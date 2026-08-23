@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import logging
-import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,8 +30,17 @@ from urllib.parse import parse_qs, urlparse
 
 from yeaboi.redaction import log_safe
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
-from yeaboi.sharing.access import invite_payload, invite_url, make_join_code, make_token, participant_url
+from yeaboi.sharing.access import (
+    client_key,
+    invite_payload,
+    invite_url,
+    make_join_code,
+    make_token,
+    participant_url,
+    secret_equal,
+)
 from yeaboi.sharing.events import ChangeWatcher, EventHub
+from yeaboi.sharing.identity import effective_pid, enforce_identity, identity_required, verified_user
 from yeaboi.sharing.live import parse_wait, serve_state
 from yeaboi.ship.board import ShipBoard
 from yeaboi.ship.page import build_board_html
@@ -90,7 +98,13 @@ class _ShipHandler(BaseHTTPRequestHandler):
         return parse_qs(urlparse(self.path).query).get(key, [""])[0]
 
     def _authed(self) -> bool:
-        return secrets.compare_digest(self._query("token"), self._token)
+        # Both factors in the Access tier: the ambient JWT (cookie / edge
+        # header) is forgeable by a cross-site form POST, so the unguessable
+        # ``?token=`` stays required as the CSRF barrier — same rule as the
+        # retro/poker/share servers.
+        if identity_required(self) and verified_user(self) is None:
+            return False
+        return secret_equal(self._query("token"), self._token)
 
     def _send(self, code: int, body: bytes, content_type: str, *, csp: str | None = None) -> None:
         send_document(self, code, body, content_type, csp=csp)
@@ -132,7 +146,7 @@ class _ShipHandler(BaseHTTPRequestHandler):
         serve_state(
             self,
             self.server.event_hub,  # type: ignore[attr-defined]
-            lambda: self._board.state_snapshot(self._query("pid")),
+            lambda: self._board.state_snapshot(effective_pid(self, self._query("pid"))),
             wait_seconds=parse_wait(self._query("wait")),
         )
 
@@ -168,7 +182,15 @@ class _ShipHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib signature
         path = urlparse(self.path).path
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            # A non-numeric Content-Length is a client error; answer 400 rather
+            # than let the cast raise out of do_POST, and drop the connection —
+            # the undeclared body would poison a keep-alive reuse.
+            self.close_connection = True
+            self._send_json(400, {"error": "bad length"})
+            return
         if length > _MAX_BODY:
             self._send_json(413, {"error": "too large"})
             return
@@ -181,15 +203,22 @@ class _ShipHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "bad json"})
             return
 
-        # /api/join is the ONLY unauthenticated POST: it exchanges the short join
-        # code for the strong token. Everything else needs the token.
+        # /api/join is the ONLY POST that does not require the board token: it
+        # exchanges the short join code for it. Everything else needs the token.
         if path == "/api/join":
-            ip = self.client_address[0]
+            # In the Access tier the code gate sits *behind* identity, matching
+            # the retro/poker/share servers: only a verified visitor may even
+            # attempt a code, so a stranger cannot spend the join-limiter budget
+            # or brute the code over the tunnel.
+            if identity_required(self) and verified_user(self) is None:
+                self._send_json(403, {"error": "verification required"})
+                return
+            ip = client_key(self, trust_forwarded=bool(getattr(self.server, "public_url", "")))
             if self._join_limiter.blocked(ip):
                 self._send_json(429, {"error": "too many attempts"})
                 return
             code = str(payload.get("code", "")).strip().upper()
-            if code and secrets.compare_digest(code, self._join_code):
+            if code and secret_equal(code, self._join_code):
                 self._join_limiter.record_success(ip)
                 self._send_json(200, {"ok": True, "token": self._token})
             else:
@@ -201,8 +230,12 @@ class _ShipHandler(BaseHTTPRequestHandler):
             self._send_json(403, {"error": "forbidden"})
             return
 
-        pid = str(payload.get("pid", ""))
-        self._board.heartbeat(pid, name=str(payload.get("name", "")), avatar=str(payload.get("avatar", "")))
+        # In the Access tier the claimed pid and name are replaced by the
+        # verified identity — the same rule as every other board's write path,
+        # and what keeps /api/presence's snapshot consistent with /api/state's
+        # effective_pid view of "mine".
+        pid, name = enforce_identity(self, str(payload.get("pid", "")), str(payload.get("name", "")))
+        self._board.heartbeat(pid, name=name, avatar=str(payload.get("avatar", "")))
         if self._query("quiet") == "1":
             self._send_json(200, {"ok": True})
             return
@@ -228,6 +261,8 @@ class ShipServer:
         self.join_limiter = JoinLimiter()
         self.port = port
         self.public_url = ""
+        # None unless the Cloudflare Access tier is on; see set_access_gate.
+        self.access_gate: object | None = None
         self.event_hub = EventHub()
         self._watcher = ChangeWatcher(self.event_hub, self._change_probe, name="ship-live-watch")
         self._httpd: ThreadingHTTPServer | None = None
@@ -243,6 +278,12 @@ class ShipServer:
         row, but a bare 1 Hz heartbeat within the same set does not.
         """
         return (self.board.revision(), self.board.present_pids())
+
+    def set_access_gate(self, gate: object | None) -> None:
+        """Arm Cloudflare Access verification for tunnel-borne requests."""
+        self.access_gate = gate
+        if self._httpd is not None:
+            self._httpd.access_gate = gate  # type: ignore[attr-defined]
 
     def set_public_url(self, url: str) -> None:
         """Record the tunnel URL and push it to the running server object."""
@@ -289,6 +330,7 @@ class ShipServer:
         httpd.page_html = page_html  # type: ignore[attr-defined]
         httpd.event_hub = self.event_hub  # type: ignore[attr-defined]
         httpd.public_url = self.public_url  # type: ignore[attr-defined]
+        httpd.access_gate = self.access_gate  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="ship-http", daemon=True)
         self._thread.start()

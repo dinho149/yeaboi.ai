@@ -39,6 +39,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# The single seam through which cloudflared is spawned, so tests can block the
+# real binary in one place (tests/conftest.py::_no_real_tunnel_spawn).
+_popen = subprocess.Popen
+
 # cloudflared prints the assigned URL to stderr inside a banner box; match it anywhere.
 _URL_RE = re.compile(r"https://[a-z0-9][a-z0-9-]*\.trycloudflare\.com")
 
@@ -84,6 +88,40 @@ _ASSET_SHA256 = {
 }
 
 
+# The only environment cloudflared gets. Withholding the rest keeps this
+# process's API keys away from a third-party binary, and keeps TUNNEL_* out of
+# its configuration — TUNNEL_LOGLEVEL=debug would make it log request URLs,
+# which carry ?token=…&admin=…, into yeaboi's own log.
+_CHILD_ENV_KEYS: tuple[str, ...] = (
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "TZ",
+    # Windows needs these to resolve anything at all.
+    "SYSTEMROOT",
+    "USERPROFILE",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "COMSPEC",
+    "PATHEXT",
+    # A corporate network may route the tunnel through a proxy; without these
+    # cloudflared simply cannot connect, and they carry no secret of ours.
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+)
+
+
+def _child_env() -> dict[str, str]:
+    """The allowlisted environment handed to cloudflared. See _CHILD_ENV_KEYS."""
+    return {key: os.environ[key] for key in _CHILD_ENV_KEYS if key in os.environ}
+
+
 def _asset_name(system: str | None = None, machine: str | None = None) -> tuple[str, bool]:
     """Return (github_asset_filename, is_tgz) for the current platform.
 
@@ -117,9 +155,12 @@ def _cached_binary_path() -> Path:
 
 
 def _make_executable(path: Path) -> None:
-    # Owner-only execute (drop group/other) — this is a cached, app-managed binary
-    # in the user's home; no reason to expose it to other local accounts.
-    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    """Make ``path`` runnable by its owner and by nobody else.
+
+    Group and other bits are masked off explicitly rather than left to the umask.
+    """
+    mode = path.stat().st_mode & ~(stat.S_IRWXG | stat.S_IRWXO)
+    path.chmod(mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
 
 
 def _verify_sha256(asset: str, data: bytes) -> None:
@@ -170,8 +211,54 @@ def _download_cloudflared(dest: Path, *, timeout: int = 120) -> Path:
         tmp.write_bytes(data)
     tmp.replace(dest)
     _make_executable(dest)
+    # Record what we just installed, so later launches can prove the file on
+    # disk is still this one (the pinned map covers the .tgz, not the binary).
+    _record_installed_digest(dest)
     logger.info("retro: cloudflared cached at %s", dest)
     return dest
+
+
+def _sidecar_path(binary: Path) -> Path:
+    """Where the installed binary's own SHA-256 is recorded."""
+    return binary.with_name(binary.name + ".sha256")
+
+
+def _record_installed_digest(binary: Path) -> None:
+    """Write the installed binary's SHA-256 beside it, for re-verification.
+
+    The pinned ``_ASSET_SHA256`` map covers the *downloaded asset*, which on
+    macOS is a ``.tgz`` — so it cannot be used to re-check the extracted binary
+    later. We therefore record what we installed at the moment we installed it,
+    immediately after the asset's pinned hash checked out. That is what makes a
+    later re-check meaningful: it proves the file on disk is still the one that
+    came out of the verified archive.
+    """
+    digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+    _sidecar_path(binary).write_text(digest, encoding="utf-8")
+
+
+def _cached_binary_is_intact(binary: Path) -> bool:
+    """True if the cached binary still matches the digest recorded at install.
+
+    A missing sidecar counts as *not* intact: it means the copy predates this
+    check (or was placed there by something else), and re-downloading a 38 MB
+    file once is a much better trade than executing an unverified binary.
+    """
+    sidecar = _sidecar_path(binary)
+    try:
+        expected = sidecar.read_text(encoding="utf-8").strip()
+    except OSError:
+        logger.info("retro: cached cloudflared has no recorded digest — re-installing")
+        return False
+    actual = hashlib.sha256(binary.read_bytes()).hexdigest()
+    if actual != expected:
+        logger.warning(
+            "retro: cached cloudflared digest changed since install (expected %s, got %s) — re-installing",
+            expected,
+            actual,
+        )
+        return False
+    return True
 
 
 def ensure_cloudflared() -> Path | None:
@@ -180,24 +267,53 @@ def ensure_cloudflared() -> Path | None:
     Resolution order: ``CLOUDFLARED_PATH`` env → a ``cloudflared`` already on
     PATH → the app's cached copy → download. Returns ``None`` if it cannot be
     obtained (caller shows a status message and stays LAN-only).
+
+    Two of those four sources carry no guarantee at all: an env override and a
+    binary on ``PATH`` are whatever the machine happens to offer, so the pinned
+    checksum that guards the download path never sees them. That is a reasonable
+    default — a user who installed cloudflared themselves should be able to use
+    it — but it is not what someone hardening a share wants, so
+    ``YEABOI_CLOUDFLARED_STRICT=1`` refuses both and accepts only the managed,
+    hash-verified copy.
+
+    The cached copy is now re-verified on every call rather than trusted because
+    it exists; see :func:`_cached_binary_is_intact` for why that check is against
+    a recorded digest rather than the pinned asset map.
     """
+    from yeaboi.config import cloudflared_strict
+
+    strict = cloudflared_strict()
+
     override = os.getenv("CLOUDFLARED_PATH")
     if override and Path(override).exists():
-        return Path(override)
+        if strict:
+            logger.warning("retro: ignoring CLOUDFLARED_PATH — YEABOI_CLOUDFLARED_STRICT allows only the pinned build")
+        else:
+            logger.info("retro: using cloudflared from CLOUDFLARED_PATH (%s) — not checksum-verified", override)
+            return Path(override)
 
     on_path = shutil.which("cloudflared")
     if on_path:
-        return Path(on_path)
+        if strict:
+            logger.warning(
+                "retro: ignoring cloudflared on PATH — YEABOI_CLOUDFLARED_STRICT allows only the pinned build"
+            )
+        else:
+            logger.info("retro: using cloudflared from PATH (%s) — not checksum-verified", on_path)
+            return Path(on_path)
 
     cached = _cached_binary_path()
-    if cached.exists():
+    if cached.exists() and _cached_binary_is_intact(cached):
+        logger.info("retro: using the managed cloudflared build (%s)", cached)
         return cached
 
     try:
-        return _download_cloudflared(cached)
+        binary = _download_cloudflared(cached)
     except Exception as e:
         logger.warning("retro: failed to obtain cloudflared: %s", e)
         return None
+    logger.info("retro: installed the pinned cloudflared %s at %s", _CLOUDFLARED_VERSION, binary)
+    return binary
 
 
 class CloudflareTunnel:
@@ -274,16 +390,40 @@ class CloudflareTunnel:
         if url is None:
             return None
 
-        # cloudflared prints the URL several seconds BEFORE the quick-tunnel hostname's DNS
-        # record actually goes live. Handing the URL out at that instant means a teammate
-        # who opens it immediately hits NXDOMAIN — which their browser/OS then *negatively
-        # caches*, so even retries keep failing for a while. Wait until the record is
-        # globally resolvable before declaring the tunnel ready.
-        host = url.split("://", 1)[-1].split("/", 1)[0]
-        self._wait_dns_live(host, deadline=time.monotonic() + 30.0)
-        logger.info("cloudflare quick tunnel ready (local_port=%d)", self.port)
+        self._await_dns(url)
+        logger.info("cloudflare tunnel ready (%s, local_port=%d)", type(self).__name__, self.port)
         self._schedule_expiry()
         return url
+
+    def _initial_url(self) -> str:
+        """The public URL when it is known before launch, or ``""`` to read it from stderr.
+
+        A quick tunnel's hostname is assigned by Cloudflare and announced in a
+        banner, so this is empty and :meth:`_attempt` waits for it. A *named*
+        tunnel is served at a hostname the host already owns and already routed,
+        so the URL is known before cloudflared starts — and there is no banner to
+        wait for, which is why this is a hook rather than a regex the Access tier
+        would have to pretend to match.
+        """
+        return ""
+
+    def _await_dns(self, url: str) -> None:
+        """Block until the tunnel hostname resolves publicly.
+
+        cloudflared prints the URL several seconds BEFORE the quick-tunnel
+        hostname's DNS record actually goes live. Handing the URL out at that
+        instant means a teammate who opens it immediately hits NXDOMAIN — which
+        their browser/OS then *negatively caches*, so even retries keep failing
+        for a while. Wait until the record is globally resolvable before
+        declaring the tunnel ready.
+
+        The Access tier overrides this to do nothing: its hostname is a stable
+        record the host created once with ``cloudflared tunnel route dns``, so
+        there is no propagation race to wait out and a 30 s gate on every launch
+        would be pure delay.
+        """
+        host = url.split("://", 1)[-1].split("/", 1)[0]
+        self._wait_dns_live(host, deadline=time.monotonic() + 30.0)
 
     def _schedule_expiry(self) -> None:
         """Arm the auto-expiry timer per ``TUNNEL_TIMEOUT_MINUTES`` (0 = never).
@@ -332,12 +472,21 @@ class CloudflareTunnel:
             " ".join(extra_args) or "-",
         )
         try:
-            proc = subprocess.Popen(  # noqa: S603 - fixed, app-managed binary + args
-                [str(binary), "tunnel", "--no-autoupdate", *extra_args, "--url", f"http://localhost:{self.port}"],
+            proc = _popen(  # noqa: S603 - fixed, app-managed binary + args
+                self._argv(binary, extra_args),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
+                # Withhold this process's environment — see _CHILD_ENV_KEYS. This
+                # is load-bearing for the flags above too: an inherited
+                # TUNNEL_LOGLEVEL would otherwise override what we pass.
+                env=_child_env(),
+                # Its own process group. Sharing ours means a Ctrl-C or a
+                # terminal hangup is delivered to both, and teardown ordering
+                # becomes the OS's choice — while every caller here assumes the
+                # child's lifetime is stop()'s to control.
+                start_new_session=True,
             )
         except OSError as e:
             logger.warning("retro: could not launch cloudflared: %s", e)
@@ -352,7 +501,12 @@ class CloudflareTunnel:
         registered = threading.Event()
         # Per-attempt URL slot: a previous attempt's drain thread that outlives its
         # join(timeout=2) must never be able to write this attempt's (or the final) URL.
-        state = {"url": ""}
+        # Pre-filled for a named tunnel, whose URL is known before launch — which
+        # both skips the banner wait below and keeps _drain's regex from ever
+        # firing on a line that merely mentions a URL.
+        state = {"url": self._initial_url()}
+        if state["url"]:
+            found.set()
 
         def _drain() -> None:
             # Keep reading stderr for the tunnel's whole life: capture the URL once,
@@ -416,6 +570,38 @@ class CloudflareTunnel:
             return None
         self._url = state["url"]
         return self._url
+
+    def _argv(self, binary: Path, extra_args: tuple[str, ...]) -> list[str]:
+        """The full cloudflared command line for one launch.
+
+        Extracted from :meth:`_attempt` so the Access tier's named tunnel can
+        override just this, inheriting the drain thread, the readiness gate, the
+        expiry timer and teardown unchanged.
+
+        Two flags are pinned rather than left to cloudflared's defaults:
+
+        ``--loglevel info`` — at ``debug`` cloudflared logs every request URL and
+        all request and response headers. This app's credentials ride in the
+        query string, so debug logging would put live tokens into the stream
+        ``_drain`` reads. The default is already ``info``; pinning it means an
+        environment variable cannot change that.
+
+        ``--metrics 127.0.0.1:0`` — cloudflared's own help warns that its default
+        metrics listener "binds to all interfaces" in virtualized environments.
+        Nothing about this app wants a metrics port reachable off-box.
+        """
+        return [
+            str(binary),
+            "tunnel",
+            "--no-autoupdate",
+            "--loglevel",
+            "info",
+            "--metrics",
+            "127.0.0.1:0",
+            *extra_args,
+            "--url",
+            f"http://localhost:{self.port}",
+        ]
 
     def _wait_registered(self, proc: subprocess.Popen, registered: threading.Event, *, deadline: float) -> bool:
         """Block until cloudflared registers an edge connection, or the deadline/process death.

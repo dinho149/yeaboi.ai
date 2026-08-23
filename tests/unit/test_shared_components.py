@@ -563,7 +563,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         output = self._render({}, height=40)
-        for tab in ("Credentials", "System"):
+        for tab in ("Credentials", "Sharing", "System"):
             assert tab in output
         assert "switch" not in output  # not in the body any more
 
@@ -585,34 +585,41 @@ class TestSettingsScreen:
         creds = self._render({"JIRA_BASE_URL": "https://org.atlassian.net"}, height=80, active_tab=0)
         assert "Anthropic Key" in creds
         assert "org.atlassian.net" in creds  # Jira grouped under Credentials
-        system = self._render({}, height=40, active_tab=1)
+        system = self._render({}, height=40, active_tab=2)
         assert "Log Level" in system  # Advanced section
         assert "Anthropic Key" not in system  # credentials are on another tab
 
     def test_duck_row_on_the_system_tab(self):
         # The duck-bubble mute is a persisted preference (DUCK_ENABLED) with a
         # Settings row beside Tips — default on, "false" shows off.
-        on = self._render({}, height=60, active_tab=1)
+        on = self._render({}, height=60, active_tab=2)
         assert "Duck" in on and "on" in on
-        off = self._render({"DUCK_ENABLED": "false"}, height=60, active_tab=1)
+        off = self._render({"DUCK_ENABLED": "false"}, height=60, active_tab=2)
         assert "Duck" in off
 
     def test_system_tab_hint_mentions_log_level(self):
-        output = self._render({}, height=40, active_tab=1)  # System tab (Advanced → log level)
+        output = self._render({}, height=40, active_tab=2)  # System tab (Advanced → log level)
         assert "log level" in output.lower()
 
-    def test_tunnel_timeout_row_on_the_system_tab(self):
+    def test_tunnel_timeout_row_on_the_sharing_tab(self):
         # Auto-expiry for retro/poker/output-share Cloudflare tunnels — same
-        # "0 disables" convention as Session Prune Days, shown right beside it.
+        # "0 disables" convention as Session Prune Days. It lives on the Sharing
+        # tab, promoted out of System so the tier is findable.
         default = self._render({}, height=60, active_tab=1)
         assert "Tunnel Timeout" in default and "60" in default
         off = self._render({"TUNNEL_TIMEOUT_MINUTES": "0"}, height=60, active_tab=1)
         assert "Tunnel Timeout" in off
 
+    def test_share_mode_row_on_the_sharing_tab(self):
+        sharing = self._render({}, height=60, active_tab=1)
+        assert "Share Mode" in sharing
+        assert "Log Level" not in sharing  # System rows live on their own tab
+
     def test_settings_tab_action_mapping(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS, settings_tab_action
 
         assert settings_tab_action(_SETTINGS_TABS.index("System")) == "loglevel"
+        assert settings_tab_action(_SETTINGS_TABS.index("Sharing")) == "sharing"
         assert settings_tab_action(_SETTINGS_TABS.index("Credentials")) == "setup"
 
     def test_editable_row_regions_map_to_their_env_rows(self):
@@ -646,7 +653,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         # The System tab's "Config File" and "Dictation" rows are read-only.
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=1)
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=2)
         labels = {label for _, _, _, _, label, _ in panel._row_regions}
         assert "Config File" not in labels
         assert "Log Level" in labels  # but editable rows on the same tab do have regions
@@ -657,7 +664,7 @@ class TestSettingsScreen:
         # narrow sections share a row.
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)  # System
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)  # System
         out = self._text(panel, width=130, height=44)
         assert "╭─ Storage" in out and "╭─ Daily Standup" in out
         # Side by side: the first box of each column lands on the same rendered row.
@@ -666,7 +673,7 @@ class TestSettingsScreen:
     def test_narrow_terminal_falls_back_to_one_column(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=70, height=44, active_tab=1)
+        panel = _build_settings_screen({}, width=70, height=44, active_tab=2)
         out = self._text(panel, width=70, height=44)
         # One column — a second would fall below _SETTINGS_MIN_BOX_W.
         assert len(panel._box_cols) == 1
@@ -682,7 +689,7 @@ class TestSettingsScreen:
 
         # box 3 / field 1 is Session Prune Days on the System tab (AWS Bedrock used
         # to sit here as a fifth box; its rows moved beside the provider).
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=1, sel_box=3, sel_field=1)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2, sel_box=3, sel_field=1)
         rows = self._segments(panel, width=130, height=44)
         barred = [r for r in rows if any(_SETTINGS_FOCUS_BG in str(s.style) for s in r)]
         assert len(barred) == 1  # exactly one value is highlighted
@@ -695,7 +702,7 @@ class TestSettingsScreen:
     def test_rows_sit_flush_against_the_box_padding(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
         line = next(ln for ln in self._text(panel, width=130, height=44).splitlines() if "Data Directory" in ln)
         # One space between the box border and the label — no marker gutter.
         assert "│ Data Directory" in line
@@ -703,12 +710,20 @@ class TestSettingsScreen:
     def test_navigation_map_is_published(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
-        # Four sections dealt into two balanced columns, nothing in the wide tail.
-        assert sorted(b for col in panel._box_cols for b in col) == [0, 1, 2, 3]
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
+        # Every System section dealt into two balanced columns, nothing in the
+        # wide tail. Counted from the registry rather than hard-coded, so adding
+        # a section is a one-line change there and not a test edit as well.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TAB_SECTIONS
+
+        expected = list(range(len(_SETTINGS_TAB_SECTIONS["System"])))
+        assert sorted(b for col in panel._box_cols for b in col) == expected
         assert len(panel._box_cols) == 2 and not panel._box_tail
         envs = [f[0] for box in panel._box_fields for f in box]
         assert "LOG_LEVEL" in envs
+        # The tier switch lives on the Sharing tab now, navigable like any row.
+        sharing = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        assert "YEABOI_SHARE_MODE" in [f[0] for box in sharing._box_fields for f in box]
         assert "_config_path" not in envs  # read-only rows aren't navigable
         # AWS credentials are navigable on the Credentials tab now, under the
         # provider that uses them, and only when Bedrock is the live provider.
@@ -724,7 +739,7 @@ class TestSettingsScreen:
             _build_settings_screen,
         )
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
         lines = self._text(panel, width=130, height=44).splitlines()
         i = next(n for n, ln in enumerate(lines) if "Data Directory" in ln)
         assert "Daily Standup" in lines[i - 1]  # side by side
@@ -840,18 +855,18 @@ class TestSettingsScreen:
     def test_storage_section_rendered(self):
         # Storage is one row, so it folded into System (tab index 1) rather than
         # keeping a tab to itself; the data dir is edited like any other value.
-        output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=40, active_tab=1)
+        output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=40, active_tab=2)
         assert "Data Directory" in output
         assert "/data/yeaboi" in output
 
     def test_data_dir_default_label_when_unset(self):
-        output = self._render({}, height=40, active_tab=1)  # System tab
+        output = self._render({}, height=40, active_tab=2)  # System tab
         assert "~/.yeaboi (default)" in output
 
     def test_data_dir_is_an_editable_row(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
         envs = [f[0] for box in panel._box_fields for f in box]
         assert "YEABOI_HOME" in envs  # reachable by keyboard and click
 
@@ -861,7 +876,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         panel = _build_settings_screen(
-            {"YEABOI_ALLOWED_PATHS": "/repos/team,/tmp/exports"}, width=160, height=44, active_tab=1
+            {"YEABOI_ALLOWED_PATHS": "/repos/team,/tmp/exports"}, width=160, height=44, active_tab=2
         )
         output = self._text(panel, width=160, height=44)
         assert "Allowed Paths" in output
@@ -870,7 +885,7 @@ class TestSettingsScreen:
     def test_allowed_paths_empty_shows_sandbox_note(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=160, height=44, active_tab=1)
+        panel = _build_settings_screen({}, width=160, height=44, active_tab=2)
         assert "none — sandboxed to data dir" in self._text(panel, width=160, height=44)
 
     def test_status_message_spoken_by_the_duck(self):

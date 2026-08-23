@@ -45,6 +45,15 @@ const WAIT_SECONDS = 25;
 /** Backoff after a failed request, in ms. Capped so recovery stays quick. */
 const RETRY_MIN_MS = 500;
 const RETRY_MAX_MS = 8000;
+// A poll that asked to park but returned sooner than this was refused a hold
+// slot (the board is over its per-visitor stream cap). It is a 200/304, not an
+// error, so the retry backoff above does not apply — this does.
+//
+// Must stay above the server's own REFUSED_HOLD_SLEEP (sharing/live.py, 1.5s):
+// the server already delays a refusal by that much, so a lower threshold here
+// can never fire and this whole branch would be dead code.
+const MIN_PARKED_MS = 4000;
+const REFUSED_HOLD_BACKOFF_MS = 2000;
 
 export type StreamStatus = 'idle' | 'live' | 'retrying';
 
@@ -90,12 +99,14 @@ export function useBoardStream<S extends Revisioned>({
 
     async function loop(): Promise<void> {
       while (live()) {
+        const startedAt = Date.now();
+        // The very first request must not park: we hold no ETag, so the
+        // server would answer immediately anyway, and asking to wait only
+        // burns a hold slot for nothing.
+        const asked = etag ? waitSeconds : 0;
         const result = await pollState<S>(session, {
           etag,
-          // The very first request must not park: we hold no ETag, so the
-          // server would answer immediately anyway, and asking to wait only
-          // burns a hold slot for nothing.
-          waitSeconds: etag ? waitSeconds : 0,
+          waitSeconds: asked,
           signal: controller.signal,
           path,
         });
@@ -117,6 +128,23 @@ export function useBoardStream<S extends Revisioned>({
         etag = result.etag;
         setStatus('live');
         if (result.changed) store.apply(result.data);
+
+        // A hold the server refused comes back immediately instead of parking
+        // for `waitSeconds`. Without this the loop would re-request as fast as
+        // the socket allows — a tight request loop for the whole ceremony — and
+        // the backoff above never fires, because a refusal is a *successful*
+        // 304, not an error. The server throttles refusals too; this is the
+        // half that keeps a single client from spinning.
+        //
+        // `!result.changed` is what distinguishes a refusal from a busy board:
+        // a refused hold hands back the same ETag, while a real change also
+        // returns fast and must not be slowed down.
+        const parked = Date.now() - startedAt;
+        if (asked > 0 && !result.changed && parked < MIN_PARKED_MS) {
+          await new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, REFUSED_HOLD_BACKOFF_MS);
+          });
+        }
       }
     }
 

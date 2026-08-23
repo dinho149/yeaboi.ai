@@ -459,3 +459,25 @@ class TestPokerParity:
         time.sleep(0.4)
         srv.stop()
         assert done.wait(timeout=5), "shutdown left a request parked"
+
+
+class TestRefusedHoldThrottle:
+    """A refused hold slot is throttled server-side, whatever the client does."""
+
+    def test_the_sleep_is_long_enough_to_stop_a_spin(self):
+        from yeaboi.sharing.live import REFUSED_HOLD_SLEEP
+
+        assert REFUSED_HOLD_SLEEP >= 1.0
+
+    def test_the_client_threshold_sits_above_the_server_sleep(self):
+        """Otherwise the client half of the throttle is dead code: the server
+        already delays a refusal past the point the client tests for."""
+        import re
+        from pathlib import Path
+
+        from yeaboi.sharing.live import REFUSED_HOLD_SLEEP
+
+        src = Path("frontend/src/hooks/useBoardStream.ts").read_text()
+        match = re.search(r"const MIN_PARKED_MS = (\d+);", src)
+        assert match, "MIN_PARKED_MS not found"
+        assert int(match.group(1)) > REFUSED_HOLD_SLEEP * 1000

@@ -12,6 +12,7 @@ import urllib.request
 
 import pytest
 
+from yeaboi.poker import server as server_mod
 from yeaboi.poker.board import PokerBoard
 from yeaboi.poker.server import JoinLimiter, PokerServer
 from yeaboi.web.security import BOARD_CSP, DOCUMENT_HEADERS
@@ -813,3 +814,65 @@ class TestSecurityHeaders:
         srv, _ = running_server
         headers = _get(f"http://127.0.0.1:{srv.port}/api/state?token={srv.token}").headers
         assert headers["Content-Security-Policy"] is None
+
+
+class TestDuelMicConsent:
+    """A remote request must not be able to switch on the host's microphone.
+
+    `/api/admin/duel/open` reaches a hardware sensor on the host's machine —
+    the only route in the whole served surface that does. It was gated on the
+    admin secret alone, which travels in the host link's query string (and so
+    into Cloudflare's edge log) and is static for the life of the screen.
+    """
+
+    def test_capture_refuses_until_the_host_arms_it(self, monkeypatch):
+        capture = server_mod._DuelCapture()
+        called = []
+        monkeypatch.setattr(
+            "yeaboi.voice.is_voice_available",
+            lambda: called.append("checked") or (True, ""),
+        )
+        reason = capture.start()
+        assert reason, "an un-armed capture must refuse"
+        assert "armed" in reason
+        assert called == [], "it must refuse before touching the voice stack at all"
+        assert capture._recorder is None
+
+    def test_arming_is_off_by_default(self):
+        assert server_mod._DuelCapture().armed is False
+
+    def test_arming_can_be_revoked(self):
+        capture = server_mod._DuelCapture()
+        capture.set_armed(True)
+        assert capture.armed is True
+        capture.set_armed(False)
+        assert capture.armed is False
+        assert capture.start().endswith("armed the microphone")
+
+
+class TestMalformedContentLengthDropsTheConnection:
+    def test_bad_length_is_400_and_the_connection_dies(self, running_server):
+        """The undeclared body stays queued on the socket, so a keep-alive reuse
+        would parse mid-body — the 400 must take the connection with it."""
+        import http.client
+
+        srv = running_server[0]
+        conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=5)
+        try:
+            conn.putrequest("POST", "/api/join")
+            conn.putheader("Content-Type", "application/json")
+            conn.putheader("Content-Length", "not-a-number")
+            conn.endheaders()
+            conn.send(b"{}")
+            response = conn.getresponse()
+            assert response.status == 400
+            response.read()
+            with pytest.raises((http.client.HTTPException, OSError)):
+                conn.putrequest("POST", "/api/join")
+                conn.putheader("Content-Type", "application/json")
+                conn.putheader("Content-Length", "2")
+                conn.endheaders()
+                conn.send(b"{}")
+                conn.getresponse()
+        finally:
+            conn.close()

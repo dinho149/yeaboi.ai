@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import pytest
 
+from yeaboi.sharing import access
 from yeaboi.sharing.access import (
     JoinLimiter,
     invite_payload,
@@ -182,3 +183,104 @@ class TestJoinLimiter:
         assert lim.blocked("10.0.0.1") is True
         clock["t"] += JoinLimiter._LOCKOUT_S + 1
         assert lim.blocked("10.0.0.1") is False
+
+
+class _FakeHandler:
+    """A handler stand-in with headers and a socket address, and nothing else."""
+
+    def __init__(self, headers: dict[str, str] | None = None, peer: str = "127.0.0.1"):
+        self.headers = headers or {}
+        self.client_address = (peer, 54321)
+
+
+class TestSecretEqual:
+    """Credential comparison must be total — a bad credential is a 403, not a crash."""
+
+    def test_matching_ascii(self):
+        assert access.secret_equal("ABCD-1234", "ABCD-1234")
+
+    def test_mismatched_ascii(self):
+        assert not access.secret_equal("ABCD-1234", "WXYZ-9999")
+
+    def test_non_ascii_compares_false_instead_of_raising(self):
+        # secrets.compare_digest raises TypeError on a non-ASCII str, and every
+        # credential here arrives from the network. Unguarded, `?token=café`
+        # printed a traceback over the live TUI and dropped the connection —
+        # and on the join path it skipped the lockout counter entirely.
+        assert not access.secret_equal("café", "ABCD-1234")
+        assert not access.secret_equal("ABCD-1234", "café")
+        assert not access.secret_equal("café", "café's twin")
+
+    def test_identical_non_ascii_still_matches(self):
+        # Not a case that can arise from a generated credential, but the
+        # function must stay a comparison rather than a blanket refusal.
+        assert access.secret_equal("café", "café")
+
+    def test_empty_supplied_never_matches_a_real_secret(self):
+        assert not access.secret_equal("", "ABCD-1234")
+
+
+class TestClientKey:
+    """Behind the tunnel, client_address is 127.0.0.1 for every remote visitor."""
+
+    def test_forwarded_header_wins_when_trusted(self):
+        h = _FakeHandler({"CF-Connecting-IP": "203.0.113.7"})
+        assert access.client_key(h, trust_forwarded=True) == "203.0.113.7"
+
+    def test_forwarded_header_ignored_when_not_trusted(self):
+        # No tunnel is up, so the header is just a string the client chose.
+        h = _FakeHandler({"CF-Connecting-IP": "203.0.113.7"})
+        assert access.client_key(h, trust_forwarded=False) == "127.0.0.1"
+
+    def test_two_visitors_through_one_tunnel_get_distinct_keys(self):
+        # The whole point: without this both were "127.0.0.1", so eight wrong
+        # codes from one of them locked the other out.
+        a = _FakeHandler({"CF-Connecting-IP": "203.0.113.7"})
+        b = _FakeHandler({"CF-Connecting-IP": "198.51.100.4"})
+        assert access.client_key(a, trust_forwarded=True) != access.client_key(b, trust_forwarded=True)
+
+    def test_x_forwarded_for_takes_the_leftmost_entry(self):
+        h = _FakeHandler({"X-Forwarded-For": "203.0.113.7, 70.41.3.18"})
+        assert access.client_key(h, trust_forwarded=True) == "203.0.113.7"
+
+    def test_cf_header_preferred_over_x_forwarded_for(self):
+        h = _FakeHandler({"CF-Connecting-IP": "203.0.113.7", "X-Forwarded-For": "198.51.100.4"})
+        assert access.client_key(h, trust_forwarded=True) == "203.0.113.7"
+
+    def test_junk_header_falls_back_rather_than_keying_on_it(self):
+        # A header is attacker-controlled text; it must never become a bucket key.
+        h = _FakeHandler({"CF-Connecting-IP": "not-an-address"})
+        assert access.client_key(h, trust_forwarded=True) == "127.0.0.1"
+
+    def test_absurdly_long_header_falls_back(self):
+        h = _FakeHandler({"CF-Connecting-IP": "1" * 5000})
+        assert access.client_key(h, trust_forwarded=True) == "127.0.0.1"
+
+    def test_missing_header_falls_back(self):
+        assert access.client_key(_FakeHandler(), trust_forwarded=True) == "127.0.0.1"
+
+    def test_ipv6_is_accepted_and_normalised(self):
+        h = _FakeHandler({"CF-Connecting-IP": "2001:DB8::1"})
+        assert access.client_key(h, trust_forwarded=True) == "2001:db8::1"
+
+
+class TestLimiterIsBounded:
+    def test_table_does_not_grow_without_limit(self):
+        # Keys now come from a forwarded header, so how many distinct ones exist
+        # is chosen by whoever is talking to us.
+        limiter = access.JoinLimiter()
+        for i in range(access.JoinLimiter._MAX_TRACKED * 2):
+            limiter.record_failure(f"198.51.100.{i}")
+        assert len(limiter._fails) <= access.JoinLimiter._MAX_TRACKED
+
+    def test_a_real_lockout_survives_eviction_pressure(self):
+        limiter = access.JoinLimiter()
+        for _ in range(access.JoinLimiter._MAX_FAILS):
+            limiter.record_failure("203.0.113.7")
+        assert limiter.blocked("203.0.113.7")
+        # Flooding the table with spoofed addresses must not flush the lockout.
+        # Plain oldest-first eviction would: the attacker's entry is among the
+        # oldest, because they failed before they started flooding.
+        for i in range(access.JoinLimiter._MAX_TRACKED * 2):
+            limiter.record_failure(f"198.51.{i // 255}.{i % 255}")
+        assert limiter.blocked("203.0.113.7"), "a flood must not evict an active lockout"

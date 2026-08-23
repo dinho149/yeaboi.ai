@@ -3370,7 +3370,7 @@ wheels = [
 
 [[package]]
 name = "yeaboi"
-version = "3.22.0"
+version = "3.25.0"
 source = { editable = "." }
 dependencies = [
     { name = "atlassian-python-api" },
@@ -3390,6 +3390,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+access = [
+    { name = "pyjwt", extra = ["crypto"] },
+]
 all-providers = [
     { name = "boto3" },
     { name = "langchain-aws" },
@@ -3478,6 +3481,7 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "prompt-toolkit" },
     { name = "pygithub" },
+    { name = "pyjwt", extras = ["crypto"], marker = "extra == 'access'", specifier = ">=2.8" },
     { name = "pymupdf", marker = "extra == 'pdf'" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-asyncio", marker = "extra == 'dev'" },
@@ -3493,7 +3497,7 @@ requires-dist = [
     { name = "sounddevice", marker = "extra == 'voice'" },
     { name = "yeaboi-core", marker = "extra == 'core'", directory = "packaging/yeaboi-core" },
 ]
-provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "ollama", "voice", "charts", "mcp", "core", "all-providers", "dev"]
+provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "ollama", "voice", "charts", "mcp", "access", "core", "all-providers", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "syrupy", specifier = ">=5.1.0" }]

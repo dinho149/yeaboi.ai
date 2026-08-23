@@ -239,3 +239,40 @@ class TestMoveDataTree:
         ok, _ = paths.move_data_tree(dest)
         assert ok
         assert (dest / "scrum-docs").exists()
+
+
+class TestRunDir:
+    """Where the generated tunnel ingress files live."""
+
+    def test_it_is_created_owner_only(self, tmp_path, monkeypatch):
+        import stat
+
+        from yeaboi import paths
+
+        monkeypatch.setattr(paths, "ROOT_DIR", tmp_path / ".yeaboi")
+        monkeypatch.setattr(paths, "RUN_DIR", tmp_path / ".yeaboi" / "run")
+        run_dir = paths.get_run_dir()
+        assert run_dir.is_dir()
+        # The ingress files name the credentials path; group/other have no
+        # business reading them.
+        assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
+
+    def test_it_is_idempotent(self, tmp_path, monkeypatch):
+        from yeaboi import paths
+
+        monkeypatch.setattr(paths, "ROOT_DIR", tmp_path / ".yeaboi")
+        monkeypatch.setattr(paths, "RUN_DIR", tmp_path / ".yeaboi" / "run")
+        assert paths.get_run_dir() == paths.get_run_dir()
+
+    def test_the_bin_dir_is_owner_only_too(self, tmp_path, monkeypatch):
+        """It holds the cloudflared binary and its recorded digest — another
+        local user able to rewrite either runs their code on the next share."""
+        import stat
+
+        from yeaboi import paths
+
+        monkeypatch.setattr(paths, "ROOT_DIR", tmp_path / ".yeaboi")
+        monkeypatch.setattr(paths, "BIN_DIR", tmp_path / ".yeaboi" / "bin")
+        bin_dir = paths.get_bin_dir()
+        assert bin_dir.is_dir()
+        assert stat.S_IMODE(bin_dir.stat().st_mode) == 0o700

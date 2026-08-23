@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import secrets
 import threading
 import time
@@ -162,16 +163,97 @@ def invite_payload(
     }
 
 
+def secret_equal(supplied: str, expected: str) -> bool:
+    """Constant-time credential comparison that is total over arbitrary input.
+
+    ``secrets.compare_digest`` raises ``TypeError`` on a non-ASCII ``str``, and
+    every credential here arrives from the network. Encoding both sides first
+    makes a non-ASCII credential simply unequal, which is the answer it should
+    have.
+    """
+    return secrets.compare_digest(
+        supplied.encode("utf-8", "replace"),
+        expected.encode("utf-8", "replace"),
+    )
+
+
+# A forwarded header is attacker-controlled text. Parse it as an address and
+# refuse anything else, so a bucket key can never become unbounded junk.
+_MAX_FORWARDED_LEN = 64
+
+
+def _first_forwarded(raw: str) -> str:
+    """The left-most address in an ``X-Forwarded-For`` list, or ``""``."""
+    return raw.split(",", 1)[0].strip()
+
+
+def client_key(handler, *, trust_forwarded: bool) -> str:
+    """The per-visitor bucket key for rate limiting and long-poll stream caps.
+
+    ``handler.client_address[0]`` is ``127.0.0.1`` for every remote participant,
+    because the servers bind loopback and cloudflared connects from the same
+    machine. ``CF-Connecting-IP`` is what cloudflared forwards.
+
+    **When it is trusted.** Only when a tunnel is live — the caller passes
+    ``trust_forwarded=bool(server.public_url)``. Off-tunnel the header is just a
+    string a client chose, and the socket address is the honest answer. A *local*
+    process could still forge it while a tunnel is up, but a local process
+    already has the machine; this is not a boundary it needs to cross.
+    """
+    if trust_forwarded:
+        for name in ("CF-Connecting-IP", "X-Forwarded-For"):
+            raw = (handler.headers.get(name) or "")[:_MAX_FORWARDED_LEN]
+            candidate = _first_forwarded(raw) if name == "X-Forwarded-For" else raw.strip()
+            if not candidate:
+                continue
+            try:
+                return str(ipaddress.ip_address(candidate))
+            except ValueError:
+                continue  # not an address — fall through rather than key on junk
+    return handler.client_address[0]
+
+
 class JoinLimiter:
     """Thread-safe failed-code throttle shared by Retro and static output sharing."""
 
     _MAX_FAILS = 8
     _LOCKOUT_S = 300.0
+    # Bucket keys now come from a forwarded header (see client_key), so the
+    # number of distinct keys is chosen by whoever is talking to us rather than
+    # by how many machines are on a LAN. Bound the table and evict the oldest
+    # entries: a flood of spoofed addresses must cost memory that is capped, and
+    # the entries worth keeping are the recent ones a real lockout is tracking.
+    _MAX_TRACKED = 1024
 
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         self._lock = threading.Lock()
         self._fails: dict[str, tuple[int, float]] = {}
         self._clock = clock
+
+    def _evict_locked(self) -> None:
+        """Trim the table back to its cap. Caller holds the lock.
+
+        **Evict un-blocked entries first, oldest of those first.** Plain
+        oldest-first is the obvious policy and it is wrong here: an attacker's
+        own entry is by definition among the oldest — they started failing
+        before they started flooding — so a flood of spoofed addresses would
+        push out exactly the lockout that was holding them back. Under this
+        policy, a bucket that has reached ``_MAX_FAILS`` is the last thing to
+        go, and a flood large enough to evict one has already had to create
+        ``_MAX_TRACKED`` blocked buckets of its own.
+        """
+        excess = len(self._fails) - self._MAX_TRACKED
+        if excess <= 0:
+            return
+        now = self._clock()
+
+        def _rank(item: tuple[str, tuple[int, float]]) -> tuple[bool, float]:
+            count, first = item[1]
+            blocked = count >= self._MAX_FAILS and (now - first) < self._LOCKOUT_S
+            return (blocked, first)  # False sorts first, then oldest
+
+        for key, _ in sorted(self._fails.items(), key=_rank)[:excess]:
+            del self._fails[key]
 
     def blocked(self, ip: str) -> bool:
         with self._lock:
@@ -192,6 +274,7 @@ class JoinLimiter:
             if self._clock() - first >= self._LOCKOUT_S:
                 count, first = 0, self._clock()
             self._fails[ip] = (count + 1, first)
+            self._evict_locked()
 
     def record_success(self, ip: str) -> None:
         with self._lock:

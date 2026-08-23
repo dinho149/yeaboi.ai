@@ -308,8 +308,25 @@ def _binary_flags(program: str) -> tuple[str, ...]:
     return ("--no-build",) if program == "uv" else ("--only-binary=:all:",)
 
 
-def install_plan(*, ignore_verdict: bool = False) -> InstallPlan:
-    """Return the additive command that adds dictation to the running interpreter.
+def install_plan(
+    *,
+    ignore_verdict: bool = False,
+    packages: tuple[str, ...] = VOICE_PACKAGES,
+    extra: str = "voice",
+    gate_platform: bool = True,
+) -> InstallPlan:
+    """Return the additive command that adds ``packages`` to the running interpreter.
+
+    Defaults to dictation, which is what it was written for. The Cloudflare
+    Access tier reuses it for ``PyJWT[crypto]`` because the rules encoded below
+    are the expensive part and are not voice-specific: never run the command a
+    human would type, because two of those four branches rebuild the very venv
+    this process is executing out of.
+
+    ``gate_platform`` is opt-out for exactly that caller. :func:`platform_support`
+    gates hosts where no wheel *can* exist for ``ctranslate2``, which is a far
+    pickier dependency than ``cryptography``; applying it to PyJWT would refuse
+    an install that would have succeeded.
 
     ``ignore_verdict`` skips a *stored* past failure but never the platform gate,
     which is the one thing here that is genuinely certain. It is what
@@ -337,9 +354,10 @@ def install_plan(*, ignore_verdict: bool = False) -> InstallPlan:
                   well belong to a different environment.
     ============  ==========================================================
     """
-    supported, platform_reason = platform_support()
-    if not supported:
-        return InstallPlan("blocked", (), "", False, platform_reason, "")
+    if gate_platform:
+        supported, platform_reason = platform_support()
+        if not supported:
+            return InstallPlan("blocked", (), "", False, platform_reason, "")
     stored = "" if ignore_verdict else read_verdict()[1]
     if stored:
         return InstallPlan("blocked", (), "", False, stored, "")
@@ -359,14 +377,16 @@ def install_plan(*, ignore_verdict: bool = False) -> InstallPlan:
         method = "uv-project" if _is_source_checkout() else "uv-tool"
         if not uv:
             return InstallPlan("blocked", (), "", False, "`uv` is not on PATH", "")
-        argv = (uv, "pip", "install", "--python", exe, *_binary_flags("uv"), *VOICE_PACKAGES)
-        follow_up = "uv sync --extra voice" if method == "uv-project" else "uv tool install --force 'yeaboi[voice]'"
+        argv = (uv, "pip", "install", "--python", exe, *_binary_flags("uv"), *packages)
+        follow_up = (
+            f"uv sync --extra {extra}" if method == "uv-project" else f"uv tool install --force 'yeaboi[{extra}]'"
+        )
         return InstallPlan(method, argv, shlex.join(argv), False, "", follow_up)
 
     venv_name = _pipx_venv_name()
     pipx = shutil.which("pipx")
     if venv_name and pipx:
-        argv = (pipx, "inject", venv_name, *VOICE_PACKAGES)
+        argv = (pipx, "inject", venv_name, *packages)
         return InstallPlan("pipx", argv, shlex.join(argv), True, "", "")
 
     argv = (
@@ -377,7 +397,7 @@ def install_plan(*, ignore_verdict: bool = False) -> InstallPlan:
         "--disable-pip-version-check",
         "--no-input",
         *_binary_flags("pip"),
-        *VOICE_PACKAGES,
+        *packages,
     )
     return InstallPlan("pip", argv, shlex.join(argv), True, "", "")
 

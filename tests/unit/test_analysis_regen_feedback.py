@@ -71,6 +71,46 @@ class TestInputScreenBranding:
         )
         assert isinstance(panel, Panel)
 
+    def test_context_message_and_step_dots_render(self):
+        """A text step can be the first screen a wizard shows (an earlier step
+        was skipped), so it must carry its own framing: the progress dots and a
+        context paragraph, not a bare input box."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_input_screen
+
+        buf = StringIO()
+        console = Console(file=buf, width=110, force_terminal=False)
+        console.print(
+            _build_standup_input_screen(
+                "Hostname to serve boards on",
+                "",
+                step="Hostname",
+                width=110,
+                height=30,
+                message="yeaboi points this address at a tunnel in your Cloudflare account.",
+                step_names=["Sign in", "Hostname", "Access app", "Verify"],
+                step_index=1,
+            )
+        )
+        out = buf.getvalue()
+        assert "tunnel in your Cloudflare account" in out
+        assert "Sign in" in out and "Access app" in out  # the dots strip
+        assert "Configure standup" not in out
+
+    def test_page_tint_follows_the_theme(self):
+        """The page panel must wear the caller's theme, not standup's — a
+        settings-branded wizard on a standup-tinted page reads as the wrong mode."""
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_input_screen
+        from yeaboi.ui.shared._components import ANALYSIS_THEME, STANDUP_THEME
+
+        panel = _build_standup_input_screen("Q", "", theme=ANALYSIS_THEME)
+        assert ANALYSIS_THEME.bg in str(panel.style)
+        default = _build_standup_input_screen("Q", "")
+        assert STANDUP_THEME.bg in str(default.style)
+
     def test_analysis_title_rendered(self):
         """The overridden title actually replaces the standup ASCII art."""
         from io import StringIO

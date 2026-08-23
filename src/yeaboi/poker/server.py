@@ -11,7 +11,8 @@ Design (identical to the retro blueprint):
     own thread. The shared :class:`~yeaboi.poker.board.PokerBoard` is the single
     source of truth and is itself lock-guarded.
   * Access is gated by a per-session random token (``secrets.token_urlsafe``)
-    checked with ``secrets.compare_digest`` (constant-time). ``GET /`` serves
+    checked with ``access.secret_equal`` (constant-time, and total over
+    non-ASCII input). ``GET /`` serves
     the harmless page; every ``/api/*`` call requires the token. Admin routes
     additionally require the admin secret that only rides in the host's link.
   * The server binds **loopback only**; teammates reach it exclusively through
@@ -38,7 +39,6 @@ from __future__ import annotations
 
 import json
 import logging
-import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,8 +49,17 @@ from yeaboi.poker.board import PokerBoard
 from yeaboi.poker.page import build_poker_html
 from yeaboi.redaction import log_safe
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
-from yeaboi.sharing.access import invite_payload, invite_url, make_join_code, make_token, participant_url
+from yeaboi.sharing.access import (
+    client_key,
+    invite_payload,
+    invite_url,
+    make_join_code,
+    make_token,
+    participant_url,
+    secret_equal,
+)
 from yeaboi.sharing.events import ChangeWatcher, EventHub
+from yeaboi.sharing.identity import effective_pid, enforce_identity, gate_of, identity_required, verified_user
 from yeaboi.sharing.live import parse_wait, serve_state
 from yeaboi.web.security import BOARD_CSP, send_document
 
@@ -94,16 +103,29 @@ class _DuelCapture:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._recorder = None  # yeaboi.voice.Recorder while the host mic is hot
+        # The host must arm the mic locally before any request can open it.
+        # Default off — see start()'s docstring for why this is not a setting.
+        self._armed = False
         self._live = False
         self._closed_at: float | None = None  # monotonic close time (grace clock)
         self._segments: dict[str, tuple[int, bytes]] = {}  # role -> (turn_no, blob)
 
-    def start(self) -> str:
-        """Begin a capture round; try to start the host mic.
+    def set_armed(self, armed: bool) -> None:
+        """Arm or disarm the host microphone. Called only from the TUI."""
+        with self._lock:
+            self._armed = armed
+        logger.info("poker: duel host mic %s by the host", "armed" if armed else "disarmed")
 
-        Returns "" on success or a short human-readable reason when the host
-        mic could not start (voice extra missing, mic/permission error). The
-        duel proceeds either way — duelists' browser mics may still cover it.
+    @property
+    def armed(self) -> bool:
+        with self._lock:
+            return self._armed
+
+    def start(self) -> str:
+        """Open the host microphone for a duel, if the host has armed it.
+
+        The arming flag is set from the TUI; an admin-authenticated request
+        alone is not enough to switch on a microphone on someone's machine.
         """
         from yeaboi.voice import is_voice_available
 
@@ -111,6 +133,10 @@ class _DuelCapture:
             self._segments = {}
             self._closed_at = None
             self._live = True
+            armed = self._armed
+        if not armed:
+            logger.info("poker: duel host mic not started — the host has not armed it")
+            return "the host has not armed the microphone"
         available, reason = is_voice_available()
         if not available:
             logger.info("poker: duel host mic skipped — %s", reason)
@@ -270,12 +296,50 @@ class _PokerHandler(BaseHTTPRequestHandler):
     def _query(self, key: str) -> str:
         return parse_qs(urlparse(self.path).query).get(key, [""])[0]
 
+    @property
+    def _client_key(self) -> str:
+        """Per-visitor key for the join limiter and the long-poll stream cap.
+
+        Trusts cloudflared's forwarded address only while a tunnel is live —
+        see :func:`yeaboi.sharing.access.client_key` for why ``client_address``
+        alone collapses every remote participant into one bucket.
+        """
+        return client_key(self, trust_forwarded=bool(getattr(self.server, "public_url", "")))
+
     def _authed(self) -> bool:
-        return secrets.compare_digest(self._query("token"), self._token)
+        """True when this request may be served at all.
+
+        One seam for both tiers — every gated route already calls it, so the
+        Access tier's fail-closed rule reaches all of them without a new check
+        at the top of ``do_GET``/``do_POST`` that a future route could forget.
+
+        In the Access tier a tunnel-borne request must present **both** a token
+        this process verified locally against Cloudflare's signing keys *and*
+        the board token: the JWT arrives ambiently (edge-injected header, or
+        the ``CF_Authorization`` cookie), so alone it is forgeable by a
+        cross-site form POST — the unguessable ``?token=`` stays required as
+        the CSRF barrier it always was. A leaked link is still not a way in:
+        identity is still required on top. The host's own loopback requests
+        stay token-gated, because cloudflared connects from ``127.0.0.1`` and
+        requiring a JWT everywhere would lock the host out of their own board.
+        """
+        if identity_required(self) and verified_user(self) is None:
+            return False
+        return secret_equal(self._query("token"), self._token)
 
     def _admin_authed(self, admin: str) -> bool:
-        """True iff ``admin`` matches the host's admin secret (constant-time)."""
-        return bool(admin) and secrets.compare_digest(admin, self._admin_token)
+        """True iff this request carries host powers.
+
+        In the Access tier the body's ``admin`` string is ignored outright and
+        the answer comes from the verified email's membership of
+        ``CLOUDFLARE_ACCESS_ADMIN_EMAILS`` — which is what makes the duel
+        microphone gate accountable to a named person rather than to whoever
+        holds a URL carrying a static secret in its query string.
+        """
+        gate = gate_of(self)
+        if gate is not None and identity_required(self):
+            return gate.is_admin(verified_user(self))
+        return bool(admin) and secret_equal(admin, self._admin_token)
 
     def _send(self, code: int, body: bytes, content_type: str, *, csp: str | None = None) -> None:
         # Same header set as the retro board and the share server; see
@@ -354,7 +418,7 @@ class _PokerHandler(BaseHTTPRequestHandler):
         serve_state(
             self,
             self.server.event_hub,  # type: ignore[attr-defined]
-            lambda: self._board.state_snapshot(self._query("pid")),
+            lambda: self._board.state_snapshot(effective_pid(self, self._query("pid"))),
             wait_seconds=parse_wait(self._query("wait")),
         )
 
@@ -388,7 +452,16 @@ class _PokerHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib signature
         path = urlparse(self.path).path
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            # A non-numeric Content-Length is a client error; answer 400 rather
+            # than let the cast raise out of do_POST. The body bytes are still
+            # queued on the socket, so drop the connection with the answer — a
+            # keep-alive reuse would parse mid-body (the share server does the same).
+            self.close_connection = True
+            self._send_json(400, {"error": "bad length"})
+            return
         if path == "/api/duel/audio":
             # Raw audio bytes, NOT JSON — routed before the JSON/size logic with
             # its own (much larger) body cap. pid/turn ride as query params: the
@@ -411,15 +484,27 @@ class _PokerHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "bad json"})
             return
 
-        # /api/join is the ONLY unauthenticated POST: it exchanges the short join
-        # code for the strong token (the code-entry gate). Everything else needs it.
+        # /api/join is the only POST that does not require the board token: it
+        # exchanges the short join code for it (the code-entry gate). Everything
+        # else needs it. In the Access tier it is not unauthenticated either —
+        # see the identity check below.
         if path == "/api/join":
-            ip = self.client_address[0]
+            # In the Access tier the code gate sits *behind* identity: only a
+            # verified visitor may even attempt a code. Without this, /api/join
+            # would be the one tunnel-borne route not locally verified — the
+            # token it hands back is useless over the tunnel (every other route
+            # wants a JWT), but "every tunnel-borne request is verified" should
+            # be true without an asterisk, and an unverified stranger should not
+            # be able to spend another visitor's rate-limit budget.
+            if identity_required(self) and verified_user(self) is None:
+                self._send_json(403, {"error": "forbidden"})
+                return
+            ip = self._client_key
             if self._join_limiter.blocked(ip):
                 self._send_json(429, {"error": "too many attempts"})
                 return
             code = str(payload.get("code", "")).strip().upper()
-            if code and secrets.compare_digest(code, self._join_code):
+            if code and secret_equal(code, self._join_code):
                 self._join_limiter.record_success(ip)
                 self._send_json(200, {"ok": True, "token": self._token})
             else:
@@ -453,6 +538,12 @@ class _PokerHandler(BaseHTTPRequestHandler):
 
         pid = str(payload.get("pid", ""))
         admin = str(payload.get("admin", ""))
+        # In the Access tier identity is the server's to decide: a browser-minted
+        # pid means any token holder can act as anyone, so it is replaced by the
+        # verified subject before the board sees it. Both come back unchanged in
+        # the quick tier, where `verified_name` is empty and the routes below
+        # keep their existing fallback to what the client sent.
+        pid, verified_name = enforce_identity(self, pid, "")
 
         def _state() -> dict:
             return self._board.state_snapshot(pid)
@@ -466,7 +557,11 @@ class _PokerHandler(BaseHTTPRequestHandler):
 
         if path == "/api/presence":
             # The ~1 s tick: record presence AND return the live state in one round-trip.
-            self._board.heartbeat(pid, name=str(payload.get("name", "")), avatar=str(payload.get("avatar", "")))
+            self._board.heartbeat(
+                pid,
+                name=verified_name or str(payload.get("name", "")),
+                avatar=str(payload.get("avatar", "")),
+            )
             # ?quiet=1: a client on the long-poll already gets state pushed to it,
             # so echoing the whole snapshot back on every heartbeat is waste. It
             # still has to send the heartbeat — presence rides on this request,
@@ -840,7 +935,7 @@ class _PokerHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             self._send_json(413, {"error": "too large"})
             return
-        role = self._board.duel_pid_role(self._query("pid"))
+        role = self._board.duel_pid_role(effective_pid(self, self._query("pid")))
         if not role:
             self.close_connection = True
             self._send_json(403, {"error": "forbidden"})
@@ -881,6 +976,7 @@ class PokerServer:
         self.port = port
         # The Cloudflare tunnel URL, once the TUI has one — see retro/server.py.
         self.public_url = ""
+        self.access_gate: object | None = None
         # Live-update plumbing. Built here rather than in start() so stop() is
         # safe on a server that was never started.
         self.event_hub = EventHub()
@@ -901,6 +997,19 @@ class PokerServer:
         # comparing the bound method silently blinds the watcher.
         return (self.board.revision(), self.board.presence_list())
 
+    def set_duel_mic_armed(self, armed: bool) -> None:
+        """Arm or disarm the host microphone for duels. TUI-only.
+
+        The one control on this server that a remote request cannot reach. See
+        :meth:`_DuelCapture.start` for why the duel's mic needs a local consent
+        step that the admin secret alone does not provide.
+        """
+        self.duel_capture.set_armed(armed)
+
+    @property
+    def duel_mic_armed(self) -> bool:
+        return self.duel_capture.armed
+
     def set_public_url(self, url: str) -> None:
         """Record the tunnel URL and push it to the running server object.
 
@@ -911,6 +1020,16 @@ class PokerServer:
         self.public_url = url
         if self._httpd is not None:
             self._httpd.public_url = url  # type: ignore[attr-defined]
+
+    def set_access_gate(self, gate: object | None) -> None:
+        """Arm Cloudflare Access verification for tunnel-borne requests.
+
+        ``None`` (the default) is the quick tier. Two writes, same reason as
+        :meth:`set_public_url`.
+        """
+        self.access_gate = gate
+        if self._httpd is not None:
+            self._httpd.access_gate = gate  # type: ignore[attr-defined]
 
     @property
     def url(self) -> str:
@@ -966,6 +1085,8 @@ class PokerServer:
         httpd.event_hub = self.event_hub  # type: ignore[attr-defined]
         # Always present so the invite/QR handlers can read it unconditionally.
         httpd.public_url = self.public_url  # type: ignore[attr-defined]
+        # None unless the Access tier is on; see set_access_gate.
+        httpd.access_gate = self.access_gate  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="poker-http", daemon=True)
         self._thread.start()

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "yeaboi"
-version = "3.24.0"
+version = "3.25.0"
 description = "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports, plus cost and security posture for your AI coding agents."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -84,6 +84,13 @@ charts = ["matplotlib>=3.8"]
 # (Claude Code, Cursor, Codex CLI, VS Code, …). Official python-sdk, v1 line;
 # v2 is a pre-release with breaking API changes, so the <2 pin is load-bearing.
 mcp = ["mcp>=1.9,<2"]
+# Cloudflare Access tier (YEABOI_SHARE_MODE=access) — verify the Access JWT on
+# every tunnel-borne request locally, against Cloudflare's published signing
+# keys, instead of trusting the edge's header. Lazy-imported in
+# sharing/identity.py: without the extra the tier refuses to start and says so,
+# and the quick tunnel (the default) is unaffected. [crypto] pulls in
+# `cryptography`, which is what does the RS256 verification.
+access = ["PyJWT[crypto]>=2.8"]
 # The Go sidecar binary as a platform wheel (packaging/yeaboi-core). With it
 # installed, gocore/discovery.py finds the binary and the agentwatch pipelines
 # are served by Go automatically (YEABOI_GO=0 opts out). Versioned on its own

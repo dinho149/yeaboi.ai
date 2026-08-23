@@ -1113,3 +1113,98 @@ class TestGetAnthropicSubscriptionToken:
         ok, why = is_llm_configured()
         assert ok is False
         assert "subscription" in why
+
+
+class TestShareTier:
+    """The switch between the zero-setup quick tunnel and the Access tier."""
+
+    def test_the_default_is_quick(self, monkeypatch):
+        monkeypatch.delenv("YEABOI_SHARE_MODE", raising=False)
+        from yeaboi.config import access_mode_enabled, share_mode
+
+        assert share_mode() == "quick"
+        assert access_mode_enabled() is False
+
+    def test_access_is_opt_in_by_name(self, monkeypatch):
+        from yeaboi.config import access_mode_enabled
+
+        monkeypatch.setenv("YEABOI_SHARE_MODE", "  ACCESS  ")
+        assert access_mode_enabled() is True
+
+    def test_an_unrecognised_value_reads_as_quick(self, monkeypatch):
+        """A typo must never enter the tier that promises *more*.
+
+        A host who mistyped the mode and got a board they believe is behind
+        their identity provider is the failure worth designing against, so an
+        unknown value lands on the tier whose boundary the caller already shows
+        a code gate for.
+        """
+        from yeaboi.config import access_mode_enabled
+
+        for raw in ("acess", "1", "true", "yes", "on"):
+            monkeypatch.setenv("YEABOI_SHARE_MODE", raw)
+            assert access_mode_enabled() is False, raw
+
+    def test_first_share_prompt_fires_until_answered(self, monkeypatch):
+        from yeaboi.config import share_tier_prompted
+
+        monkeypatch.delenv("YEABOI_SHARE_MODE", raising=False)
+        monkeypatch.delenv("YEABOI_SHARE_TIER_PROMPTED", raising=False)
+        assert share_tier_prompted() is False
+        monkeypatch.setenv("YEABOI_SHARE_TIER_PROMPTED", "1")
+        assert share_tier_prompted() is True
+
+    def test_an_explicit_tier_answers_the_prompt_too(self, monkeypatch):
+        """However the mode got set — wizard, CLI, hand-edited .env — the
+        question is answered; asking again would second-guess the host."""
+        from yeaboi.config import share_tier_prompted
+
+        monkeypatch.delenv("YEABOI_SHARE_TIER_PROMPTED", raising=False)
+        monkeypatch.setenv("YEABOI_SHARE_MODE", "quick")
+        assert share_tier_prompted() is True
+
+
+class TestAccessConfig:
+    def test_the_team_accepts_a_bare_name_or_a_full_url(self, monkeypatch):
+        """Hosts copy whichever form their dashboard shows them.
+
+        Getting it wrong fails closed in a way that looks like "nobody can log
+        in", so being forgiving here is worth the four string operations.
+        """
+        from yeaboi.config import access_team
+
+        for raw in ("acme", "https://acme.cloudflareaccess.com", "https://acme.cloudflareaccess.com/", "acme"):
+            monkeypatch.setenv("CLOUDFLARE_ACCESS_TEAM", raw)
+            assert access_team() == "acme", raw
+
+    def test_the_per_surface_hostname_wins(self, monkeypatch):
+        from yeaboi.config import access_hostname
+
+        monkeypatch.setenv("CLOUDFLARE_ACCESS_HOSTNAME", "shared.example.com")
+        monkeypatch.setenv("CLOUDFLARE_ACCESS_HOSTNAME_POKER", "poker.example.com")
+        monkeypatch.delenv("CLOUDFLARE_ACCESS_HOSTNAME_RETRO", raising=False)
+        assert access_hostname("poker") == "poker.example.com"
+        assert access_hostname("retro") == "shared.example.com"
+        assert access_hostname() == "shared.example.com"
+
+    def test_admin_emails_are_a_lowercased_set(self, monkeypatch):
+        from yeaboi.config import access_admin_emails
+
+        monkeypatch.setenv("CLOUDFLARE_ACCESS_ADMIN_EMAILS", " Ada@Example.com , bob@example.com ,, ")
+        assert access_admin_emails() == frozenset({"ada@example.com", "bob@example.com"})
+
+    def test_no_admins_is_an_empty_set_not_a_crash(self, monkeypatch):
+        from yeaboi.config import access_admin_emails
+
+        monkeypatch.delenv("CLOUDFLARE_ACCESS_ADMIN_EMAILS", raising=False)
+        assert access_admin_emails() == frozenset()
+
+    def test_the_credentials_path_expands_a_tilde(self, monkeypatch):
+        # `cloudflared tunnel create` prints ~/.cloudflared/<uuid>.json, and a
+        # host pasting that verbatim into .env should not get a directory named
+        # "~" in their repo.
+        from yeaboi.config import access_credentials_file
+
+        monkeypatch.setenv("CLOUDFLARE_TUNNEL_CREDENTIALS", "~/.cloudflared/x.json")
+        assert access_credentials_file().startswith(os.path.expanduser("~"))
+        assert "~" not in access_credentials_file()

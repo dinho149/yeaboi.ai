@@ -246,6 +246,14 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/web/security.py",
             "src/yeaboi/sharing/access.py",
             "src/yeaboi/sharing/gate.py",
+            # The Cloudflare Access tier: local JWT verification and the named
+            # tunnel that carries it. `sharing/` as a whole belongs to
+            # artifacts-sharing; these two are claimed by name here for the same
+            # reason access.py and gate.py are — they are access control, and a
+            # change to them must run the security lane.
+            "src/yeaboi/sharing/identity.py",
+            "src/yeaboi/sharing/access_tunnel.py",
+            "src/yeaboi/sharing/access_setup.py",
         ),
         tests=(
             "tests/unit/guardrails/*.py",
@@ -256,6 +264,15 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_web_security.py",
             "tests/unit/test_export_xss.py",
             "tests/unit/test_consent.py",
+            # The tunnel's blast radius: one loopback origin, an allowlisted
+            # child environment. Named test_retro_* as well so it also runs
+            # under the `retro` area, which owns retro/tunnel.py itself.
+            "tests/unit/test_retro_tunnel_containment.py",
+            "tests/unit/test_sharing_identity.py",
+            "tests/unit/test_access_tunnel.py",
+            "tests/unit/test_access_server_identity.py",
+            "tests/unit/test_access_setup.py",
+            "tests/unit/test_access_setup_wizard.py",
         ),
     ),
     Area(

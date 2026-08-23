@@ -836,6 +836,23 @@ def tunnels_disabled() -> bool:
     return os.getenv("YEABOI_NO_TUNNEL", "").strip().lower() in ("1", "true", "yes")
 
 
+def cloudflared_strict() -> bool:
+    """True when only the pinned, checksum-verified cloudflared may run.
+
+    ``ensure_cloudflared`` resolves four sources, and two of them carry no
+    guarantee: ``CLOUDFLARED_PATH`` and a ``cloudflared`` already on ``PATH`` are
+    whatever the machine offers, so the pinned SHA-256 that protects the download
+    never sees them. Trusting them is the right default — a user who installed
+    cloudflared themselves should be able to use it — but it means the supply
+    chain the download path is careful about can be sidestepped by anything that
+    can write to ``PATH`` or the environment.
+
+    Set ``YEABOI_CLOUDFLARED_STRICT=1`` and both are refused; only the managed
+    copy under ``~/.yeaboi/bin`` runs, and it is re-verified on every launch.
+    """
+    return os.getenv("YEABOI_CLOUDFLARED_STRICT", "").strip().lower() in ("1", "true", "yes")
+
+
 def get_tunnel_timeout_minutes() -> int:
     """Auto-expiry for Cloudflare share tunnels, in minutes (default 60).
 
@@ -852,6 +869,145 @@ def get_tunnel_timeout_minutes() -> int:
     except ValueError:
         return 60
     return max(0, min(minutes, 1440))
+
+
+# The two share tiers. ``quick`` is the zero-setup default: a random
+# ``*.trycloudflare.com`` hostname, no Cloudflare account, a join code as the
+# only boundary. ``access`` is the opt-in tier: the host's own named tunnel on
+# a hostname in a zone they control, fronted by Cloudflare Access, with every
+# tunnel-borne request carrying a JWT this process verifies locally.
+SHARE_MODE_QUICK = "quick"
+SHARE_MODE_ACCESS = "access"
+
+#: Env keys that only mean anything in the Access tier. Setting *any* of them is
+#: read as "the host asked for the tier" — see ``sharing.identity.preflight``,
+#: which is why a half-finished config is a named error rather than a silent
+#: fall back to a public quick tunnel.
+ACCESS_ENV_KEYS: tuple[str, ...] = (
+    "CLOUDFLARE_TUNNEL_ID",
+    "CLOUDFLARE_TUNNEL_CREDENTIALS",
+    "CLOUDFLARE_ACCESS_HOSTNAME",
+    "CLOUDFLARE_ACCESS_HOSTNAME_RETRO",
+    "CLOUDFLARE_ACCESS_HOSTNAME_POKER",
+    "CLOUDFLARE_ACCESS_HOSTNAME_SHARE",
+    "CLOUDFLARE_ACCESS_HOSTNAME_SHIP",
+    "CLOUDFLARE_ACCESS_TEAM",
+    "CLOUDFLARE_ACCESS_AUD",
+    "CLOUDFLARE_ACCESS_ADMIN_EMAILS",
+)
+
+
+def share_mode() -> str:
+    """Which share tier the boards use: ``quick`` (default) or ``access``.
+
+    One switch, deliberately explicit. The tier is never inferred from "the
+    Access variables happen to be set", because the failure mode of guessing
+    wrong is publishing a board on a quick tunnel while the host believes they
+    are behind their identity provider. An unrecognised value reads as
+    ``quick``: the tier that promises less cannot be entered by a typo.
+    """
+    raw = os.getenv("YEABOI_SHARE_MODE", "").strip().lower()
+    return SHARE_MODE_ACCESS if raw == SHARE_MODE_ACCESS else SHARE_MODE_QUICK
+
+
+def access_mode_enabled() -> bool:
+    """True when the Access tier is switched on."""
+    return share_mode() == SHARE_MODE_ACCESS
+
+
+def share_tier_prompted() -> bool:
+    """True once the first-share tier question no longer needs asking.
+
+    The TUI asks exactly once, right before the first share, whether links
+    should be open to anyone (the default) or to verified users only. Any
+    resolution of that screen persists ``YEABOI_SHARE_TIER_PROMPTED=1``; an
+    explicit ``YEABOI_SHARE_MODE`` answers the question too, however it was
+    set. Settings ▸ Sharing and ``--setup-access`` remain the doors back in.
+    """
+    if os.getenv("YEABOI_SHARE_MODE", "").strip():
+        return True
+    return os.getenv("YEABOI_SHARE_TIER_PROMPTED", "").strip().lower() in ("1", "true", "yes")
+
+
+def access_tunnel_id() -> str:
+    """The named tunnel's UUID or name (``CLOUDFLARE_TUNNEL_ID``).
+
+    This is a *locally*-managed tunnel — credentials file plus an ingress file
+    yeaboi generates — not the dashboard's ``--token`` form. The reason is the
+    port: every server here picks its port at bind time (``sharing/server.py``
+    binds port 0, the boards walk a range on conflict), and a remotely-managed
+    tunnel takes its ingress from the dashboard, where the port would have to
+    be written down in advance. A locally-managed tunnel lets the ingress name
+    the port we actually got.
+    """
+    return os.getenv("CLOUDFLARE_TUNNEL_ID", "").strip()
+
+
+def access_credentials_file() -> str:
+    """Path to the named tunnel's credentials JSON (``CLOUDFLARE_TUNNEL_CREDENTIALS``).
+
+    Written by ``cloudflared tunnel create`` — usually
+    ``~/.cloudflared/<uuid>.json``. yeaboi only *references* it from the ingress
+    file it generates; the secret is never read into this process, never copied,
+    and never logged.
+    """
+    return os.path.expanduser(os.getenv("CLOUDFLARE_TUNNEL_CREDENTIALS", "").strip())
+
+
+def access_hostname(surface: str = "") -> str:
+    """The stable hostname this surface is served at, e.g. ``retro.team.example.com``.
+
+    ``CLOUDFLARE_ACCESS_HOSTNAME_{RETRO,POKER,SHARE}`` wins over the shared
+    ``CLOUDFLARE_ACCESS_HOSTNAME``. The per-surface override is not a nicety:
+    one named tunnel accepts many simultaneous connectors (that is how
+    Cloudflare does HA), so a host who opens a retro board *and* a poker board
+    on one hostname gets two connectors advertising ingress for it, and
+    teammates land on whichever answers first. See
+    ``sharing.access_tunnel.claim_hostname``, which refuses the second board
+    rather than letting that happen silently.
+    """
+    if surface:
+        specific = os.getenv(f"CLOUDFLARE_ACCESS_HOSTNAME_{surface.upper()}", "").strip()
+        if specific:
+            return specific
+    return os.getenv("CLOUDFLARE_ACCESS_HOSTNAME", "").strip()
+
+
+def access_team() -> str:
+    """The Cloudflare Access team name, used to build the issuer and JWKS URLs.
+
+    Accepts either the bare team name or the full
+    ``https://<team>.cloudflareaccess.com`` — hosts copy whichever their
+    dashboard shows them, and getting this wrong fails closed in a way that
+    looks like "nobody can log in", so it is worth being forgiving here.
+    """
+    raw = os.getenv("CLOUDFLARE_ACCESS_TEAM", "").strip()
+    raw = raw.removeprefix("https://").removeprefix("http://").rstrip("/")
+    return raw.removesuffix(".cloudflareaccess.com")
+
+
+def access_aud() -> str:
+    """The Access application's AUD tag — what a token's ``aud`` claim must equal.
+
+    This is the claim that binds a token to *this* application. Without it any
+    valid token from the same Cloudflare team — issued for a different app, to a
+    different audience — would verify, so the verifier refuses to be built
+    without one.
+    """
+    return os.getenv("CLOUDFLARE_ACCESS_AUD", "").strip()
+
+
+def access_admin_emails() -> frozenset[str]:
+    """Verified emails granted host powers, lowercased (``CLOUDFLARE_ACCESS_ADMIN_EMAILS``).
+
+    Comma-separated. In the Access tier this replaces the admin secret that
+    otherwise travels in the host link's query string — where it reaches
+    Cloudflare's edge access log and stays a static bearer for the life of the
+    screen. Membership is tested by exact set equality, never substring: an
+    ``in`` test would make ``ada@example.com`` match ``ada@example.com.evil.net``.
+    """
+    raw = os.getenv("CLOUDFLARE_ACCESS_ADMIN_EMAILS", "")
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
 
 
 def get_slack_webhook_url() -> str:

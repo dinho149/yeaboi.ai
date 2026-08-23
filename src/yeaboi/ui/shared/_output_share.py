@@ -143,7 +143,7 @@ def run_output_share(
     exception, and a path that rewrites the host's stored report from a crash
     handler is not one anybody asked for.
     """
-    from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
+    from yeaboi.sharing.tunnel import ensure_cloudflared, open_tunnel
 
     # Read before anything can join: a reopened share has already replayed every
     # correction on record, and those are not news.
@@ -167,8 +167,24 @@ def run_output_share(
 
     def _worker() -> None:
         server: OutputShareServer | None = None
-        tunnel: CloudflareTunnel | None = None
+        tunnel: object | None = None
         try:
+            # The retro and poker boards check this before starting a tunnel;
+            # this surface did not, so YEABOI_NO_TUNNEL — documented as the
+            # opt-out for offline, locked-down and dry-run environments —
+            # silently still published to the internet from here. Refuse before
+            # the server binds: unlike a board, there is nothing useful for a
+            # host to do with a loopback-only share of their own output.
+            from yeaboi.config import tunnels_disabled
+
+            if tunnels_disabled():
+                logger.info("output sharing refused: tunnels are disabled (YEABOI_NO_TUNNEL)")
+                _set(
+                    error="Sharing is off (YEABOI_NO_TUNNEL) — nothing was published.",
+                    done=True,
+                )
+                return
+
             server = OutputShareServer(document, editable=editable, on_edit=on_edit)
             server.start()
             _set(server=server, status="Setting up Cloudflare sharing (first use may download ~40 MB)…")
@@ -194,11 +210,31 @@ def run_output_share(
                 _set(active=False, done=True, public_url="", error="Secure link expired after the configured timeout.")
                 logger.info("output sharing expired (mode=%s)", document.source_mode)
 
-            tunnel = CloudflareTunnel(server.port, binary=binary, on_expire=_on_expired)
+            # One call decides the tier. In the quick tier this is the same
+            # CloudflareTunnel as before; in the Access tier it is a named
+            # tunnel plus the identity gate the server verifies against, and a
+            # refusal here NEVER falls back to a public quick tunnel — a host
+            # who configured Access and silently got a trycloudflare.com URL is
+            # worse off than one who got no share at all.
+            transport = open_tunnel(server.port, surface="share", binary=binary, on_expire=_on_expired)
+            if transport.tunnel is None:
+                logger.warning("output sharing: secure link unavailable — %s", transport.error)
+                _set(error=f"Secure link unavailable — {transport.error}", done=True)
+                return
+            # Armed before start(), so verification is on before the door is.
+            server.set_access_gate(transport.gate)
+            tunnel = transport.tunnel
             _set(tunnel=tunnel)
             public_url = tunnel.start(timeout=45)
             if not public_url:
-                _set(error="Cloudflare did not provide a reachable URL. See the logs for details.", done=True)
+                # The Access tier reports host *setup* errors here (a missing
+                # credentials file, an unknown tunnel id) rather than leaving
+                # the host to guess at a network fault.
+                detail = getattr(tunnel, "last_error", "")
+                _set(
+                    error=detail or "Cloudflare did not provide a reachable URL. See the logs for details.",
+                    done=True,
+                )
                 return
             if cancel.is_set():
                 tunnel.stop()

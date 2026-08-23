@@ -163,7 +163,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     FeatureTip(
         "output-sharing",
-        "🌐 Tip: Share Online publishes any generated output behind a temporary access code",
+        "🌐 Tip: Share Online publishes output behind an access code — or verified sign-ins via Settings ▸ Sharing",
         is_new=True,
     ),
     FeatureTip(

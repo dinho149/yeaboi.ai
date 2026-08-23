@@ -13,7 +13,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
-import secrets
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,10 +24,11 @@ from urllib.parse import parse_qs, urlparse
 from yeaboi.artifacts.edits import Edit, EditError
 from yeaboi.artifacts.paths import PathError
 from yeaboi.redaction import log_safe
-from yeaboi.sharing.access import JoinLimiter, invite_payload, make_join_code, make_token
+from yeaboi.sharing.access import JoinLimiter, client_key, invite_payload, make_join_code, make_token, secret_equal
 from yeaboi.sharing.editable import ConflictError, EditableShare
 from yeaboi.sharing.events import ChangeWatcher, EventHub
 from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, render_gate_page
+from yeaboi.sharing.identity import effective_pid, enforce_identity, gate_of, identity_required, verified_user
 from yeaboi.sharing.live import parse_wait, serve_state
 from yeaboi.web.security import EDIT_CSP, send_document
 
@@ -107,10 +107,40 @@ class _OutputHandler(BaseHTTPRequestHandler):
     def _query(self, key: str) -> str:
         return parse_qs(urlparse(self.path).query).get(key, [""])[0]
 
+    @property
+    def _client_key(self) -> str:
+        """Per-visitor key for the join limiter and the long-poll stream cap.
+
+        Trusts cloudflared's forwarded address only while a tunnel is live —
+        see :func:`yeaboi.sharing.access.client_key` for why ``client_address``
+        alone collapses every remote participant into one bucket.
+        """
+        return client_key(self, trust_forwarded=bool(getattr(self.server, "public_url", "")))
+
     def _authed(self) -> bool:
+        """True when this request may be served at all.
+
+        One seam for both share tiers — every gated route already calls it, so
+        the Access tier's fail-closed rule reaches all of them without a new
+        check at the top of ``do_GET``/``do_POST`` that a future route could
+        forget to inherit.
+
+        In the Access tier a tunnel-borne request must present **both** a token
+        this process verified locally against Cloudflare's signing keys *and*
+        the share token: the JWT arrives ambiently (edge-injected header, or
+        the ``CF_Authorization`` cookie), so alone it is forgeable by a
+        cross-site form POST — the unguessable token stays required as the
+        CSRF barrier it always was. A leaked link is still not a way in:
+        identity is still required on top. Requests arriving on loopback are
+        the host's own browser and stay token-gated, because cloudflared
+        connects from ``127.0.0.1`` and there is no other way to tell the two
+        apart.
+        """
+        if identity_required(self) and verified_user(self) is None:
+            return False
         supplied = self._query("token")
         token = self.server.token  # type: ignore[attr-defined]
-        return bool(supplied) and secrets.compare_digest(supplied, token)
+        return bool(supplied) and secret_equal(supplied, token)
 
     #: Whether *this* request's body has been taken off the socket.
     _body_read = False
@@ -175,7 +205,7 @@ class _OutputHandler(BaseHTTPRequestHandler):
         return self.server.editable  # type: ignore[attr-defined]
 
     def _pid(self) -> str:
-        return self._query("pid")[:64]
+        return effective_pid(self, self._query("pid"))[:64]
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
@@ -286,13 +316,24 @@ class _OutputHandler(BaseHTTPRequestHandler):
         POST. The browser's own notion of being admin is cosmetic — it decides
         what renders; this decides what is allowed.
         """
+        gate = gate_of(self)
+        if gate is not None and identity_required(self):
+            # The Access tier ignores the body's claim entirely and answers from
+            # the verified email's membership of CLOUDFLARE_ACCESS_ADMIN_EMAILS,
+            # which retires a static bearer secret that otherwise rides in the
+            # host link's query string and into Cloudflare's edge access log.
+            return gate.is_admin(verified_user(self))
         supplied = str(payload.get("admin", ""))
         expected = self.server.admin_token  # type: ignore[attr-defined]
-        return bool(supplied) and secrets.compare_digest(supplied, expected)
+        return bool(supplied) and secret_equal(supplied, expected)
 
     def _edit(self, payload: dict, share: EditableShare) -> None:
         """Apply one correction and answer with the whole fresh document."""
-        pid = str(payload.get("pid", ""))[:64]
+        # In the Access tier the edit's attribution is the server's to decide:
+        # `pid` is what the document keys authorship on, and a browser-minted one
+        # lets any token holder sign someone else's name to a correction. Both
+        # come back unchanged in the quick tier.
+        pid, verified_name = enforce_identity(self, str(payload.get("pid", ""))[:64], "")
         try:
             if_revision = int(payload.get("if_revision", -1))
         except (TypeError, ValueError):
@@ -305,7 +346,7 @@ class _OutputHandler(BaseHTTPRequestHandler):
             base=str(payload.get("base", "")),
             label=str(payload.get("label", "")),
             target=str(payload.get("target", ""))[:64],
-            author=str(payload.get("author", "")),
+            author=verified_name or str(payload.get("author", "")),
             avatar=str(payload.get("avatar", ""))[:8],
             pid=pid,
             at=self.server.now(),  # type: ignore[attr-defined]
@@ -325,9 +366,10 @@ class _OutputHandler(BaseHTTPRequestHandler):
 
     def _presence(self, payload: dict, share: EditableShare) -> None:
         """Record a heartbeat. Answers ok only — the long poll carries state."""
+        pid, verified_name = enforce_identity(self, str(payload.get("pid", ""))[:64], "")
         share.document.heartbeat(
-            str(payload.get("pid", ""))[:64],
-            name=str(payload.get("name", "")),
+            pid,
+            name=verified_name or str(payload.get("name", "")),
             avatar=str(payload.get("avatar", "")),
             editing=str(payload.get("editing", "")),
         )
@@ -370,7 +412,13 @@ class _OutputHandler(BaseHTTPRequestHandler):
             else:
                 self._json(404, {"error": "not found"})
                 return
-            self._json(200, {"ok": True, "state": share.snapshot(str(payload.get("pid", ""))[:64])})
+            # The verified identity here too, so the admin's own "mine" flags
+            # are right — and so there is no route left where the server takes
+            # the client's word for who it is.
+            self._json(
+                200,
+                {"ok": True, "state": share.snapshot(enforce_identity(self, str(payload.get("pid", ""))[:64], "")[0])},
+            )
             return
 
         # A correctable standup: not an editable document, so it has no `share`,
@@ -382,6 +430,14 @@ class _OutputHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/join":
+            # In the Access tier the code gate sits *behind* identity: only a
+            # verified visitor may even attempt a code. It is otherwise the one
+            # tunnel-borne route not locally verified — the token it returns is
+            # useless over the tunnel, but "every tunnel-borne request is
+            # verified" should be true without an asterisk.
+            if identity_required(self) and verified_user(self) is None:
+                self._json(403, {"error": "forbidden"})
+                return
             if (payload := self._read_body(_MAX_BODY)) is not None:
                 self._join(payload)
             return
@@ -389,14 +445,14 @@ class _OutputHandler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found"})
 
     def _join(self, payload: dict) -> None:
-        ip = self.client_address[0]
+        ip = self._client_key
         limiter = self.server.join_limiter  # type: ignore[attr-defined]
         if limiter.blocked(ip):
             self._json(429, {"error": "too many attempts"})
             return
         code = str(payload.get("code", "")).strip().upper()
         expected = self.server.join_code  # type: ignore[attr-defined]
-        if code and secrets.compare_digest(code, expected):
+        if code and secret_equal(code, expected):
             limiter.record_success(ip)
             self._json(200, {"ok": True, "token": self.server.token})  # type: ignore[attr-defined]
             return
@@ -515,6 +571,7 @@ class OutputShareServer:
         self.admin_token = make_token()
         self.join_limiter = JoinLimiter()
         self.public_url = ""
+        self.access_gate: object | None = None
         self._on_edit = on_edit
         self._hub = EventHub()
         self._watcher: ChangeWatcher | None = None
@@ -544,6 +601,16 @@ class OutputShareServer:
         self.public_url = url
         if self._httpd is not None:
             self._httpd.public_url = url  # type: ignore[attr-defined]
+
+    def set_access_gate(self, gate: object | None) -> None:
+        """Arm Cloudflare Access verification for tunnel-borne requests.
+
+        ``None`` (the default) is the quick tier. Written onto the running
+        server too, for the reason spelled out in :meth:`set_public_url`.
+        """
+        self.access_gate = gate
+        if self._httpd is not None:
+            self._httpd.access_gate = gate  # type: ignore[attr-defined]
 
     def persist(self, share: EditableShare, edit: Edit, ip: str) -> None:
         """Hand an accepted edit to whoever owns durability.
@@ -592,6 +659,8 @@ class OutputShareServer:
         httpd.persist = self.persist  # type: ignore[attr-defined]
         httpd.render_editable = self.render_editable  # type: ignore[attr-defined]
         httpd.public_url = self.public_url  # type: ignore[attr-defined]
+        # None unless the Access tier is on; see set_access_gate.
+        httpd.access_gate = self.access_gate  # type: ignore[attr-defined]
         self._httpd = httpd
         if self.editable is not None:
             # Watches rather than being told: it catches presence, which
