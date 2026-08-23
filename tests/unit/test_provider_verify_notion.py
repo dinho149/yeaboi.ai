@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from yeaboi.ui.provider_select._verification import _verify_notion
+from yeaboi.provider_verification import _verify_notion
 
 
 def _resp(status_code: int) -> MagicMock:

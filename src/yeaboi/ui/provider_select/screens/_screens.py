@@ -14,8 +14,8 @@ from rich.align import Align
 from rich.panel import Panel
 from rich.text import Text
 
+from yeaboi.provider_verification import _validate_key
 from yeaboi.ui.provider_select._constants import _PROVIDER_CARDS, TOKEN_HELP
-from yeaboi.ui.provider_select._verification import _validate_key
 from yeaboi.ui.shared._animations import shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.shared._components import build_page_panel

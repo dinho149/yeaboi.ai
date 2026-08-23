@@ -18,6 +18,13 @@ import time
 
 from rich.console import Console
 
+from yeaboi.provider_verification import (
+    _verify_api_key,
+    _verify_model,
+    _verify_vc_token,
+    fetch_available_models,
+    pull_ollama_model,
+)
 from yeaboi.ui.provider_select._config import _save_progress  # noqa: F401
 from yeaboi.ui.provider_select._constants import _PROVIDER_CARDS, _VC_OPTIONS
 from yeaboi.ui.provider_select._nav import StepNav, nav_for_key
@@ -26,13 +33,6 @@ from yeaboi.ui.provider_select._phase_docs import _run_docs
 from yeaboi.ui.provider_select._phase_issue_tracking import _run_issue_tracking  # noqa: F401
 from yeaboi.ui.provider_select._phase_notion import _run_notion  # noqa: F401
 from yeaboi.ui.provider_select._transitions import _transition_to_input  # noqa: F401
-from yeaboi.ui.provider_select._verification import (
-    _verify_api_key,
-    _verify_model,
-    _verify_vc_token,
-    fetch_available_models,
-    pull_ollama_model,
-)
 from yeaboi.ui.provider_select.screens._screens import (
     _build_input_screen,
     _build_model_input_screen,

@@ -18,6 +18,28 @@ _OLLAMA_PKG_MISSING = (
     "Ollama support isn't installed — run: uv sync --extra ollama (or: pip install langchain-ollama), then retry"
 )
 
+# The two messages that mean the provider positively *rejected* the credential,
+# as named constants so `credential_verdict` cannot drift from the branches that
+# produce them. Everything else `_verify_api_key` can return — a timeout, a
+# proxy, an unexpected status — means "could not tell", which is a different
+# thing and must not be reported to the user as an expired key.
+INVALID_KEY = "Invalid API key"
+KEY_LACKS_PERMISSIONS = "Key lacks permissions"
+_DEFINITE_REJECTIONS = frozenset({INVALID_KEY, KEY_LACKS_PERMISSIONS})
+
+
+def _connection_error(exc: Exception) -> str:
+    """ "Connection error: …" with any credential scrubbed out of it.
+
+    A transport exception quotes the request it failed on, and Google's carries
+    the API key in the URL — so the raw text is a secret-bearing string that
+    both the wizard (which renders it) and the credential gate (which renders
+    and logs it) would otherwise pass straight through.
+    """
+    from yeaboi.redaction import redact  # lazy: keep module import-light
+
+    return redact(f"Connection error: {exc}")
+
 
 def _ollama_unreachable_message() -> str:
     """'Can't reach Ollama' copy that distinguishes not-installed from not-running.
@@ -112,9 +134,9 @@ def _verify_api_key(provider: dict[str, Any], api_key: str) -> tuple[bool, str]:
             if resp.status_code in (200, 201):
                 return True, "Key verified"
             if resp.status_code == 401:
-                return False, "Invalid API key"
+                return False, INVALID_KEY
             if resp.status_code == 403:
-                return False, "Key lacks permissions"
+                return False, KEY_LACKS_PERMISSIONS
             return False, f"Unexpected response: {resp.status_code}"
 
         elif provider_val == "openai":
@@ -128,7 +150,7 @@ def _verify_api_key(provider: dict[str, Any], api_key: str) -> tuple[bool, str]:
             if resp.status_code == 200:
                 return True, "Key verified"
             if resp.status_code == 401:
-                return False, "Invalid API key"
+                return False, INVALID_KEY
             return False, f"Unexpected response: {resp.status_code}"
 
         elif provider_val == "google":
@@ -141,7 +163,7 @@ def _verify_api_key(provider: dict[str, Any], api_key: str) -> tuple[bool, str]:
             if resp.status_code == 200:
                 return True, "Key verified"
             if resp.status_code in (400, 401, 403):
-                return False, "Invalid API key"
+                return False, INVALID_KEY
             return False, f"Unexpected response: {resp.status_code}"
 
         elif provider_val == "bedrock":
@@ -190,9 +212,55 @@ def _verify_api_key(provider: dict[str, Any], api_key: str) -> tuple[bool, str]:
             return False, "No AWS credentials found \u2014 configure IAM role, ~/.aws/credentials, or env vars"
         if "InvalidIdentityToken" in err_str or "AccessDenied" in err_str or "403" in err_str:
             return False, "AWS credentials lack Bedrock permissions"
-        return False, f"Connection error: {e}"
+        return False, _connection_error(e)
 
     return False, "Unknown provider"
+
+
+def log_category(message: str) -> str:
+    """A fixed-vocabulary label for a verification message, safe to log.
+
+    Every branch returns a literal, so the credential cannot reach a log line
+    even in principle — the message itself quotes the request it failed on, and
+    a value that never carries a secret is a stronger guarantee than one that
+    has been scrubbed. The message still reaches the *screen*, redacted, where
+    its detail is what makes the failure actionable.
+    """
+    if message == INVALID_KEY:
+        return "invalid key"
+    if message == KEY_LACKS_PERMISSIONS:
+        return "key lacks permissions"
+    if message.startswith("Connection error"):
+        return "connection error"
+    if message.startswith("Unexpected response"):
+        return "unexpected status"
+    if "ollama" in message.lower():
+        return "ollama unavailable"
+    if "AWS" in message:
+        return "aws credentials"
+    return "verification failed"
+
+
+def credential_verdict(provider: dict[str, Any], credential: str) -> tuple[str, str]:
+    """``(verdict, message)`` where verdict is "ok", "rejected" or "inconclusive".
+
+    The setup wizard only needs pass/fail, because a person is sitting there
+    reading the message. A gate that *blocks* on the answer needs the third
+    state: "Connection error" covers a captive wifi, a proxy and a DNS failure
+    as well as a dead key, and telling someone on a train that their
+    credentials expired is worse than saying nothing (the rule
+    :func:`yeaboi.auth_state.probe_subscription_token` already follows).
+
+    Ollama is the one provider whose failures are all definite: it is a local
+    server that either answers or does not, with no network in between, and
+    both of its messages name the fix.
+    """
+    ok, message = _verify_api_key(provider, credential)
+    if ok:
+        return "ok", message
+    if provider.get("provider_val") == "ollama":
+        return "rejected", message
+    return ("rejected" if message in _DEFINITE_REJECTIONS else "inconclusive"), message
 
 
 def _verify_model(provider: dict[str, Any], api_key: str, model: str) -> tuple[bool, str]:
@@ -235,7 +303,7 @@ def _verify_model(provider: dict[str, Any], api_key: str, model: str) -> tuple[b
                 detail = _extract_error_message(resp)
                 return False, detail or "Model not accepted"
             if resp.status_code == 401:
-                return False, "Invalid API key"
+                return False, INVALID_KEY
             if resp.status_code == 403:
                 return False, "Key lacks access to this model"
             return False, f"Unexpected response: {resp.status_code}"
@@ -253,7 +321,7 @@ def _verify_model(provider: dict[str, Any], api_key: str, model: str) -> tuple[b
             if resp.status_code == 404:
                 return False, "Unknown model for this account"
             if resp.status_code == 401:
-                return False, "Invalid API key"
+                return False, INVALID_KEY
             return False, f"Unexpected response: {resp.status_code}"
 
         elif provider_val == "google":
@@ -269,7 +337,7 @@ def _verify_model(provider: dict[str, Any], api_key: str, model: str) -> tuple[b
             if resp.status_code == 404:
                 return False, "Unknown model"
             if resp.status_code in (400, 401, 403):
-                return False, "Invalid API key"
+                return False, INVALID_KEY
             return False, f"Unexpected response: {resp.status_code}"
 
         elif provider_val == "bedrock":
@@ -314,7 +382,7 @@ def _verify_model(provider: dict[str, Any], api_key: str, model: str) -> tuple[b
             return False, "No AWS credentials found — configure IAM role, ~/.aws/credentials, or env vars"
         if "InvalidIdentityToken" in err_str or "AccessDenied" in err_str or "403" in err_str:
             return False, "AWS credentials lack Bedrock permissions"
-        return False, f"Connection error: {e}"
+        return False, _connection_error(e)
 
     return False, "Unknown provider"
 
@@ -525,7 +593,7 @@ def _verify_vc_token(vc: dict[str, Any], token: str) -> tuple[bool, str]:
             return False, "Token too short"
 
     except Exception as e:
-        return False, f"Connection error: {e}"
+        return False, _connection_error(e)
 
     return False, "Unknown provider"
 
@@ -550,7 +618,7 @@ def _verify_jira(base_url: str, email: str, token: str) -> tuple[bool, str]:
             return False, "Invalid Jira credentials"
         return False, f"Unexpected response: {resp.status_code}"
     except Exception as e:
-        return False, f"Connection error: {e}"
+        return False, _connection_error(e)
 
 
 def _verify_confluence(base_url: str, email: str, token: str, space_key: str) -> tuple[bool, str]:
@@ -586,7 +654,7 @@ def _verify_confluence(base_url: str, email: str, token: str, space_key: str) ->
         return False, f"Unexpected response: {resp.status_code}"
     except Exception as e:
         logger.warning("Confluence verification error for space '%s': %s", space_key, e)
-        return False, f"Connection error: {e}"
+        return False, _connection_error(e)
 
 
 def _verify_notion(token: str) -> tuple[bool, str]:
@@ -614,7 +682,7 @@ def _verify_notion(token: str) -> tuple[bool, str]:
             return False, "Token lacks access — share pages with the integration"
         return False, f"Unexpected response: {resp.status_code}"
     except Exception as e:
-        return False, f"Connection error: {e}"
+        return False, _connection_error(e)
 
 
 def _verify_azdevops(org_url: str, project: str, token: str) -> tuple[bool, str]:
@@ -639,4 +707,4 @@ def _verify_azdevops(org_url: str, project: str, token: str) -> tuple[bool, str]
             return False, "Project not found — check org URL and project name"
         return False, f"Unexpected response: {resp.status_code}"
     except Exception as e:
-        return False, f"Connection error: {e}"
+        return False, _connection_error(e)

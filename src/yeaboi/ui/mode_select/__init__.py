@@ -80,6 +80,7 @@ from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._input import esc_came_from_back_tab, paste_payload, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
+from yeaboi.ui.shared._llm_gate import show_llm_gate
 from yeaboi.ui.shared._music_bar import duck_working_thread, make_live, take_settings_jump
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
 from yeaboi.ui.shared._voice_input import DoubleTapSpace
@@ -13289,6 +13290,23 @@ def select_mode(
 
             # ── Phase 2: Transition ───────────────────────────────────────────
             chosen = cards[selected]
+
+            # Every card passes through here before its transition animation
+            # starts — one chokepoint, so a mode added later is gated by
+            # default rather than by its author remembering, which is what left
+            # show_beta_notice's per-branch calls covering two of a dozen modes.
+            # A card opts out with "llm": False (see _MODE_CARDS); --dry-run
+            # opts the whole run out, since it promises no LLM calls at all and
+            # runs on a fixture key (see scripts/record_demo.py).
+            if (
+                chosen.get("llm", True)
+                and not dry_run
+                and not show_llm_gate(live, console, read_key, _FRAME_TIME, _supports_timeout)
+            ):
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
+
             all_indices = list(range(n))
             others = [i for i in all_indices if i != selected]
             base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))

@@ -18,10 +18,10 @@ from typing import Any
 from rich.console import Console
 from rich.live import Live
 
+from yeaboi.provider_verification import _verify_azdevops, _verify_jira
 from yeaboi.ui.provider_select._config import _save_progress
 from yeaboi.ui.provider_select._constants import _ISSUE_TRACKING_OPTIONS
 from yeaboi.ui.provider_select._nav import StepNav, nav_for_key
-from yeaboi.ui.provider_select._verification import _verify_azdevops, _verify_jira
 from yeaboi.ui.provider_select.screens._screens_vc import _build_issue_tracking_screen
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
 from yeaboi.ui.shared._input import paste_payload

@@ -94,6 +94,9 @@ FEEDBACK_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220
 # category card, cyan/mint/rose per mode below it. The landing split reads its
 # card accents from these two — a card that hardcoded the same rgb() triples
 # would drift the moment either palette moved.
+# The pre-mode credential gate. Alert rose, shared with Agent Security by
+# coincidence of meaning ("something is wrong here"), not by ownership.
+LLM_GATE_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
 HUMANS_THEME = Theme()
 AGENTS_THEME = Theme(accent="rgb(90,160,210)", accent_bright="rgb(130,200,255)")
 AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,255)")
@@ -125,6 +128,10 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Allow once": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Always allow": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     "Deny": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Pre-mode credential gate: proceeding means accepting non-AI placeholder
+    # output, so it wears the same amber "you are choosing this" as Always allow
+    # rather than reading as the safe default.
+    "Continue anyway": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     # Blocked-destination warning popup in the export picker.
     "Open Setup": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Data-dir change: move the existing tree or leave it in place.

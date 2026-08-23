@@ -14,6 +14,12 @@ from rich.console import Console
 from rich.panel import Panel
 
 from yeaboi.agent.llm import _PROVIDER_DEFAULTS
+from yeaboi.provider_verification import (
+    _verify_confluence,
+    _verify_model,
+    fetch_available_models,
+    pull_ollama_model,
+)
 from yeaboi.setup_wizard import _PROVIDERS, run_setup_wizard
 from yeaboi.ui.provider_select import _existing_model_for, _merge_model_presets
 from yeaboi.ui.provider_select._config import _save_progress
@@ -32,12 +38,6 @@ from yeaboi.ui.provider_select._nav import (
     _STEP_LLM,
     StepNav,
     nav_for_key,
-)
-from yeaboi.ui.provider_select._verification import (
-    _verify_confluence,
-    _verify_model,
-    fetch_available_models,
-    pull_ollama_model,
 )
 from yeaboi.ui.provider_select.screens._screens import (
     _STEPS,
@@ -264,20 +264,20 @@ _OLLAMA_TAGS = {
 
 class TestValidateKeyOllama:
     def test_url_accepted(self):
-        from yeaboi.ui.provider_select._verification import _validate_key
+        from yeaboi.provider_verification import _validate_key
 
         status, hint = _validate_key(_card("ollama"), "http://localhost:11434")
         assert status == "valid_format"
         assert "Ollama" in hint
 
     def test_non_url_rejected(self):
-        from yeaboi.ui.provider_select._verification import _validate_key
+        from yeaboi.provider_verification import _validate_key
 
         status, _ = _validate_key(_card("ollama"), "localhost:11434")
         assert status == "bad_prefix"
 
     def test_empty(self):
-        from yeaboi.ui.provider_select._verification import _validate_key
+        from yeaboi.provider_verification import _validate_key
 
         assert _validate_key(_card("ollama"), "")[0] == "empty"
 
@@ -308,7 +308,7 @@ class TestVerifyApiKeyOllama:
     def test_server_up_with_models(self, monkeypatch, ollama_pkg_installed):
         import httpx
 
-        from yeaboi.ui.provider_select._verification import _verify_api_key
+        from yeaboi.provider_verification import _verify_api_key
 
         monkeypatch.setattr(httpx, "get", lambda *a, **kw: _FakeResponse(200, _OLLAMA_TAGS))
         ok, msg = _verify_api_key(_card("ollama"), "http://localhost:11434")
@@ -318,7 +318,7 @@ class TestVerifyApiKeyOllama:
     def test_server_up_no_models_still_ok_with_pull_hint(self, monkeypatch, ollama_pkg_installed):
         import httpx
 
-        from yeaboi.ui.provider_select._verification import _verify_api_key
+        from yeaboi.provider_verification import _verify_api_key
 
         monkeypatch.setattr(httpx, "get", lambda *a, **kw: _FakeResponse(200, {"models": []}))
         ok, msg = _verify_api_key(_card("ollama"), "http://localhost:11434")
@@ -328,7 +328,7 @@ class TestVerifyApiKeyOllama:
     def test_server_down_actionable_message(self, monkeypatch, ollama_pkg_installed):
         import httpx
 
-        from yeaboi.ui.provider_select._verification import _verify_api_key
+        from yeaboi.provider_verification import _verify_api_key
 
         def _boom(*a, **kw):
             raise httpx.ConnectError("connection refused")
@@ -401,7 +401,7 @@ class TestOllamaPackageCheck:
 
         import httpx
 
-        from yeaboi.ui.provider_select._verification import _verify_api_key
+        from yeaboi.provider_verification import _verify_api_key
 
         monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
 
@@ -418,7 +418,7 @@ class TestOllamaPackageCheck:
         # /api/tags verification.
         import httpx
 
-        from yeaboi.ui.provider_select._verification import _verify_api_key
+        from yeaboi.provider_verification import _verify_api_key
 
         monkeypatch.setattr(httpx, "get", lambda *a, **kw: _FakeResponse(200, _OLLAMA_TAGS))
         ok, _ = _verify_api_key(_card("ollama"), "http://localhost:11434")
@@ -430,7 +430,7 @@ class TestOllamaInstallGuidance:
         import httpx
 
         import yeaboi.ollama_control as ollama_control
-        from yeaboi.ui.provider_select._verification import _verify_api_key
+        from yeaboi.provider_verification import _verify_api_key
 
         def _boom(*a, **kw):
             raise httpx.ConnectError("connection refused")
@@ -447,7 +447,7 @@ class TestOllamaInstallGuidance:
         import httpx
 
         import yeaboi.ollama_control as ollama_control
-        from yeaboi.ui.provider_select._verification import _verify_api_key
+        from yeaboi.provider_verification import _verify_api_key
 
         def _boom(*a, **kw):
             raise httpx.ConnectError("connection refused")
@@ -1492,3 +1492,27 @@ class TestFetchAvailableModels:
     def test_bedrock_excluded(self):
         # No API key model listing for Bedrock — returns [] without any call.
         assert fetch_available_models(_card("bedrock"), "us-east-1") == []
+
+
+class TestConnectionErrorRedaction:
+    """A transport exception quotes the failing request, and Google's URL carries
+    the API key — so the message both the wizard renders and the credential gate
+    logs must never be the raw string."""
+
+    def test_a_google_key_in_the_url_is_scrubbed(self, monkeypatch):
+        import httpx
+
+        from yeaboi.provider_verification import _verify_api_key
+
+        key = "AIzaSyEXAMPLEKEYVALUE0123456789abcdef"
+        monkeypatch.setenv("GOOGLE_API_KEY", key)
+
+        def _boom(*a, **kw):
+            raise httpx.ConnectError(f"failed to connect to https://generativelanguage.googleapis.com/v1?key={key}")
+
+        monkeypatch.setattr(httpx, "get", _boom)
+        ok, message = _verify_api_key(_card("google"), key)
+
+        assert ok is False
+        assert key not in message
+        assert message.startswith("Connection error:")
