@@ -13,6 +13,11 @@ export interface Envelope<T = unknown> {
 
 interface Bridge {
   api: (path: string, init?: { method?: string; body?: unknown }) => Promise<{ status: number; body: unknown }>;
+  apiStream: (
+    path: string,
+    body: unknown,
+    onLine: (line: unknown) => void,
+  ) => Promise<{ status: number; body: unknown }>;
   getBackendState: () => Promise<unknown>;
   onBackendState: (callback: (state: unknown) => void) => void;
   platform: string;
@@ -34,6 +39,12 @@ export async function apiPost<T>(path: string, body: object = {}): Promise<T> {
   const { status, body: resp } = await bridge().api(path, { method: 'POST', body });
   if (status !== 200) throw new Error((resp as { error?: string }).error ?? `POST ${path} → ${status}`);
   return resp as T;
+}
+
+/** POST a request whose response is NDJSON, calling back once per parsed line. */
+export async function apiStream(path: string, body: object, onLine: (line: unknown) => void): Promise<void> {
+  const { status, body: resp } = await bridge().apiStream(path, body, onLine);
+  if (status !== 200) throw new Error((resp as { error?: string }).error ?? `POST ${path} → ${status}`);
 }
 
 export async function callTool<T = unknown>(name: string, args: object = {}): Promise<Envelope<T>> {

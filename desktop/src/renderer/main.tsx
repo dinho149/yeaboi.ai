@@ -10,7 +10,10 @@ import { Wordmark } from '@design/primitives/Wordmark';
 import { type ComponentType, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { getBackendState, onBackendState } from './api';
+import { Chat } from './pages/Chat';
 import { Home } from './pages/Home';
+import { Planning } from './pages/Planning';
+import { Sessions } from './pages/Sessions';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
 import { Usage } from './pages/Usage';
@@ -20,6 +23,9 @@ import { APP_ROUTES, DEFAULT_ROUTE, routeFor } from './routes';
 const PAGES: Record<string, ComponentType> = {
   '/home': Home,
   '/whats-new': WhatsNew,
+  '/humans/planning': Planning,
+  '/humans/planning/chat': Chat,
+  '/humans/planning/sessions': Sessions,
   '/usage': Usage,
   '/settings/credentials': Settings,
   '/settings/sharing': Settings,
@@ -27,10 +33,16 @@ const PAGES: Record<string, ComponentType> = {
   '/setup': Setup,
 };
 
+/** The route half of a hash — anything after `?` is the page's own business. */
+function pathOf(hash: string): string {
+  const path = hash.slice(1).split('?')[0] ?? '';
+  return path || DEFAULT_ROUTE;
+}
+
 function useHashRoute(): string {
-  const [path, setPath] = useState(() => window.location.hash.slice(1) || DEFAULT_ROUTE);
+  const [path, setPath] = useState(() => pathOf(window.location.hash));
   useEffect(() => {
-    const onChange = () => setPath(window.location.hash.slice(1) || DEFAULT_ROUTE);
+    const onChange = () => setPath(pathOf(window.location.hash));
     window.addEventListener('hashchange', onChange);
     return () => window.removeEventListener('hashchange', onChange);
   }, []);
@@ -61,7 +73,15 @@ function Sidebar({ active }: { active: string }) {
   // The three /settings/* routes collapse into one nav entry (the page owns
   // its own tab bar), and Setup + Settings live in the footer like the TUI's
   // secondary row rather than among the modes.
-  const primary = APP_ROUTES.filter((route) => !route.path.startsWith('/settings/') && route.path !== '/setup');
+  // The chat and the saved-plans list hang off Planning rather than standing
+  // in the nav; Setup and Settings live in the footer like the TUI's secondary
+  // row rather than among the modes.
+  const primary = APP_ROUTES.filter(
+    (route) =>
+      !route.path.startsWith('/settings/') &&
+      route.path !== '/setup' &&
+      !route.path.startsWith('/humans/planning/'),
+  );
   return (
     <nav class="sidebar">
       <div class="sidebar-brand">
@@ -69,7 +89,11 @@ function Sidebar({ active }: { active: string }) {
         <Wordmark text="YEABOI" label="yeaboi" size="110px" />
       </div>
       {primary.map((route) => (
-        <a key={route.path} href={`#${route.path}`} aria-current={active === route.path ? 'page' : undefined}>
+        <a
+          key={route.path}
+          href={`#${route.path}`}
+          aria-current={active === route.path || active.startsWith(`${route.path}/`) ? 'page' : undefined}
+        >
           {route.title}
         </a>
       ))}

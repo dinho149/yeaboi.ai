@@ -599,3 +599,223 @@ body {
   gap: var(--s2);
   text-align: center;
 }
+
+/* ---------------------------------------------------------------- planning */
+
+.intake {
+  max-width: 720px;
+}
+.intake-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+.intake-lead {
+  color: var(--muted);
+  margin: 4px 0 0;
+  max-width: 52ch;
+}
+.intake-box {
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+.intake-sizes {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+.size-card {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.size-card.active {
+  border-color: var(--duck);
+  box-shadow: 0 0 0 1px var(--duck) inset;
+}
+.size-card span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.intake-error,
+.chat-error {
+  color: var(--danger, #d2544c);
+}
+.intake-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.session-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 720px;
+}
+.session-list a {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-decoration: none;
+  color: var(--fg);
+}
+.session-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* -------------------------------------------------------------------- chat */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 860px;
+}
+.chat-head {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+.stage-rail {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stage {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.stage.active {
+  color: var(--fg);
+  border-color: var(--duck);
+  background: color-mix(in srgb, var(--duck) 14%, transparent);
+}
+.chat-sub {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 6px;
+}
+.bubble {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  max-width: 78%;
+}
+.bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.bubble.user {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--duck) 16%, var(--surface));
+}
+.bubble.assistant {
+  align-self: flex-start;
+}
+.bubble.working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.bubble.streaming p::after {
+  content: '▍';
+  opacity: 0.5;
+}
+.bubble.card {
+  align-self: stretch;
+  max-width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-left: 3px solid var(--duck);
+}
+.card-note {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.chat-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+.chat-choices button {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.choice-key {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.composer {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px;
+  margin-top: 10px;
+}
+.composer textarea {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+  outline: none;
+}
+.composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.composer-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+}

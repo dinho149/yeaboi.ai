@@ -17,6 +17,21 @@
       "title": "Usage"
     },
     {
+      "path": "/humans/planning",
+      "capability": "planning",
+      "title": "Planning"
+    },
+    {
+      "path": "/humans/planning/chat",
+      "capability": "planning",
+      "title": "Planning · Chat"
+    },
+    {
+      "path": "/humans/planning/sessions",
+      "capability": "sessions",
+      "title": "Saved plans"
+    },
+    {
       "path": "/settings/credentials",
       "capability": "settings",
       "title": "Settings · Credentials"

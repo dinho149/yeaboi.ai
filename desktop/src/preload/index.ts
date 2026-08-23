@@ -6,6 +6,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 export interface YeaboiBridge {
   api: (path: string, init?: { method?: string; body?: unknown }) => Promise<{ status: number; body: unknown }>;
+  apiStream: (
+    path: string,
+    body: unknown,
+    onLine: (line: unknown) => void,
+  ) => Promise<{ status: number; body: unknown }>;
   getBackendState: () => Promise<unknown>;
   onBackendState: (callback: (state: unknown) => void) => void;
   platform: string;
@@ -13,6 +18,17 @@ export interface YeaboiBridge {
 
 const bridge: YeaboiBridge = {
   api: (path, init) => ipcRenderer.invoke('api:request', path, init),
+  apiStream: (path, body, onLine) => {
+    // The channel is per call, so two concurrent turns never cross lines; the
+    // listener is removed when the stream ends, however it ends.
+    const id = `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+    const channel = `api:stream:${id}`;
+    const handler = (_event: unknown, line: unknown) => onLine(line);
+    ipcRenderer.on(channel, handler);
+    return ipcRenderer
+      .invoke('api:stream', path, { method: 'POST', body }, id)
+      .finally(() => ipcRenderer.removeListener(channel, handler));
+  },
   getBackendState: () => ipcRenderer.invoke('backend:get-state'),
   onBackendState: (callback) => {
     ipcRenderer.on('backend:state', (_event, state: unknown) => callback(state));

@@ -100,7 +100,7 @@ CAPABILITIES: dict[str, dict] = {
             "--architecture-spike",
         },
         "skill": "plan-sprint",
-        "desktop": Exempt("desktop: scheduled milestone M5 — the planning chat ships with the session event stream"),
+        "desktop": {"/humans/planning", "/humans/planning/chat"},
     },
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
@@ -108,7 +108,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("sessions are surfaced inside the planning-mode screens, no dedicated card"),
         "cli": {"--list-sessions", "--resume", "--clear-sessions"},
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
-        "desktop": Exempt("desktop: scheduled milestone M5 — the sessions page ships with the planning chat"),
+        "desktop": {"/humans/planning/sessions"},
     },
     "standup": {
         "engines": {
