@@ -476,6 +476,10 @@ def start_state(description: str, *, intake_mode: str = "") -> dict:
         "questionnaire": None,
         "_intake_mode": mode,
         "_chat_greeting_done": True,
+        # The opening line, held until it is sent as messages[0]. A caller that
+        # never sends it gets an intake with nothing to plan, so the session
+        # view carries it and the client's first turn is this text.
+        "_chat_opening": description,
         # The description is deliberately absent: it becomes messages[0] on the
         # first turn, and replaying it here too would show it twice.
         "_chat_preamble": [
@@ -550,6 +554,8 @@ class ChatSession:
             logger.error("Chat turn produced no state")
             return False
         self.state = result
+        if text:
+            self.state.pop("_chat_opening", None)
         event = reply_event(self.state)
         if event is not None:
             on_event(event)

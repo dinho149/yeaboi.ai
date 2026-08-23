@@ -93,6 +93,16 @@ class TestCreate:
         # otherwise appear twice the moment the first turn lands.
         assert not any("barbers" in item["text"] for item in view["transcript"])
 
+    def test_the_description_is_owed_as_the_first_turn(self, app):
+        # It has to reach the graph as messages[0]; until it does, the view
+        # carries it so the client knows to send it.
+        assert open_chat(app)["opening"] == "a booking app for barbers"
+
+    def test_the_opening_is_spent_once_it_has_been_sent(self, app):
+        open_chat(app)
+        turn(app, text="a booking app for barbers")
+        assert json.loads(request(app, "GET", "/api/chat/sessions/proj-1").body)["opening"] == ""
+
     def test_a_new_conversation_is_persisted_immediately(self, app):
         open_chat(app)
         assert "proj-1" in app.saved

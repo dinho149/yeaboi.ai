@@ -163,6 +163,8 @@ def _view(chat: LiveChat) -> dict:
         "project_id": chat.project_id,
         "stage": chat.session.awaiting,
         "transcript": [_wire(item, chat) for item in replay(state)],
+        # Non-empty only until the description has been sent as the first turn.
+        "opening": state.get("_chat_opening", ""),
         "question": to_jsonable(derive_question_view(state)),
     }
 

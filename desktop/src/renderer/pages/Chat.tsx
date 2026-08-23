@@ -68,6 +68,10 @@ export function Chat() {
         setBubbles(bubblesOf(view.transcript));
         setQuestion(view.question);
         setStage(view.stage);
+        // A conversation opened from Planning still owes its first turn: the
+        // description has to reach the graph as messages[0] or the intake has
+        // nothing to plan.
+        if (view.opening) void send(view.opening);
       },
       (e: Error) => setError(e.message),
     );

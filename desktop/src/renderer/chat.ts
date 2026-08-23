@@ -37,6 +37,8 @@ export interface SessionView {
   stage: Stage;
   transcript: ChatLine[];
   question: QuestionView;
+  /** The description, until it has been sent as the conversation's first turn. */
+  opening: string;
 }
 
 /** One drawn row of the conversation. Cards carry a kind, prose carries text. */

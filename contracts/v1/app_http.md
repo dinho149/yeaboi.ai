@@ -101,7 +101,9 @@ rejoins the conversation it left rather than restarting it.
 | POST | `/api/chat/sessions/{project_id}/send` | body `{text, images?: [..]}` → a chunked NDJSON turn; 409 while a turn is already running |
 
 The **session view** is
-`{project_id, stage, transcript: [<event>], question: {question_text, choices, multi_select, auto_submit, prior_art, suggestion, progress, phase_label, current_question, preamble_lines}}`.
+`{project_id, stage, opening, transcript: [<event>], question: {question_text, choices, multi_select, auto_submit, prior_art, suggestion, progress, phase_label, current_question, preamble_lines}}`.
+`opening` is the description until it has been sent as the conversation's
+first turn — a client that skips it leaves the intake with nothing to plan.
 `stage` is one of `intake`, `review`, `pipeline`, `epic`, `capacity`, `spike`,
 `chat` — the one predicate every surface routes on.
 
