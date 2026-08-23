@@ -26,7 +26,7 @@ import json
 import logging
 import re
 from collections.abc import Callable, Collection
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from yeaboi import html_theme
@@ -2088,7 +2088,7 @@ def run_transcript_review(
             return TranscriptReview(
                 session_id=session_id,
                 standup_date=standup_date,
-                reviewed_at=datetime.now(UTC).isoformat(),
+                reviewed_at=datetime.now(timezone.utc).isoformat(),
                 llm_mode="deterministic",
                 warnings=(str(exc),),
             )
@@ -2114,7 +2114,7 @@ def run_transcript_review(
         return TranscriptReview(
             session_id=session_id,
             standup_date=standup_date,
-            reviewed_at=datetime.now(UTC).isoformat(),
+            reviewed_at=datetime.now(timezone.utc).isoformat(),
             llm_mode="deterministic",
             warnings=("No unreviewed transcripts found. Drop one in ~/.yeaboi/transcripts and try again.",),
         )

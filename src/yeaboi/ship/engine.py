@@ -27,7 +27,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import ShipPhase, ShipRun, ShipValidation
@@ -52,7 +52,7 @@ class _RunAbortError(Exception):
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _report(on_progress, component_id: str, label: str, status: str, **kwargs) -> None:
@@ -71,7 +71,7 @@ def _new_run_id(story_id: str) -> str:
     ``worktree.prepare`` is idempotent per id, a collision would hand the
     second run the first one's checkout and let one gate answer for both.
     """
-    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     safe = "".join(c if c.isalnum() or c in "._-" else "-" for c in story_id.lower()).strip("-.")[:40]
     return f"{safe or 'story'}-{stamp}-{secrets.token_hex(3)}"
 

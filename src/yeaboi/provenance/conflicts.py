@@ -21,7 +21,8 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import StrEnum
+
+from yeaboi._compat import StrEnum
 
 
 class Severity(StrEnum):

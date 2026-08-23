@@ -18,7 +18,7 @@ import json
 import re
 import subprocess
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -34,7 +34,7 @@ prf = importlib.util.module_from_spec(_spec)
 sys.modules["pr_feedback"] = prf
 _spec.loader.exec_module(prf)
 
-NOW = datetime(2026, 8, 6, 12, 0, 0, tzinfo=UTC)
+NOW = datetime(2026, 8, 6, 12, 0, 0, tzinfo=timezone.utc)
 AUTHOR = "dinho"
 # A second human with write access — not the PR's author. On the unattended lane
 # an acknowledgement from the author is discarded, so this is who answers.
@@ -1595,7 +1595,7 @@ class TestFetch:
         )
         state = prf.fetch_ci("o/r", HEAD)
         assert state.conclusion == "success"
-        assert state.completed_at == datetime(2026, 8, 6, 10, 10, tzinfo=UTC)
+        assert state.completed_at == datetime(2026, 8, 6, 10, 10, tzinfo=timezone.utc)
 
     def test_no_run_for_this_sha_is_not_a_green_one(self, gh):
         gh.reply("actions/runs", {"workflow_runs": []})

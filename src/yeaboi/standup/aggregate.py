@@ -32,10 +32,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection, Mapping
-from datetime import date
 
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, PracticeSignal, StandupReport
 from yeaboi.standup import categories, collector, confidence, habits, insights
+from yeaboi.timeparse import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +229,7 @@ def aggregate_standup(inputs: dict) -> dict:
         capacity_points=float(sprint.get("capacity_points", 0.0)),
         completed_points=float(sprint.get("completed_points", 0.0)),
         activity_count=bundle.total(exclude_kinds=("wip",)),
-        today=date.fromisoformat(str(inputs["today"])),
+        today=parse_date(str(inputs["today"])),
         history=list(inputs.get("history") or ()),
     )
 

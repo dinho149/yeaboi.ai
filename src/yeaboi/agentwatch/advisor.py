@@ -34,7 +34,7 @@ store, and the export.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import AgentAdvisorReport, VolatileFileSignal, WasteLineItem
@@ -243,7 +243,7 @@ def run_agent_advisor(
 
     dry_run: skip the LLM (deterministic artifact only, no warning).
     """
-    resolved_today = today or datetime.now(UTC).date()
+    resolved_today = today or datetime.now(timezone.utc).date()
     window_days = max(1, int(window_days))
     period_start = (resolved_today - timedelta(days=window_days - 1)).isoformat()
     period_end = resolved_today.isoformat()
@@ -388,7 +388,7 @@ def run_agent_advisor(
         insights=insights,
         recommendations=recommendations,
         warnings=tuple(warnings),
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
     # Persist + auto-export (blueprint: every run leaves an artifact on disk).

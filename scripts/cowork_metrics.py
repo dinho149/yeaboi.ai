@@ -47,7 +47,7 @@ import json
 import re
 import sys
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -105,7 +105,7 @@ FLEET_LANES = frozenset({"auto", "approved", "campaign", "codeql", "sentinel"})
 
 
 def since_iso(days: int, now: datetime | None = None) -> str:
-    return ((now or datetime.now(UTC)) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return ((now or datetime.now(timezone.utc)) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _labels(item: dict) -> set[str]:
@@ -457,7 +457,7 @@ def build_report(
 
 
 def _moment(stamp: str) -> datetime:
-    return datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    return datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
 def _median(values: list[float]) -> float:

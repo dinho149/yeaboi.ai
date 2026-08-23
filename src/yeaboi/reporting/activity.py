@@ -16,9 +16,9 @@ turns that into a warning, never a crash.
 from __future__ import annotations
 
 import logging
-from datetime import date
 
 from yeaboi.agent.state import DeliveredItem
+from yeaboi.timeparse import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +216,7 @@ def _within_window(timestamp: str, window_start: str, window_end: str) -> bool:
     """
     day = (timestamp or "").strip()[:10]
     try:
-        date.fromisoformat(day)
+        parse_date(day)
     except ValueError:
         return True
     return (not window_start or day >= window_start) and (not window_end or day <= window_end)

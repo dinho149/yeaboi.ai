@@ -17,6 +17,7 @@ from rich.text import Text
 from yeaboi.agent.state import Ceremony, CeremonyRun
 from yeaboi.ceremonies.catalog import CATALOG, UNSCHEDULABLE, lookup
 from yeaboi.ceremonies.scheduler import weekday_spec_label
+from yeaboi.timeparse import parse_datetime
 
 
 def local_stamp(fired_at: str, *, with_date: bool = True) -> str:
@@ -31,7 +32,7 @@ def local_stamp(fired_at: str, *, with_date: bool = True) -> str:
     with an odd stamp is still a row worth showing.
     """
     try:
-        moment = datetime.fromisoformat(fired_at).astimezone()
+        moment = parse_datetime(fired_at).astimezone()
     except (TypeError, ValueError):
         return (fired_at or "")[:16].replace("T", " ")
     return moment.strftime("%Y-%m-%d %H:%M" if with_date else "%m-%d %H:%M")

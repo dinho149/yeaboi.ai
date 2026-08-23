@@ -47,7 +47,7 @@ import logging
 import secrets
 import threading
 import time
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 
 from yeaboi.agent.state import PokerReport, PokerTicketResult, PokerVote
 
@@ -114,7 +114,7 @@ def _ai_idle() -> dict:
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def snap_to_deck(value: float) -> float:

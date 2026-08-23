@@ -39,6 +39,7 @@ from yeaboi.config import (
     get_confluence_space_key,
     get_confluence_token,
 )
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -542,21 +543,21 @@ def _cql_next_with_retry(conf, response: dict) -> dict | None:
 
 def _iso_to_dt(ts: str):
     """Parse an ISO timestamp from the Confluence API; None when unparseable."""
-    from datetime import UTC, datetime
+    from datetime import timezone
 
     try:
-        parsed = datetime.fromisoformat((ts or "").replace("Z", "+00:00"))
+        parsed = parse_datetime(ts or "")
     except (ValueError, TypeError):
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _page_cutoff(days: int, since):
-    from datetime import UTC, datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     if since is not None:
-        return since.astimezone(UTC) if since.tzinfo else since.replace(tzinfo=UTC)
-    return datetime.now(UTC) - timedelta(days=int(days))
+        return since.astimezone(timezone.utc) if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - timedelta(days=int(days))
 
 
 def _page_link(content: dict, page_id: str) -> str:

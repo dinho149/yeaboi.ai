@@ -17,7 +17,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import Annotation, annotations_from
@@ -770,7 +770,7 @@ class TeamProfileStore:
 
     def save(self, profile: TeamProfile, *, examples: dict | None = None) -> None:
         """Insert or update a team profile, optionally with examples data."""
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         json_str = _profile_to_json(profile)
         ex_str = _examples_to_json(examples) if examples else None
         self._conn.execute(
@@ -800,7 +800,7 @@ class TeamProfileStore:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 run_id,
-                datetime.now(UTC).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
                 str(coverage.get("status", "complete")),
                 int(result.get("analysis_window_days", 120)),
                 json.dumps(result.get("analysis_scope", {}), ensure_ascii=False),
@@ -878,7 +878,7 @@ class TeamProfileStore:
         entries: dict[str, tuple[str, dict]],
     ) -> None:
         """Upsert valid Deep-analysis ticket parses and prune stale cache rows."""
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         for issue_key, (content_hash, parsed) in entries.items():
             self._conn.execute(
                 """INSERT INTO analysis_ticket_cache
@@ -912,7 +912,7 @@ class TeamProfileStore:
         self._conn.execute(
             """UPDATE analysis_enrichment_cache SET last_used_at = ?
                WHERE task = ? AND cache_key = ? AND model = ?""",
-            (datetime.now(UTC).isoformat(), task, cache_key, model),
+            (datetime.now(timezone.utc).isoformat(), task, cache_key, model),
         )
         return result
 
@@ -925,7 +925,7 @@ class TeamProfileStore:
                ON CONFLICT(task, cache_key, model) DO UPDATE SET
                    result_json = excluded.result_json,
                    last_used_at = excluded.last_used_at""",
-            (task, cache_key, model, json.dumps(result, ensure_ascii=False), datetime.now(UTC).isoformat()),
+            (task, cache_key, model, json.dumps(result, ensure_ascii=False), datetime.now(timezone.utc).isoformat()),
         )
         self._conn.execute(
             "DELETE FROM analysis_enrichment_cache WHERE julianday(last_used_at) < julianday('now', '-90 days')"

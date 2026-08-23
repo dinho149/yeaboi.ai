@@ -21,7 +21,7 @@ import statistics
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from langchain_core.tools import tool
 
@@ -299,7 +299,7 @@ def _build_profile_from_sprint_data(
     """
     from datetime import datetime
 
-    team_id = f"{source}-{project_key}-{datetime.now(UTC).strftime('%Y%m%d%H%M')}"
+    team_id = f"{source}-{project_key}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
 
     # Velocity stats
     velocities = [sd["completed_points"] for sd in sprint_data if sd.get("completed_points", 0) > 0]
@@ -3225,7 +3225,7 @@ def _run_parallel_analysis(
 
     from datetime import datetime
 
-    team_id = f"{source}-{project_key}-{datetime.now(UTC).strftime('%Y%m%d%H%M')}"
+    team_id = f"{source}-{project_key}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
     profile = TeamProfile(
         team_id=team_id,
         source=source,
@@ -6450,10 +6450,10 @@ def _fetch_azdevops_history(
         return []
 
     # Filter to past iterations by date (timeframe param not reliable)
-    from datetime import UTC
     from datetime import datetime as _dt
+    from datetime import timezone
 
-    now = _dt.now(UTC)
+    now = _dt.now(timezone.utc)
     past_iterations = []
     for it in all_iterations:
         attrs = getattr(it, "attributes", None)

@@ -489,6 +489,12 @@ ALWAYS: tuple[str, ...] = (
     # guards the install commands the README and landing page advertise, and
     # README.md is INERT: without this entry a README-only change runs nothing.
     "tests/unit/test_install_script.py",
+    # AST-scans every .py in the repo for the two 3.11-only constructs the 3.10
+    # floor bans. Any file can reintroduce them, so no path implies this test.
+    "tests/unit/test_compat.py",
+    # Its guard half AST-scans every module in src/ for a bare fromisoformat,
+    # which any file can reintroduce.
+    "tests/unit/test_timeparse.py",
     # The ship gate reads the Makefile, the slash commands and this file. Nothing
     # about a changed module implies it, and its whole subject is the machinery
     # that decides what a scoped run covers — so it has to run on every one.
@@ -517,6 +523,8 @@ GLOBAL: tuple[str, ...] = (
     ".github/workflows/ci.yml",
     "scripts/test_scope.py",
     "src/yeaboi/__init__.py",
+    "src/yeaboi/_compat.py",  # StrEnum for the 3.10 floor — its members serialize into every artifact
+    "src/yeaboi/timeparse.py",  # every stored and provider timestamp in the app is read through it
     "src/yeaboi/sessions.py",  # CURRENT_SCHEMA_VERSION — every store migrates off it
     "src/yeaboi/persistence.py",
     "src/yeaboi/paths.py",

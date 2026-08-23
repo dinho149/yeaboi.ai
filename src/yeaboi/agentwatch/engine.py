@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import (
@@ -341,7 +341,7 @@ def _deterministic_usage_report(
     clock-skewed future ``ended_at`` stays visible instead of disappearing into
     a gap — a cost dashboard that silently omits spend is the worse failure.
     """
-    resolved_today = today or datetime.now(UTC).date()
+    resolved_today = today or datetime.now(timezone.utc).date()
     window_days = max(1, int(window_days))
     period_start = (resolved_today - timedelta(days=window_days - 1)).isoformat()
     period_end = resolved_today.isoformat()
@@ -512,7 +512,7 @@ def run_agent_usage(
     source:  exact filter on the telemetry source (currently "claude_code").
     dry_run: skip the LLM (deterministic artifact only, no warning).
     """
-    resolved_today = today or datetime.now(UTC).date()
+    resolved_today = today or datetime.now(timezone.utc).date()
     window_days = max(1, int(window_days))
     logger.info(
         "agent usage: %d-day window to %s (project=%r source=%r dry_run=%s)",
@@ -591,7 +591,7 @@ def run_agent_usage(
         insights=insights,
         recommendations=recommendations,
         warnings=tuple(warnings),
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
     # Persist + auto-export (blueprint: every run leaves an artifact on disk).
@@ -885,7 +885,7 @@ def run_agent_standup(
     """
     from yeaboi.standup.collector import previous_working_day_start
 
-    resolved_today = today or datetime.now(UTC).date()
+    resolved_today = today or datetime.now(timezone.utc).date()
     if days is None:
         window_start_dt = previous_working_day_start(resolved_today)
         window_days = max(1, (resolved_today - window_start_dt.date()).days + 1)
@@ -1001,7 +1001,7 @@ def run_agent_standup(
         narrative=narrative,
         coverage_notes=coverage_notes,
         warnings=tuple(warnings),
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
     if deliver:
@@ -1184,7 +1184,7 @@ def run_agent_security(
     deep=True forgets the ingest cursors first, so every transcript is
     re-scanned rather than only new/changed files.
     """
-    resolved_today = today or datetime.now(UTC).date()
+    resolved_today = today or datetime.now(timezone.utc).date()
     scan_date = resolved_today.isoformat()
     logger.info("agent security: scan %s (deep=%s dry_run=%s)", scan_date, deep, dry_run)
 
@@ -1245,7 +1245,7 @@ def run_agent_security(
         summary=summary,
         recommendations=recommendations,
         warnings=tuple(warnings),
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
     try:

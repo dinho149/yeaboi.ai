@@ -34,7 +34,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # scripts/ is not a package, so the sibling transport is imported by path.
@@ -341,7 +341,7 @@ def _day(stamp: str | None) -> str:
 
 def build_payload(now: datetime | None = None) -> dict:
     """Everything both messages are rendered from, recomputed from scratch."""
-    moment = now or datetime.now(UTC)
+    moment = now or datetime.now(timezone.utc)
     waves = parse_program(PROGRAM_DOC.read_text(encoding="utf-8"))
     program_done = sum(1 for wave in waves if wave.done)
     wave6 = _wave6_merged()

@@ -16,7 +16,7 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -587,7 +587,7 @@ class OutputShareServer:
 
     def now(self) -> str:
         """Timestamp for a newly accepted edit, in UTC."""
-        return datetime.now(UTC).isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     def set_public_url(self, url: str) -> None:
         """Record the tunnel URL, so the invite is the address teammates can open.

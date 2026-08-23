@@ -36,7 +36,7 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.agentwatch.store import AgentWatchStore
@@ -595,7 +595,7 @@ def _store_parsed(
     if not rollup.model_usage and not rollup.turns and not rollup.tool_counts:
         return  # not a session transcript (some other tool's JSONL)
     if not rollup.ended_at:
-        rollup.ended_at = rollup.started_at or datetime.now(UTC).isoformat()
+        rollup.ended_at = rollup.started_at or datetime.now(timezone.utc).isoformat()
     store.upsert_session(
         rollup.session_id,
         source=source,

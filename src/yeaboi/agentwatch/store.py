@@ -31,7 +31,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -220,7 +220,7 @@ class AgentWatchStore:
         self.close()
 
     def _now(self) -> str:
-        return datetime.now(UTC).isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     # ── Ingest cursor ─────────────────────────────────────────────────────
 

@@ -19,7 +19,7 @@
 import json
 import logging
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from jira import JIRA, JIRAError
 from langchain_core.tools import tool
@@ -27,6 +27,7 @@ from langchain_core.tools import tool
 from yeaboi.config import get_jira_base_url, get_jira_email, get_jira_project_key, get_jira_token
 from yeaboi.redaction import log_safe
 from yeaboi.ticket_text import jira_wiki_to_text, ticket_text
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -749,17 +750,17 @@ def _raise_if_auth_error(e: JIRAError, source: str) -> None:
 def _activity_cutoff(days: int, since: datetime | None) -> datetime:
     """Tz-aware window start for client-side timestamp filtering (since wins)."""
     if since is not None:
-        return since.astimezone(UTC) if since.tzinfo else since.replace(tzinfo=UTC)
-    return datetime.now(UTC) - timedelta(days=int(days))
+        return since.astimezone(timezone.utc) if since.tzinfo else since.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - timedelta(days=int(days))
 
 
 def _parse_jira_ts(ts: str) -> datetime | None:
     """Parse a Jira ISO timestamp (e.g. '2026-07-17T14:23:45.000+0100'); None if unparseable."""
     try:
-        parsed = datetime.fromisoformat(ts)
+        parsed = parse_datetime(ts)
     except (ValueError, TypeError):
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 # App/automation accounts act on tickets (rule-driven transitions, field edits)

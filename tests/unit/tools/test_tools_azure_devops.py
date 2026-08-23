@@ -5,7 +5,7 @@ so no real network requests are made. Tests cover happy paths, error cases, and
 edge cases for each tool and the _parse_azdo_url helper.
 """
 
-from datetime import UTC
+from datetime import timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -589,7 +589,7 @@ class TestAzdevopsReadBoard:
         mock_clients.return_value = (mock_wit, mock_work)
 
         # Mock current iteration with dates that bracket "now"
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         cur_iter = MagicMock()
         cur_iter.name = "Sprint 42"
         cur_iter.attributes.start_date = now - timedelta(days=7)
@@ -619,7 +619,7 @@ class TestAzdevopsListSprints:
 
         mock_work = MagicMock()
         mock_clients.return_value = (MagicMock(), mock_work)
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         past = MagicMock()
         past.name = "Sprint 1"
         past.attributes.start_date = now - timedelta(days=28)
@@ -655,7 +655,7 @@ class TestAzdevopsFetchActiveIteration:
         mock_work = MagicMock()
         mock_clients.return_value = (MagicMock(), mock_work)
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         cur_iter = MagicMock()
         cur_iter.name = "Sprint 42"
         cur_iter.attributes.start_date = now - timedelta(days=7)
@@ -703,7 +703,7 @@ class TestFetchTeamIterationsMeta:
 
         mock_work = MagicMock()
         mock_clients.return_value = (MagicMock(), mock_work)
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         mock_work.get_team_iterations.return_value = [
             self._iteration("Sprint 1", now - timedelta(days=21), now - timedelta(days=8)),
             self._iteration("Sprint 2", now - timedelta(days=7), now + timedelta(days=7)),
@@ -751,7 +751,7 @@ class TestFetchTeamIterationsMeta:
 
         mock_work = MagicMock()
         mock_clients.return_value = (MagicMock(), mock_work)
-        naive_now = datetime.now(UTC).replace(tzinfo=None)
+        naive_now = datetime.now(timezone.utc).replace(tzinfo=None)
         mock_work.get_team_iterations.return_value = [
             self._iteration("Sprint 1", naive_now - timedelta(days=21), naive_now - timedelta(days=8)),
             self._iteration("Sprint 2", naive_now - timedelta(days=7), naive_now + timedelta(days=7)),
@@ -1252,13 +1252,13 @@ class TestStandupPathBounds:
         assert lookups["count"] == _MAX_CHANGED_FILE_LOOKUPS
 
     def test_standup_pr_change_lookups_capped(self, monkeypatch):
-        from datetime import UTC, datetime
+        from datetime import datetime, timezone
 
         from yeaboi.tools.azure_devops import _MAX_CHANGED_FILE_LOOKUPS, azdevops_recent_prs
 
         repo = SimpleNamespace(id="r1", name="api")
         self._git_client(monkeypatch, [repo])
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         prs = [
             SimpleNamespace(
                 pull_request_id=index,

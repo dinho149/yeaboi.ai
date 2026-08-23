@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 import re
 import webbrowser
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import GapIssueLink, StandupGap, StandupReport, TranscriptReview
@@ -314,7 +314,7 @@ def build_gap_comment_body(gap: StandupGap, review: TranscriptReview, *, occurre
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _repo():

@@ -1,6 +1,8 @@
 # platform
 
 **Owns** — `src/yeaboi/cli.py` (2.5k LOC), `config.py`, `paths.py`, `logging_setup.py`,
+`_compat.py` and `timeparse.py` (the two shims the supported Python range rests on —
+both are deleted, not edited, when the floor rises to 3.11),
 `telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`,
 `provenance/` (the cross-mode tamper-evident decision chain),
 `ceremonies/` (the clock any mode can run on — it owns the OS-job installer and the

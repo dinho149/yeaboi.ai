@@ -130,10 +130,10 @@ class TestInventoryStillWorks:
     """The extraction must not have changed what the estate scan produces."""
 
     def test_github_inventory_row_carries_description_and_languages(self, monkeypatch):
-        from datetime import UTC, datetime
+        from datetime import datetime, timezone
 
         repo = _Repo(_Tree([_Item("app.py")]), languages={"Python": 5}, description=" Payments API ")
-        repo.pushed_at = datetime.now(UTC)
+        repo.pushed_at = datetime.now(timezone.utc)
         repo.html_url = "https://github.com/acme/api"
         repo.archived = False
 
@@ -153,10 +153,10 @@ class TestInventoryStillWorks:
         assert row["active"] is True
 
     def test_inactive_repo_skips_the_languages_call(self, monkeypatch):
-        from datetime import UTC, datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         repo = _Repo(_Tree([]), description="stale")
-        repo.pushed_at = datetime.now(UTC) - timedelta(days=900)
+        repo.pushed_at = datetime.now(timezone.utc) - timedelta(days=900)
         repo.html_url = ""
         repo.archived = False
         repo.get_languages = lambda: (_ for _ in ()).throw(AssertionError("must not call for inactive repos"))

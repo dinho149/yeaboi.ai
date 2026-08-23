@@ -39,6 +39,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from yeaboi.agent.state import TranscriptNudge, TranscriptSource
+from yeaboi.timeparse import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +334,7 @@ def _clamp_date(value: str, today: date) -> str:
     if not value:
         return ""
     try:
-        return value if date.fromisoformat(value) <= today else ""
+        return value if parse_date(value) <= today else ""
     except ValueError:
         return ""
 
@@ -518,7 +519,7 @@ def missing_transcript_dates(
     today = today or date.today()
     horizon = before_date or (today + timedelta(days=1)).isoformat()
     try:
-        since = (date.fromisoformat(horizon) - timedelta(days=_LOOKBACK_DAYS)).isoformat()
+        since = (parse_date(horizon) - timedelta(days=_LOOKBACK_DAYS)).isoformat()
     except ValueError:
         return (), (), False
 
@@ -692,7 +693,7 @@ def import_text(
     resolved_date = ""
     if covered_date.strip():
         try:
-            given = date.fromisoformat(covered_date.strip())
+            given = parse_date(covered_date.strip())
         except ValueError as exc:
             raise ValueError(f"Invalid covered_date {covered_date!r} — expected YYYY-MM-DD.") from exc
         resolved_date = min(given, today).isoformat()  # a future date is not a standup that happened
@@ -850,7 +851,7 @@ def discover(
     cutoff = ""
     if before_date:
         try:
-            cutoff = (date.fromisoformat(before_date) - timedelta(days=_LOOKBACK_DAYS)).isoformat()
+            cutoff = (parse_date(before_date) - timedelta(days=_LOOKBACK_DAYS)).isoformat()
         except ValueError:
             cutoff = ""
 

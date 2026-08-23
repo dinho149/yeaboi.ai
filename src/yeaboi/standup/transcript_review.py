@@ -31,7 +31,7 @@ import json
 import logging
 import re
 from collections import defaultdict
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import StandupGap, StandupReport, TranscriptClaim, TranscriptReview, TranscriptSource
@@ -362,7 +362,7 @@ def review_transcripts(
     degrade to a review that says what it could not do.
     """
     warnings = list(extra_warnings or [])
-    reviewed_at = now or datetime.now(UTC).isoformat()
+    reviewed_at = now or datetime.now(timezone.utc).isoformat()
     source_tuple = tuple(s for s, _turns in sources)
     for source in source_tuple:
         if source.truncated:
@@ -568,7 +568,7 @@ def sweep_and_review(
             TranscriptReview(
                 session_id=session_id,
                 standup_date=standup_date,
-                reviewed_at=datetime.now(UTC).isoformat(),
+                reviewed_at=datetime.now(timezone.utc).isoformat(),
                 llm_mode="deterministic",
                 warnings=tuple(dict.fromkeys(warnings)),
             )

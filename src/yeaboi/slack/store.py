@@ -30,8 +30,10 @@ import json
 import logging
 import sqlite3
 from dataclasses import asdict, dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -179,15 +181,15 @@ class SlackAnchor:
         if not self.expires_at:
             return False
         try:
-            deadline = datetime.fromisoformat(self.expires_at)
+            deadline = parse_datetime(self.expires_at)
         except ValueError:
             logger.warning("slack anchor %s/%s has an unparseable expires_at", self.channel, self.ts)
             return True
-        moment = now or datetime.now(UTC)
+        moment = now or datetime.now(timezone.utc)
         if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=UTC)
+            moment = moment.replace(tzinfo=timezone.utc)
         if deadline.tzinfo is None:
-            deadline = deadline.replace(tzinfo=UTC)
+            deadline = deadline.replace(tzinfo=timezone.utc)
         return moment >= deadline
 
 
@@ -224,7 +226,7 @@ def reply_key(channel: str, reply_ts: str) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _stamp(moment: datetime) -> str:

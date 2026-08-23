@@ -8,14 +8,14 @@ one, and every impure edge degrades instead of raising.
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pytest
 
 from yeaboi.agent import prior_art
 from yeaboi.agent.prior_art_feedback import FeedbackExample, Ledger
 
-_THIS_YEAR = datetime.now(UTC).year
+_THIS_YEAR = datetime.now(timezone.utc).year
 
 
 def _row(**over):

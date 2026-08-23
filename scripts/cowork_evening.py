@@ -40,7 +40,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # scripts/ is not a package, so the siblings are imported by path.
@@ -147,7 +147,7 @@ def _moment(stamp: str | None) -> datetime | None:
         moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def _clock(stamp: str | None, zone: object | None) -> str:
@@ -334,7 +334,7 @@ def open_clause(pr: dict, now: datetime, zone: object | None) -> tuple[str, bool
     verdict, blocked_at = review_verdict(pr.get("number") or 0)
     checks = ci_state(_head_sha(pr))
     stuck = age >= STUCK_DAYS or checks == "ci red" or verdict == "changes requested"
-    if opened and opened.astimezone(zone or UTC).date() == now.astimezone(zone or UTC).date():
+    if opened and opened.astimezone(zone or timezone.utc).date() == now.astimezone(zone or timezone.utc).date():
         when = "opened today"
     elif age <= 0:
         when = "open"
@@ -719,7 +719,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     since = _moment(args.since) or (now - timedelta(hours=24))
     checked_in = args.checked_in.split(",") if args.checked_in is not None else None
     print(json.dumps(build(since, now, checked_in), indent=2, ensure_ascii=False))

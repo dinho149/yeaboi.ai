@@ -25,10 +25,11 @@ import logging
 import re
 import sqlite3
 from dataclasses import asdict, replace
-from datetime import UTC, date, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import CEREMONY_OUTCOMES, Ceremony, CeremonyRun
+from yeaboi.timeparse import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_ceremony_runs_lookup
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def valid_name(name: str) -> bool:
@@ -215,7 +216,7 @@ class CeremonyStore:
         # as set and never takes effect.
         if ceremony.skip_next:
             try:
-                date.fromisoformat(ceremony.skip_next)
+                parse_date(ceremony.skip_next)
             except ValueError as exc:
                 raise ValueError(
                     f"invalid skip_next {ceremony.skip_next!r} — use an ISO date, e.g. 2026-08-18"

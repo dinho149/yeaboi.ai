@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from yeaboi.slack.grammar import (
@@ -216,7 +216,7 @@ def _correction_counts(event: InboundEvent, *, db_path: Path | None) -> tuple[in
     Unreadable counts as at the cap — a bound we cannot check is one we have to
     assume, because the thing it guards against is unbounded writing.
     """
-    since = (datetime.now(UTC) - timedelta(days=1)).isoformat(timespec="seconds")
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
     try:
         with SlackStore(db_path) as store:
             common = {"channel": event.channel, "anchor_ts": event.anchor_ts, "act": ACT_CORRECTION, "since": since}

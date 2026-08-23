@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from yeaboi.slack import allowlist as allow
@@ -49,6 +49,7 @@ from yeaboi.slack.store import (
     reaction_key,
     reply_key,
 )
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +252,7 @@ def run_poll(
     from yeaboi import config
     from yeaboi.logging_setup import mode_log
 
-    moment = now or datetime.now(UTC)
+    moment = now or datetime.now(timezone.utc)
     started = time.monotonic()
     api = api or _default_api()
     if apply_event is None:
@@ -473,7 +474,7 @@ def _gap_notice(store, now: datetime) -> str:
     if not last or not last.get("polled_at"):
         return ""
     try:
-        previous = datetime.fromisoformat(last["polled_at"])
+        previous = parse_datetime(last["polled_at"])
     except ValueError:
         return ""
     hours = (now - previous).total_seconds() / 3600

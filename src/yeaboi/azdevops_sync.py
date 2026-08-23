@@ -32,6 +32,7 @@ from yeaboi.config import (
     get_azure_devops_project,
     get_azure_devops_token,
 )
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -471,9 +472,9 @@ def sync_iterations_to_azdevops(
                 start_date = ""
                 finish_date = ""
                 if sprint_start_date_str:
-                    from datetime import datetime, timedelta
+                    from datetime import timedelta
 
-                    start = datetime.fromisoformat(sprint_start_date_str) + timedelta(weeks=sprint_length_weeks * idx)
+                    start = parse_datetime(sprint_start_date_str) + timedelta(weeks=sprint_length_weeks * idx)
                     end = start + timedelta(weeks=sprint_length_weeks) - timedelta(days=1)
                     start_date = start.strftime("%Y-%m-%d")
                     finish_date = end.strftime("%Y-%m-%d")

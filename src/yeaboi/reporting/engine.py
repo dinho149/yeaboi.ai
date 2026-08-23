@@ -26,6 +26,7 @@ from datetime import date, timedelta
 
 from yeaboi.agent.state import DeliveredItem, DeliveryReport
 from yeaboi.reporting import activity as activity_mod
+from yeaboi.timeparse import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +258,7 @@ def _validate_window_dates(window_start: str, window_end: str) -> None:
         if not value:
             continue
         try:
-            date.fromisoformat(value)
+            parse_date(value)
         except ValueError:
             raise ValueError(f"{name} must be an ISO date (YYYY-MM-DD) — got {value!r}") from None
     if window_start and window_end and window_end < window_start:
@@ -330,7 +331,7 @@ def run_delivery_report(
     if use_window:
         # Explicit window: the selected sprints / custom dates define the date span.
         try:
-            days = max(1, (today - date.fromisoformat(window_start)).days)
+            days = max(1, (today - parse_date(window_start)).days)
         except (TypeError, ValueError):
             days = activity_mod.period_days(activity_mod.PERIOD_LAST_MONTH)
         period_start = window_start

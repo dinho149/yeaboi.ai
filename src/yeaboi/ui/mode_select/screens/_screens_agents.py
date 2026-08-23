@@ -10,7 +10,7 @@ convention), so the page renders correctly at the minimum terminal size.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from rich.console import Group
 from rich.panel import Panel
@@ -19,6 +19,7 @@ from rich.text import Text
 from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentStandupDigest, AgentUsageReport
 from yeaboi.agentwatch.render import format_usage_rich
 from yeaboi.analysis.progress import is_component_progress
+from yeaboi.timeparse import parse_datetime
 from yeaboi.ui.shared._components import (
     AGENT_USAGE_THEME,
     agent_usage_title,
@@ -86,12 +87,12 @@ def _relative_age(iso: str, *, now: datetime | None = None) -> str:
     Unparseable input returns "" — no stamp rather than a wrong one.
     """
     try:
-        then = datetime.fromisoformat(iso)
+        then = parse_datetime(iso)
     except (TypeError, ValueError):
         return ""
     if then.tzinfo is None:
-        then = then.replace(tzinfo=UTC)
-    resolved_now = now or datetime.now(UTC)
+        then = then.replace(tzinfo=timezone.utc)
+    resolved_now = now or datetime.now(timezone.utc)
     seconds = (resolved_now - then).total_seconds()
     if seconds < 60:
         return "just now"

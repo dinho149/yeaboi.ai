@@ -16,7 +16,7 @@
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import github
 from langchain_core.tools import tool
@@ -144,7 +144,7 @@ def github_analysis_inventory(
     first-100/one-repository bias.  Recently active repositories also include a
     deterministic tree inventory used by repository-health analysis.
     """
-    cutoff = datetime.now(UTC) - timedelta(days=max(1, int(days)))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, int(days)))
     client = _get_github_client()
     out: list[dict] = []
     seen: set[str] = set()
@@ -162,7 +162,7 @@ def github_analysis_inventory(
                 seen.add(slug.lower())
                 pushed = getattr(repo, "pushed_at", None) or getattr(repo, "updated_at", None)
                 if pushed is not None and pushed.tzinfo is None:
-                    pushed = pushed.replace(tzinfo=UTC)
+                    pushed = pushed.replace(tzinfo=timezone.utc)
                 archived = bool(getattr(repo, "archived", False))
                 # Relevance: archived repos and repos with no recorded push are
                 # never scanned (unknown-pushed used to count as active, pulling
@@ -566,11 +566,11 @@ def _since_dt(days: int, since=None):
     ``since`` (a tz-aware datetime, e.g. the standup's previous-working-day
     midnight) wins when given; otherwise fall back to ``days`` days ago.
     """
-    from datetime import UTC, datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     if since is not None:
-        return since.astimezone(UTC)
-    return datetime.now(UTC) - timedelta(days=int(days))
+        return since.astimezone(timezone.utc)
+    return datetime.now(timezone.utc) - timedelta(days=int(days))
 
 
 def _author_type(user) -> str:

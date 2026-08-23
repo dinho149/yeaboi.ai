@@ -174,6 +174,9 @@ markers = [
 [tool.ruff]
 src = ["src"]
 line-length = 120
+# Explicit rather than inferred from requires-python: pyupgrade (UP) rewrites are
+# gated on it, so the version the linter targets is a decision, not a side effect.
+target-version = "py310"
 
 [tool.ruff.lint]
 # "S" = flake8-bandit security rules (SAST). See `make security`.
@@ -190,6 +193,10 @@ ignore = [
     "S603",  # subprocess-without-shell — all calls are argv lists, never shell=True (audited)
     "S607",  # partial-executable-path — git/osascript/sudo/crontab resolved via PATH by design
 ]
+
+[tool.ruff.lint.isort]
+# tomllib is stdlib from 3.11; below target-version ruff files it as third-party.
+extra-standard-library = ["tomllib"]
 
 [tool.ruff.lint.per-file-ignores]
 # Both board pages and the reporting slide deck used to be listed here as

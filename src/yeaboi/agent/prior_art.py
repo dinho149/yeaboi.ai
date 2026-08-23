@@ -287,9 +287,9 @@ def _recency_score(updated_at: str) -> float:
     year = (updated_at or "")[:4]
     if not year.isdigit():
         return 0.0
-    from datetime import UTC, datetime
+    from datetime import datetime, timezone
 
-    age = datetime.now(UTC).year - int(year)
+    age = datetime.now(timezone.utc).year - int(year)
     if age <= 0:
         return 1.0
     if age == 1:

@@ -71,7 +71,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import TextIO
 from zoneinfo import ZoneInfo
@@ -1245,7 +1245,7 @@ def _local(day: date, moment: time, zone: ZoneInfo | None) -> str:
     """
     if zone is None:
         return f"{moment:%H:%M}"
-    here = datetime.combine(day, moment, tzinfo=UTC).astimezone(zone)
+    here = datetime.combine(day, moment, tzinfo=timezone.utc).astimezone(zone)
     shift = (here.date() - day).days
     return f"{here:%H:%M}" + ("" if shift == 0 else f" ({shift:+d}d)")
 
@@ -2409,7 +2409,7 @@ def _age_days(stamp: str, now: datetime) -> int | None:
     except (AttributeError, ValueError):
         return None
     if created.tzinfo is None:
-        created = created.replace(tzinfo=UTC)
+        created = created.replace(tzinfo=timezone.utc)
     return max(0, (now - created).days)
 
 
@@ -2498,7 +2498,7 @@ def lapsed_items(workstream: str, now: datetime | None = None) -> tuple[list[dic
     issues, error = _issues_labelled(f"workstream:{_segment(workstream)}", None)
     if issues is None:
         return None, error
-    moment = now or datetime.now(UTC)
+    moment = now or datetime.now(timezone.utc)
     lapsed = []
     for issue in issues:
         names = _labels_of(issue)
@@ -2542,7 +2542,7 @@ def _lapse_date(stamp: str) -> str:
     except (AttributeError, ValueError):
         return ""
     if asked.tzinfo is None:
-        asked = asked.replace(tzinfo=UTC)
+        asked = asked.replace(tzinfo=timezone.utc)
     return f"{asked + timedelta(days=LAPSE_DAYS):%-d %b}"
 
 
@@ -2582,7 +2582,7 @@ def proposal_slots(workstream: str, now: datetime | None = None) -> dict:
             "blocking": [],
             "error": error,
         }
-    moment = now or datetime.now(UTC)
+    moment = now or datetime.now(timezone.utc)
     # Both fields come off the same clock, and the clock is `digest.md` step 4's:
     # the last time the question was *asked*, not the day the issue was filed. A
     # bounced proposal keeps its `created_at`, so ageing from that would print an
@@ -2736,7 +2736,7 @@ def queue_report(workstream: str, now: datetime | None = None) -> dict:
     issues, error = queued_items(workstream)
     if issues is None:
         return {"workstream": workstream, "queued": None, "items": [], "error": error}
-    moment = now or datetime.now(UTC)
+    moment = now or datetime.now(timezone.utc)
     items = []
     for issue in issues:
         impact, risk = _scores(issue.get("body"))
@@ -3868,8 +3868,8 @@ def created_recently(live: dict, now: datetime | None = None) -> bool:
     except ValueError:
         return False
     if created.tzinfo is None:
-        created = created.replace(tzinfo=UTC)
-    return (now or datetime.now(UTC)) - created <= CREATED_WINDOW
+        created = created.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) - created <= CREATED_WINDOW
 
 
 def webhook_plan(
@@ -4843,7 +4843,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # The UTC day, not the local one: every cron in cowork/ is UTC and
             # `cron_times` matches against a UTC date. `date.today()` would hand a
             # laptop in Sydney yesterday's schedule, already fully run.
-            day = date.fromisoformat(args.date) if args.date else datetime.now(UTC).date()
+            day = date.fromisoformat(args.date) if args.date else datetime.now(timezone.utc).date()
         except ValueError:
             fail(f"--date `{args.date}` is not a YYYY-MM-DD date")
             return 2

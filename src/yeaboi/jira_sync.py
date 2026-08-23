@@ -25,12 +25,13 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta, timezone
 from typing import Any
 
 from jira import JIRAError
 
 from yeaboi.config import get_jira_project_key, get_jira_token
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -567,7 +568,7 @@ def sync_sprints_to_jira(
                     # not bare dates. End is inclusive (start + length − 1 day) so
                     # consecutive sprints don't overlap — same convention as
                     # reporting/sprints.py.
-                    start = datetime.fromisoformat(sprint_start_date_str).replace(tzinfo=UTC) + timedelta(
+                    start = parse_datetime(sprint_start_date_str).replace(tzinfo=timezone.utc) + timedelta(
                         weeks=sprint_length_weeks * idx
                     )
                     end = start + timedelta(weeks=sprint_length_weeks) - timedelta(days=1)

@@ -38,7 +38,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import sqlite3
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.paths import get_db_path
@@ -210,7 +210,7 @@ def apply_verdict(
                     (reason or "").strip()[:_REASON_CLIP],
                     (repo_name or "").strip()[:_NAME_CLIP],
                     (project or "").strip(),
-                    datetime.now(UTC).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                 ),
             )
     except Exception:

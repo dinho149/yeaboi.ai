@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -238,7 +238,7 @@ class TestTheOutputIsHonestAboutItself:
 
 class TestWindow:
     def test_the_window_is_days_back_from_now_in_utc(self) -> None:
-        assert metrics.since_iso(30, datetime(2026, 8, 31, 12, 0, tzinfo=UTC)) == "2026-08-01T12:00:00Z"
+        assert metrics.since_iso(30, datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc)) == "2026-08-01T12:00:00Z"
 
 
 class TestTheReportSerialises:

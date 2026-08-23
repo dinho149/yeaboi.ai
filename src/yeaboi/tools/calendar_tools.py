@@ -22,6 +22,8 @@ from datetime import date, timedelta
 
 from langchain_core.tools import tool
 
+from yeaboi.timeparse import parse_date
+
 logger = logging.getLogger(__name__)
 
 # Default subdivision for countries where the base holiday set is incomplete.
@@ -138,7 +140,7 @@ def detect_bank_holidays(
     # Parse start date
     if start_date and start_date.strip():
         try:
-            start = date.fromisoformat(start_date.strip())
+            start = parse_date(start_date.strip())
         except ValueError:
             return f"Error: invalid date format '{start_date}'. Use YYYY-MM-DD."
     else:
@@ -274,7 +276,7 @@ def get_bank_holidays_structured(
 
     if start_date and start_date.strip():
         try:
-            start = date.fromisoformat(start_date.strip())
+            start = parse_date(start_date.strip())
         except ValueError:
             return []
     else:

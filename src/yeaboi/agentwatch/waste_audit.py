@@ -48,8 +48,9 @@ import re
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
+
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def _parse_ts(line: dict) -> float | None:
     if not ts:
         return None
     try:
-        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
+        return parse_datetime(str(ts)).timestamp()
     except ValueError:
         return None
 

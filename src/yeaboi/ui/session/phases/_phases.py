@@ -23,6 +23,7 @@ from yeaboi.repl._review import (
     _serialize_artifacts_for_review,
 )
 from yeaboi.repl._ui import _PIPELINE_STEPS, _SPINNER_MESSAGES, _predict_next_node
+from yeaboi.timeparse import parse_datetime
 from yeaboi.ui.session._renderers import _render_pipeline_artifacts
 from yeaboi.ui.session._utils import _invoke_with_animation
 
@@ -890,7 +891,7 @@ def _phase_pipeline(
                                 _target_sprints = getattr(_ep_analysis, "target_sprints", 0)
                                 _sprint_weeks = getattr(_ep_analysis, "sprint_length_weeks", 2)
                                 try:
-                                    _start_dt = _dt.fromisoformat(_sprint_start) if _sprint_start else _dt.now()
+                                    _start_dt = parse_datetime(_sprint_start) if _sprint_start else _dt.now()
                                 except Exception:
                                     _start_dt = _dt.now()
                                 _start_q = ((_start_dt.month - 1) // 3) + 1

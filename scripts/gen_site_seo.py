@@ -51,8 +51,9 @@ import json
 import logging
 import re
 import sys
-from enum import StrEnum
 from pathlib import Path
+
+from yeaboi._compat import StrEnum
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"

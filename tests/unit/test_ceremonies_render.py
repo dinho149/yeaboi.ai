@@ -15,7 +15,7 @@ either spelling the other's palette.
 from __future__ import annotations
 
 import io
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from rich.console import Console
@@ -46,11 +46,11 @@ class TestLocalStamp:
         # The bug this exists for: a ceremony set for 18:13 recording itself at
         # 17:13, because the stored string was being sliced rather than read.
         moment = datetime(2026, 8, 17, 18, 13).astimezone()
-        assert render.local_stamp(moment.astimezone(UTC).isoformat()) == "2026-08-17 18:13"
+        assert render.local_stamp(moment.astimezone(timezone.utc).isoformat()) == "2026-08-17 18:13"
 
     def test_the_short_form_drops_the_year_not_the_conversion(self):
         moment = datetime(2026, 8, 17, 18, 13).astimezone()
-        stamp = render.local_stamp(moment.astimezone(UTC).isoformat(), with_date=False)
+        stamp = render.local_stamp(moment.astimezone(timezone.utc).isoformat(), with_date=False)
         assert stamp == "08-17 18:13"
 
     @pytest.mark.parametrize("raw", ["", "not-a-time", "17/08/2026 09:00"])

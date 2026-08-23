@@ -26,13 +26,14 @@
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from langchain_core.tools import tool
 from notion_client import Client
 from notion_client.errors import APIResponseError, NotionClientErrorBase
 
 from yeaboi.config import get_notion_root_page_id, get_notion_token
+from yeaboi.timeparse import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -566,7 +567,9 @@ def notion_recent_pages(
         logger.warning("notion_recent_pages skipped — Notion not configured")
         return []
 
-    cutoff = since.astimezone(UTC) if since is not None else datetime.now(UTC) - timedelta(days=int(days))
+    cutoff = (
+        since.astimezone(timezone.utc) if since is not None else datetime.now(timezone.utc) - timedelta(days=int(days))
+    )
     # Best-effort cache of user-id → display name so we don't refetch per page.
     _user_names: dict[str, str] = {}
 
@@ -641,7 +644,7 @@ def notion_recent_pages(
             edited = page.get("last_edited_time", "")
             # last_edited_time is ISO 8601 (e.g. 2026-07-14T10:20:00.000Z).
             try:
-                edited_dt = datetime.fromisoformat(edited.replace("Z", "+00:00")) if edited else None
+                edited_dt = parse_datetime(edited) if edited else None
             except ValueError:
                 edited_dt = None
             if edited_dt is not None and edited_dt < cutoff:
