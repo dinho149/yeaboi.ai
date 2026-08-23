@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.27.0",
+      "date": "2026-08-23",
+      "summary": "Expanded Python platform support from 3.11+ to 3.10+ and introduced a bootstrap installer that removes the need for a pre-installed compatible Python. A new POSIX shell script at install.sh fetches its own Python runtime, making yeaboi accessible to developers stuck on older system Python versions. The floor was always 3.10 according to the dependency tree, but three Python 3.11-specific constructs (datetime.UTC, StrEnum rendering, and fromisoformat) were holding the codebase back. All three are now handled with compatibility shims. Documentation updated throughout to reflect the new install path and expanded runtime support.",
+      "highlights": [
+        {
+          "text": "Python 3.10 support: yeaboi now runs on Python 3.10+, not just 3.11+",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Bootstrap installer script: run install.sh to fetch CPython automatically, no system Python version constraints",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Compatibility shims for 3.10: datetime.UTC, StrEnum rendering, and ISO format date parsing all work consistently across 3.10–3.14",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Enhanced installation docs: clearer guidance on uv tool install vs. pipx, with the bootstrap script as the recommended path for maximum compatibility",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Expanded CI testing: floor verification on Python 3.10, compatibility matrix on 3.11–3.14, and new guards to prevent Python version constraints from creeping back in",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.26.0",
       "date": "2026-08-23",
       "summary": "Added a live credential verification check before every mode opens, with a blocking gate if your LLM API key is missing or expired. Previously, a present-but-expired key would silently walk into the fallback path and generate misleading content (action items that say 'Address: <topic>' with no explanation). Now every mode verifies the credential works before starting, distinguishing between a definite rejection and inconclusive network errors (so it won't block on a captive wifi). Usage and Settings modes are exempt because they make no LLM calls. The check is also skipped with --dry-run, which is used by the demo recorder and test suite.",
