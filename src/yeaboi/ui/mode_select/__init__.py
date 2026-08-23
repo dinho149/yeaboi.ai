@@ -6927,13 +6927,13 @@ def _run_performance_hub(
     person's slice, opened from the roster's "History" action, where "+ New artifact"
     hands control straight back to the roster it came from.
     """
+    from yeaboi.agent.state import PerformanceNote
     from yeaboi.performance.export import (
         build_completion_markdown,
         build_prep_markdown,
         build_review_markdown,
         export_artifact,
     )
-    from yeaboi.performance.render import format_completion_lines, format_prep_lines, format_review_lines
     from yeaboi.performance.store import PerformanceStore
     from yeaboi.persistence import _relative_time
     from yeaboi.ui.mode_select.screens._project_cards import RunSummary
@@ -6962,37 +6962,47 @@ def _run_performance_hub(
         return run.engineer or engineer
 
     def _artifact(run):
-        """Return (artifact_or_text, kind, lines) for a saved row, or None if gone."""
+        """Return (artifact, kind) for a saved row, or None if it is gone.
+
+        A note comes back as a PerformanceNote rather than a bare string: the row
+        already carries who and when, and carrying them lets the note be titled,
+        dated, and masked like every other artifact on this page.
+        """
         with PerformanceStore(_ana_dbp) as store:
             if run.kind == "review":
                 art = store.get_review_by_id(run.run_id)
-                return None if art is None else (art, "review", format_review_lines(art))
+                return None if art is None else (art, "review")
             if run.kind == "note":
                 for n in store.get_notes(_who(run), 200):
                     if n["id"] == run.run_id:
-                        return (n["note_text"], "note", (n["note_text"] or "").splitlines() or ["(empty note)"])
+                        note = PerformanceNote(
+                            engineer=_who(run),
+                            date=str(n.get("created_at", "")),
+                            text=n.get("note_text", "") or "",
+                        )
+                        return (note, "note")
                 return None
             pair = store.get_one_on_one_by_id(run.run_id)
         if pair is None:
             return None
         kind, art = pair
-        lines = format_completion_lines(art) if kind == "completion" else format_prep_lines(art)
-        return (art, kind, lines)
+        return (art, kind)
 
     def make_detail(run):
-        # Render the saved artifact through the live Performance detail screen (coral
-        # theme + semantic _styled colouring) instead of flat grey lines.
+        # Render the saved artifact through the live Performance detail screen, so a
+        # saved prep looks exactly like the one that was just generated.
         got = _artifact(run)
         if got is None:
             return None
-        _art, _kind, lines = got
+        art, kind = got
         title = run.title
 
         def render(*, scroll, action_sel, actions, scroll_meta, width, height, message, shimmer_tick):
             return _build_performance_screen(
                 {
                     "view": "detail",
-                    "detail_lines": lines,
+                    "artifact": art,
+                    "kind": kind,
                     "detail_title": title,
                     "actions": actions,
                     "message": message,
@@ -7020,7 +7030,7 @@ def _run_performance_hub(
         got = _artifact(run)
         if got is None:
             return "That artifact is no longer available."
-        art, kind, _lines = got
+        art, kind = got
         if kind == "note":
             return "Notes aren't exported to files individually — use Copy/Publish."
         paths = export_artifact(art, engineer=_who(run), kind=kind)
@@ -7030,9 +7040,9 @@ def _run_performance_hub(
         got = _artifact(run)
         if got is None:
             return "That artifact is no longer available."
-        art, kind, _lines = got
+        art, kind = got
         if kind == "note":
-            return (f"Note — {_who(run)}", art if isinstance(art, str) else "")
+            return (f"Note — {_who(run)}", art.text)
         if kind == "completion":
             return (run.title, build_completion_markdown(art))
         if kind == "review":
@@ -7043,7 +7053,7 @@ def _run_performance_hub(
         got = _artifact(run)
         if got is None:
             return None
-        art, kind, _lines = got
+        art, kind = got
         if kind == "note":
             return None
         from yeaboi.sharing.documents import performance_document
@@ -9288,11 +9298,6 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
 
     # See docs: "Performance Mode" — TUI page
     """
-    from yeaboi.performance.render import (
-        format_completion_lines,
-        format_prep_lines,
-        format_review_lines,
-    )
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_performance_screen
 
     base = _collect_performance_data()
@@ -9308,7 +9313,8 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         "scroll_meta": {},
         "sel": 0,
         "message": "",
-        "detail_lines": [],
+        "detail_artifact": None,
+        "detail_kind": "",
         "detail_title": "",
     }
     roster_actions = ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History", "Export"]  # back tab covers Back
@@ -9325,13 +9331,16 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         return acts
 
     def _data() -> dict:
-        lines = state["detail_lines"]
+        artifact = state["detail_artifact"]
         title = state["detail_title"]
-        # In-place mask: the detail view re-renders the SAME lines with words swapped.
-        if anon is not None and state["view"] == "detail":
-            from yeaboi.anonymize.apply import apply_replacements, mask_lines
+        # In-place mask: the detail view re-renders the SAME artifact with words
+        # swapped. mask_artifact rather than mask_lines, because the view now
+        # renders the object — and the store's reconstructors are what carry
+        # every field through the round trip.
+        if anon is not None and state["view"] == "detail" and artifact is not None:
+            from yeaboi.anonymize.apply import apply_replacements, mask_artifact
 
-            lines = mask_lines(lines, anon.replacements)
+            artifact = mask_artifact(artifact, anon.replacements)
             title = apply_replacements(title, anon.replacements)
         return {
             "session_name": session_name,
@@ -9339,7 +9348,8 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             "roster": roster,
             "roster_hints": roster_hints,
             "selected_idx": state["selected"],
-            "detail_lines": lines,
+            "artifact": artifact,
+            "kind": state["detail_kind"],
             "detail_title": title,
             "actions": _detail_actions() if state["view"] == "detail" else roster_actions,
             "message": state["message"],
@@ -9376,9 +9386,10 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         )
         live.update(_last_panel)
 
-    def _show_detail(lines: list[str], title: str, message: str) -> None:
+    def _show_detail(artifact, kind: str, title: str, message: str) -> None:
         state["view"] = "detail"
-        state["detail_lines"] = lines
+        state["detail_artifact"] = artifact
+        state["detail_kind"] = kind
         state["detail_title"] = title
         state["message"] = message
         state["sel"] = 0
@@ -9399,7 +9410,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 )
                 logger.info("performance: 1:1 prep generated for engineer=%s", engineer)
                 _duck_react("artifact_done")
-                _show_detail(format_prep_lines(prep), f"1:1 Prep — {engineer}", "Prep generated.")
+                _show_detail(prep, "prep", f"1:1 Prep — {engineer}", "Prep generated.")
             elif label == "1:1 Complete":
                 transcript_result = _performance_get_transcript(console, live, read_key, frame_time, supports_timeout)
                 if transcript_result is None or not transcript_result[0].strip():
@@ -9421,7 +9432,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 sent = "email sent" if not record.warnings else "see notices"
                 logger.info("performance: 1:1 completed for engineer=%s (%s)", engineer, sent)
                 _duck_react("artifact_done")
-                _show_detail(format_completion_lines(record), f"1:1 Summary — {engineer}", f"Completed — {sent}.")
+                _show_detail(record, "completion", f"1:1 Summary — {engineer}", f"Completed — {sent}.")
             elif label == "6mo Review":
                 from yeaboi.performance.engine import run_six_month_review
 
@@ -9434,7 +9445,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 )
                 logger.info("performance: 6-month review generated for engineer=%s", engineer)
                 _duck_react("artifact_done")
-                _show_detail(format_review_lines(review), f"6-Month Review — {engineer}", "Review generated.")
+                _show_detail(review, "review", f"6-Month Review — {engineer}", "Review generated.")
             elif label == "Notes":
                 note = _standup_read_line(
                     console,

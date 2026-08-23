@@ -72,11 +72,14 @@ class TestBuildPerformanceScreen:
         out = _render(panel)
         assert "No engineers" in out
 
-    def test_detail_view_shows_artifact_lines(self):
+    def test_detail_view_renders_the_artifact(self):
+        from yeaboi.agent.state import OneOnOnePrep
+
         data = {
             "view": "detail",
             "detail_title": "1:1 Prep — Ada",
-            "detail_lines": ["1:1 Prep — Ada", "", "Talking points:", "  • one", "  • two"],
+            "artifact": OneOnOnePrep(engineer="Ada", date="2026-08-23", talking_points=("one", "two")),
+            "kind": "prep",
             "actions": ["Export", "Back"],
         }
         panel = _build_performance_screen(data, width=100, height=32, action_sel=1)
@@ -85,10 +88,22 @@ class TestBuildPerformanceScreen:
         assert "Talking points" in out and "one" in out
 
     def test_detail_scrolls_without_error(self):
-        lines = [f"line {i}" for i in range(100)]
-        data = {"view": "detail", "detail_title": "x", "detail_lines": lines, "actions": ["Export", "Back"]}
+        from yeaboi.agent.state import OneOnOnePrep
+
+        prep = OneOnOnePrep(engineer="Ada", talking_points=tuple(f"point {i}" for i in range(100)))
+        data = {
+            "view": "detail",
+            "detail_title": "x",
+            "artifact": prep,
+            "kind": "prep",
+            "actions": ["Export", "Back"],
+        }
         panel = _build_performance_screen(data, width=100, height=20, scroll_offset=40)
         assert isinstance(panel, Panel)
+
+    def test_a_detail_view_with_no_artifact_says_so(self):
+        data = {"view": "detail", "detail_title": "x", "artifact": None, "kind": "", "actions": ["Back"]}
+        assert "Nothing to show" in _render(_build_performance_screen(data, width=100, height=32))
 
 
 class TestActionsView:
@@ -169,3 +184,82 @@ class TestBetaChip:
         glyph_rows = [line for line in out.splitlines() if any(ch in line for ch in "█▀▄")]
         assert len(glyph_rows) == TITLE_ROWS
         assert BETA_LABEL in out
+
+
+class TestDetailViewportGeometry:
+    """The three things that used to go wrong silently on this view."""
+
+    @staticmethod
+    def _prep():
+        from yeaboi.agent.state import OneOnOnePrep
+
+        return OneOnOnePrep(
+            engineer="Ada",
+            date="2026-08-23",
+            talking_points=tuple(
+                f"A talking point long enough to wrap on a narrow terminal, number {i}." for i in range(40)
+            ),
+            warnings=("Only one sprint of history — treat trends as provisional",),
+        )
+
+    @staticmethod
+    def _data(**extra):
+        return {
+            "view": "detail",
+            "detail_title": "1:1 Prep — Ada",
+            "kind": "prep",
+            "actions": ["Export", "Share Online", "Anonymize"],
+            **extra,
+        }
+
+    def _render_at(self, *, width, height, scroll=0, message="", actions=None):
+        data = self._data(artifact=self._prep(), message=message)
+        if actions is not None:
+            data["actions"] = actions
+        return _render(
+            _build_performance_screen(data, width=width, height=height, scroll_offset=scroll),
+        )
+
+    def test_the_tail_of_a_long_artifact_is_reachable(self):
+        # Rows wrapped at render time while the scroll math counted them as one,
+        # so max_scroll under-counted and the last section could not be reached.
+        out = self._render_at(width=100, height=30, scroll=999)
+        assert "Notices" in out
+        assert "treat trends as provisional" in out
+
+    def test_the_status_banner_survives_a_scroll_to_the_bottom(self):
+        # It used to be the first row *inside* the viewport, so scrolling lost it.
+        out = self._render_at(width=100, height=30, scroll=999, message="Exported to ~/.yeaboi/exports.")
+        assert "Exported to" in out
+
+    @staticmethod
+    def _panel_height(out: str) -> int:
+        return len([ln for ln in out.splitlines() if ln.strip()])
+
+    def test_a_short_terminal_drops_the_banner_and_keeps_the_buttons(self):
+        # At 17 rows the banner and a full viewport cannot both fit. The banner
+        # goes: the message repeats, the way out of the page does not. (Below 16
+        # the button labels crop whatever we do — that floor predates this view.)
+        out = self._render_at(width=100, height=17, message="Exported to ~/.yeaboi/exports.")
+        assert "Export" in out
+        assert "Exported to" not in out
+        assert self._panel_height(out) == 17
+
+    def test_one_more_row_is_enough_to_keep_both(self):
+        out = self._render_at(width=100, height=18, message="Exported to ~/.yeaboi/exports.")
+        assert "Export" in out
+        assert "Exported to" in out
+
+    def test_panel_height_is_exact_across_terminals_and_button_counts(self):
+        # Five detail buttons wrap to a second row on a narrow terminal; the
+        # hardcoded action height this replaces pushed the bottom border off the
+        # panel when they did.
+        for height in (15, 18, 20, 24, 28, 40):
+            for width in (60, 80, 100, 120):
+                for actions in (["Export", "Back"], ["Export", "Share Online", "Adjust", "Revert", "Back"]):
+                    data = {**self._data(artifact=self._prep(), message="working…"), "actions": actions}
+                    console = Console(file=io.StringIO(), width=width)
+                    console.print(_build_performance_screen(data, width=width, height=height, scroll_offset=3))
+                    lines = [ln for ln in console.file.getvalue().splitlines() if ln.strip()]
+                    assert len(lines) == height, (width, height, len(actions))
+                    assert lines[-1].lstrip().startswith("╰"), (width, height, len(actions))

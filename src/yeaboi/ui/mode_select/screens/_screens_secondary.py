@@ -3945,13 +3945,16 @@ def _build_performance_screen(
       scrollable, with Back / Export buttons.
 
     performance_data keys: session_name, view ("roster"|"actions"|"detail"), roster
-    (list[str]), selected_idx (int), detail_lines (list[str] plaintext), detail_title
+    (list[str]), selected_idx (int), artifact (the OneOnOnePrep / OneOnOneRecord /
+    SixMonthReview / PerformanceNote being shown) and kind (str), detail_title
     (str), actions (list[str]), message (str, transient status line).
 
     Uses PERFORMANCE_THEME (coral) with shared buttons, scrollbar, and viewport.
 
     # See docs: "Performance Mode" — TUI page
     """
+    from yeaboi.ui.mode_select.screens._performance_sections import performance_detail_rows
+    from yeaboi.ui.mode_select.screens._row_ctx import max_scroll_for, pack_viewport
     from yeaboi.ui.mode_select.screens._screens import _build_mode_row
     from yeaboi.ui.shared._components import (
         PERFORMANCE_THEME,
@@ -3987,20 +3990,6 @@ def _build_performance_screen(
     sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     message = performance_data.get("message", "")
-
-    def _styled(line: str) -> Text:
-        """Style a plaintext artifact line: headers accent, bullets value, notices warn."""
-        stripped = line.strip()
-        style = theme.value
-        if not stripped:
-            return Text("")
-        if stripped.startswith("⚠"):
-            style = theme.warn
-        elif stripped.startswith(("•", "-", "☐", "↺")) or line.startswith("  "):
-            style = theme.desc
-        elif stripped.endswith(":") or line == line.lstrip():
-            style = f"bold {theme.accent}"
-        return Text(_PAD + "  " + line, style=style, justify="left")
 
     actions = performance_data.get("actions") or ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "Export", "Back"]
 
@@ -4124,24 +4113,44 @@ def _build_performance_screen(
         return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)
 
     # ── Detail view — the produced artifact, scrollable ──────────────────────────
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
-    body_lines: list = []
+    #
+    # A transient status message ("Exported to …") renders as a PINNED one-row
+    # banner above the viewport, never inside it: a reader who has scrolled down
+    # would otherwise never see it.
+    banner: Text | None = None
     if message:
-        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
-        body_lines.append(Text(""))
-    for line in performance_data.get("detail_lines", []) or ["(nothing to show)"]:
-        body_lines.append(_styled(line))
+        # no_wrap is load-bearing: header_h below counts the banner as one row.
+        banner = Text(
+            _PAD + "  " + message,
+            style=theme.accent_bright,
+            justify="left",
+            no_wrap=True,
+            overflow="ellipsis",
+        )
 
-    viewport_h = calc_viewport(height, header_h=6, action_h=4)
-    total_lines = len(body_lines)
-    max_scroll = max(0, total_lines - viewport_h)
+    inner_w = width - _PANEL_BORDER_W - _PANEL_PADDING_W
+    action_h = action_rows_height(actions, inner_w)
+    header_h = 6 + (1 if banner is not None else 0)
+    if banner is not None and (height - 4) - header_h - action_h < 3:
+        # A very short terminal drops the banner, never the buttons: the message
+        # repeats, the way out of the page does not.
+        banner, header_h = None, 6
+    viewport_h = calc_viewport(height, header_h=header_h, action_h=action_h)
+
+    body_lines, item_heights = performance_detail_rows(
+        performance_data.get("artifact"),
+        kind=performance_data.get("kind", ""),
+        theme=theme,
+        width=width,
+    )
+    max_scroll = max_scroll_for(item_heights, viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
     publish_geometry(scroll_meta, max_scroll, viewport_h)
-    visible = body_lines[actual_scroll : actual_scroll + viewport_h]
+    visible, visible_h = pack_viewport(body_lines, item_heights, actual_scroll, viewport_h)
 
-    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    _sb_text = build_scrollbar(viewport_h, sum(item_heights), actual_scroll, max_scroll, always_show=True)
     padded_lines: list = list(visible)
-    for _ in range(max(0, viewport_h - len(visible))):
+    for _ in range(max(0, viewport_h - visible_h)):
         padded_lines.append(Text(""))
 
     if _sb_text is not None:
@@ -4160,12 +4169,11 @@ def _build_performance_screen(
         title,
         Text(""),
         sub,
+        *((banner,) if banner is not None else ()),
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        *build_action_rows(actions, action_sel, width=inner_w),
     )
 
     return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)

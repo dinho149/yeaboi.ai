@@ -230,12 +230,14 @@ class TestSnapshotRendering:
         assert "By the numbers" in out  # rich metrics section, not flat lines
 
     def test_performance_detail_renders_rich(self):
+        from yeaboi.agent.state import SixMonthReview
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_performance_screen
 
         panel = _build_performance_screen(
             {
                 "view": "detail",
-                "detail_lines": ["Strengths:", "• ownership"],
+                "artifact": SixMonthReview(engineer="Ada", strengths=("ownership",)),
+                "kind": "review",
                 "detail_title": "6-month review — Ada",
                 "actions": _SNAP_ACTIONS,
             },
