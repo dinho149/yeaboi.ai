@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.28.0",
+      "date": "2026-08-23",
+      "summary": "Performance mode now renders structured metrics and evidence instead of plaintext prose across all surfaces: TUI, web exports, Cloudflare shares, and CLI. The engine computes real figures once (12 of 14 stories, 4.1d cycle time, 62% with tests) and projects them two ways — prompt prose for the LLM and structured records for the UI — so the numbers quoted to the model are the numbers the page renders. New persisted data shapes (PerfMetric, EvidenceGroup, PerformanceNote) preserve evidence as linked rows and metrics as numbers. TUI rendering gained stat tiles, evidence rows, and repositioned the coverage strip from the foot of long artifacts to the headline, fixing three bugs: long lines were unreachable when scrolling, the status banner scrolled out of view, and empty sections rendered nothing at all.",
+      "highlights": [
+        {
+          "text": "Structured performance metrics: numbers stay numbers throughout the pipeline, not stringified into prose and thrown away",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "Unified rendering across surfaces: TUI, web, CLI, and Cloudflare shares all display the same stat tiles and evidence rows",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "New TUI components: stat tiles for KPIs, meters for ratios, evidence rows with sources, and repositioned coverage strip",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "Three scrolling bugs fixed: long artifact tails now reachable, status banner no longer scrolls out of view, empty sections label themselves",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "Compact roster for large teams: switch from ASCII art table to a space-efficient list when a team doesn't fit",
+          "areas": [
+            "performance"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.27.0",
       "date": "2026-08-23",
       "summary": "Expanded Python platform support from 3.11+ to 3.10+ and introduced a bootstrap installer that removes the need for a pre-installed compatible Python. A new POSIX shell script at install.sh fetches its own Python runtime, making yeaboi accessible to developers stuck on older system Python versions. The floor was always 3.10 according to the dependency tree, but three Python 3.11-specific constructs (datetime.UTC, StrEnum rendering, and fromisoformat) were holding the codebase back. All three are now handled with compatibility shims. Documentation updated throughout to reflect the new install path and expanded runtime support.",
