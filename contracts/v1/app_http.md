@@ -535,3 +535,47 @@ stand, so launching the app does not greet you with a week of stale news.
 Things you did and watched happen are **not** here. A run's own NDJSON stream
 already says when it finished, and the renderer's duck quips off that; the
 ambient feed is for what the window missed.
+
+## Dictation (M11)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/voice` | `{state, detail, model, model_cached, device, install: {available, blocked, size_mb, command}, max_bytes}` |
+| POST | `/api/voice/offer` | body `{enabled}` — take or withdraw the standing install offer |
+| POST | `/api/voice/install` | NDJSON: `op`, then `stage` lines, then `done`/`error`; cancellable |
+| POST | `/api/voice/transcribe` | body `{audio: "<base64>", mime}` → `{text}` |
+
+**The microphone is the window's, not Python's.** In the terminal, dictation is
+capture *and* transcription and both belong to Python: PortAudio opens the
+device, negotiates a format it will accept, and hands WAV frames to Whisper.
+Here the window captures — `getUserMedia` picks the device, draws the level
+meter, and owns the OS permission prompt — and Python transcribes what arrives.
+
+Three things follow, and they are the whole reason this section is short:
+
+- `state` comes from `voice.transcription_state()`, not `voice_state()`. The
+  question is "can this machine transcribe", and answering it with the terminal's
+  question would refuse a machine that can, then install an audio backend to fix
+  a problem it does not have.
+- The install fetches `voice.TRANSCRIBE_PACKAGES` (`faster-whisper` alone), not
+  the `voice` extra. `state`, the size estimate, the sticky no-wheel verdict and
+  the "never" answer are all the shared ones, so declining here stops the
+  terminal asking too.
+- `device` is the `VOICE_DEVICE` preference passed through **unresolved**. The
+  terminal resolves that name against PortAudio's device list and the window
+  against Chromium's; the name is the shared part, and neither surface may
+  resolve it for the other.
+
+The blob is a container the stdlib cannot read (webm/opus, or mp4), so it goes
+to `transcribe_media` — faster-whisper's PyAV path, which the poker duel already
+uses — rather than the WAV path the terminal records into. It travels base64 in
+a JSON body because the IPC proxy carries JSON and nothing else; `max_bytes` is
+the decoded ceiling, set below the server's own body cap with room for base64's
+third, and a body dropped for exceeding that cap answers 413 rather than
+reporting a silent take.
+
+`stage` names the same four steps the terminal animates — `install`, `download`
+(with a real byte `fraction`), `load`, then `done` — because both surfaces drive
+one installer and a person who has seen one should recognise the other. A failed
+model download is a `done` with a `warning`, not an `error`: the packages are in,
+so the weights simply arrive lazily on the first dictation.

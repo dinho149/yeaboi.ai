@@ -34,6 +34,7 @@ from yeaboi.app import (
     routes_share,
     routes_ship,
     routes_standup,
+    routes_voice,
 )
 from yeaboi.app.router import Router
 
@@ -173,6 +174,14 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/feedback/polish", routes_feedback.polish),
     AppRoute("GET", "/api/consent", routes_consent.pending),
     AppRoute("POST", "/api/consent/{req_id}", routes_consent.resolve),
+    # -- dictation (the M11 surface) ------------------------------------------
+    # Not a capability of its own on any surface — it is an input method, like
+    # paste. Its setup is what the registry names, and that has always belonged
+    # to settings (`--install-voice`, `--list-audio-devices`).
+    AppRoute("GET", "/api/voice", routes_voice.status, "settings"),
+    AppRoute("POST", "/api/voice/offer", routes_voice.offer, "settings"),
+    AppRoute("POST", "/api/voice/install", routes_voice.install, "settings"),
+    AppRoute("POST", "/api/voice/transcribe", routes_voice.transcribe, "settings"),
 )
 
 
