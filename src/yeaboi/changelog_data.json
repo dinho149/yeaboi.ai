@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.25.0",
+      "date": "2026-08-23",
+      "summary": "Hardened the Cloudflare tunnel sharing path with an opt-in verified-users tier (YEABOI_SHARE_MODE=access). The quick-tunnel default now uses the real visitor IP for rate limiting instead of collapsing into one bucket, refused holds back off server-side, and the cloudflared binary is verified on every launch. The new access tier adds a named tunnel with verified identity: local JWT verification with RS256 keys, hostname claim registry, server-side impersonation prevention on retro/poker/share/ship surfaces, and a four-step setup wizard integrated into Settings. Cloudflared is now containerized with an allowlisted environment (no API keys, pinned logging and metrics), and tunnel hostname redaction from logs keeps host metadata private.",
+      "highlights": [
+        {
+          "text": "New verified-users access tier (opt-in via YEABOI_SHARE_MODE=access): named tunnel with JWT identity verification and server-side impersonation checks",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Quick-tunnel default improvements: real visitor IP for rate limiting, refused holds back off server-side, binary digest verified on each launch",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Sharing is now a dedicated Settings tab with one-time setup wizard: domain, Access app creation, and team/AUD auto-detection",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Cloudflared containment: child process gets allowlisted environment (no API keys), pinned logging, isolated session, hostname redacted from all logs",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Server-side identity verification on all tunnel surfaces (retro, poker, share, ship) prevents bearer-token and admin-flag impersonation",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.24.0",
       "date": "2026-08-23",
       "summary": "Slack integration is now two-way: reactions and replies on ceremony posts control ceremonies, vote on practice signals, and correct artifacts. With both SLACK_BOT_TOKEN and SLACK_CHANNEL_ID configured, ceremony delivery posts via chat.postMessage and records an anchor row, while a background polling job reads the channel every N minutes and applies what it finds. Four acts exist: emoji reactions on the post control pause/resume/skip, vote reactions on signal replies apply verdicts, short text replies (pause/resume/skip/ack) call the same store functions, and any other threaded reply becomes an attributed correction. All four acts are free, reversible database writes with no LLM anywhere in the inbound path, and the allowlist is empty by default (making the poll a no-op). The Slack column moved from the Ceremonies page to a page-level fact line, showing post status, channel, and token/reader configuration. A one-shot ceremony skip flag and artifact leases for concurrent edits round out the delivery improvements.",
