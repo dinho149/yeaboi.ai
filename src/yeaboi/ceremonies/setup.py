@@ -140,7 +140,7 @@ def declare(
     mode: str,
     at: str = "",
     weekdays: str = "",
-    channels: tuple[str, ...] = (),
+    channels: tuple[str, ...] = ("terminal",),
     args: tuple[tuple[str, str], ...] = (),
     stale_after_min: int = 120,
     monthly_cap_usd: float = 0.0,
@@ -165,7 +165,7 @@ def declare(
                 args=args,
                 weekdays=weekdays or found.default_weekdays,
                 at=at or found.default_at,
-                channels=channels or ("terminal",),
+                channels=channels,
                 stale_after_min=stale_after_min,
                 monthly_cap_usd=monthly_cap_usd,
             )

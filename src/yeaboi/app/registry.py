@@ -18,8 +18,10 @@ from dataclasses import dataclass
 from functools import partial
 
 from yeaboi.app import (
+    routes_agents,
     routes_analysis,
     routes_boards,
+    routes_ceremonies,
     routes_chat,
     routes_meta,
     routes_performance,
@@ -139,6 +141,22 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/ship/runs/{key}", routes_ship.run, "ship"),
     AppRoute("POST", "/api/ship/runs/{key}/gate", routes_ship.gate, "ship"),
     AppRoute("POST", "/api/ship/runs/{key}/cancel", routes_ship.cancel, "ship"),
+    # -- ceremonies + the inbound Slack lane (the M9 surface) -----------------
+    AppRoute("GET", "/api/ceremonies", routes_ceremonies.ceremonies, "ceremonies"),
+    AppRoute("POST", "/api/ceremonies", routes_ceremonies.declare, "ceremonies"),
+    AppRoute("POST", "/api/ceremonies/{name}/enabled", routes_ceremonies.enabled, "ceremonies"),
+    AppRoute("POST", "/api/ceremonies/{name}/remove", routes_ceremonies.remove, "ceremonies"),
+    AppRoute("POST", "/api/ceremonies/{name}/run", routes_ceremonies.run, "ceremonies"),
+    AppRoute("GET", "/api/slack", routes_ceremonies.slack, "slack-inbound"),
+    AppRoute("POST", "/api/slack/link", routes_ceremonies.link, "slack-inbound"),
+    AppRoute("POST", "/api/slack/poll", routes_ceremonies.poll, "slack-inbound"),
+    # -- the Agents family (the M9 surface) ----------------------------------
+    # One set of routes over four modes, addressed by kind. Registered against
+    # agent-usage, the row whose engine the other three sit beside.
+    AppRoute("GET", "/api/agents/modes", routes_agents.modes, "agent-usage"),
+    AppRoute("GET", "/api/agents/{kind}/latest", routes_agents.latest, "agent-usage"),
+    AppRoute("POST", "/api/agents/{kind}/run", routes_agents.run, "agent-usage"),
+    AppRoute("POST", "/api/agents/{kind}/export", routes_agents.export, "agent-usage"),
 )
 
 

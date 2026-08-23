@@ -393,3 +393,66 @@ inside a worktree write after real money has been spent.
 The gate answers `{taken, resolution}`. `taken: false` is not an error: the
 store's compare-and-swap means another surface answered first, so the honest
 move is to re-read rather than retry.
+
+## Ceremonies and the inbound Slack lane
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/ceremonies` | what is declared, when each fires, and where store and OS disagree |
+| POST | `/api/ceremonies` | declare one and install its job |
+| POST | `/api/ceremonies/{name}/enabled` | pause or resume, job and all |
+| POST | `/api/ceremonies/{name}/remove` | forget it and tear its job down |
+| POST | `/api/ceremonies/{name}/run` | fire one now, streamed as NDJSON |
+| GET | `/api/slack` | the two-way lane's status, its identity links and what it applied |
+| POST | `/api/slack/link` | bind a Slack id to a roster name, or drop one |
+| POST | `/api/slack/poll` | read the Slack window once and apply what is new |
+
+`ceremonies_list`, `ceremonies_history`, `slack_inbound_history` and
+`slack_identities_list` are the MCP reads. Declaring, pausing and linking are
+native for the reason those tools do not exist: declaring installs a launchd or
+crontab job that outlives the session and spends money unattended, and linking
+decides whose name goes on somebody else's report. Both are decisions for a
+human at a machine they own.
+
+`drift` is the load-bearing field: the store says what is declared, the OS says
+what will fire, and nothing else in the app would ever mention the gap. A pause
+removes the **job** and keeps the declaration — a paused ceremony that still
+fires is the bug users report.
+
+`run` answers `progress` lines then `done: {run, summary}`. There is **no `op`
+line**: `run_ceremony` takes no cancel event, and a Cancel button over a run
+nothing can stop would be a lie. Running one from here is not "scheduled" — the
+staleness and monthly-cap guards answer questions an unattended fire raises, and
+a human pressing Run now at 14:00 means it.
+
+`poll` is offered as a button for the reason the engine has no `scheduled` flag:
+a poll reads a fixed 48-hour window, everything it applies is free and
+idempotent, and a poll that declines (no token, an empty allowlist, another poll
+already running) is not a failure.
+
+## The Agents family
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/agents/modes` | the four modes and how fresh each saved report is |
+| GET | `/api/agents/{kind}/latest` | the last saved report, for an instant open |
+| POST | `/api/agents/{kind}/run` | one fresh pass, streamed as NDJSON |
+| POST | `/api/agents/{kind}/export` | write the report, or hand back its Markdown |
+
+`kind` is one of `usage`, `advisor`, `standup`, `security`. Every mode's run and
+history is an MCP tool already; what is native is the shape of the page. A pass
+scans every session log on the machine, so a surface opens on the last saved
+report and refreshes behind it — which needs the last artifact on its own and
+the fresh one as a stream. Export is native because these four artifacts write
+through `agentwatch/export.py` rather than the shared exporter, so `/api/export`
+cannot reach them; `copy` is answered as data, never performed.
+
+A run answers `progress` lines (bare phase strings), `component` lines (the
+`analysis_component` dicts the phase checklist draws), then `done: {kind,
+report}`. No `op` line — the agentwatch engines take no cancel event, and
+backing out is free: the pass finishes and stores its report either way.
+
+Provenance has no routes here. `provenance_audit` and `provenance_trace` are
+request/response reads with no progress, no cancel and no page-shaped gap, so
+the desktop's audit and trace explorer goes through the dispatcher like every
+other tool-served capability.
