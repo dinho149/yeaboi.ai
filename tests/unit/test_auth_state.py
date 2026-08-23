@@ -127,6 +127,102 @@ class TestProbe:
         auth_state.probe_in_background()  # returns without starting a thread
 
 
+class TestProviderLabel:
+    def test_known_provider(self):
+        assert auth_state.provider_label("anthropic") == "Anthropic"
+        assert auth_state.provider_label("bedrock") == "AWS Bedrock"
+
+    def test_unknown_provider_falls_back_to_the_raw_value(self):
+        assert auth_state.provider_label("mystery") == "mystery"
+
+    def test_defaults_to_the_active_provider(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
+        assert auth_state.provider_label() == "OpenAI"
+
+
+class TestCheckLlmCredentials:
+    """The provider-agnostic, synchronous liveness check the TUI gate calls."""
+
+    def test_not_configured_short_circuits_before_any_network_call(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_api_key",
+            lambda *_a, **_kw: pytest.fail("must not ping when nothing is configured"),
+        )
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is False
+        assert status.configured is False
+        assert status.provider_label == "Anthropic"
+        assert status.reason  # non-empty, human-readable
+
+    def test_configured_and_the_live_ping_succeeds(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-good")
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        monkeypatch.setattr("yeaboi.provider_verification._verify_api_key", lambda *_a, **_kw: (True, "Key verified"))
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is True
+        assert status.configured is True
+        assert status.reason is None
+        assert status.provider_label == "Anthropic"
+
+    def test_configured_but_expired_reports_the_reason(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-expired")
+        monkeypatch.delenv("ANTHROPIC_AUTH_MODE", raising=False)
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_api_key", lambda *_a, **_kw: (False, "Invalid API key")
+        )
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is False
+        assert status.configured is True
+        assert status.reason == "Invalid API key"
+
+    def test_subscription_auth_delegates_to_the_subscription_probe(self, on_subscription, monkeypatch):
+        monkeypatch.setattr(auth_state, "probe_subscription_token", lambda: True)
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_api_key",
+            lambda *_a, **_kw: pytest.fail("subscription auth must not use the API-key ping"),
+        )
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is True
+        assert status.configured is True
+
+    def test_subscription_auth_reports_staleness(self, on_subscription, monkeypatch):
+        monkeypatch.setattr(auth_state, "probe_subscription_token", lambda: False)
+        monkeypatch.setattr(auth_state, "stale_reason", lambda: "AuthenticationError")
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is False
+        assert status.reason == "AuthenticationError"
+
+    def test_non_anthropic_provider_pings_with_its_own_key(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-good")
+        seen = {}
+
+        def _fake_verify(provider, credential):
+            seen["provider_val"] = provider["provider_val"]
+            seen["credential"] = credential
+            return True, "Key verified"
+
+        monkeypatch.setattr("yeaboi.provider_verification._verify_api_key", _fake_verify)
+
+        status = auth_state.check_llm_credentials()
+
+        assert status.ok is True
+        assert status.provider_label == "OpenAI"
+        assert seen == {"provider_val": "openai", "credential": "sk-openai-good"}
+
+
 class TestSettingsJump:
     """Ctrl+R is a request the hub claims, not a navigation the key performs."""
 

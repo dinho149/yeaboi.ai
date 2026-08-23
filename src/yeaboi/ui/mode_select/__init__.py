@@ -80,6 +80,7 @@ from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._input import esc_came_from_back_tab, paste_payload, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
+from yeaboi.ui.shared._llm_gate import show_llm_gate
 from yeaboi.ui.shared._music_bar import duck_working_thread, make_live, take_settings_jump
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
 from yeaboi.ui.shared._voice_input import DoubleTapSpace
@@ -13289,6 +13290,22 @@ def select_mode(
 
             # ── Phase 2: Transition ───────────────────────────────────────────
             chosen = cards[selected]
+
+            # Every mode uses the LLM somewhere, so every card passes through
+            # here before its transition animation starts — one chokepoint that
+            # covers a mode added later automatically, unlike show_beta_notice's
+            # per-branch calls below. Two exemptions: "settings" makes no LLM
+            # call and is where a broken key gets fixed; --dry-run promises no
+            # LLM calls at all, so live-pinging the provider there would both
+            # break that promise and fail outright on the fixture key it runs
+            # with (see scripts/record_demo.py).
+            if (
+                chosen["key"] != "settings"
+                and not dry_run
+                and not show_llm_gate(live, console, read_key, _FRAME_TIME, _supports_timeout)
+            ):
+                continue
+
             all_indices = list(range(n))
             others = [i for i in all_indices if i != selected]
             base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))

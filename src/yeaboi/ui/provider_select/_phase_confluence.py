@@ -21,11 +21,11 @@ import time
 from rich.console import Console
 from rich.live import Live
 
+from yeaboi.provider_verification import _verify_confluence, _verify_jira
 from yeaboi.ui.provider_select._config import _save_progress
 from yeaboi.ui.provider_select._constants import _CONFLUENCE_FIELDS, _CONFLUENCE_STANDALONE_FIELDS
 from yeaboi.ui.provider_select._nav import StepNav, nav_for_key
 from yeaboi.ui.provider_select._phase_notion import _drain
-from yeaboi.ui.provider_select._verification import _verify_confluence, _verify_jira
 from yeaboi.ui.provider_select.screens._screens import (
     _ACCENT,
     _build_provider_row,

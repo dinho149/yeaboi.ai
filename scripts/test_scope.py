@@ -287,11 +287,16 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/voice_install.py",
             "src/yeaboi/music.py",
             "src/yeaboi/os_open.py",
+            # Provider credential verification (live pings, format checks) used
+            # by both the setup wizard and the pre-mode LLM gate; its own tests
+            # (test_provider_*.py) already live in this area.
+            "src/yeaboi/provider_verification.py",
         ),
         tests=(
             "tests/unit/test_*screen*.py",
             "tests/unit/test_*page*.py",
             "tests/unit/test_shared_components.py",
+            "tests/unit/test_llm_gate.py",
             "tests/unit/test_mascot*.py",
             "tests/unit/test_ansi_font.py",
             "tests/unit/test_ascii_font.py",

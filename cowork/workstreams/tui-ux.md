@@ -4,7 +4,9 @@
 `src/yeaboi/ui/shared/_tips.py`, `src/yeaboi/usage_export.py`, `formatters.py` (the REPL-side
 formatter layer), and the terminal-affordance helpers the TUI reaches out through — `clipboard.py`,
 `voice.py`, `voice_install.py`, `music.py`, `os_open.py` — plus the matching render tests. Includes the two TUI utility
-mode cards, **`usage` and `settings`**.
+mode cards, **`usage` and `settings`**. Also `src/yeaboi/provider_verification.py` — the setup
+wizard's live credential pings, promoted out of `ui/provider_select/` so the pre-mode LLM gate
+(`ui/shared/_llm_gate.py`) can call it without a UI-layer dependency.
 
 **Skills** — `.claude/skills/tui-standards/SKILL.md` (mandatory — read it before any edit)
 
