@@ -447,10 +447,12 @@ the fresh one as a stream. Export is native because these four artifacts write
 through `agentwatch/export.py` rather than the shared exporter, so `/api/export`
 cannot reach them; `copy` is answered as data, never performed.
 
-A run answers `progress` lines (bare phase strings), `component` lines (the
-`analysis_component` dicts the phase checklist draws), then `done: {kind,
-report}`. No `op` line — the agentwatch engines take no cancel event, and
-backing out is free: the pass finishes and stores its report either way.
+A run answers `component` lines — the `analysis_component` dicts the phase
+checklist draws, which is every phase these engines emit today — then `done:
+{kind, report}`. Anything that is not one arrives as a `progress` line carrying
+a plain phase, so a mode that grows a bare-string step still reaches the
+surface. No `op` line — the agentwatch engines take no cancel event, and backing
+out is free: the pass finishes and stores its report either way.
 
 Provenance has no routes here. `provenance_audit` and `provenance_trace` are
 request/response reads with no progress, no cancel and no page-shaped gap, so

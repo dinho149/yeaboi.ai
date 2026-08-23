@@ -190,7 +190,10 @@ function DeclareForm({
   const [name, setName] = useState('');
   const [at, setAt] = useState(first?.default_at ?? '09:00');
   const [weekdays, setWeekdays] = useState(first?.default_weekdays ?? '1-5');
-  const [channels, setChannels] = useState<string[]>(['terminal']);
+  // `desktop` and not `terminal`: the backend drops the terminal channel from
+  // every fan-out (stdout is the handshake), so a ceremony delivering only
+  // there would run and reach nobody.
+  const [channels, setChannels] = useState<string[]>(['desktop']);
   const [busy, setBusy] = useState(false);
   const picked = page.modes.find((option) => option.key === mode);
 

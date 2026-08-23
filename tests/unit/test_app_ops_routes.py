@@ -125,6 +125,14 @@ class TestDeclare:
     def test_an_unknown_mode_is_a_400(self, app, env):
         assert _declare(app, mode="nonsense").code == 400
 
+    def test_the_default_channel_is_desktop_not_terminal(self, app, env):
+        # This process reserves stdout for the handshake and drops the terminal
+        # channel from every fan-out, so defaulting to it would declare a
+        # ceremony that runs and reaches nobody.
+        payload = {"name": "morning", "mode": "standup"}
+        stored = body(request(app, "POST", "/api/ceremonies", payload))["ceremony"]
+        assert stored["channels"] == ["desktop"]
+
 
 class TestPauseResumeRemove:
     def test_pause_takes_the_job_down_and_keeps_the_declaration(self, app, env):

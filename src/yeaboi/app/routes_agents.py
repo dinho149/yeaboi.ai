@@ -167,8 +167,10 @@ def _run(mode) -> Iterator[dict]:
 def _progress_line(event: object) -> dict:
     """One engine progress event, as a wire line.
 
-    The collector emits two kinds: structured ``analysis_component`` dicts (the
-    phase checklist with its files meter) and bare strings.
+    Every agentwatch phase today is a structured ``analysis_component`` dict —
+    the checklist with its files meter. Anything else is passed through as a
+    plain phase rather than dropped, so a mode that grows a bare-string step
+    still reaches the surface.
     """
     from yeaboi.analysis.progress import is_component_progress
 

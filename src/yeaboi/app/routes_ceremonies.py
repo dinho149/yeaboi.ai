@@ -81,8 +81,12 @@ def declare(app, request: Request) -> Response:
         at=str(payload.get("at", "")),
         weekdays=str(payload.get("weekdays", "")),
         # A missing key means the default; an explicitly empty list is refused
-        # by the store — a ceremony that tells nobody is not a ceremony.
-        channels=tuple(str(c) for c in payload.get("channels", ("terminal",))),
+        # by the store — a ceremony that tells nobody is not a ceremony. The
+        # default here is `desktop`, not the CLI's `terminal`: this process
+        # reserves stdout for the handshake and drops the terminal channel from
+        # every fan-out, so a ceremony declared here with only that one would
+        # run and deliver nowhere.
+        channels=tuple(str(c) for c in payload.get("channels", ("desktop",))),
         args=args,
         stale_after_min=int(payload.get("stale_after_min", 120) or 0),
         monthly_cap_usd=float(payload.get("monthly_cap_usd", 0.0) or 0.0),
