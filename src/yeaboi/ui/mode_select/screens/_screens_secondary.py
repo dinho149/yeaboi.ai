@@ -3920,6 +3920,50 @@ _PERFORMANCE_ACTION_NOTES = {
 }
 
 
+# A roster longer than this, or a terminal shorter than this, gets the compact
+# list. The big-ASCII row is borrowed from the intake mode picker, which has
+# eight fixed entries; at three lines each it shows two engineers on a 24-row
+# terminal, so a ten-person team is five screens of paging.
+_ROSTER_ASCII_MAX = 6
+_ROSTER_ASCII_MIN_HEIGHT = 30
+
+
+def _compact_roster(count: int, height: int) -> bool:
+    return count > _ROSTER_ASCII_MAX or height < _ROSTER_ASCII_MIN_HEIGHT
+
+
+def _roster_rows(body: list, roster: list, hints: list, selected: int, theme, *, budget: int) -> None:
+    """One row per engineer: a caret, their name, and what is open for them.
+
+    Mirrors the microphone picker — the shape this codebase already uses for a
+    list that is chosen from rather than browsed.
+    """
+    rows = max(3, budget - 1)  # one row reserved for the ▲/▼ counter
+    start = max(0, min(selected - rows // 2, max(0, len(roster) - rows)))
+    end = min(len(roster), start + rows)
+
+    # One name column for the whole window, so the hints line up and the eye can
+    # run down them; sized to what is visible rather than to the longest name in
+    # a roster of fifty.
+    name_w = min(28, max(len(roster[i]) for i in range(start, end)))
+
+    if start:
+        body.append(Text(_PAD + f"  ▲ {start} more", style=theme.dim, justify="left"))
+    for idx in range(start, end):
+        focused = idx == selected
+        row = Text(_PAD + ("  ▸ " if focused else "    "), justify="left", no_wrap=True, overflow="ellipsis")
+        name = roster[idx]
+        shown = name if len(name) <= name_w else name[: name_w - 1] + "…"
+        row.append(f"{shown:<{name_w}}", style=f"bold {theme.accent_bright}" if focused else theme.value)
+        hint = hints[idx] if idx < len(hints) else ""
+        if hint:
+            row.append("   ")
+            row.append(hint, style=theme.desc if focused else theme.dim)
+        body.append(row)
+    if end < len(roster):
+        body.append(Text(_PAD + f"  ▼ {len(roster) - end} more", style=theme.dim, justify="left"))
+
+
 def _build_performance_screen(
     performance_data: dict,
     *,
@@ -4063,17 +4107,21 @@ def _build_performance_screen(
         if message:
             body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
             body.append(Text(""))
+        # The footer is blank + blank + key hints + blank, so action_h=4 is honest
+        # here — the -16 this replaces under-budgeted by two and cost a row.
+        roster_budget = calc_viewport(height, header_h=6, action_h=4) - (2 if message else 0)
 
         if not roster:
             body.append(Text(_PAD + "  No engineers found.", style=theme.muted, justify="left"))
             body.append(Text(""))
             body.append(Text(_PAD + "  Connect Jira or Azure DevOps (see Settings) — the roster is", style=theme.muted))
             body.append(Text(_PAD + "  built from the people assigned work on your board.", style=theme.muted))
+        elif _compact_roster(len(roster), height):
+            _roster_rows(body, roster, hints, selected_idx, theme, budget=roster_budget)
         else:
             # Window the engineers that fit vertically, centred on the selection —
             # big ASCII rows are tall, so only a few show at once (▲/▼ mark the rest).
-            budget = max(6, height - 16 - (2 if message else 0))
-            start, end = _performance_roster_window(selected_idx, len(roster), budget)
+            start, end = _performance_roster_window(selected_idx, len(roster), roster_budget)
             if start > 0:
                 body.append(Text(_PAD + f"▲ {start} more", style=theme.dim, justify="left"))
                 body.append(Text(""))

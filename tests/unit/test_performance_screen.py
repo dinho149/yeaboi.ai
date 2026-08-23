@@ -263,3 +263,72 @@ class TestDetailViewportGeometry:
                     lines = [ln for ln in console.file.getvalue().splitlines() if ln.strip()]
                     assert len(lines) == height, (width, height, len(actions))
                     assert lines[-1].lstrip().startswith("╰"), (width, height, len(actions))
+
+
+class TestRosterDensity:
+    """The big-ASCII row is borrowed from a picker with eight fixed entries.
+
+    At three lines each it fits two engineers on a 24-row terminal, so a
+    ten-person team was five screens of paging.
+    """
+
+    NAMES = [
+        "Ada Lovelace",
+        "Bob Jones",
+        "Carla Diaz",
+        "Dan Okafor",
+        "Eve Nakamura",
+        "Frank Li",
+        "Grace Hopper",
+        "Hana Suzuki",
+        "Ivan Petrov",
+        "Jo Kim",
+    ]
+
+    def _render_roster(self, names, *, height=24, selected=0, width=100):
+        hints = [f"{i} open 1:1 actions" for i in range(len(names))]
+        data = {
+            "view": "roster",
+            "roster": list(names),
+            "roster_hints": hints,
+            "selected_idx": selected,
+            "session_name": "Team",
+            "actions": [],
+        }
+        return _render(_build_performance_screen(data, width=width, height=height, sub_reveal=999.0, desc_reveal=999.0))
+
+    def test_a_ten_person_team_is_one_screen_not_five(self):
+        out = self._render_roster(self.NAMES)
+        visible = [name for name in self.NAMES if name in out]
+        assert len(visible) >= 8
+
+    def test_a_small_team_keeps_the_big_ascii_rows(self):
+        # Its whole point is that a roster of four reads as four faces.
+        out = self._render_roster(self.NAMES[:4], height=40)
+        assert "█" in out
+
+    def test_a_short_terminal_switches_to_the_compact_list_whatever_the_roster_size(self):
+        out = self._render_roster(self.NAMES[:4], height=20)
+        assert "█▀█ █▀▀ █▀█" in out  # the PERFORMANCE title itself still renders
+        assert all(name in out for name in self.NAMES[:4])
+
+    def test_the_selected_engineer_carries_the_caret(self):
+        out = self._render_roster(self.NAMES, selected=3)
+        assert "▸ Dan Okafor" in out
+
+    def test_the_window_follows_the_selection_and_counts_what_it_hides(self):
+        out = self._render_roster(self.NAMES, selected=9)
+        assert "Jo Kim" in out
+        assert "▲" in out
+
+    def test_hints_line_up_in_one_column(self):
+        # Ragged hints are what the eye cannot run down.
+        out = self._render_roster(["Al", "Bartholomew Fitzgerald"])
+        rows = [ln for ln in out.splitlines() if "open 1:1 actions" in ln]
+        assert len({ln.index("open 1:1 actions") for ln in rows}) == 1
+
+    def test_panel_height_stays_exact_for_a_long_roster(self):
+        for height in (18, 24, 30, 40):
+            out = self._render_roster(self.NAMES, height=height)
+            lines = [ln for ln in out.splitlines() if ln.strip()]
+            assert len(lines) == height, height
