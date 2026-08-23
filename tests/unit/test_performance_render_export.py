@@ -3,7 +3,13 @@
 import pytest
 
 from tests._pages import assert_self_contained, island
-from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.agent.state import (
+    ActivityEvidence,
+    EvidenceGroup,
+    OneOnOnePrep,
+    OneOnOneRecord,
+    SixMonthReview,
+)
 from yeaboi.performance import delivery, export, render
 
 
@@ -170,11 +176,46 @@ class TestPayload:
             boot = island(html)
             assert boot["chrome"]["wordmark"] == wordmark
             assert boot["chrome"]["title"].endswith("Ada Lovelace")
-            # The name is in the title and in the body's avatar row; a third
-            # copy as a header eyebrow is noise, not emphasis.
+            # An artifact grounded in nothing carries no eyebrows at all — the
+            # name is in the title and in the body's avatar row, and a third copy
+            # as a header fact is noise, not emphasis.
             assert "facts" not in boot["chrome"]
             assert boot["report"]["kind"] == "performance"
             assert boot["report"]["engineer"] == "Ada Lovelace"
+
+    def test_the_header_says_what_the_document_was_built_out_of(self):
+        # What the eyebrows add is the one thing the title cannot say.
+        prep = OneOnOnePrep(
+            engineer="Ada Lovelace",
+            evidence_sources=("standup", "analysis"),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    items=(ActivityEvidence(kind="pr", key="#91"), ActivityEvidence(kind="pr", key="#92")),
+                ),
+            ),
+        )
+        facts = dict(tuple(f) for f in island(export.build_prep_html(prep))["chrome"]["facts"])
+        assert facts["SOURCES"] == "Standup, Team analysis"
+        assert facts["EVIDENCE"] == "2 items"
+
+    def test_a_table_of_contents_appears_only_when_it_earns_itself(self):
+        # Below three entries it is a second copy of the headings.
+        short = OneOnOnePrep(engineer="Ada", goals=("a",))
+        assert "nav" not in island(export.build_prep_html(short))["chrome"]
+
+        long = OneOnOnePrep(engineer="Ada", goals=("a",), gaps=("b",), improvements=("c",))
+        nav = island(export.build_prep_html(long))["chrome"]["nav"]
+        assert [entry[0] for entry in nav] == ["goals-to-align-on", "gaps-observed", "areas-to-improve"]
+
+    def test_every_nav_entry_points_at_a_section_that_exists(self):
+        # Two implementations of one slug rule is how a nav link ends up pointing
+        # at nothing, so the exporter owns the id and the component reads it.
+        prep = OneOnOnePrep(engineer="Ada", goals=("a",), gaps=("b",), improvements=("c",))
+        boot = island(export.build_prep_html(prep))
+        ids = {section["id"] for section in boot["report"]["sections"]}
+        assert {entry[0] for entry in boot["chrome"]["nav"]} <= ids
 
     def test_prep_sections_are_titled_bullet_runs_in_order(self):
         prep = OneOnOnePrep(
@@ -188,23 +229,47 @@ class TestPayload:
         report = island(export.build_prep_html(prep))["report"]
         assert report["lead"] == {"title": "Sprint work", "text": "shipped auth"}
         assert report["sections"] == [
-            {"title": "Carried-over action items", "items": ["carry"]},
-            {"title": "Talking points", "items": ["tp"]},
-            {"title": "Goals to align on", "items": ["goal"]},
+            {"id": "carried-over-action-items", "title": "Carried-over action items", "items": ["carry"]},
+            {"id": "talking-points", "title": "Talking points", "items": ["tp"]},
+            {"id": "goals-to-align-on", "title": "Goals to align on", "items": ["goal"]},
         ]
 
-    def test_empty_sections_are_dropped_not_sent_blank(self):
-        # A section with no items draws nothing, so shipping it would put a row
-        # in the payload whose only possible rendering is absence.
+    def test_a_section_that_is_empty_for_no_known_reason_is_dropped(self):
+        # Nothing to draw and nothing to say about why: a row whose only possible
+        # rendering is absence.
         report = island(export.build_prep_html(OneOnOnePrep(engineer="Ada", date="2026-07-27")))["report"]
         assert report["sections"] == []
         assert "lead" not in report
+
+    def test_a_section_that_is_empty_for_a_known_reason_rides_and_says_why(self):
+        # "The model found no gaps" and "nobody ever looked" are different facts,
+        # and dropping the row made them the same silence.
+        prep = OneOnOnePrep(
+            engineer="Ada",
+            section_states=(("gaps", "not_configured", "No saved team analysis covers this engineer."),),
+        )
+        report = island(export.build_prep_html(prep))["report"]
+        assert report["sections"] == [
+            {
+                "id": "gaps-observed",
+                "title": "Gaps observed",
+                "items": [],
+                "state": "not_configured",
+                "reason": "No saved team analysis covers this engineer.",
+            }
+        ]
+
+    def test_a_populated_section_carries_no_state(self):
+        # It explains itself; "covered" beside a list of findings is noise.
+        prep = OneOnOnePrep(engineer="Ada", gaps=("thin on deploys",), section_states=(("gaps", "covered", ""),))
+        (section,) = island(export.build_prep_html(prep))["report"]["sections"]
+        assert "state" not in section
 
     def test_review_framework_rides_as_a_footnote(self):
         review = SixMonthReview(engineer="Ada", framework_used="Dreyfus", strengths=("clear writer",))
         report = island(export.build_review_html(review))["report"]
         assert report["footnote"] == "Framework: Dreyfus"
-        assert report["sections"][0] == {"title": "Strengths", "items": ["clear writer"]}
+        assert report["sections"][0] == {"id": "strengths", "title": "Strengths", "items": ["clear writer"]}
 
     def test_completion_subject_is_a_section_not_a_second_prose_slot(self):
         record = OneOnOneRecord(
@@ -216,7 +281,7 @@ class TestPayload:
         )
         report = island(export.build_completion_html(record))["report"]
         assert report["lead"] == {"title": "Summary email", "text": "We agreed on the plan."}
-        assert report["sections"][0] == {"title": "Subject", "items": ["1:1 recap"]}
+        assert report["sections"][0] == {"id": "subject", "title": "Subject", "items": ["1:1 recap"]}
 
 
 class TestTheEmailBodyStillComesFromHere:

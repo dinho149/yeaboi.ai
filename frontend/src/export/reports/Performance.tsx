@@ -23,14 +23,10 @@ import styles from './reports.module.css';
 /** Long enough that it is packed prose, not a bullet someone wrote. */
 const SPLIT_OVER = 160;
 
-function sectionId(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
 function Section({ section }: { section: PerfSection }) {
   if (!section.items.length) return null;
   return (
-    <section id={sectionId(section.title)}>
+    <section id={section.id}>
       <h2 className={styles['h2']}>{section.title}</h2>
       <ul className={styles['bullets']}>
         {section.items.flatMap((item, i) =>
@@ -74,7 +70,7 @@ export function Performance({
 
       <EditableSlot anchor="" label="this review" />
       {lead ? (
-        <section id={sectionId(lead.title)}>
+        <section id="summary">
           <h2 className={styles['h2']}>{lead.title}</h2>
           <Field edit={edit} field={lead.field ?? ''} label={lead.title.toLowerCase()}>
             <Prose text={lead.text} />

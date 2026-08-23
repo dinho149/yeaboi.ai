@@ -175,7 +175,7 @@
             "kind": "bullets"
           }
         ],
-        "id": "card0001",
+        "id": "summary",
         "title": "Executive Summary"
       },
       {
@@ -217,7 +217,7 @@
             "kind": "cards"
           }
         ],
-        "id": "card0002",
+        "id": "insights",
         "title": "Team Insights"
       },
       {
@@ -422,7 +422,7 @@
             "title": "Examples"
           }
         ],
-        "id": "card0003",
+        "id": "ai-adoption",
         "title": "AI Usage"
       },
       {
@@ -465,7 +465,7 @@
             ]
           }
         ],
-        "id": "card0004",
+        "id": "documentation",
         "title": "Documentation"
       },
       {
@@ -523,7 +523,7 @@
             ]
           }
         ],
-        "id": "card0005",
+        "id": "velocity",
         "title": "Team & Velocity"
       },
       {
@@ -547,7 +547,7 @@
             "kind": "bullets"
           }
         ],
-        "id": "card0006",
+        "id": "recurring",
         "title": "Recurring Work"
       },
       {
@@ -566,7 +566,7 @@
             ]
           }
         ],
-        "id": "card0007",
+        "id": "spillover",
         "title": "Spillover Root Causes"
       },
       {
@@ -767,7 +767,7 @@
             "text": "Churn — % of committed points added or removed mid-sprint (scope change) · Δ — net points added (+) or removed (−) after the sprint started · Spill% — share of stories not finished, carried into the next sprint"
           }
         ],
-        "id": "card0008",
+        "id": "sprints",
         "title": "Sprint Breakdown"
       },
       {
@@ -858,7 +858,7 @@
             "tone": "warn"
           }
         ],
-        "id": "card0009",
+        "id": "team-members",
         "title": "Team Members"
       },
       {
@@ -905,7 +905,7 @@
             "tone": "warn"
           }
         ],
-        "id": "card0010",
+        "id": "shadow",
         "title": "Shadow Spillover"
       },
       {
@@ -971,7 +971,7 @@
             "title": "frontend"
           }
         ],
-        "id": "card0011",
+        "id": "disc-cal",
         "title": "Calibration by Discipline"
       },
       {
@@ -1046,7 +1046,7 @@
             "title": "What these look like"
           }
         ],
-        "id": "card0012",
+        "id": "calibration",
         "title": "What Each Point Value Means"
       },
       {
@@ -1168,7 +1168,7 @@
             "title": "Task assignees"
           }
         ],
-        "id": "card0013",
+        "id": "tasks",
         "title": "Task Decomposition"
       },
       {
@@ -1210,7 +1210,7 @@
             "text": "Common signals: tests pass, reviewed"
           }
         ],
-        "id": "card0014",
+        "id": "dod",
         "title": "Definition of Done (inferred)"
       },
       {
@@ -1258,7 +1258,7 @@
             "text": "Team-specific steps: “Demo to support” (40%)"
           }
         ],
-        "id": "card0015",
+        "id": "proposed-dod",
         "title": "Proposed Definition of Done"
       },
       {
@@ -1359,7 +1359,7 @@
             "title": "Repos by story size"
           }
         ],
-        "id": "card0016",
+        "id": "repos",
         "title": "Repository Activity"
       },
       {
@@ -1386,7 +1386,7 @@
             ]
           }
         ],
-        "id": "card0017",
+        "id": "naming",
         "title": "Ticket Naming & Organisation"
       },
       {
@@ -1417,7 +1417,7 @@
             ]
           }
         ],
-        "id": "card0018",
+        "id": "structure",
         "title": "Story & Epic Structure"
       },
       {
@@ -1473,7 +1473,7 @@
             "title": "Topics"
           }
         ],
-        "id": "card0019",
+        "id": "ac-patterns",
         "title": "Acceptance Criteria Patterns"
       },
       {
@@ -1492,7 +1492,7 @@
             ]
           }
         ],
-        "id": "card0020",
+        "id": "point-descriptions",
         "title": "What Each Point Value Means (LLM Interpretation)"
       },
       {
@@ -1519,7 +1519,7 @@
             ]
           }
         ],
-        "id": "card0021",
+        "id": "estimation",
         "title": "Estimation Accuracy"
       },
       {
@@ -1541,7 +1541,7 @@
             ]
           }
         ],
-        "id": "card0022",
+        "id": "seasonal",
         "title": "Seasonal Patterns"
       },
       {
@@ -1560,7 +1560,7 @@
             ]
           }
         ],
-        "id": "card0023",
+        "id": "workflow",
         "title": "Board Workflow"
       },
       {
@@ -1596,7 +1596,7 @@
             "tone": "warn"
           }
         ],
-        "id": "card0024",
+        "id": "recommendations",
         "title": "Recommendations"
       }
     ]

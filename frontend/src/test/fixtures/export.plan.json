@@ -124,7 +124,7 @@
     "features": [
       {
         "description": "Bring your own IdP.",
-        "id": "card0001",
+        "id": "F-1",
         "priority": "critical",
         "title": "Single sign-on"
       }
@@ -196,7 +196,7 @@
                 true
               ]
             ],
-            "id": "card0002",
+            "id": "S-1",
             "points": 8,
             "priority": "critical",
             "rationale": "Unfamiliar identity provider.",
@@ -214,7 +214,7 @@
           {
             "aiPrompt": "Write the assertion validator.",
             "description": "Add the ACS endpoint.",
-            "id": "card0003",
+            "id": "T-1",
             "label": "Code",
             "testPlan": "Round-trip against the dev tenant.",
             "title": "Wire the handshake"

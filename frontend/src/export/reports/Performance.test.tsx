@@ -44,7 +44,7 @@ describe('Performance', () => {
     const { container } = render(
       <Performance
         engineer="Ada"
-        sections={[{ title: 'Talking points', items: [LONG, 'Discuss growth; align on goals.'] }]}
+        sections={[{ id: 'talking-points', title: 'Talking points', items: [LONG, 'Discuss growth; align on goals.'] }]}
         warnings={[]}
       />
     );
@@ -63,7 +63,7 @@ describe('Performance', () => {
     // A nested <ul> outside an <li> is invalid, and indents fragments of one
     // bullet as if they were a sub-topic.
     const { container } = render(
-      <Performance engineer="Ada" sections={[{ title: 'Points', items: [LONG] }]} warnings={[]} />
+      <Performance engineer="Ada" sections={[{ id: 'points', title: 'Points', items: [LONG] }]} warnings={[]} />
     );
     expect(container.querySelectorAll('ul')).toHaveLength(1);
     expect(container.querySelectorAll('ul ul')).toHaveLength(0);
@@ -71,14 +71,14 @@ describe('Performance', () => {
 
   it('draws nothing for a section with no items', () => {
     const { container } = render(
-      <Performance engineer="Ada" sections={[{ title: 'Gaps observed', items: [] }]} warnings={[]} />
+      <Performance engineer="Ada" sections={[{ id: 'gaps-observed', title: 'Gaps observed', items: [] }]} warnings={[]} />
     );
     expect(container.textContent).not.toContain('Gaps observed');
   });
 
   it('gives every section a linkable id', () => {
     const { container } = render(
-      <Performance engineer="Ada" sections={[{ title: 'Areas for improvement', items: ['x'] }]} warnings={[]} />
+      <Performance engineer="Ada" sections={[{ id: 'areas-for-improvement', title: 'Areas for improvement', items: ['x'] }]} warnings={[]} />
     );
     expect(container.querySelector('#areas-for-improvement')).toBeTruthy();
   });
