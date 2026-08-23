@@ -6,6 +6,8 @@
 
 import { Duck } from '@design/primitives/Duck';
 import { useEffect, useRef, useState } from 'react';
+import { MicButton } from '../components/MicButton';
+import { appendSpoken } from '../voice';
 import {
   type Bubble,
   type ChatLine,
@@ -176,6 +178,7 @@ export function Chat() {
           }}
         />
         <div class="composer-actions">
+          <MicButton disabled={busy} onText={(text) => setDraft((prior) => appendSpoken(prior, text))} />
           <span class="composer-hint">Enter sends · Shift+Enter for a new line</span>
           {busy && opId ? (
             <button type="button" onClick={() => void cancelTurn(opId)}>

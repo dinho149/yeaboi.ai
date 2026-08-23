@@ -15,7 +15,9 @@ import {
   runPrep,
   runReview,
 } from '../modes';
+import { MicButton } from '../components/MicButton';
 import { ResultActions } from '../components/ResultActions';
+import { appendSpoken } from '../voice';
 
 /** The engineer named in `#/humans/performance/engineer?name=…`. */
 export function engineerFromHash(hash: string): string {
@@ -137,6 +139,7 @@ export function PerformanceEngineer() {
           onInput={(e) => setTranscript((e.target as HTMLTextAreaElement).value)}
         />
         <div class="dash-actions">
+          <MicButton onText={(text) => setTranscript((prior) => appendSpoken(prior, text))} />
           <button
             type="button"
             disabled={Boolean(busy) || !transcript.trim()}

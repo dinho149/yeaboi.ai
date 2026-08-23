@@ -5,6 +5,8 @@
 import { Duck } from '@design/primitives/Duck';
 import { useState } from 'react';
 import { createChat } from '../chat';
+import { MicButton } from '../components/MicButton';
+import { appendSpoken } from '../voice';
 
 const SIZES = [
   { key: '', label: 'Let yeaboi decide', hint: 'the description is classified for you' },
@@ -51,6 +53,10 @@ export function Planning() {
         disabled={busy}
         onInput={(e) => setDescription((e.target as HTMLTextAreaElement).value)}
       />
+
+      <div class="intake-dictate">
+        <MicButton disabled={busy} onText={(text) => setDescription((prior) => appendSpoken(prior, text))} />
+      </div>
 
       <div class="intake-sizes">
         {SIZES.map((option) => (

@@ -6,7 +6,9 @@
 
 import { Duck } from '@design/primitives/Duck';
 import { useEffect, useMemo, useState } from 'react';
+import { MicTest } from '../components/MicTest';
 import { SignInPanel } from '../components/SignInPanel';
+import { VoiceSetup } from '../components/VoiceSetup';
 import {
   type ProviderCatalog,
   type SettingField,
@@ -19,6 +21,7 @@ import {
 } from '../settings';
 
 import { SETTINGS_TABS } from '../settings-tabs';
+import { type VoiceStatus, getVoice, setVoiceOffer } from '../voice';
 
 const SECTION_TITLES: Record<string, string> = {
   provider: 'LLM Provider',
@@ -161,27 +164,10 @@ export function Settings() {
     }
 
     if (field.action === 'voice-device') {
-      const devices = snapshot.voice.devices;
-      return (
-        <div class="settings-row" key={field.env}>
-          <span class="settings-label">{field.label}</span>
-          <select
-            value={field.value}
-            onChange={(event) => void save(field.env, (event.target as HTMLSelectElement).value)}
-          >
-            <option value="">system default</option>
-            {devices.map((d) => (
-              <option key={d.index} value={d.name}>
-                {d.name}
-                {d.is_default ? ' (default)' : ''}
-              </option>
-            ))}
-            {field.value && !devices.some((d) => d.name === field.value) && (
-              <option value={field.value}>{field.value} (saved)</option>
-            )}
-          </select>
-        </div>
-      );
+      // The snapshot's device list is PortAudio's — the terminal's stack, not
+      // this window's. MicTest enumerates the engine's own devices and saves
+      // the same VOICE_DEVICE *name* back, which is the part both surfaces share.
+      return <MicTest key={field.env} value={field.value} onSave={(name) => void save(field.env, name)} />;
     }
 
     const isEditing = editing === field.env;
@@ -251,14 +237,7 @@ export function Settings() {
         </div>
       );
     }
-    if (section === 'voice') {
-      return (
-        <div class="settings-row readonly">
-          <span class="settings-label">Dictation</span>
-          <span class="settings-value">{snapshot.voice.detail || snapshot.voice.state}</span>
-        </div>
-      );
-    }
+    if (section === 'voice') return <DictationRow />;
     if (section === 'advanced') {
       return (
         <div class="settings-row readonly">
@@ -413,6 +392,61 @@ function AllowedPathsRow({ field, onSaved }: { field: SettingField; onSaved: (me
           <button onClick={() => setOpen(false)}>Cancel</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Whether dictation can run here, and the way in or out.
+ *
+ * Read from /api/voice, not from the settings snapshot: the snapshot answers
+ * the terminal's question (is the whole voice extra installed, and is PortAudio
+ * alive) and this window needs neither half of that — it records its own audio,
+ * so the only thing that has to be present is the speech engine. */
+function DictationRow() {
+  const [voice, setVoice] = useState<VoiceStatus | null>(null);
+  const [setup, setSetup] = useState<VoiceStatus | null>(null);
+  const [note, setNote] = useState('');
+
+  const refresh = () => getVoice().then(setVoice, () => setVoice(null));
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  if (!voice) return null;
+
+  return (
+    <div class="settings-row readonly">
+      <span class="settings-label">Dictation</span>
+      <span class={voice.state === 'ready' ? 'settings-value good' : 'settings-value'}>{voice.detail}</span>
+      {voice.state === 'installable' && (
+        <button type="button" onClick={() => setSetup(voice)}>
+          Set up ({voice.install.size_mb} MB)
+        </button>
+      )}
+      {voice.state === 'declined' && (
+        <button
+          type="button"
+          onClick={() =>
+            void setVoiceOffer(true).then(() => {
+              setNote('');
+              void refresh();
+            })
+          }
+        >
+          Offer again
+        </button>
+      )}
+      {note && <span class="settings-scope">{note}</span>}
+      {setup && (
+        <VoiceSetup
+          status={setup}
+          onClose={(_ready, message) => {
+            setSetup(null);
+            setNote(message);
+            void refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

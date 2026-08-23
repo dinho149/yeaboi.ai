@@ -9,11 +9,12 @@
 // is still there to notice.
 
 import { join } from 'node:path';
-import { BrowserWindow, app, ipcMain, shell } from 'electron';
+import { BrowserWindow, app, ipcMain, session, shell } from 'electron';
 import { callApi, registerApiProxy } from './api-proxy';
 import { closeAllBoardWindows, registerBoardWindows } from './boards';
 import { EventReader, broadcast } from './events';
 import { Pet, type PetNotice } from './pet';
+import { installPermissionHandlers } from './permissions';
 import { Sidecar } from './sidecar';
 import { AppTray } from './tray';
 
@@ -100,6 +101,11 @@ if (!gotLock) {
   app.on('second-instance', () => openApp());
 
   void app.whenReady().then(() => {
+    installPermissionHandlers(
+      (listener) => app.on('session-created', listener),
+      session.defaultSession,
+      (contents) => contents !== null && contents === mainWindow?.webContents,
+    );
     registerApiProxy(sidecar);
     registerBoardWindows(sidecar);
     pet.register((route) => openApp(route));

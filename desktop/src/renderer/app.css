@@ -1393,3 +1393,133 @@ a.button.primary {
     animation: none;
   }
 }
+
+/* --- Dictation ----------------------------------------------------------- */
+
+.mic {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.mic-button {
+  font-size: var(--fs-m);
+  line-height: 1;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--hairline);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mic-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Amber while recording, for the reason the terminal's border is amber: red
+   would sit close enough to the error colour to read as "something crashed"
+   rather than "I am listening". */
+.mic-button.recording {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 18%, var(--panel));
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  50% {
+    background: color-mix(in srgb, var(--warn) 38%, var(--panel));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-button.recording {
+    animation: none;
+  }
+}
+
+.mic-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  min-width: 0;
+}
+
+.mic-status.recording {
+  color: var(--warn);
+}
+
+.mic-status.error {
+  color: var(--danger);
+}
+
+.mic-clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.mic-meter {
+  font-family: var(--font-mono);
+  letter-spacing: -0.05em;
+  color: var(--duck);
+}
+
+.mic-test {
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.intake-dictate {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s1);
+}
+
+/* --- The dictation setup modal ------------------------------------------- */
+
+.voice-stage {
+  font-size: var(--fs-s);
+  color: var(--text);
+}
+
+.voice-bar {
+  height: 6px;
+  margin-top: var(--s2);
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.voice-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--duck);
+  transition: width 200ms linear;
+}
+
+/* No byte total came back, so the bar reports "working", not a percentage. */
+.voice-bar-fill.indeterminate {
+  width: 35%;
+  animation: voice-scan 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes voice-scan {
+  from {
+    transform: translateX(-40%);
+  }
+  to {
+    transform: translateX(220%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-bar-fill.indeterminate {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}

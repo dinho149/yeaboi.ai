@@ -7,7 +7,9 @@
 import { Card, Lozenge, NoticeBlock } from '@design/primitives';
 import { useEffect, useState } from 'react';
 import { callTool } from '../api';
+import { MicButton } from '../components/MicButton';
 import { loadStandup } from '../dashboards';
+import { appendSpoken } from '../voice';
 
 interface Gap {
   fingerprint: string;
@@ -120,6 +122,7 @@ export function StandupReview() {
           onInput={(e) => setPaste((e.target as HTMLTextAreaElement).value)}
         />
         <div class="dash-actions">
+          <MicButton onText={(text) => setPaste((prior) => appendSpoken(prior, text))} />
           <button
             type="button"
             class="primary"

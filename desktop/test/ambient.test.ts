@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DOCK_SCRIPT, dockConfig, parseDockRect } from '../src/main/dock';
 import { parseFrames } from '../src/main/events';
+import { permitted } from '../src/main/permissions';
 
 describe('parseFrames', () => {
   it('reads one whole frame', () => {
@@ -72,5 +73,24 @@ describe('dockConfig', () => {
 
   it('says so plainly when there is no dock', () => {
     expect(dockConfig(null, { x: 0, y: 0 })).toEqual({ present: false });
+  });
+});
+
+describe('permitted', () => {
+  it('lets the app window ask for the microphone', () => {
+    expect(permitted('media', true)).toBe(true);
+  });
+
+  it('keeps everything the app window already relied on', () => {
+    // Clipboard writes go through a permission check too — an allowlist naming
+    // only the microphone would have silently broken every Copy button.
+    expect(permitted('clipboard-sanitized-write', true)).toBe(true);
+  });
+
+  it('gives a board window nothing', () => {
+    // A board page is the same document a teammate opens in a browser. It must
+    // not gain a microphone here that it lacks there.
+    expect(permitted('media', false)).toBe(false);
+    expect(permitted('notifications', false)).toBe(false);
   });
 });

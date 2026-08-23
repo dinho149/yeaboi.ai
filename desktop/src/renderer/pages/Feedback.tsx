@@ -18,6 +18,8 @@ import {
   polishFeedback,
   submitFeedback,
 } from '../ambience';
+import { MicButton } from '../components/MicButton';
+import { appendSpoken } from '../voice';
 
 export function Feedback() {
   const [options, setOptions] = useState<FeedbackOptions | null>(null);
@@ -151,6 +153,7 @@ export function Feedback() {
             placeholder="What you did, what you expected, what happened instead."
             onInput={(event) => setDescription((event.target as HTMLTextAreaElement).value)}
           />
+          <MicButton onText={(text) => setDescription((prior) => appendSpoken(prior, text))} />
         </label>
         {status && <p class="settings-status">{status}</p>}
         <div class="modal-actions">

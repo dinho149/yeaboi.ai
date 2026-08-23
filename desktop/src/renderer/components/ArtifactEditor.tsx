@@ -15,6 +15,8 @@ import { Card, NoticeBlock } from '@design/primitives';
 import { useEffect, useState } from 'react';
 import { quip } from '../ambience';
 import { type ArtifactEdits, type ArtifactRef, applyArtifactEdits, loadArtifactEdits } from '../boards';
+import { appendSpoken } from '../voice';
+import { MicButton } from './MicButton';
 
 export function ArtifactEditor({ refer, onApplied }: { refer: ArtifactRef; onApplied?: () => void }) {
   const [data, setData] = useState<ArtifactEdits | null>(null);
@@ -93,6 +95,7 @@ export function ArtifactEditor({ refer, onApplied }: { refer: ArtifactRef; onApp
               value={value}
               onInput={(e) => setValue((e.target as HTMLTextAreaElement).value)}
             />
+            <MicButton onText={(text) => setValue((prior) => appendSpoken(prior, text))} />
           </label>
           <label class="field">
             <span>Your name</span>
