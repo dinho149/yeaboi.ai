@@ -30,6 +30,19 @@ def _bullets(items: tuple[str, ...] | list[str]) -> list[str]:
     return [f"  • {it}" for it in items if it]
 
 
+def coverage_lines(artifact) -> tuple[str, ...]:
+    """One readable row per evidence source: what was scanned, and what was not.
+
+    Rendered on every artifact so a reader can tell a quiet period from an
+    unscanned one. An artifact stored before evidence coverage existed has none,
+    and simply shows nothing.
+    """
+    return tuple(
+        f"{source} — {state.replace('_', ' ')}: {detail}"
+        for source, state, detail in getattr(artifact, "evidence_coverage", ()) or ()
+    )
+
+
 def _section_lines(title: str, items: tuple[str, ...] | list[str]) -> list[str]:
     if not items:
         return []
@@ -54,6 +67,7 @@ def format_prep_lines(prep: OneOnOnePrep) -> list[str]:
     lines += _section_lines("Goals to align on:", prep.goals)
     lines += _section_lines("Gaps observed:", prep.gaps)
     lines += _section_lines("Areas to improve:", prep.improvements)
+    lines += _section_lines("Evidence coverage:", coverage_lines(prep))
     if prep.warnings:
         lines += _section_lines("⚠ Notices:", prep.warnings)
     return [ln for ln in lines]
@@ -77,6 +91,7 @@ def format_prep_rich(prep: OneOnOnePrep, *, accent: str = _ACCENT) -> Group:
     _rich_section(body, "Goals to align on", prep.goals, accent)
     _rich_section(body, "Gaps observed", prep.gaps, accent)
     _rich_section(body, "Areas to improve", prep.improvements, accent)
+    _rich_section(body, "Evidence coverage", coverage_lines(prep), accent, marker="·")
     _rich_notices(body, prep.warnings)
     return Group(*body)
 
@@ -142,6 +157,7 @@ def format_review_lines(review: SixMonthReview) -> list[str]:
     lines += _section_lines("Achievements:", review.achievements)
     lines += _section_lines("Areas for improvement:", review.areas_for_improvement)
     lines += _section_lines("Goals for next period:", review.goals)
+    lines += _section_lines("Evidence coverage:", coverage_lines(review))
     if review.framework_used:
         lines += [f"(Framework: {review.framework_used})", ""]
     if review.warnings:
@@ -165,6 +181,7 @@ def format_review_rich(review: SixMonthReview, *, accent: str = _ACCENT) -> Grou
     _rich_section(body, "Achievements", review.achievements, accent)
     _rich_section(body, "Areas for improvement", review.areas_for_improvement, accent)
     _rich_section(body, "Goals for next period", review.goals, accent)
+    _rich_section(body, "Evidence coverage", coverage_lines(review), accent, marker="·")
     _rich_notices(body, review.warnings)
     return Group(*body)
 

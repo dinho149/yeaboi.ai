@@ -35,7 +35,24 @@ class TestBuildPerformanceScreen:
         assert isinstance(panel, Panel)
         out = _render(panel)
         assert "2 open 1:1 actions" in out  # selected engineer's description
-        assert "1:1 Prep" in out  # action buttons still present
+        assert "Enter open" in out  # key hints, the roster's only guidance
+
+    def test_roster_view_has_no_action_buttons(self):
+        # Choosing a person is the whole job here. Buttons would give the view a
+        # second focus and a second axis of movement, which is what the actions
+        # view exists to take over.
+        data = {
+            "view": "roster",
+            "roster": ["Ada Lovelace"],
+            "roster_hints": ["2 open 1:1 actions"],
+            "selected_idx": 0,
+            "actions": ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History", "Export"],
+        }
+        out = _render(_build_performance_screen(data, width=120, height=40))
+        assert "1:1 Prep" not in out
+        # A button row carries several "\u256d\u2500\u2500\u256e" runs; the page's own frame has
+        # exactly one corner per line.
+        assert not [line for line in out.splitlines() if line.count("\u256d") > 1]
 
     def test_roster_windows_large_roster(self):
         # A long roster must not crash; ▼ marker shows there are more below.
@@ -72,6 +89,50 @@ class TestBuildPerformanceScreen:
         data = {"view": "detail", "detail_title": "x", "detail_lines": lines, "actions": ["Export", "Back"]}
         panel = _build_performance_screen(data, width=100, height=20, scroll_offset=40)
         assert isinstance(panel, Panel)
+
+
+class TestActionsView:
+    """Picking a person opens their own page — one focus, one axis of movement."""
+
+    ACTIONS = ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History", "Export"]
+
+    def _data(self, **over):
+        data = {
+            "session_name": "Demo",
+            "view": "actions",
+            "roster": ["Ada Lovelace", "Alan Turing"],
+            "roster_hints": ["2 open 1:1 actions", "no open 1:1 actions"],
+            "selected_idx": 1,
+            "actions": self.ACTIONS,
+        }
+        data.update(over)
+        return data
+
+    def test_shows_the_chosen_engineers_hint_and_the_action_buttons(self):
+        out = _render(_build_performance_screen(self._data(), width=120, height=40, action_sel=0, desc_reveal=100.0))
+        assert "no open 1:1 actions" in out  # the engineer at selected_idx, not the first
+        for label in self.ACTIONS:
+            assert label in out
+
+    def test_describes_the_focused_action(self):
+        prep = _render(_build_performance_screen(self._data(), width=120, height=40, action_sel=0))
+        review = _render(_build_performance_screen(self._data(), width=120, height=40, action_sel=2))
+        assert "next 1:1" in prep
+        assert "six-month review" in review
+        assert "next 1:1" not in review
+
+    def test_message_renders_over_the_engineer(self):
+        data = self._data(message="Generating 1:1 prep for Alan Turing\u2026")
+        out = _render(_build_performance_screen(data, width=120, height=40))
+        assert "Generating 1:1 prep" in out
+
+    def test_empty_roster_does_not_crash(self):
+        # Unreachable through the page loop, but the builder must never raise.
+        panel = _build_performance_screen(self._data(roster=[], roster_hints=[]), width=100, height=30)
+        assert isinstance(panel, Panel)
+
+    def test_header_carries_the_beta_chip(self):
+        assert BETA_LABEL in _render(_build_performance_screen(self._data(), width=100, height=30))
 
 
 class TestBetaChip:

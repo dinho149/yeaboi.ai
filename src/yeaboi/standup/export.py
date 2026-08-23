@@ -25,7 +25,15 @@ from datetime import datetime
 from pathlib import Path
 
 from yeaboi.agent.state import MemberUpdate, StandupReport
-from yeaboi.artifacts.render import annotations_markdown, edit_map, row_anchor, with_annotations
+from yeaboi.artifacts.render import (
+    annotations_markdown,
+    edit_map,
+    ev_children,
+    ev_field,
+    evidence_payload,
+    row_anchor,
+    with_annotations,
+)
 from yeaboi.html_theme import prose_bullets as _summary_bullets
 from yeaboi.html_theme import safe_url
 from yeaboi.html_theme import split_sentences as _split_sentences
@@ -181,8 +189,8 @@ def _ticket_title_map(report: StandupReport) -> dict[str, str]:
     for m in report.member_updates:
         for field in ("ticketing_evidence", "code_evidence", "documentation_evidence"):
             for e in getattr(m, field, ()) or ():
-                key = _ev_field(e, "key")
-                title = _ev_field(e, "title")
+                key = ev_field(e, "key")
+                title = ev_field(e, "title")
                 if not title or key in titles or not _TICKET_KEY_RE.fullmatch(key):
                     continue
                 if len(title) > _TICKET_TITLE_MAX:
@@ -305,28 +313,28 @@ def _md_evidence_lines(evidence: Sequence[object]) -> list[str]:
         deduped.append(e)
     evidence = deduped
     for e in evidence[:_MD_EVIDENCE_CAP]:
-        key = _ev_field(e, "key")
-        title = _ev_field(e, "title")
-        url = _ev_field(e, "url")
-        if _ev_field(e, "kind") in _DOC_KINDS:
+        key = ev_field(e, "key")
+        title = ev_field(e, "title")
+        url = ev_field(e, "url")
+        if ev_field(e, "kind") in _DOC_KINDS:
             label = title or key
             line = _md_link(label, url) if url else label
         else:
             head = _md_link(key or title, url) if url else (key or title)
             line = f"{head} {title}" if title and key else head
-        if repo := _ev_field(e, "repository"):
+        if repo := ev_field(e, "repository"):
             line += f" · {repo}"
-        if status := _ev_field(e, "status"):
+        if status := ev_field(e, "status"):
             line += f" — {status}"
-        children = _ev_children(e)
+        children = ev_children(e)
         if children:
             line += f" — {len(children)} commit{'s' if len(children) != 1 else ''}"
         if line.strip():
             lines.append(f"  - {line.strip()}")
         for c in children[:_MD_CHILD_CAP]:
-            c_key = _ev_field(c, "key")
-            c_title = _ev_field(c, "title")
-            c_url = _ev_field(c, "url")
+            c_key = ev_field(c, "key")
+            c_title = ev_field(c, "title")
+            c_url = ev_field(c, "url")
             c_head = _md_link(c_key or c_title, c_url) if c_url else (c_key or c_title)
             c_line = f"{c_head} {c_title}" if c_title and c_key else c_head
             if c_line.strip():
@@ -348,42 +356,6 @@ def _links_payload(pairs: Sequence[tuple[str, str]]) -> list[list[str]]:
     return [[label or url, safe_url(url)] for label, url in pairs or ()]
 
 
-def _ev_field(evidence: object, field: str) -> str:
-    """Read one ActivityEvidence field, tolerant of dataclass or dict.
-
-    The standup store rebuilds proper dataclasses, but a report that came
-    through a generic ``asdict``/JSON round-trip hands us plain dicts — the
-    export must not care which it got.
-    """
-    if isinstance(evidence, Mapping):
-        return str(evidence.get(field, "") or "").strip()
-    return str(getattr(evidence, field, "") or "").strip()
-
-
-def _ev_children(evidence: object) -> Sequence[object]:
-    """The nested commit rows of a PR evidence item, dict- or dataclass-shaped."""
-    if isinstance(evidence, Mapping):
-        children = evidence.get("children")
-    else:
-        children = getattr(evidence, "children", ())
-    return children if isinstance(children, (list, tuple)) else ()
-
-
-def _ev_flag(evidence: object, field: str) -> bool:
-    """Read one boolean ActivityEvidence field, dict- or dataclass-shaped."""
-    if isinstance(evidence, Mapping):
-        return bool(evidence.get(field, False))
-    return bool(getattr(evidence, field, False))
-
-
-def _ev_seq(evidence: object, field: str) -> tuple[str, ...]:
-    """Read one string-tuple ActivityEvidence field, dict- or dataclass-shaped."""
-    values = evidence.get(field) if isinstance(evidence, Mapping) else getattr(evidence, field, ())
-    if not isinstance(values, (list, tuple)):
-        return ()
-    return tuple(str(v).strip() for v in values if str(v).strip())
-
-
 def _pr_merge_dedupe_key(e: object) -> str:
     """The ``pr-merge:{repo}:{number}`` identity of a merge-commit row, or "".
 
@@ -392,21 +364,21 @@ def _pr_merge_dedupe_key(e: object) -> str:
     same subject, different SHAs. Re-exports of history deserve the same one
     merge, one row.
     """
-    if _ev_field(e, "kind") != "commit":
+    if ev_field(e, "kind") != "commit":
         return ""
-    title = _ev_field(e, "title")
+    title = ev_field(e, "title")
     if not references.is_merge_subject(title):
         return ""
     number = references.pr_reference(title)
-    return f"pr-merge:{_ev_field(e, 'repository')}:{number}" if number else ""
+    return f"pr-merge:{ev_field(e, 'repository')}:{number}" if number else ""
 
 
 def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
-    """Structured evidence rows for the browser: words and numbers, no markup.
+    """Structured evidence rows for the browser, with merge commits deduped.
 
-    Same URL rule as ``_links_payload``: an unsafe scheme degrades the URL to
-    ``""`` but the row survives — the kind/key/title are what the reader is
-    being shown evidence *of*.
+    The projection itself is shared (``artifacts.render.evidence_payload``); what
+    is standup's own is the dedupe above it, which depends on this mode's
+    reference grammar.
     """
     seen_merges: set[str] = set()
     rows: list[object] = []
@@ -417,26 +389,7 @@ def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
                 continue
             seen_merges.add(merge_key)
         rows.append(e)
-    return [
-        {
-            "kind": _ev_field(e, "kind"),
-            "key": _ev_field(e, "key"),
-            "title": _ev_field(e, "title"),
-            "url": safe_url(_ev_field(e, "url")),
-            "repo": _ev_field(e, "repository"),
-            "status": _ev_field(e, "status"),
-            "time": _ev_field(e, "timestamp"),
-            "children": _evidence_payload(_ev_children(e)),
-            # Story/subtask facts — the browser nests from these (words, not
-            # layout): the tracker's type word, its parent's key, its own
-            # subtask flag, and the exact ticket keys a change's text names.
-            "type": _ev_field(e, "issue_type"),
-            "parent": _ev_field(e, "parent_key"),
-            "subtask": _ev_flag(e, "subtask"),
-            "tickets": list(_ev_seq(e, "ticket_keys")),
-        }
-        for e in rows
-    ]
+    return evidence_payload(rows)
 
 
 def _leftover_links(text: str, links: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:

@@ -31,12 +31,23 @@ def _patch_llm(monkeypatch, content):
     )
 
 
-def _patch_activity(monkeypatch, stories=()):
+def _patch_activity(monkeypatch, stories=(), coverage=()):
+    """Stub the whole evidence gather — the engine's one deterministic input.
+
+    ``coverage`` lets a test assert the artifact carries what was and was not
+    scanned; the default leaves it empty, which is the pre-evidence shape.
+    """
+    from yeaboi.performance.evidence import EngineerEvidence, SourceCoverage
+
     monkeypatch.setattr(
-        engine.activity_mod,
-        "gather_engineer_activity",
-        lambda engineer, **kw: EngineerActivity(
-            engineer=engineer, current_sprint="Sprint 5", stories=tuple(stories), total_items=len(stories)
+        engine.evidence_mod,
+        "gather_engineer_evidence",
+        lambda engineer, **kw: EngineerEvidence(
+            engineer=engineer,
+            activity=EngineerActivity(
+                engineer=engineer, current_sprint="Sprint 5", stories=tuple(stories), total_items=len(stories)
+            ),
+            coverage=tuple(SourceCoverage(*row) for row in coverage),
         ),
     )
 

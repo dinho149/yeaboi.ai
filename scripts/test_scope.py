@@ -296,6 +296,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_*screen*.py",
             "tests/unit/test_*page*.py",
             "tests/unit/test_shared_components.py",
+            "tests/unit/test_row_ctx.py",
             "tests/unit/test_llm_gate.py",
             "tests/unit/test_mascot*.py",
             "tests/unit/test_ansi_font.py",

@@ -24,4 +24,15 @@ def fetch_roster(
         db_path=db_path,
         force_refresh=force_refresh,
     )
-    return [EngineerRef(name=member.name, source=member.source) for member in result.members]
+    # identity/email are carried through, not dropped: they are what
+    # performance/identity.py closes over to attach a person's commits, pages
+    # and ceremony cards to them when those are authored under another handle.
+    return [
+        EngineerRef(
+            name=member.name,
+            source=member.source,
+            external_id=member.identity,
+            email=member.email,
+        )
+        for member in result.members
+    ]

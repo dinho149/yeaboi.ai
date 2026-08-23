@@ -2713,6 +2713,7 @@ def _build_standup_screen(
 
     # See docs: "Daily Standup" — TUI page
     """
+    from yeaboi.ui.mode_select.screens._row_ctx import max_scroll_for, pack_viewport
     from yeaboi.ui.mode_select.screens._standup_sections import (
         _confidence_style,
         _StandupCtx,
@@ -2828,16 +2829,9 @@ def _build_standup_screen(
     viewport_h = calc_viewport(height, header_h=header_h, action_h=action_h)
     total_items = len(body_lines)
     total_rendered = sum(ctx.item_heights)
-    # Scroll offsets identify renderable items, not terminal rows. Find the
-    # earliest trailing item from which the report's tail fits in the viewport.
-    tail_h = 0
-    max_scroll = max(0, total_items - 1)
-    for i in range(total_items - 1, -1, -1):
-        item_h = ctx.item_heights[i] if i < len(ctx.item_heights) else 1
-        if tail_h and tail_h + item_h > viewport_h:
-            break
-        tail_h += item_h
-        max_scroll = i
+    # Scroll offsets identify renderable items, not terminal rows; item_heights
+    # is what maps between the two.
+    max_scroll = max_scroll_for(ctx.item_heights, viewport_h)
     # On the overview every item remains a one-row Text value. Keep the whole
     # selected card visible, including a wrapped summary teaser.
     if view == "overview" and ctx.card_rows and selected_card < len(ctx.card_rows):
@@ -2849,14 +2843,7 @@ def _build_standup_screen(
             scroll_offset = row_top
     actual_scroll = min(scroll_offset, max_scroll)
     publish_geometry(scroll_meta, max_scroll, viewport_h)
-    visible: list = []
-    visible_h = 0
-    for i in range(actual_scroll, total_items):
-        item_h = ctx.item_heights[i] if i < len(ctx.item_heights) else 1
-        if visible_h + item_h > viewport_h:
-            break
-        visible.append(body_lines[i])
-        visible_h += item_h
+    visible, visible_h = pack_viewport(body_lines, ctx.item_heights, actual_scroll, viewport_h)
 
     _sb_text = build_scrollbar(viewport_h, total_rendered, actual_scroll, max_scroll, always_show=True)
     padded_lines: list = list(visible)
@@ -3923,6 +3910,16 @@ def _performance_roster_window(selected: int, n: int, budget: int) -> tuple[int,
     return start, end
 
 
+_PERFORMANCE_ACTION_NOTES = {
+    "1:1 Prep": "Draft talking points and open actions for your next 1:1.",
+    "1:1 Complete": "Turn a 1:1 transcript into a summary, decisions and actions.",
+    "6mo Review": "Draft a six-month review from six months of delivery evidence.",
+    "Notes": "Jot a private note to feed into the next prep or review.",
+    "History": "Browse, open and export everything saved for this engineer.",
+    "Export": "Write the most recent artifact to Markdown and HTML.",
+}
+
+
 def _build_performance_screen(
     performance_data: dict,
     *,
@@ -3938,15 +3935,18 @@ def _build_performance_screen(
 ) -> Panel:
     """Build the Performance dashboard screen using shared TUI components.
 
-    Two views, both rendered here (the run page owns which is active):
-    - "roster": a selectable list of engineers (from Jira / Azure DevOps) — up/down
-      moves the selection, the action buttons run a workflow for the selected person.
+    Three views, all rendered here (the run page owns which is active):
+    - "roster": a selectable list of engineers (from Jira / Azure DevOps). Choosing a
+      person is the only thing this view does, so it carries key hints rather than
+      action buttons — one focus, one axis of movement.
+    - "actions": what to do for the engineer just chosen — their name and status hint
+      over the action buttons, the focused one described a line below.
     - "detail": the artifact produced by an action (1:1 prep / completion / review),
       scrollable, with Back / Export buttons.
 
-    performance_data keys: session_name, view ("roster"|"detail"), roster (list[str]),
-    selected_idx (int), detail_lines (list[str] plaintext), detail_title (str),
-    actions (list[str]), message (str, transient status line).
+    performance_data keys: session_name, view ("roster"|"actions"|"detail"), roster
+    (list[str]), selected_idx (int), detail_lines (list[str] plaintext), detail_title
+    (str), actions (list[str]), message (str, transient status line).
 
     Uses PERFORMANCE_THEME (coral) with shared buttons, scrollbar, and viewport.
 
@@ -3956,6 +3956,7 @@ def _build_performance_screen(
     from yeaboi.ui.shared._components import (
         PERFORMANCE_THEME,
         build_badge,
+        build_key_hints,
         build_reveal_subtitle,
         performance_title,
     )
@@ -3977,6 +3978,8 @@ def _build_performance_screen(
 
     if view == "detail":
         sub_text = performance_data.get("detail_title", "") or "Performance"
+    elif view == "actions":
+        sub_text = "Choose an action"
     else:
         sub_text = f"Team performance — {session_name}" if session_name else "Team performance"
     if anon_note:  # anonymized detail view: the subtitle carries the "N masked" indicator
@@ -4000,7 +4003,66 @@ def _build_performance_screen(
         return Text(_PAD + "  " + line, style=style, justify="left")
 
     actions = performance_data.get("actions") or ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "Export", "Back"]
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+
+    def _focused_engineer() -> tuple[str, str]:
+        """The engineer the page is pointed at, and their one-line status hint."""
+        roster = performance_data.get("roster", []) or []
+        if not roster:
+            return "", ""
+        hints = performance_data.get("roster_hints", []) or []
+        idx = max(0, min(performance_data.get("selected_idx", 0), len(roster) - 1))
+        return roster[idx], (hints[idx] if idx < len(hints) else "")
+
+    # ── Actions view — what to do for the engineer just chosen ─────────────────
+    if view == "actions":
+        name, hint = _focused_engineer()
+        btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+        body = []
+        if message:
+            body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
+            body.append(Text(""))
+        body.extend(
+            _build_mode_row(
+                {
+                    "title": name or "No engineer",
+                    "color": _accent,
+                    "available": bool(name),
+                    "description": hint or "1:1 prep · completion · 6-month review",
+                },
+                selected=True,
+                shimmer_tick=shimmer_tick,
+                desc_reveal=desc_reveal,
+            )
+        )
+        body.append(Text(""))
+        focused = actions[action_sel] if 0 <= action_sel < len(actions) else ""
+        body.append(
+            Text(
+                _PAD + "  " + _PERFORMANCE_ACTION_NOTES.get(focused, ""),
+                style=theme.desc,
+                justify="left",
+                no_wrap=True,
+                overflow="ellipsis",
+            )
+        )
+        # The name block is 2 glyph rows, a blank and the reserved hint row; then a
+        # blank and the note. Padding to the detail view's body budget bottom-anchors
+        # the buttons, so they sit where they do on every other view of this page.
+        used = 6 + (2 if message else 0)
+        body.extend(Text("") for _ in range(max(0, calc_viewport(height, header_h=6, action_h=4) - used)))
+        content = Group(
+            Text(""),
+            title,
+            Text(""),
+            sub,
+            Text(""),
+            *body,
+            Text(""),
+            btn_top,
+            btn_mid,
+            btn_bot,
+        )
+        return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)
 
     # ── Roster view — big ASCII engineer names (mirrors the intake mode picker) ──
     if view != "detail":
@@ -4045,6 +4107,8 @@ def _build_performance_screen(
                 body.append(Text(""))
                 body.append(Text(_PAD + f"▼ {len(roster) - end} more", style=theme.dim, justify="left"))
 
+        # Three rows plus a leading blank, matching the button block this replaces,
+        # so the roster window budget above stays correct.
         content = Group(
             Text(""),
             title,
@@ -4053,13 +4117,14 @@ def _build_performance_screen(
             Text(""),
             *body,
             Text(""),
-            btn_top,
-            btn_mid,
-            btn_bot,
+            Text(""),
+            build_key_hints([("↑/↓", "choose"), ("Enter", "open"), ("Esc", "back")], pad=_PAD),
+            Text(""),
         )
         return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)
 
     # ── Detail view — the produced artifact, scrollable ──────────────────────────
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
     body_lines: list = []
     if message:
         body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))

@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Sequence
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import date, timedelta
 
 from yeaboi.agent.state import (
@@ -29,10 +29,15 @@ from yeaboi.agent.state import (
     OneOnOneRecord,
     SixMonthReview,
 )
-from yeaboi.performance import activity as activity_mod
+from yeaboi.performance import evidence as evidence_mod
 from yeaboi.performance.store import PerformanceStore
 
 logger = logging.getLogger(__name__)
+
+# How far back a 1:1 prep reads the other modes' history. Wider than the two
+# sprints of tickets it quotes, so a practice signal or a retro action item from
+# last month still surfaces in the conversation.
+_PREP_EVIDENCE_DAYS = 60
 
 
 # ---------------------------------------------------------------------------
@@ -172,24 +177,38 @@ def run_one_on_one_prep(
     session_id: str = "",
     jira_project: str = "",
     azdo_project: str = "",
+    deep_scan: bool = False,
     db_path=None,
     today: date | None = None,
 ) -> OneOnOnePrep:
-    """Generate 1:1 prep for ``engineer`` from their recent sprint work + last 1:1.
+    """Generate 1:1 prep for ``engineer`` from every source that knows them.
 
-    Gathers the engineer's current + prior sprint tickets, pulls the open action
-    items from their most recent completed 1:1, and asks the LLM for structured
-    talking points / feedback / goals / gaps / improvements. Persists the prep.
+    Gathers their tickets, the per-member code/documentation/self-report evidence
+    saved by standup, their practice signals, the team analysis metrics, and their
+    retro and poker history, pulls the open action items from their most recent
+    completed 1:1, and asks the LLM for structured talking points / feedback /
+    goals / gaps / improvements. Persists the prep.
+
+    ``deep_scan`` permits one capped live scan for the stretch no saved standup
+    covered; it costs API calls, so it is off by default.
     """
     today = today or date.today()
     date_str = today.isoformat()
     db_path = _resolve_db_path(db_path)
-    logger.info("run_one_on_one_prep: engineer=%s session=%s", engineer, session_id)
+    logger.info("run_one_on_one_prep: engineer=%s session=%s deep_scan=%s", engineer, session_id, deep_scan)
 
     state = _load_state(session_id, db_path)
-    activity = activity_mod.gather_engineer_activity(
-        engineer, state=state, jira_project=jira_project, azdo_project=azdo_project
+    evidence = evidence_mod.gather_engineer_evidence(
+        engineer,
+        period_start=(today - timedelta(days=_PREP_EVIDENCE_DAYS)).isoformat(),
+        period_end=date_str,
+        state=state,
+        jira_project=jira_project,
+        azdo_project=azdo_project,
+        deep_scan=deep_scan,
+        db_path=db_path,
     )
+    activity = evidence.activity
 
     with PerformanceStore(db_path) as store:
         carried = store.get_open_action_items(engineer)
@@ -202,6 +221,8 @@ def run_one_on_one_prep(
         activity=asdict(activity),
         open_action_items=list(carried),
         notes=notes,
+        evidence_md=evidence.summary_md,
+        coverage_md=evidence_mod.format_coverage_md(evidence),
     )
     parsed, warnings = _invoke_llm(prompt, what="1:1 prep")
 
@@ -225,6 +246,10 @@ def run_one_on_one_prep(
             activity_summary=(parsed.get("activity_summary") or "").strip(),
             warnings=tuple(warnings),
         )
+
+    # Applied after the branch so the fallback artifact says what was scanned too
+    # — a run with no LLM is exactly when the lead most needs to know.
+    prep = _with_coverage(prep, evidence)
 
     with PerformanceStore(db_path) as store:
         store.record_prep(prep, session_id=session_id)
@@ -340,6 +365,15 @@ def complete_one_on_one(
     return record
 
 
+def _with_coverage(artifact, evidence):
+    """Stamp an artifact with the sources that fed it and what each one covered."""
+    return replace(
+        artifact,
+        evidence_sources=evidence.contributing_sources,
+        evidence_coverage=tuple((c.source, c.state, c.detail) for c in evidence.coverage),
+    )
+
+
 def _with_warning(record: OneOnOneRecord, warning: str) -> OneOnOneRecord:
     """Return a copy of ``record`` with ``warning`` appended (records are frozen)."""
     from dataclasses import replace
@@ -430,14 +464,20 @@ def run_six_month_review(
     jira_project: str = "",
     azdo_project: str = "",
     period_months: int = 6,
+    deep_scan: bool = False,
     db_path=None,
     today: date | None = None,
 ) -> SixMonthReview:
     """Synthesize a performance review for ``engineer`` over the last ``period_months``.
 
-    Pulls together: past 1:1 records, long-window Jira/AzDO delivery history, team
-    ceremony history, the lead's notes, and a competency framework, then asks the
-    LLM for a structured review. Persists the review.
+    Pulls together: past 1:1 records, long-window Jira/AzDO delivery history, the
+    per-member code / documentation / self-report evidence standup saved over the
+    period, their practice signals, the team analysis metrics, their retro and
+    poker history, team ceremony history, the lead's notes, and a competency
+    framework, then asks the LLM for a structured review. Persists the review.
+
+    ``deep_scan`` permits one capped live scan for the stretch no saved standup
+    covered; it costs API calls, so it is off by default.
     """
     today = today or date.today()
     period_end = today.isoformat()
@@ -452,13 +492,18 @@ def run_six_month_review(
         notes = [n["note_text"] for n in store.get_notes(engineer)]
 
     # ~2 sprints/month over the period → enough look-back for delivery signal.
-    delivery = activity_mod.gather_engineer_activity(
+    evidence = evidence_mod.gather_engineer_evidence(
         engineer,
+        period_start=period_start,
+        period_end=period_end,
         state=state,
         jira_project=jira_project,
         azdo_project=azdo_project,
         sprints=max(2, period_months * 2),
+        deep_scan=deep_scan,
+        db_path=db_path,
     )
+    delivery = evidence.activity
 
     ceremony_summary = ""
     try:
@@ -482,6 +527,8 @@ def run_six_month_review(
         notes=notes,
         framework_text=framework_text,
         custom_template=is_custom,
+        evidence_md=evidence.summary_md,
+        coverage_md=evidence_mod.format_coverage_md(evidence),
     )
     parsed, warnings = _invoke_llm(prompt, what="6-month review")
 
@@ -500,6 +547,8 @@ def run_six_month_review(
             framework_used=framework_label,
             warnings=tuple(warnings),
         )
+
+    review = _with_coverage(review, evidence)
 
     with PerformanceStore(db_path) as store:
         store.record_review(review, session_id=session_id)

@@ -61,6 +61,11 @@ class TestPrepRoundTrip:
             carried_action_items=("Write the auth runbook",),
             activity_summary="Closed 7 stories across PROJ-101..PROJ-118, mostly auth.",
             warnings=("Only one sprint of history — treat trends as provisional",),
+            evidence_sources=("standup", "code", "analysis"),
+            evidence_coverage=(
+                ("code", "covered", "Scanned by 12 of 12 standup run(s)."),
+                ("documentation", "not_configured", "No standup run in this period scanned documentation."),
+            ),
             annotations=(
                 Annotation(
                     kind="field",
@@ -176,6 +181,11 @@ class TestReviewRoundTrip:
             overall="Strong half, grounded in 14 delivered stories across two teams.",
             framework_used="acme-engineering-ladder-v3",
             warnings=("Half covers 4 sprints of data — narrower than a usual review window",),
+            evidence_sources=("standup", "code", "analysis"),
+            evidence_coverage=(
+                ("code", "covered", "Scanned by 12 of 12 standup run(s)."),
+                ("documentation", "not_configured", "No standup run in this period scanned documentation."),
+            ),
             annotations=(
                 Annotation(
                     kind="field",
@@ -226,6 +236,45 @@ class TestSavedRunsHub:
         kinds = sorted(r["kind"] for r in rows)
         assert kinds == ["completion", "note", "prep", "review"]
         assert all({"id", "created_at", "title"} <= set(r) for r in rows)
+
+    def test_get_all_history_spans_every_engineer(self, db_path):
+        """The Performance card's landing lists the whole team, each row naming its owner."""
+        with PerformanceStore(db_path) as store:
+            store.record_prep(OneOnOnePrep(engineer="Ada", date="2026-07-01"))
+            store.record_completion(OneOnOneRecord(engineer="Ada", date="2026-07-05"))
+            store.record_review(SixMonthReview(engineer="Bob", overall="x"))
+            store.add_note("Bob", "a note")
+            rows = store.get_all_history()
+        assert sorted(r["engineer"] for r in rows) == ["Ada", "Ada", "Bob", "Bob"]
+        assert sorted(r["kind"] for r in rows) == ["completion", "note", "prep", "review"]
+
+    def test_get_all_history_agrees_with_the_scoped_read(self, db_path):
+        """One engineer's slice of the team-wide read is that engineer's own history.
+
+        The landing hub and the roster's History action must show the same artifact for
+        the same person, or deleting from one would appear to leave it in the other.
+        """
+        with PerformanceStore(db_path) as store:
+            store.record_prep(OneOnOnePrep(engineer="Ada", date="2026-07-01"))
+            store.add_note("Ada", "a note")
+            store.record_review(SixMonthReview(engineer="Bob", overall="x"))
+            scoped = store.get_engineer_history("Ada")
+            mine = [r for r in store.get_all_history() if r["engineer"] == "Ada"]
+        assert [(r["kind"], r["id"], r["title"]) for r in mine] == [(r["kind"], r["id"], r["title"]) for r in scoped]
+
+    def test_get_all_history_is_newest_first_and_respects_limit(self, db_path):
+        with PerformanceStore(db_path) as store:
+            store.record_prep(OneOnOnePrep(engineer="Ada", date="2026-07-01"))
+            store.record_review(SixMonthReview(engineer="Bob", overall="x"))
+            store.add_note("Cleo", "a note")
+            store.record_completion(OneOnOneRecord(engineer="Ada", date="2026-07-05"))
+            stamps = [r["created_at"] for r in store.get_all_history()]
+            assert stamps == sorted(stamps, reverse=True)
+            assert len(store.get_all_history(limit=2)) == 2
+
+    def test_get_all_history_empty_when_nothing_saved(self, db_path):
+        with PerformanceStore(db_path) as store:
+            assert store.get_all_history() == []
 
     def test_one_on_one_by_id_dispatches_on_kind(self, db_path):
         with PerformanceStore(db_path) as store:

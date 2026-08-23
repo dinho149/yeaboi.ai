@@ -80,6 +80,22 @@ def _prep_to_json(prep: OneOnOnePrep) -> str:
     return json.dumps(asdict(prep), ensure_ascii=False)
 
 
+def _coverage_from(raw) -> tuple[tuple[str, str, str], ...]:
+    """Rebuild (source, state, detail) rows from JSON or a masked artifact.
+
+    Both round-trips hand these back as lists of lists, so rows are rebuilt as
+    tuples and anything not three-wide is dropped rather than crashing a reader.
+    """
+    rows: list[tuple[str, str, str]] = []
+    for row in raw or ():
+        try:
+            source, state, detail = row
+        except (TypeError, ValueError):
+            continue
+        rows.append((str(source), str(state), str(detail)))
+    return tuple(rows)
+
+
 def _dict_to_prep(d: dict) -> OneOnOnePrep:
     """Reconstruct a OneOnOnePrep, defaulting every field (backward-compat)."""
     return OneOnOnePrep(
@@ -93,6 +109,8 @@ def _dict_to_prep(d: dict) -> OneOnOnePrep:
         carried_action_items=tuple(d.get("carried_action_items", ())),
         activity_summary=d.get("activity_summary", ""),
         warnings=tuple(d.get("warnings", ())),
+        evidence_sources=tuple(d.get("evidence_sources", ())),
+        evidence_coverage=_coverage_from(d.get("evidence_coverage")),
         annotations=annotations_from(d.get("annotations")),
     )
 
@@ -135,6 +153,8 @@ def _dict_to_review(d: dict) -> SixMonthReview:
         overall=d.get("overall", ""),
         framework_used=d.get("framework_used", ""),
         warnings=tuple(d.get("warnings", ())),
+        evidence_sources=tuple(d.get("evidence_sources", ())),
+        evidence_coverage=_coverage_from(d.get("evidence_coverage")),
         annotations=annotations_from(d.get("annotations")),
     )
 
@@ -405,44 +425,83 @@ class PerformanceStore:
             logger.info("Deleted performance note id=%s", note_id)
         return deleted
 
-    # ── Per-engineer saved-runs hub ───────────────────────────────────────────
+    # ── Saved-artifacts hub rows ──────────────────────────────────────────────
 
-    def get_engineer_history(self, engineer: str, limit: int = 100) -> list[dict]:
-        """Return every saved artifact for an engineer, newest first, for the hub.
+    def _history_rows(self, engineer: str, limit: int) -> list[dict]:
+        """Merge the three artifact tables into hub rows, newest first.
 
-        Merges the three per-engineer tables (1:1 preps + completions, 6-month
-        reviews, notes) into one list of lightweight rows. Each row carries a
-        ``kind`` (``prep`` | ``completion`` | ``review`` | ``note``), its table
-        ``id``, ``created_at``, and a short ``title`` — enough for the run-hub list
-        to render and, on open/delete, dispatch to the right getter/deleter by kind.
+        An empty ``engineer`` means every engineer. Each row carries a ``kind``
+        (``prep`` | ``completion`` | ``review`` | ``note``), its table ``id``, the
+        owning ``engineer``, ``created_at``, and a short ``title`` — enough for the
+        run-hub list to render and, on open/delete, dispatch to the right
+        getter/deleter by kind.
         """
+        # An empty :engineer matches every row, so one parameterised query serves both
+        # scopes — no clause is ever built by string interpolation.
+        args = {"engineer": engineer, "limit": limit}
         rows: list[dict] = []
         for r in self._conn.execute(
-            "SELECT id, kind, on_date, created_at FROM performance_one_on_ones "
-            "WHERE engineer = ? ORDER BY created_at DESC LIMIT ?",
-            (engineer, limit),
+            "SELECT id, kind, on_date, created_at, engineer FROM performance_one_on_ones "
+            "WHERE (:engineer = '' OR engineer = :engineer) ORDER BY created_at DESC LIMIT :limit",
+            args,
         ).fetchall():
             kind = r[1] or "prep"
             label = "1:1 Prep" if kind == "prep" else "1:1 Summary"
-            rows.append({"kind": kind, "id": r[0], "created_at": r[3], "title": f"{label} — {r[2] or r[3][:10]}"})
+            rows.append(
+                {
+                    "kind": kind,
+                    "id": r[0],
+                    "engineer": r[4],
+                    "created_at": r[3],
+                    "title": f"{label} — {r[2] or r[3][:10]}",
+                }
+            )
         for r in self._conn.execute(
-            "SELECT id, period_start, period_end, created_at FROM performance_reviews "
-            "WHERE engineer = ? ORDER BY created_at DESC LIMIT ?",
-            (engineer, limit),
+            "SELECT id, period_start, period_end, created_at, engineer FROM performance_reviews "
+            "WHERE (:engineer = '' OR engineer = :engineer) ORDER BY created_at DESC LIMIT :limit",
+            args,
         ).fetchall():
             span = f"{r[1]}..{r[2]}" if (r[1] or r[2]) else r[3][:10]
-            rows.append({"kind": "review", "id": r[0], "created_at": r[3], "title": f"6-Month Review — {span}"})
+            rows.append(
+                {
+                    "kind": "review",
+                    "id": r[0],
+                    "engineer": r[4],
+                    "created_at": r[3],
+                    "title": f"6-Month Review — {span}",
+                }
+            )
         for r in self._conn.execute(
-            "SELECT id, note_text, created_at FROM performance_notes "
-            "WHERE engineer = ? ORDER BY created_at DESC LIMIT ?",
-            (engineer, limit),
+            "SELECT id, note_text, created_at, engineer FROM performance_notes "
+            "WHERE (:engineer = '' OR engineer = :engineer) ORDER BY created_at DESC LIMIT :limit",
+            args,
         ).fetchall():
             snippet = (r[1] or "").strip().replace("\n", " ")
             if len(snippet) > 48:
                 snippet = snippet[:47] + "…"
-            rows.append({"kind": "note", "id": r[0], "created_at": r[2], "title": f"Note — {snippet or r[2][:10]}"})
+            rows.append(
+                {
+                    "kind": "note",
+                    "id": r[0],
+                    "engineer": r[3],
+                    "created_at": r[2],
+                    "title": f"Note — {snippet or r[2][:10]}",
+                }
+            )
         rows.sort(key=lambda d: d["created_at"], reverse=True)
         return rows[:limit]
+
+    def get_engineer_history(self, engineer: str, limit: int = 100) -> list[dict]:
+        """Return every saved artifact for one engineer, newest first, for the hub."""
+        return self._history_rows(engineer, limit)
+
+    def get_all_history(self, limit: int = 100) -> list[dict]:
+        """Return every saved artifact across all engineers, newest first.
+
+        Backs the Performance card's saved-artifacts landing, which names the owning
+        engineer on each row. Signature matches the other modes' stores.
+        """
+        return self._history_rows("", limit)
 
     # ── Team-wide (cross-engineer) reads — used by performance/context.py to
     #    feed Planning / Analysis with per-engineer open actions + focus areas.

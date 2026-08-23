@@ -780,6 +780,11 @@ def build_parser() -> argparse.ArgumentParser:
     prep_p.add_argument("--session", default="", metavar="ID", help="Session for team context (default: most recent)")
     prep_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     prep_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
+    prep_p.add_argument(
+        "--deep-scan",
+        action="store_true",
+        help="Also live-scan the stretch no saved standup covered (slower, costs API calls)",
+    )
     prep_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     complete_p = perf_sub.add_parser(
         "complete", help="Complete a held 1:1 from its transcript", description=PERFORMANCE_BETA_NOTICE
@@ -805,6 +810,11 @@ def build_parser() -> argparse.ArgumentParser:
     review_p.add_argument("--session", default="", metavar="ID", help="Session for team context")
     review_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     review_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
+    review_p.add_argument(
+        "--deep-scan",
+        action="store_true",
+        help="Also live-scan the stretch no saved standup covered (slower, costs API calls)",
+    )
     review_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     note_p = perf_sub.add_parser("note", help="Record a note about an engineer", description=PERFORMANCE_BETA_NOTICE)
     note_p.add_argument("engineer", help="Engineer name")
@@ -2119,6 +2129,7 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
             session_id=_resolve_cli_session(args.session) or "",
             jira_project=args.jira_project,
             azdo_project=args.azdo_project,
+            deep_scan=args.deep_scan,
         )
         for warning in prep.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
@@ -2163,6 +2174,7 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
             jira_project=args.jira_project,
             azdo_project=args.azdo_project,
             period_months=args.months,
+            deep_scan=args.deep_scan,
         )
         for warning in review.warnings:
             print(f"⚠ {warning}", file=sys.stderr)

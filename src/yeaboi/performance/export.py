@@ -19,6 +19,7 @@ from pathlib import Path
 
 from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
 from yeaboi.artifacts.render import annotations_markdown, edit_map, with_annotations
+from yeaboi.performance.render import coverage_lines
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ def build_prep_markdown(prep: OneOnOnePrep) -> str:
     lines += _md_section("Goals to align on", prep.goals)
     lines += _md_section("Gaps observed", prep.gaps)
     lines += _md_section("Areas to improve", prep.improvements)
+    lines += _md_section("Evidence coverage", coverage_lines(prep))
     lines += _md_section("⚠ Notices", prep.warnings)
     return "\n".join(lines + annotations_markdown(prep.annotations) + _md_footer())
 
@@ -96,6 +98,7 @@ def build_review_markdown(review: SixMonthReview) -> str:
     lines += _md_section("Achievements", review.achievements)
     lines += _md_section("Areas for improvement", review.areas_for_improvement)
     lines += _md_section("Goals for next period", review.goals, style="numbered")
+    lines += _md_section("Evidence coverage", coverage_lines(review))
     if review.framework_used:
         lines += [f"_Framework: {review.framework_used}_", ""]
     lines += _md_section("⚠ Notices", review.warnings)
@@ -189,6 +192,7 @@ def prep_export_args(prep: OneOnOnePrep, *, editable: bool = False) -> dict[str,
             ("Goals to align on", prep.goals),
             ("Gaps observed", prep.gaps),
             ("Areas to improve", prep.improvements),
+            ("Evidence coverage", coverage_lines(prep)),
         ],
         warnings=prep.warnings,
         artifact=prep,
@@ -243,6 +247,7 @@ def review_export_args(review: SixMonthReview, *, editable: bool = False) -> dic
             ("Achievements", review.achievements),
             ("Areas for improvement", review.areas_for_improvement),
             ("Goals for next period", review.goals),
+            ("Evidence coverage", coverage_lines(review)),
         ],
         footnote=f"Framework: {review.framework_used}" if review.framework_used else "",
         warnings=review.warnings,

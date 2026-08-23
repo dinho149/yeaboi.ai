@@ -24,83 +24,31 @@ card's first row so the auto-scroll never assumes one row per card.
 
 from __future__ import annotations
 
-import io
 import textwrap
 
 import rich.box
-from rich.console import Console, Group
-from rich.padding import Padding
+from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table as RichTable
 from rich.text import Text
 
+from yeaboi.ui.mode_select.screens._row_ctx import RowCtx
 from yeaboi.ui.shared._components import PAD, Theme
 
 _TEASER_W = 46  # max teaser length on an overview section row
 _TITLE_W = 22  # section-title column width — teasers align to it, as does the summary continuation row
 
 
-class _StandupCtx:
-    """Renderable accumulator for Standup overview and detail screens.
+class _StandupCtx(RowCtx):
+    """Standup's row accumulator: the shared one plus overview-card bookkeeping.
 
-    Overview rows remain height-one Text values. Detail pages may also contain
-    Rich panels and tables, so ``item_heights`` records their measured terminal
-    height for the same height-aware viewport packing used by Analysis mode.
-    ``card_rows`` stores overview item indexes for selection auto-scroll.
+    ``card_rows`` stores each overview card's first item index so the selection
+    auto-scroll never assumes one row per card (the summary teaser wraps to two).
     """
 
     def __init__(self, theme: Theme, width: int) -> None:
-        self.lines: list = []
-        self.item_heights: list[int] = []
-        self.theme = theme
-        self.width = width
+        super().__init__(theme, width)
         self.card_rows: list[int] = []
-
-    def add(self, line, rendered_h: int = 1) -> None:
-        self.lines.append(line)
-        self.item_heights.append(rendered_h)
-
-    def add_renderable(self, renderable) -> None:
-        """Add a padded Rich renderable with its actual terminal height."""
-        padded = Padding(renderable, (0, 1, 0, len(PAD)))
-        console = Console(width=max(10, self.width - 7), file=io.StringIO(), legacy_windows=False)
-        self.add(padded, max(1, len(console.render_lines(padded, pad=False))))
-
-    def add_table(self, table: RichTable) -> None:
-        self.add_renderable(table)
-
-    def blank(self) -> None:
-        self.add(Text(""))
-
-    def heading(self, text: str) -> None:
-        self.blank()
-        h = Text(PAD + "  ", justify="left")
-        h.append(text, style=f"bold {self.theme.accent}")
-        self.add(h)
-        self.add(Text(PAD + "  " + "─" * min(len(text), 40), style=self.theme.sep, justify="left"))
-
-    def row(self, label: str, value: str, value_style: str = "") -> None:
-        r = Text(PAD + "    ", justify="left")
-        r.append(f"{label}:  ", style=self.theme.muted)
-        r.append(str(value), style=value_style or self.theme.value)
-        self.add(r)
-
-    def line(self, text: str, style: str = "") -> None:
-        self.add(Text(PAD + "    " + text, style=style or self.theme.value, justify="left"))
-
-    def wrapped(self, text: str, style: str, *, indent: str = "    ", preserve_newlines: bool = False) -> None:
-        """Append word-wrapped lines; optionally honour explicit newlines.
-
-        preserve_newlines keeps the user's own paragraph breaks (multi-line
-        self-reports typed with Alt+Enter) instead of collapsing them.
-        """
-        # -7: panel border+padding (6) plus the scrollbar column (1) — one char
-        # over and the row wraps, silently eating a viewport row.
-        wrap_w = max(24, self.width - len(PAD) - len(indent) - 7)
-        paragraphs = text.splitlines() if preserve_newlines else [text]
-        for para in paragraphs or [""]:
-            for chunk in textwrap.wrap(para, width=wrap_w) or [""]:
-                self.add(Text(PAD + indent + chunk, style=style, justify="left"))
 
 
 # ---------------------------------------------------------------------------

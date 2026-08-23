@@ -6033,6 +6033,7 @@ def _run_mode_hub(
     get_editable_session=None,
     share_theme=None,
     new_breaks_out: bool = False,
+    new_message: str = "New run recorded.",
     extra_label=None,
     extra_action=None,
 ) -> None:
@@ -6057,6 +6058,9 @@ def _run_mode_hub(
     actions, scroll_meta, width, height, message, shimmer_tick) -> Panel`` (or None if
     the run vanished). Standup needs section drill-in beyond plain scroll, so it passes
     an ``open_snapshot`` override instead; the other three use the shared scroll loop.
+
+    ``new_message`` is what the list says after ``run_new`` returns. Performance passes
+    "" because its "+ New" opens the roster, which the user may simply browse and leave.
 
     ``extra_label``/``extra_action`` (both optional callables) add one fixed card
     below "+ New run" — standup uses it for "Set up a schedule". ``extra_label()``
@@ -6185,7 +6189,7 @@ def _run_mode_hub(
             return True, None
         if act == "Run again":
             run_new()
-            _reload("New run recorded.")
+            _reload(new_message)
             return True, None
         return False, None
 
@@ -6306,7 +6310,7 @@ def _run_mode_hub(
                         if new_breaks_out:
                             break  # Performance: hand control back to the roster
                         run_new()
-                        _reload("New run recorded.")
+                        _reload(new_message)
                     else:
                         _open_snapshot(runs[_hit])
                 _render_list()
@@ -6346,7 +6350,7 @@ def _run_mode_hub(
                     break
                 # "+ New run" card → run the live page, then reload the list.
                 run_new()
-                _reload("New run recorded.")
+                _reload(new_message)
                 _render_list()
                 continue
             run = runs[selected]
@@ -6909,14 +6913,19 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
 
 
 def _run_performance_hub(
-    console: Console, live, read_key, frame_time: float, supports_timeout: bool, engineer: str
+    console: Console, live, read_key, frame_time: float, supports_timeout: bool, engineer: str = ""
 ) -> None:
-    """Per-engineer saved-artifacts hub (opened from the Performance roster's "History").
+    """Saved-artifacts hub for Performance — the mode's landing, or one engineer's slice.
 
-    Performance is keyed by engineer, not by a single run, so the hub lists every saved
-    artifact for one engineer — 1:1 preps, completions, 6-month reviews, and notes — with
-    the same Open / Delete / Export experience. "+ New artifact" hands control back to the
-    roster, where the create actions (Prep / Complete / Review / Notes) live.
+    Performance is keyed by engineer rather than by a single run, so a row is one saved
+    artifact — a 1:1 prep, a completion, a 6-month review, or a note — with the same
+    Open / Delete / Export experience the other modes' hubs offer.
+
+    An empty ``engineer`` is the Performance card's landing: every engineer's artifacts,
+    each row naming who it is about, and "+ New artifact" opening the roster where the
+    create actions (Prep / Complete / Review / Notes) live. A named engineer is that
+    person's slice, opened from the roster's "History" action, where "+ New artifact"
+    hands control straight back to the roster it came from.
     """
     from yeaboi.performance.export import (
         build_completion_markdown,
@@ -6933,18 +6942,24 @@ def _run_performance_hub(
 
     def load_runs():
         with PerformanceStore(_ana_dbp) as store:
-            rows = store.get_engineer_history(engineer, 100)
+            rows = store.get_engineer_history(engineer, 100) if engineer else store.get_all_history(100)
         return [
             RunSummary(
                 "performance",
                 r["id"],
                 r["title"],
-                r["kind"].capitalize(),
+                # A team-wide row names the person; a scoped hub already says so in its subtitle.
+                r["kind"].capitalize() if engineer else f"{r['engineer']} · {r['kind'].capitalize()}",
                 _relative_time(r["created_at"]),
                 kind=r["kind"],
+                engineer=r["engineer"],
             )
             for r in rows
         ]
+
+    def _who(run) -> str:
+        """The engineer a row is about — carried on the row when the hub is team-wide."""
+        return run.engineer or engineer
 
     def _artifact(run):
         """Return (artifact_or_text, kind, lines) for a saved row, or None if gone."""
@@ -6953,7 +6968,7 @@ def _run_performance_hub(
                 art = store.get_review_by_id(run.run_id)
                 return None if art is None else (art, "review", format_review_lines(art))
             if run.kind == "note":
-                for n in store.get_notes(engineer, 200):
+                for n in store.get_notes(_who(run), 200):
                     if n["id"] == run.run_id:
                         return (n["note_text"], "note", (n["note_text"] or "").splitlines() or ["(empty note)"])
                 return None
@@ -7008,7 +7023,7 @@ def _run_performance_hub(
         art, kind, _lines = got
         if kind == "note":
             return "Notes aren't exported to files individually — use Copy/Publish."
-        paths = export_artifact(art, engineer=engineer, kind=kind)
+        paths = export_artifact(art, engineer=_who(run), kind=kind)
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):
@@ -7017,7 +7032,7 @@ def _run_performance_hub(
             return "That artifact is no longer available."
         art, kind, _lines = got
         if kind == "note":
-            return (f"Note — {engineer}", art if isinstance(art, str) else "")
+            return (f"Note — {_who(run)}", art if isinstance(art, str) else "")
         if kind == "completion":
             return (run.title, build_completion_markdown(art))
         if kind == "review":
@@ -7035,6 +7050,7 @@ def _run_performance_hub(
 
         return performance_document(art, kind=kind)
 
+    scoped = bool(engineer)
     _run_mode_hub(
         console,
         live,
@@ -7043,9 +7059,11 @@ def _run_performance_hub(
         supports_timeout,
         mode="performance",
         title_fn=performance_title,
-        subtitle=f"Saved artifacts — {engineer}",
-        empty_title=f"No saved artifacts for {engineer}",
-        empty_subtitle="Press Enter to create one from the roster",
+        subtitle=f"Saved artifacts — {engineer}" if scoped else "Saved artifacts",
+        empty_title=f"No saved artifacts for {engineer}" if scoped else "No saved artifacts yet",
+        empty_subtitle=(
+            "Press Enter to create one from the roster" if scoped else "Press Enter to pick an engineer and create one"
+        ),
         new_label="+ New artifact",
         load_runs=load_runs,
         make_detail=make_detail,
@@ -7054,8 +7072,15 @@ def _run_performance_hub(
         get_share_document=get_share_document,
         share_theme=PERFORMANCE_THEME,
         delete_run=delete_run,
-        run_new=lambda: None,
-        new_breaks_out=True,
+        # Scoped: "+ New" breaks back out to the roster that opened this hub. Team-wide:
+        # the roster IS the create surface, so open it in place and reload on return.
+        run_new=(
+            (lambda: None)
+            if scoped
+            else (lambda: _run_performance_page(console, live, read_key, frame_time, supports_timeout))
+        ),
+        new_breaks_out=scoped,
+        new_message="",  # opening the roster records nothing on its own
     )
 
 
@@ -9254,10 +9279,12 @@ def _ensure_insights(
 def _run_performance_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Event loop for the Performance page.
 
-    Two views. In "roster": Up/Down choose an engineer, Left/Right pick an action
-    (1:1 Prep / 1:1 Complete / 6mo Review / Notes / Export / Back), Enter runs it —
-    an AI action switches to "detail" showing the artifact. In "detail": Up/Down
-    scroll, Export re-writes the artifact, Back returns to the roster.
+    Three views, each with exactly one thing to move. In "roster": Up/Down choose an
+    engineer, Enter opens them. In "actions": Left/Right pick what to do for that
+    engineer (1:1 Prep / 1:1 Complete / 6mo Review / Notes / History / Export), Enter
+    runs it — an AI action switches to "detail" showing the artifact, Esc returns to
+    the roster. In "detail": Up/Down scroll, Export re-writes the artifact, Back
+    returns to that engineer's actions.
 
     # See docs: "Performance Mode" — TUI page
     """
@@ -9314,7 +9341,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             "selected_idx": state["selected"],
             "detail_lines": lines,
             "detail_title": title,
-            "actions": roster_actions if state["view"] == "roster" else _detail_actions(),
+            "actions": _detail_actions() if state["view"] == "detail" else roster_actions,
             "message": state["message"],
         }
 
@@ -9334,7 +9361,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         sub_reveal = tick * _HEADER_SUB_SPEED
         # The per-engineer description only reveals in the roster view, and restarts
         # whenever the selection changes (select_time), like the intake picker.
-        reveal = (now - state["select_time"]) * _DESC_SCROLL_SPEED if state["view"] == "roster" else 0.0
+        reveal = (now - state["select_time"]) * _DESC_SCROLL_SPEED if state["view"] != "detail" else 0.0
         _last_panel = _build_performance_screen(
             _data(),
             scroll_offset=state["scroll"],
@@ -9440,7 +9467,12 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         if _clicked is not None:
             if _last_panel is None:
                 continue
-            _labels = roster_actions if state["view"] == "roster" else _detail_actions()
+            # The roster carries key hints, not buttons — nothing there to click.
+            _labels = (
+                []
+                if state["view"] == "roster"
+                else (roster_actions if state["view"] == "actions" else _detail_actions())
+            )
             _idx = button_click(console, _last_panel, *_clicked, _labels)
             if _idx is None:
                 continue  # click missed the buttons — ignore it
@@ -9455,17 +9487,26 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 if roster:
                     state["selected"] = (state["selected"] + 1) % len(roster)
                     state["select_time"] = time.monotonic()
-            elif k == "left":
+            elif k in ("enter", " "):
+                if not roster:
+                    logger.info("performance: open pressed with an empty roster")
+                    state["message"] = "No engineers — connect Jira or Azure DevOps first."
+                else:
+                    logger.info("performance: opened engineer=%s", roster[state["selected"]])
+                    state["view"] = "actions"
+                    state["sel"], state["message"] = 0, ""
+                    state["select_time"] = time.monotonic()  # replay the hint reveal
+            elif k in ("esc", "q"):
+                break
+        elif state["view"] == "actions":
+            if k == "left":
                 state["sel"] = max(0, state["sel"] - 1)
             elif k == "right":
                 state["sel"] = min(len(roster_actions) - 1, state["sel"] + 1)
             elif k in ("enter", " "):
                 label = roster_actions[state["sel"]]
-                if label == "Back":
-                    break
-                if not roster:
-                    logger.info("performance: %s pressed with empty roster", label)
-                    state["message"] = "No engineers — connect Jira or Azure DevOps first."
+                if not roster:  # the roster emptied under us — nothing to act on
+                    state["view"] = "roster"
                 else:
                     engineer = roster[state["selected"]]
                     logger.info("performance: %s pressed for engineer=%s", label, engineer)
@@ -9492,7 +9533,9 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                         # review — refresh the per-engineer hints shown in the roster.
                         roster_hints[:] = _performance_roster_hints(roster)
             elif k in ("esc", "q"):
-                break
+                state["view"] = "roster"
+                state["sel"], state["message"] = 0, ""
+                state["select_time"] = time.monotonic()
         else:  # detail view
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(state["scroll"], k, state["scroll_meta"], read_key)
@@ -9506,7 +9549,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             elif k in ("enter", " "):
                 label = _detail_actions()[state["sel"]]
                 if label == "Back":
-                    state["view"] = "roster"
+                    state["view"] = "actions"
                     state["sel"], state["scroll"], state["message"] = 0, 0, ""
                     anon, anon_instruction = None, ""  # leaving the artifact drops the mask
                     state["select_time"] = time.monotonic()  # replay the reveal on return
@@ -9629,7 +9672,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 elif label == "Revert":  # restore the real names (no LLM call)
                     anon, anon_instruction = None, ""
             elif k in ("esc", "q"):
-                state["view"] = "roster"
+                state["view"] = "actions"
                 state["sel"], state["scroll"], state["message"] = 0, 0, ""
                 anon, anon_instruction = None, ""
                 state["select_time"] = time.monotonic()
@@ -14317,17 +14360,17 @@ def select_mode(
                 _skip_fade_in = True
                 continue
 
-            # ── Route: Performance mode → per-engineer dashboard ─────────
+            # ── Route: Performance mode → saved-artifacts hub ────────────
             if chosen["key"] == "performance":
                 logger.info("Performance mode selected")
                 with mode_log("performance"):
                     # Beta gate first: the mode drafts material about named
-                    # people, so the caveat comes before the roster, not after.
-                    # Shown once ever; a decline returns to the menu unrecorded.
+                    # people, and the hub lists those names, so the caveat comes
+                    # before it. Shown once ever; a decline returns unrecorded.
                     if show_beta_notice(
                         live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="performance"
                     ):
-                        _run_performance_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        _run_performance_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue

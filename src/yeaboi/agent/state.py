@@ -908,6 +908,10 @@ class EngineerRef:
     name: str = ""  # display name, e.g. "Ada Lovelace"
     source: str = ""  # "jira" | "azuredevops" | "manual"
     external_id: str = ""  # accountId / descriptor — best-effort, may be empty
+    email: str = ""  # best-effort; often hidden by tracker privacy settings.
+    # Both of the above are alias seeds: the same person authors commits, pages
+    # and retro cards under handles that are not their tracker display name, so
+    # evidence gathered by display name alone silently misses their work.
 
 
 @dataclass(frozen=True)
@@ -959,6 +963,12 @@ class OneOnOnePrep:
     carried_action_items: tuple[str, ...] = ()  # open actions from the previous 1:1
     activity_summary: str = ""  # short prose summary of the sprint work reviewed
     warnings: tuple[str, ...] = ()
+    # What fed this artifact, and what did not. ``evidence_coverage`` rows are
+    # (source, state, detail) — state uses the standup coverage vocabulary. Kept
+    # so a reader can tell "did nothing" from "nobody looked"; see
+    # performance/evidence.py. Defaulted for backward-compat.
+    evidence_sources: tuple[str, ...] = ()
+    evidence_coverage: tuple[tuple[str, str, str], ...] = ()
     # Reader-authored additions; see Annotation. Defaulted so a report stored
     # before browser editing existed still deserializes.
     annotations: tuple[Annotation, ...] = ()
@@ -1005,6 +1015,10 @@ class SixMonthReview:
     overall: str = ""  # overall summary paragraph
     framework_used: str = ""  # "default" | imported template name
     warnings: tuple[str, ...] = ()
+    # What fed this review, and what did not — see OneOnOnePrep for the shape.
+    # A review that cannot say which sources were scanned cannot be argued with.
+    evidence_sources: tuple[str, ...] = ()
+    evidence_coverage: tuple[tuple[str, str, str], ...] = ()
     # Reader-authored additions; see Annotation. Defaulted so a report stored
     # before browser editing existed still deserializes.
     annotations: tuple[Annotation, ...] = ()

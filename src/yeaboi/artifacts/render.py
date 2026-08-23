@@ -13,9 +13,10 @@ annotations that its exporters silently drop.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from yeaboi.agent.state import Annotation
+from yeaboi.html_theme import safe_url
 
 NOTES_HEADING = "Added by the team"
 """Section title. Says who put it there without claiming it was verified — the
@@ -117,3 +118,77 @@ def row_anchor(list_field: str, key: str, value: str) -> str:
     from yeaboi.artifacts.paths import escape_value
 
     return f"{list_field}[{key}={escape_value(value)}]"
+
+
+# ---------------------------------------------------------------------------
+# Structured activity evidence
+# ---------------------------------------------------------------------------
+#
+# Lives here rather than in one mode's exporter because two modes now project
+# the same `ActivityEvidence` rows onto the same `EvidenceItem` wire shape, and
+# a second copy of these accessors is how the two would drift.
+
+
+def ev_field(evidence: object, field: str) -> str:
+    """Read one ActivityEvidence field, tolerant of dataclass or dict.
+
+    A mode's store rebuilds proper dataclasses, but a report that came through a
+    generic ``asdict``/JSON round-trip hands us plain dicts — the projection must
+    not care which it got.
+    """
+    if isinstance(evidence, Mapping):
+        return str(evidence.get(field, "") or "").strip()
+    return str(getattr(evidence, field, "") or "").strip()
+
+
+def ev_children(evidence: object) -> Sequence[object]:
+    """The nested commit rows of a PR evidence item, dict- or dataclass-shaped."""
+    if isinstance(evidence, Mapping):
+        children = evidence.get("children")
+    else:
+        children = getattr(evidence, "children", ())
+    return children if isinstance(children, (list, tuple)) else ()
+
+
+def _ev_flag(evidence: object, field: str) -> bool:
+    """Read one boolean ActivityEvidence field, dict- or dataclass-shaped."""
+    if isinstance(evidence, Mapping):
+        return bool(evidence.get(field, False))
+    return bool(getattr(evidence, field, False))
+
+
+def _ev_seq(evidence: object, field: str) -> tuple[str, ...]:
+    """Read one string-tuple ActivityEvidence field, dict- or dataclass-shaped."""
+    values = evidence.get(field) if isinstance(evidence, Mapping) else getattr(evidence, field, ())
+    if not isinstance(values, (list, tuple)):
+        return ()
+    return tuple(str(v).strip() for v in values if str(v).strip())
+
+
+def evidence_payload(evidence: Sequence[object]) -> list[dict]:
+    """Structured evidence rows for the browser: words and numbers, no markup.
+
+    An unsafe scheme degrades the URL to ``""`` but the row survives — the
+    kind/key/title are what the reader is being shown evidence *of*, and dropping
+    the row would silently shrink that.
+    """
+    return [
+        {
+            "kind": ev_field(e, "kind"),
+            "key": ev_field(e, "key"),
+            "title": ev_field(e, "title"),
+            "url": safe_url(ev_field(e, "url")),
+            "repo": ev_field(e, "repository"),
+            "status": ev_field(e, "status"),
+            "time": ev_field(e, "timestamp"),
+            "children": evidence_payload(ev_children(e)),
+            # Story/subtask facts — the browser nests from these (words, not
+            # layout): the tracker's type word, its parent's key, its own
+            # subtask flag, and the exact ticket keys a change's text names.
+            "type": ev_field(e, "issue_type"),
+            "parent": ev_field(e, "parent_key"),
+            "subtask": _ev_flag(e, "subtask"),
+            "tickets": list(_ev_seq(e, "ticket_keys")),
+        }
+        for e in evidence or ()
+    ]
