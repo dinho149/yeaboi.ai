@@ -282,31 +282,36 @@ def run_poll(
         logger.info("slack poll %s: %s", result.outcome, result.detail or "-")
         return result
 
-    token = config.get_slack_bot_token()
-    if not token:
-        return _finish(PollResult(outcome=POLL_NO_TOKEN, detail="no SLACK_BOT_TOKEN — a webhook cannot read"))
-    channel = config.get_slack_channel_id()
-    if not channel:
-        return _finish(PollResult(outcome=POLL_NO_CHANNEL, detail="no SLACK_CHANNEL_ID"))
+    # Its own log file rather than the ceremonies one, for the reason that one
+    # is separate from each mode's: this fires unattended on its own cadence,
+    # and "did anyone's reaction get read?" must not be a question you answer
+    # by reading around the runs a human started.
+    #
+    # It opens BEFORE the token/channel/allowlist/lock checks, not after. Those
+    # four declines and the outer handler's stack trace are precisely the
+    # diagnostics this directory exists for, and every one of them returned
+    # through _finish() before the handler was ever installed.
+    with mode_log("slack"):
+        token = config.get_slack_bot_token()
+        if not token:
+            return _finish(PollResult(outcome=POLL_NO_TOKEN, detail="no SLACK_BOT_TOKEN — a webhook cannot read"))
+        channel = config.get_slack_channel_id()
+        if not channel:
+            return _finish(PollResult(outcome=POLL_NO_CHANNEL, detail="no SLACK_CHANNEL_ID"))
 
-    allowed = allow.load()
-    if not allowed:
-        # Not even a request: with nobody authorised there is no event this poll
-        # could act on, so calling Slack would be pure waste.
-        return _finish(PollResult(outcome=POLL_NO_ALLOWLIST, detail=allow.describe()))
+        allowed = allow.load()
+        if not allowed:
+            # Not even a request: with nobody authorised there is no event this poll
+            # could act on, so calling Slack would be pure waste.
+            return _finish(PollResult(outcome=POLL_NO_ALLOWLIST, detail=allow.describe()))
 
-    from yeaboi.paths import get_slack_log_dir
+        from yeaboi.paths import get_slack_log_dir
 
-    handle = _lock(get_slack_log_dir() / "poll.lock")
-    if handle is None:
-        return _finish(PollResult(outcome=POLL_LOCKED, detail="another poll is already running"))
+        handle = _lock(get_slack_log_dir() / "poll.lock")
+        if handle is None:
+            return _finish(PollResult(outcome=POLL_LOCKED, detail="another poll is already running"))
 
-    try:
-        # Its own log file rather than the ceremonies one, for the reason that
-        # one is separate from each mode's: this fires unattended on its own
-        # cadence, and "did anyone's reaction get read?" must not be a question
-        # you answer by reading around the runs a human started.
-        with mode_log("slack"):
+        try:
             identity = api.auth_test(token=token)
             if not identity.ok:
                 return _finish(
@@ -359,11 +364,11 @@ def run_poll(
                     error=read_error,
                 )
             )
-    except Exception as exc:  # noqa: BLE001 — an unattended job records rather than crashes
-        logger.error("slack poll failed", exc_info=True)
-        return _finish(PollResult(outcome=POLL_FAILED, error=f"{type(exc).__name__}: {exc}"))
-    finally:
-        handle.close()
+        except Exception as exc:  # noqa: BLE001 — an unattended job records rather than crashes
+            logger.error("slack poll failed", exc_info=True)
+            return _finish(PollResult(outcome=POLL_FAILED, error=f"{type(exc).__name__}: {exc}"))
+        finally:
+            handle.close()
 
 
 def _handle(store, event, *, allowed, bot_id, apply_event, now) -> ApplyResult | None:

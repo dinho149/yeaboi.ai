@@ -113,3 +113,20 @@ class TestDescribe:
     def test_a_broken_list_explains_itself(self, monkeypatch):
         monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", "nope")
         assert "nobody is authorised" in describe()
+
+
+class TestTheTwoReadersOfTheIdShape:
+    """`parse` and `identity.link` must answer "is that an id" the same way.
+
+    Slack's own UI hands you ``@U0123456789``. That was fine for ``link`` and
+    voided the entire allowlist here — fail-closed, so never dangerous, but it
+    made the shared-fact claim in ``is_member_id``'s docstring untrue.
+    """
+
+    def test_a_pasted_at_prefix_is_accepted_and_normalised(self):
+        assert parse("@U0123456789") == ("U0123456789",)
+        assert parse("@U0123456789, U0123456789") == ("U0123456789",), "and it dedupes against the bare form"
+
+    def test_malformed_still_voids_the_whole_list(self):
+        with pytest.raises(AllowlistError, match="nonsense"):
+            parse("U0123456789, nonsense")

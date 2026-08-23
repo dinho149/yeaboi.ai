@@ -88,10 +88,19 @@ def normalise_emoji(name: str) -> str:
 def clean_reply_text(raw: str) -> str:
     """Slack's wire text as plain prose, with the things that can ping stripped.
 
-    Mentions and broadcasts go first and unconditionally. An annotation is
-    rendered into exports and can be read back out into a channel, and a stored
-    ``<!channel>`` that pings a workspace weeks later — from a note somebody
-    wrote as a throwaway remark — is a bug with no obvious author.
+    **Unescaping happens first, and the order is the whole point.** Slack sends
+    ``&lt;!channel&gt;`` on the wire when somebody *types* those characters rather
+    than picking the real broadcast from the composer, so stripping before
+    unescaping walks straight past the one form an attacker can choose. Then
+    mentions and broadcasts go unconditionally: an annotation is rendered into
+    exports and can be read back out into a channel, and a stored ``<!channel>``
+    that pings a workspace weeks later — from a note somebody wrote as a
+    throwaway remark — is a bug with no obvious author.
+
+    One unescape pass, not a loop to a fixed point: one is what reverses Slack's
+    own encoding, and anything still escaped after it was escaped twice on the
+    way in, which Slack does not do. A loop would instead let a crafted
+    ``&amp;amp;lt;`` chain decide how many times we decode it.
 
     Link syntax unwraps to its label so a URL somebody pasted still reads. This
     runs *before* the artifact validator, which then does the control
@@ -99,9 +108,9 @@ def clean_reply_text(raw: str) -> str:
     because a too-long value is the author's own prose and they should be told
     it did not fit rather than have it quietly clipped.
     """
-    text = _LINK_RE.sub(lambda m: m.group(2) or m.group(1), raw or "")
-    text = _MENTION_RE.sub("", text)
-    return html.unescape(text).strip()
+    text = html.unescape(raw or "")
+    text = _LINK_RE.sub(lambda m: m.group(2) or m.group(1), text)
+    return _MENTION_RE.sub("", text).strip()
 
 
 def parse_reaction(emoji: str, *, on_signal: bool) -> tuple[str, str]:

@@ -243,6 +243,18 @@ def replies(
     return call("conversations.replies", params, token=token, budget=budget)
 
 
+def history(channel: str, *, limit: int = 1, token: str = "", budget: RetryBudget | None = None) -> SlackResponse:
+    """One message off the channel — the readability half of ``slack check``.
+
+    ``auth.test`` proves the token is live and names the scopes it carries. It
+    says nothing at all about whether the bot was ever *invited*, and
+    ``not_in_channel`` is the most common real-world Slack failure there is. A
+    check that reports "on" because the token authenticated is answering a
+    question nobody asked; this one reads the channel the poll will read.
+    """
+    return call("conversations.history", {"channel": channel, "limit": limit}, token=token, budget=budget)
+
+
 def reactions_get(channel: str, ts: str, *, token: str = "", budget: RetryBudget | None = None) -> SlackResponse:
     """Reactions on one message.
 

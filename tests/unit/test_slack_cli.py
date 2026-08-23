@@ -25,7 +25,7 @@ def env(tmp_path, monkeypatch):
     db = tmp_path / "sessions.db"
     monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
     monkeypatch.setattr("yeaboi.mcp.tools_sessions.resolve_session_id", lambda sid="": sid or "s1")
-    monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s: ["Ada Lovelace", "Ben Carter"])
+    monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s, **_kw: ["Ada Lovelace", "Ben Carter"])
     return db
 
 
@@ -128,6 +128,52 @@ class TestMembers:
         code, out = _run("members", capsys=capsys)
         assert code == 1
         assert "no SLACK_BOT_TOKEN" in out
+
+
+class TestCheck:
+    """`check` answers "can this actually read the channel", not "is the token live".
+
+    ``auth.test`` succeeds for a bot that was never invited anywhere, and
+    ``not_in_channel`` is the most common real Slack failure there is — so a
+    check that stopped at identity reported "on" for exactly the configuration
+    whose failure mode the error table calls out by name.
+    """
+
+    @pytest.fixture()
+    def configured(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.slack_two_way_ready", lambda: (True, ""))
+        monkeypatch.setattr("yeaboi.config.get_slack_channel_id", lambda: "C0123456789")
+        monkeypatch.setattr(
+            "yeaboi.tools.slack.auth_test",
+            lambda **_kw: SlackResponse(ok=True, data={"team": "Acme", "user": "yeaboi", "user_id": "U0BOT"}),
+        )
+
+    def test_a_readable_channel_passes(self, env, configured, monkeypatch, capsys):
+        monkeypatch.setattr(
+            "yeaboi.tools.slack.history", lambda *_a, **_kw: SlackResponse(ok=True, data={"messages": []})
+        )
+        code, out = _run("check", capsys=capsys)
+        assert code == 0
+        assert "readable" in out
+
+    def test_an_uninvited_bot_fails_and_says_which_half_broke(self, env, configured, monkeypatch, capsys):
+        monkeypatch.setattr(
+            "yeaboi.tools.slack.history", lambda *_a, **_kw: SlackResponse(ok=False, error="not_in_channel")
+        )
+        code, out = _run("check", capsys=capsys)
+        assert code == 1, "a bot that cannot read the channel is not configured"
+        assert "invite" in out.lower() or "not_in_channel" in out
+
+    def test_the_probe_reads_the_configured_channel(self, env, configured, monkeypatch, capsys):
+        seen: list = []
+
+        def _probe(channel, **kw):
+            seen.append((channel, kw.get("limit")))
+            return SlackResponse(ok=True, data={"messages": []})
+
+        monkeypatch.setattr("yeaboi.tools.slack.history", _probe)
+        _run("check", capsys=capsys)
+        assert seen == [("C0123456789", 1)], "one message off the channel the poll will read"
 
 
 class TestPoll:

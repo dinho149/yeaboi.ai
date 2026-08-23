@@ -167,7 +167,15 @@ class SlackAnchor:
         return self.kind == KIND_SIGNAL
 
     def expired(self, now: datetime | None = None) -> bool:
-        """True once this anchor is too old to act on (unparseable = expired)."""
+        """True once this anchor is too old to act on (unparseable = expired).
+
+        Both sides are forced to aware-UTC before they are compared. Every row
+        this package writes carries an offset, but a caller passing a naive
+        ``now`` would otherwise raise ``TypeError`` mid-comparison — and from
+        ``_handle`` that escapes all the way out to ``run_poll``'s handler and
+        fails the whole poll over one anchor's arithmetic. This is documented
+        as tolerant, so it has to be tolerant of that too.
+        """
         if not self.expires_at:
             return False
         try:
@@ -175,7 +183,12 @@ class SlackAnchor:
         except ValueError:
             logger.warning("slack anchor %s/%s has an unparseable expires_at", self.channel, self.ts)
             return True
-        return (now or datetime.now(UTC)) >= deadline
+        moment = now or datetime.now(UTC)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=UTC)
+        return moment >= deadline
 
 
 @dataclass(frozen=True)

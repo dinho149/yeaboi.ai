@@ -40,12 +40,17 @@ class IdentityError(ValueError):
     """A link that must not be written — a bad id, or a name not in the roster."""
 
 
-def roster(session_id: str) -> list[str]:
-    """The team names a link may be bound to, for one session."""
+def roster(session_id: str, *, db_path: Path | None = None) -> list[str]:
+    """The team names a link may be bound to, for one session.
+
+    Honours ``db_path`` like every other read here. Ignoring it would have
+    ``link`` validate against the production roster while writing the binding
+    somewhere else — the two halves of one decision reading two databases.
+    """
     from yeaboi.paths import get_db_path
     from yeaboi.standup.store import StandupStore
 
-    with StandupStore(get_db_path()) as store:
+    with StandupStore(db_path or get_db_path()) as store:
         config = store.load_config(session_id) or {}
     return [str(name) for name in config.get("team_members", []) if str(name).strip()]
 
@@ -101,7 +106,7 @@ def link(session_id: str, slack_user: str, member: str, *, db_path: Path | None 
             "(list them with `yeaboi slack members`)."
         )
     name = member.strip()
-    known = roster(session_id)
+    known = roster(session_id, db_path=db_path)
     if not known:
         raise IdentityError(
             "this session has no team roster to link against — configure the standup's team first. "

@@ -368,7 +368,7 @@ class TestCorrection:
 
     def test_a_linked_id_is_promoted_to_the_roster_name(self, voted, monkeypatch):
         db, run_id = voted
-        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s: ["Ada Lovelace"])
+        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s, **_kw: ["Ada Lovelace"])
         from yeaboi.slack import identity
 
         identity.link("s1", "U0123456789", "Ada Lovelace", db_path=db)
@@ -380,7 +380,7 @@ class TestCorrection:
         # Reading it off anything else would let a link made in one session
         # rename a correction on another's report.
         db, run_id = voted
-        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s: ["Ada Lovelace"])
+        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s, **_kw: ["Ada Lovelace"])
         from yeaboi.slack import identity
 
         identity.link("s2", "U0123456789", "Ada Lovelace", db_path=db)

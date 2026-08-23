@@ -128,7 +128,7 @@ class TestInboundHistory:
 class TestLinkSlackMember:
     @pytest.fixture(autouse=True)
     def _roster(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s: ["Ada Lovelace"])
+        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s, **_kw: ["Ada Lovelace"])
 
     def test_no_slack_user_lists(self, db):
         engine.link_slack_member("s1", "U0123456789", "Ada Lovelace", db_path=db)

@@ -78,7 +78,11 @@ def parse(raw: str) -> tuple[str, ...]:
     somebody typed wrong leaves them believing they are on a list they are not.
     """
     entries = [part.strip() for part in re.split(r"[,\s]+", raw or "") if part.strip()]
-    bad = [e for e in entries if not _MEMBER_RE.match(e.upper()) or is_placeholder(e)]
+    # Through ``is_member_id`` rather than the regex directly, so the two readers
+    # of "the id shape" cannot drift: a pasted ``@U0123456789`` — which is how
+    # Slack's own UI offers it — used to void the entire list here while being
+    # perfectly acceptable to ``identity.link``.
+    bad = [e for e in entries if not is_member_id(e)]
     if bad:
         raise AllowlistError(
             f"SLACK_ALLOWED_MEMBER_IDS has {', '.join(map(repr, bad))} in it — "
@@ -88,7 +92,7 @@ def parse(raw: str) -> tuple[str, ...]:
     # Dedupe, keep the order somebody wrote them in.
     seen: dict[str, None] = {}
     for entry in entries:
-        seen.setdefault(entry.upper(), None)
+        seen.setdefault(entry.lstrip("@").upper(), None)
     return tuple(seen)
 
 

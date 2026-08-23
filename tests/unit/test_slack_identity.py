@@ -25,7 +25,7 @@ def db(tmp_path):
 def roster(monkeypatch):
     """A session whose roster is Ada and Ben, without a standup store behind it."""
     names = ["Ada Lovelace", "Ben Carter"]
-    monkeypatch.setattr(identity, "roster", lambda _session: list(names))
+    monkeypatch.setattr(identity, "roster", lambda _session, **_kw: list(names))
     return names
 
 
@@ -73,7 +73,7 @@ class TestWhatIsRefused:
             identity.link("s1", bad, "Ada Lovelace", db_path=db)
 
     def test_a_session_with_no_roster_is_refused_and_says_the_lane_still_works(self, db, monkeypatch):
-        monkeypatch.setattr(identity, "roster", lambda _session: [])
+        monkeypatch.setattr(identity, "roster", lambda _session, **_kw: [])
         with pytest.raises(IdentityError, match="still works"):
             identity.link("s1", "U0123456789", "Ada Lovelace", db_path=db)
 
@@ -125,3 +125,32 @@ class TestTheTableIsConfigurationNotTelemetry:
         with SlackStore(db) as store:
             store.prune(keep_days=0)
         assert identity.resolve("s1", "U0123456789", db_path=db) == "Ada Lovelace"
+
+
+class TestTheDbPathSeam:
+    """``roster`` reads the database it is handed, not the machine's own.
+
+    It used to hardcode ``get_db_path()`` while ``link`` threaded ``db_path``
+    everywhere else, so a link validated against the production roster and then
+    wrote the binding into whatever database it was actually given — the two
+    halves of one decision reading two different files. Every test above stubs
+    ``roster`` out, so nothing exercised the seam at all.
+    """
+
+    def test_the_roster_comes_from_the_handed_database(self, db):
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db) as store:
+            store.save_config(
+                "s1",
+                enabled=True,
+                time="09:00",
+                weekdays="mon-fri",
+                delivery_channels=["terminal"],
+                team_members=["Ada Lovelace"],
+            )
+
+        assert identity.roster("s1", db_path=db) == ["Ada Lovelace"]
+        assert identity.link("s1", "U0123456789", "Ada Lovelace", db_path=db)
+        with pytest.raises(IdentityError, match="roster"):
+            identity.link("s1", "U0123456789", "Grace Hopper", db_path=db)

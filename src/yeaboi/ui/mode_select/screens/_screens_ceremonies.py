@@ -70,23 +70,6 @@ def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
     return cell
 
 
-def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
-    if run is None:
-        return _cell("never run", theme.dim)
-    glyph, tone = outcome_mark(run.outcome)
-    # The table names a tone; the palette decides what it looks like.
-    style = getattr(theme, tone, theme.dim)
-    cell = Text(no_wrap=True, overflow="ellipsis")
-    cell.append(f"{glyph} ", style=style)
-    # The verdict leads and the timestamp follows, because this column
-    # ellipsizes at the minimum terminal width and "stale" is the half worth
-    # keeping. A successful run needs no word — the tick already said it.
-    if run.outcome != "ok":
-        cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
-    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
-    return cell
-
-
 def slack_line(ceremonies: list[Ceremony], *, two_way: bool, linked: int, interval_min: int) -> tuple[str, bool]:
     """(one line about answering these posts, is it a warning) — ('', False) for nothing.
 
@@ -116,69 +99,6 @@ def slack_line(ceremonies: list[Ceremony], *, two_way: bool, linked: int, interv
         return "Nothing is reading Slack back — run: yeaboi slack watch --install", True
     tail = f"{linked} linked." if linked else "[l] to link one."
     return f"Reactions on {posting} of these are read back every {interval_min} min. {tail}", False
-
-
-def _cell(text: str, style: str) -> Text:
-    """One table cell. ``no_wrap`` is what makes ``overflow`` mean anything —
-    without it a long name wraps to a second row and the table stops lining up."""
-    return Text(text, style=style, no_wrap=True, overflow="ellipsis")
-
-
-def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
-    if run is None:
-        return _cell("never run", theme.dim)
-    glyph, tone = outcome_mark(run.outcome)
-    # The table names a tone; the palette decides what it looks like.
-    style = getattr(theme, tone, theme.dim)
-    cell = Text(no_wrap=True, overflow="ellipsis")
-    cell.append(f"{glyph} ", style=style)
-    # The verdict leads and the timestamp follows, because this column
-    # ellipsizes at the minimum terminal width and "stale" is the half worth
-    # keeping. A successful run needs no word — the tick already said it.
-    if run.outcome != "ok":
-        cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
-    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
-    return cell
-
-
-def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
-    if run is None:
-        return _cell("never run", theme.dim)
-    glyph, tone = outcome_mark(run.outcome)
-    # The table names a tone; the palette decides what it looks like.
-    style = getattr(theme, tone, theme.dim)
-    cell = Text(no_wrap=True, overflow="ellipsis")
-    cell.append(f"{glyph} ", style=style)
-    # The verdict leads and the timestamp follows, because this column
-    # ellipsizes at the minimum terminal width and "stale" is the half worth
-    # keeping. A successful run needs no word — the tick already said it.
-    if run.outcome != "ok":
-        cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
-    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
-    return cell
-
-
-def _cell(text: str, style: str) -> Text:
-    """One table cell. ``no_wrap`` is what makes ``overflow`` mean anything —
-    without it a long name wraps to a second row and the table stops lining up."""
-    return Text(text, style=style, no_wrap=True, overflow="ellipsis")
-
-
-def _last_run_cell(run: CeremonyRun | None, theme) -> Text:
-    if run is None:
-        return _cell("never run", theme.dim)
-    glyph, tone = outcome_mark(run.outcome)
-    # The table names a tone; the palette decides what it looks like.
-    style = getattr(theme, tone, theme.dim)
-    cell = Text(no_wrap=True, overflow="ellipsis")
-    cell.append(f"{glyph} ", style=style)
-    # The verdict leads and the timestamp follows, because this column
-    # ellipsizes at the minimum terminal width and "stale" is the half worth
-    # keeping. A successful run needs no word — the tick already said it.
-    if run.outcome != "ok":
-        cell.append(f"{run.outcome.removeprefix('skipped_')} ", style=style)
-    cell.append(local_stamp(run.fired_at, with_date=False), style=theme.muted)
-    return cell
 
 
 def _spend_cell(ceremony: Ceremony, spent: float, theme) -> Text:

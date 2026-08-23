@@ -148,6 +148,17 @@ class TestCleanReplyText:
         cleaned = clean_reply_text(raw)
         assert "<!" not in cleaned and "<@" not in cleaned
 
+    @pytest.mark.parametrize(
+        "raw", ["&lt;!channel&gt; please look", "&lt;!here&gt; ping", "hey &lt;@U0123456&gt; can you"]
+    )
+    def test_the_escaped_wire_form_is_stripped_too(self, raw):
+        # Slack sends this form when somebody TYPES the characters instead of
+        # picking the real broadcast, so it is the form an attacker can choose.
+        # Stripping before unescaping walked straight past it.
+        cleaned = clean_reply_text(raw)
+        assert "<!" not in cleaned and "<@" not in cleaned
+        assert "&lt;" not in cleaned and "&gt;" not in cleaned
+
     def test_a_link_unwraps_to_its_label(self):
         assert clean_reply_text("see <https://example.com|the ticket>") == "see the ticket"
 

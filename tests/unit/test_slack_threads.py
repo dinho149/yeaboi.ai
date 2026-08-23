@@ -22,6 +22,9 @@ from yeaboi.tools.slack import SlackResponse
 def _token(monkeypatch):
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-1")
     monkeypatch.setenv("SLACK_CHANNEL_ID", "C123")
+    # A signal reply invites a gesture, so it is only posted when somebody could
+    # actually make one — see TestTheInvitationIsOnlyMadeWhenItCanBeAnswered.
+    monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", "U0123456789")
 
 
 class Ref:
@@ -204,3 +207,29 @@ class TestItNeverCostsTheDelivery:
 def test_a_second_votable_mode_is_one_entry_in_a_dict():
     # The shape that keeps the ceremonies engine from learning report shapes.
     assert set(threads._SIGNALS) == {"standup"}
+
+
+class TestTheInvitationIsOnlyMadeWhenItCanBeAnswered:
+    """No allowlist ⇒ no signal replies, though the post itself still goes out.
+
+    A signal reply says "👍 right / 👎 wrong", which is a promise the gesture
+    lands somewhere. With an empty or voided allowlist the poll never calls
+    Slack at all, so every one of those thumbs is discarded in silence — the
+    gesture-with-no-consequence this package refuses to make anywhere else,
+    repeated up to twelve times per standup.
+    """
+
+    @pytest.mark.parametrize("value", ["", "   ", "not-an-id"])
+    def test_no_usable_allowlist_posts_no_replies(self, value, monkeypatch, db, _api):
+        monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", value)
+        report = _report({"Ada": [_signal()], "Ben": [_signal(rule="wip-sprawl", title="WIP sprawl")]})
+        assert _post(report, db) == 0
+        assert _api.posts == [], "nothing invites a vote nobody is authorised to cast"
+
+    def test_one_malformed_entry_voids_it_and_so_withholds_the_replies(self, monkeypatch, db, _api):
+        # The allowlist's own rule: a half-filled list is the more dangerous of
+        # the two because it looks configured. The replies follow it rather than
+        # inviting votes only some of the thread can cast.
+        monkeypatch.setenv("SLACK_ALLOWED_MEMBER_IDS", "U0123456789,nonsense")
+        assert _post(_report({"Ada": [_signal()]}), db) == 0
+        assert _api.posts == []

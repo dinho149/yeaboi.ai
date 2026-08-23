@@ -1385,7 +1385,7 @@ class TestSlackTools:
 
     def test_identities_round_trip(self, tmp_db, monkeypatch):
         monkeypatch.setattr("yeaboi.mcp.tools_sessions.resolve_session_id", lambda sid="": sid or "s1")
-        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s: ["Ada Lovelace"])
+        monkeypatch.setattr("yeaboi.slack.identity.roster", lambda _s, **_kw: ["Ada Lovelace"])
         from yeaboi.slack import identity
 
         identity.link("s1", "U0123456789", "Ada Lovelace", db_path=tmp_db)

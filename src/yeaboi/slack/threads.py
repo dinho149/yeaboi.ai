@@ -87,10 +87,21 @@ def post_signal_anchors(
         return 0
 
     from yeaboi import config
+    from yeaboi.slack import allowlist as allow
     from yeaboi.tools import slack as api
 
     token = config.get_slack_bot_token()
     if not token:
+        return 0
+
+    # A signal reply says "👍 if that's right, 👎 if it isn't", so posting one
+    # is a promise that the gesture lands somewhere. With an empty or voided
+    # allowlist the poll never calls Slack at all, and every one of these is a
+    # gesture with no consequence — which is the thing this package refuses to
+    # make anywhere else, and it would say it twelve times per standup. The
+    # post itself still goes out; only the invitation is withheld.
+    if not allow.load():
+        logger.info("slack: no allowlist, so no signal replies — a vote could not be actioned")
         return 0
 
     try:

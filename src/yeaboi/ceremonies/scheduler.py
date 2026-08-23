@@ -640,9 +640,20 @@ def _install_launchd_interval(session_id: str, seconds: int, kind: str) -> str:
     return f"Slack inbox polling every {seconds // 60} min via launchd ({path.name})"
 
 
+def _cron_minute_field(minutes: int) -> str:
+    """The minute field for an every-``minutes`` job.
+
+    ``*/60`` is not it: cron's minute field is 0–59, so a step of 60 is out of
+    range, and implementations disagree about whether that means "fire at :00"
+    or "reject this crontab". Hourly is spelled ``0``. Everything below 60 is a
+    divisor of it (see POLL_INTERVALS) and steps cleanly.
+    """
+    return "0" if minutes >= 60 else f"*/{minutes}"
+
+
 def _install_cron_interval(session_id: str, minutes: int, kind: str) -> str:
     marker = _cron_marker(session_id, kind)
-    entry = f"*/{minutes} * * * * {_cron_command(session_id, kind)} {marker}"
+    entry = f"{_cron_minute_field(minutes)} * * * * {_cron_command(session_id, kind)} {marker}"
     lines = [ln for ln in _read_crontab() if marker not in ln]
     lines.append(entry)
     _write_crontab(lines)
@@ -708,8 +719,13 @@ def _installed_interval(session_id: str, kind: str) -> int:
         if _is_linux():
             marker = _cron_marker(session_id, kind)
             for line in _read_crontab():
-                if marker in line and line.startswith("*/"):
-                    return int(line.split()[0][2:])
+                if marker not in line:
+                    continue
+                field = line.split()[0]
+                if field.startswith("*/"):
+                    return int(field[2:])
+                if field == "0":  # the hourly spelling — see _cron_minute_field
+                    return 60
     except (OSError, ValueError, plistlib.InvalidFileException):
         logger.warning("scheduler: could not read the installed poll interval", exc_info=True)
     return 0

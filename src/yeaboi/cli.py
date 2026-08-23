@@ -2047,6 +2047,13 @@ def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
                 else slack_api.error_message(identity)
             )
             report["reachable"] = identity.ok
+            if identity.ok:
+                # auth.test passes for a bot nobody ever invited, so identity
+                # alone cannot say "on". Read the channel the poll will read.
+                probe = slack_api.history(config.get_slack_channel_id(), limit=1)
+                report["readable"] = probe.ok
+                if not probe.ok:
+                    report["channel"] = slack_api.error_message(probe)
         if to_json:
             print(json.dumps(report, indent=2))
         else:
@@ -2055,7 +2062,11 @@ def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
             console.print(f"Ack reaction: {report['ack_reaction']}")
             if "identity" in report:
                 console.print(f"Slack says: {report['identity']}")
-        return 0 if ready and report.get("reachable", True) else 1
+            if "channel" in report:
+                console.print(f"[yellow]Channel: {report['channel']}[/yellow]")
+            elif report.get("readable"):
+                console.print("Channel: readable")
+        return 0 if ready and report.get("reachable", True) and report.get("readable", True) else 1
 
     if command == "watch":
         from yeaboi.ceremonies import scheduler
