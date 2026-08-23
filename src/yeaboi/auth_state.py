@@ -253,25 +253,29 @@ def check_llm_credentials() -> CredentialStatus:
             return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
 
     from yeaboi.agent.llm import resolve_model_name
+    from yeaboi.redaction import log_safe, redact
 
     logger.info("credential check: pinging %s", label)
     # The model the modes will actually call, not the verifier's hardcoded
     # default — otherwise this proves the wrong thing, and blocks on a 404 the
     # day that default retires.
     provider_spec = {"provider_val": provider, "models": {"default": resolve_model_name()}}
-    verdict, message = credential_verdict(provider_spec, credential)
-    logger.info("credential check: %s → %s (%s)", label, verdict, message)
+    verdict, raw_message = credential_verdict(provider_spec, credential)
+
+    # Redacted once, here, so neither a log line nor a rendered screen can carry
+    # the credential: a provider message quotes the failing request, and Google's
+    # puts the API key in the URL. The log handler redacts too, but a value that
+    # is never secret in the first place cannot leak through a handler someone
+    # adds later.
+    message = redact(raw_message)
+    logger.info("credential check: %s → %s (%s)", label, verdict, log_safe(message))
 
     if verdict == "ok":
         with _lock:
             _verified_provider = fingerprint
         return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
     if verdict == "inconclusive":
-        logger.warning("credential check inconclusive for %s (%s) — not blocking", label, message)
+        logger.warning("credential check inconclusive for %s (%s) — not blocking", label, log_safe(message))
         return CredentialStatus(ok=True, configured=True, reason=None, provider_label=label)
 
-    from yeaboi.redaction import redact
-
-    # Redacted: a provider message can quote the request, and Google's carries
-    # the API key in the URL. Logs go through RedactingFormatter; a screen does not.
-    return CredentialStatus(ok=False, configured=True, reason=redact(message), provider_label=label)
+    return CredentialStatus(ok=False, configured=True, reason=message, provider_label=label)

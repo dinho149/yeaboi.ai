@@ -1492,3 +1492,27 @@ class TestFetchAvailableModels:
     def test_bedrock_excluded(self):
         # No API key model listing for Bedrock — returns [] without any call.
         assert fetch_available_models(_card("bedrock"), "us-east-1") == []
+
+
+class TestConnectionErrorRedaction:
+    """A transport exception quotes the failing request, and Google's URL carries
+    the API key — so the message both the wizard renders and the credential gate
+    logs must never be the raw string."""
+
+    def test_a_google_key_in_the_url_is_scrubbed(self, monkeypatch):
+        import httpx
+
+        from yeaboi.provider_verification import _verify_api_key
+
+        key = "AIzaSyEXAMPLEKEYVALUE0123456789abcdef"
+        monkeypatch.setenv("GOOGLE_API_KEY", key)
+
+        def _boom(*a, **kw):
+            raise httpx.ConnectError(f"failed to connect to https://generativelanguage.googleapis.com/v1?key={key}")
+
+        monkeypatch.setattr(httpx, "get", _boom)
+        ok, message = _verify_api_key(_card("google"), key)
+
+        assert ok is False
+        assert key not in message
+        assert message.startswith("Connection error:")
