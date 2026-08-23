@@ -199,6 +199,38 @@ class TestAnalysis:
         self._profile(db_path, member="Bob Jones")
         assert _gather(db_path).analysis_lines == ()
 
+    def _metric(self, db_path, key: str):
+        return next((m for m in _gather(db_path).metrics if m.key == key), None)
+
+    def test_the_numbers_behind_the_prose_survive_as_numbers(self, db_path):
+        self._profile(db_path)
+        stories = self._metric(db_path, "stories_completed")
+        assert (stories.value, stories.denominator) == (14.0, 16.0)
+        assert stories.source == evidence.SOURCE_ANALYSIS
+        assert self._metric(db_path, "delivery_points").unit == "pts"
+        assert self._metric(db_path, "tests_rate").value == 72.0
+
+    def test_a_rate_with_no_sample_is_absent_rather_than_zero(self, db_path):
+        # The fixture sets tests_rate and nothing else. An engineer whose docs
+        # rate was never measured has not touched docs 0% of the time, and a 0
+        # here would read as a finding about them.
+        self._profile(db_path)
+        assert self._metric(db_path, "tests_rate") is not None
+        for absent in ("docs_rate", "ticket_rate", "desc_rate", "spill_rate", "avg_cycle_time"):
+            assert self._metric(db_path, absent) is None, absent
+
+    def test_the_prose_and_the_metrics_cannot_disagree(self, db_path):
+        # Both are projections of one row match, which is the whole point of the
+        # split: a number quoted to the model is the number drawn on the page.
+        self._profile(db_path)
+        ev = _gather(db_path)
+        stories = next(m for m in ev.metrics if m.key == "stories_completed")
+        assert f"{stories.value:g} of {stories.denominator:g} stories" in " ".join(ev.analysis_lines)
+
+    def test_a_member_who_is_not_them_contributes_no_metrics(self, db_path):
+        self._profile(db_path, member="Bob Jones")
+        assert _gather(db_path).metrics == ()
+
 
 class TestRetro:
     def _retro(self, db_path, author=ENGINEER):

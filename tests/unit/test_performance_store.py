@@ -4,7 +4,17 @@ from dataclasses import fields
 
 import pytest
 
-from yeaboi.agent.state import Annotation, OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.agent.state import (
+    ActivityEvidence,
+    Annotation,
+    EngineerActivity,
+    EngineerStory,
+    EvidenceGroup,
+    OneOnOnePrep,
+    OneOnOneRecord,
+    PerfMetric,
+    SixMonthReview,
+)
 from yeaboi.performance.store import PerformanceStore
 
 
@@ -65,6 +75,56 @@ class TestPrepRoundTrip:
             evidence_coverage=(
                 ("code", "covered", "Scanned by 12 of 12 standup run(s)."),
                 ("documentation", "not_configured", "No standup run in this period scanned documentation."),
+            ),
+            metrics=(
+                PerfMetric(
+                    key="stories_completed",
+                    label="Stories completed",
+                    value=12.0,
+                    denominator=14.0,
+                    group="delivery",
+                    source="analysis",
+                    detail="Closed 12 of the 14 stories assigned in the window.",
+                ),
+                PerfMetric(
+                    key="tests_rate",
+                    label="Changes with tests",
+                    value=62.0,
+                    unit="%",
+                    group="practice",
+                    source="analysis",
+                ),
+            ),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 1 of 41",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Roll SSO out to every tenant",
+                            url="https://github.com/acme/web/pull/91",
+                            repository="acme/web",
+                            status="merged",
+                            timestamp="2026-07-09T11:00:00+00:00",
+                            ticket_keys=("PROJ-118",),
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Add tenant guard"),),
+                        ),
+                    ),
+                ),
+            ),
+            section_states=(("gaps", "partial", "No analysis run covered the second month."),),
+            activity=EngineerActivity(
+                engineer="Ada",
+                current_sprint="Sprint 14",
+                previous_sprint="Sprint 13",
+                stories=(
+                    EngineerStory(key="PROJ-118", title="SSO rollout", status="Done", kind="issue", source="jira"),
+                ),
+                total_items=7,
+                sources=(("jira", 7),),
             ),
             annotations=(
                 Annotation(
@@ -128,6 +188,49 @@ class TestCompletionRoundTrip:
             action_items=("Write the auth runbook", "Draft the billing design"),
             highlights=("Auth shipped early", "Wants deployment exposure"),
             warnings=("Transcript was partial — summary covers the second half only",),
+            delivery_state="sent",
+            evidence_sources=("standup", "code", "analysis"),
+            evidence_coverage=(("code", "covered", "Scanned by 12 of 12 standup run(s)."),),
+            metrics=(
+                PerfMetric(
+                    key="stories_completed",
+                    label="Stories completed",
+                    value=12.0,
+                    denominator=14.0,
+                    group="delivery",
+                    source="analysis",
+                    detail="Closed 12 of the 14 stories assigned in the window.",
+                ),
+                PerfMetric(
+                    key="tests_rate",
+                    label="Changes with tests",
+                    value=62.0,
+                    unit="%",
+                    group="practice",
+                    source="analysis",
+                ),
+            ),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 1 of 41",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Roll SSO out to every tenant",
+                            url="https://github.com/acme/web/pull/91",
+                            repository="acme/web",
+                            status="merged",
+                            timestamp="2026-07-09T11:00:00+00:00",
+                            ticket_keys=("PROJ-118",),
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Add tenant guard"),),
+                        ),
+                    ),
+                ),
+            ),
+            section_states=(("gaps", "partial", "No analysis run covered the second month."),),
             annotations=(
                 Annotation(
                     kind="note",
@@ -185,6 +288,56 @@ class TestReviewRoundTrip:
             evidence_coverage=(
                 ("code", "covered", "Scanned by 12 of 12 standup run(s)."),
                 ("documentation", "not_configured", "No standup run in this period scanned documentation."),
+            ),
+            metrics=(
+                PerfMetric(
+                    key="stories_completed",
+                    label="Stories completed",
+                    value=12.0,
+                    denominator=14.0,
+                    group="delivery",
+                    source="analysis",
+                    detail="Closed 12 of the 14 stories assigned in the window.",
+                ),
+                PerfMetric(
+                    key="tests_rate",
+                    label="Changes with tests",
+                    value=62.0,
+                    unit="%",
+                    group="practice",
+                    source="analysis",
+                ),
+            ),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 1 of 41",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Roll SSO out to every tenant",
+                            url="https://github.com/acme/web/pull/91",
+                            repository="acme/web",
+                            status="merged",
+                            timestamp="2026-07-09T11:00:00+00:00",
+                            ticket_keys=("PROJ-118",),
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Add tenant guard"),),
+                        ),
+                    ),
+                ),
+            ),
+            section_states=(("gaps", "partial", "No analysis run covered the second month."),),
+            activity=EngineerActivity(
+                engineer="Ada",
+                current_sprint="Sprint 14",
+                previous_sprint="Sprint 13",
+                stories=(
+                    EngineerStory(key="PROJ-118", title="SSO rollout", status="Done", kind="issue", source="jira"),
+                ),
+                total_items=7,
+                sources=(("jira", 7),),
             ),
             annotations=(
                 Annotation(
@@ -347,3 +500,67 @@ class TestProvenanceSelfHeal:
             for table in ("performance_one_on_ones", "performance_reviews"):
                 cols = {r[1] for r in store._conn.execute(f"PRAGMA table_info({table})")}
                 assert {"origin", "edited_from_id"} <= cols, table
+
+
+class TestMaskingReachesEveryField:
+    """Anonymize rebuilds an artifact through this module's ``_dict_to_*``.
+
+    A field the reconstructor does not read is therefore dropped from every
+    masked artifact — silently, and only on the path whose whole purpose is to
+    make something safe to publish. This is the guard for that.
+    """
+
+    @staticmethod
+    def _spine(**extra):
+        return dict(
+            evidence_sources=("analysis",),
+            evidence_coverage=(("code", "covered", "Ada Lovelace was scanned."),),
+            metrics=(PerfMetric(key="spill_rate", label="Spill rate", value=18.0, unit="%", source="analysis"),),
+            evidence_items=(
+                EvidenceGroup(
+                    source="code",
+                    label="Code activity",
+                    note="capped at 1 of 9",
+                    items=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="#91",
+                            title="Ada Lovelace ships SSO",
+                            children=(ActivityEvidence(kind="commit", key="78e4201", title="Ada Lovelace fixes it"),),
+                        ),
+                    ),
+                ),
+            ),
+            section_states=(("gaps", "partial", "Only Ada Lovelace was covered."),),
+            **extra,
+        )
+
+    @pytest.mark.parametrize("kind", ["prep", "record", "review"])
+    def test_every_spine_field_survives_a_masking_round_trip(self, kind):
+        from yeaboi.anonymize.apply import mask_artifact
+
+        artifact = {
+            "prep": lambda: OneOnOnePrep(engineer="Ada Lovelace", **self._spine()),
+            "record": lambda: OneOnOneRecord(engineer="Ada Lovelace", delivery_state="sent", **self._spine()),
+            "review": lambda: SixMonthReview(engineer="Ada Lovelace", **self._spine()),
+        }[kind]()
+
+        masked = mask_artifact(artifact, [("Ada Lovelace", "Engineer A")])
+
+        assert masked.metrics == artifact.metrics  # numbers are not names
+        assert masked.evidence_sources == artifact.evidence_sources
+        assert len(masked.evidence_items) == 1
+        assert masked.evidence_items[0].note == "capped at 1 of 9"
+        assert masked.section_states[0][1] == "partial"
+
+    def test_masking_reaches_inside_nested_evidence_rows(self):
+        from yeaboi.anonymize.apply import mask_artifact
+
+        prep = OneOnOnePrep(engineer="Ada Lovelace", **self._spine())
+        masked = mask_artifact(prep, [("Ada Lovelace", "Engineer A")])
+
+        row = masked.evidence_items[0].items[0]
+        assert row.title == "Engineer A ships SSO"
+        # A commit folded under its PR is a row a reader sees, so it masks too.
+        assert row.children[0].title == "Engineer A fixes it"
+        assert masked.section_states[0][2] == "Only Engineer A was covered."

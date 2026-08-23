@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, replace
 
-from yeaboi.agent.state import EngineerActivity
+from yeaboi.agent.state import ActivityEvidence, EngineerActivity, EvidenceGroup, PerfMetric
 from yeaboi.performance import identity
 
 logger = logging.getLogger(__name__)
@@ -91,6 +91,7 @@ _MAX_POKER_RUNS = 20
 _MAX_POKER_LINES = 8
 _MAX_DELIVERY_LINES = 8
 _MAX_LINE = 220  # per-line truncation of free text
+_MAX_EVIDENCE_ROWS = 24  # structured rows kept per evidence group
 _MAX_GAP_DAYS = 45  # hard ceiling on a live gap-fill scan
 
 
@@ -124,6 +125,10 @@ class EngineerEvidence:
     retro_lines: tuple[str, ...] = ()
     poker_lines: tuple[str, ...] = ()
     delivery_lines: tuple[str, ...] = ()
+    # The same facts the prose above carries, kept as numbers and as rows, so a
+    # page can render a meter and a linked item instead of re-reading a sentence.
+    metrics: tuple[PerfMetric, ...] = ()
+    groups: tuple[EvidenceGroup, ...] = ()
     coverage: tuple[SourceCoverage, ...] = ()
     summary_md: str = ""
 
@@ -219,59 +224,127 @@ def _standup_lines(reports, aliases: frozenset[str]) -> dict[str, list[str]]:
     }
 
 
-def _analysis_lines(examples: dict, aliases: frozenset[str]) -> list[str]:
-    """Delivery stats, practice-hygiene rates and AI markers for one member."""
-    lines: list[str] = []
+def _analysis_rows(examples: dict, aliases: frozenset[str]) -> tuple[dict, dict, dict]:
+    """The three team-analysis rows that belong to this engineer.
+
+    Matching happens here and only here, so the prose the prompt reads and the
+    metrics the pages render are two projections of one extraction rather than
+    two extractions that can disagree about a number.
+    """
     examples = examples or {}
-
-    for row in examples.get("contributor_stats") or ():
-        if not isinstance(row, dict) or not identity.matches(str(row.get("name", "")), aliases):
-            continue
-        bits = [
-            f"{row.get('stories_completed', 0)} of {row.get('stories_total', 0)} stories completed",
-            f"{row.get('delivery_pts', 0)} points delivered",
-        ]
-        if row.get("spill_rate") is not None:
-            bits.append(f"{row['spill_rate']}% spill rate")
-        if row.get("avg_cycle_time"):
-            bits.append(f"{row['avg_cycle_time']}d average cycle time")
-        if row.get("top_discipline"):
-            bits.append(f"mostly {row['top_discipline']}")
-        lines.append("Delivery (analysis): " + ", ".join(str(b) for b in bits) + ".")
-        break
-
     blob = examples.get("ai_adoption") or {}
-    practices = (blob.get("member_practices") or {}).get("members") or ()
-    for row in practices:
-        if not isinstance(row, dict) or not identity.matches(str(row.get("member", "")), aliases):
-            continue
-        rates = []
-        for label, key in (
-            ("tests alongside production changes", "tests_rate"),
-            ("docs touched", "docs_rate"),
-            ("changes referencing a ticket", "ticket_rate"),
-            ("PRs with a meaningful description", "desc_rate"),
-        ):
-            value = row.get(key)
-            if value is not None:
-                rates.append(f"{label} {value}%")
-        volume = f"{row.get('commits', 0)} commits, {row.get('prs', 0)} PRs"
+
+    def _first(rows, field: str) -> dict:
+        for row in rows or ():
+            if isinstance(row, dict) and identity.matches(str(row.get(field, "")), aliases):
+                return row
+        return {}
+
+    return (
+        _first(examples.get("contributor_stats"), "name"),
+        _first((blob.get("member_practices") or {}).get("members"), "member"),
+        _first(blob.get("member_activity"), "member"),
+    )
+
+
+_PRACTICE_RATES: tuple[tuple[str, str], ...] = (
+    ("tests alongside production changes", "tests_rate"),
+    ("docs touched", "docs_rate"),
+    ("changes referencing a ticket", "ticket_rate"),
+    ("PRs with a meaningful description", "desc_rate"),
+)
+
+
+def _analysis_lines(stats: dict, practices: dict, activity: dict) -> list[str]:
+    """Delivery stats, practice-hygiene rates and AI markers, as prompt prose."""
+    lines: list[str] = []
+
+    if stats:
+        bits = [
+            f"{stats.get('stories_completed', 0)} of {stats.get('stories_total', 0)} stories completed",
+            f"{stats.get('delivery_pts', 0)} points delivered",
+        ]
+        if stats.get("spill_rate") is not None:
+            bits.append(f"{stats['spill_rate']}% spill rate")
+        if stats.get("avg_cycle_time"):
+            bits.append(f"{stats['avg_cycle_time']}d average cycle time")
+        if stats.get("top_discipline"):
+            bits.append(f"mostly {stats['top_discipline']}")
+        lines.append("Delivery (analysis): " + ", ".join(str(b) for b in bits) + ".")
+
+    if practices:
+        rates = [f"{label} {practices[key]}%" for label, key in _PRACTICE_RATES if practices.get(key) is not None]
+        volume = f"{practices.get('commits', 0)} commits, {practices.get('prs', 0)} PRs"
         lines.append(
             f"Practice hygiene (analysis, over {volume}): " + ("; ".join(rates) if rates else "no rate had a sample")
         )
-        break
 
-    for row in blob.get("member_activity") or ():
-        if not isinstance(row, dict) or not identity.matches(str(row.get("member", "")), aliases):
-            continue
-        if row.get("ai_marked"):
-            lines.append(
-                f"AI-tool markers (analysis, a lower bound): {row['ai_marked']} of "
-                f"{row.get('commits', 0) + row.get('prs', 0)} changes carried one."
-            )
-        break
+    if activity.get("ai_marked"):
+        lines.append(
+            f"AI-tool markers (analysis, a lower bound): {activity['ai_marked']} of "
+            f"{activity.get('commits', 0) + activity.get('prs', 0)} changes carried one."
+        )
 
     return lines
+
+
+def _analysis_metrics(stats: dict, practices: dict, activity: dict) -> list[PerfMetric]:
+    """The same three rows, as numbers.
+
+    A rate with no sample is left out entirely rather than recorded as 0 — an
+    engineer whose spill rate was never measured has not spilled 0%.
+    """
+    out: list[PerfMetric] = []
+
+    def add(key: str, label: str, value, *, denominator=0, unit: str = "", group: str = "", detail: str = "") -> None:
+        if value is None:
+            return
+        try:
+            out.append(
+                PerfMetric(
+                    key=key,
+                    label=label,
+                    value=float(value),
+                    denominator=float(denominator or 0),
+                    unit=unit,
+                    group=group,
+                    source=SOURCE_ANALYSIS,
+                    detail=detail,
+                )
+            )
+        except (TypeError, ValueError):
+            return
+
+    if stats:
+        add(
+            "stories_completed",
+            "Stories completed",
+            stats.get("stories_completed"),
+            denominator=stats.get("stories_total"),
+            group="delivery",
+            detail=f"Mostly {stats['top_discipline']} work." if stats.get("top_discipline") else "",
+        )
+        add("delivery_points", "Points delivered", stats.get("delivery_pts"), unit="pts", group="delivery")
+        add("spill_rate", "Spill rate", stats.get("spill_rate"), unit="%", group="delivery")
+        add("avg_cycle_time", "Average cycle time", stats.get("avg_cycle_time"), unit="d", group="delivery")
+
+    if practices:
+        for label, key in _PRACTICE_RATES:
+            add(key, label[:1].upper() + label[1:], practices.get(key), unit="%", group="practice")
+        add("commits", "Commits", practices.get("commits"), group="volume")
+        add("prs", "Pull requests", practices.get("prs"), group="volume")
+
+    if activity.get("ai_marked"):
+        add(
+            "ai_marked",
+            "Changes carrying an AI marker",
+            activity.get("ai_marked"),
+            denominator=activity.get("commits", 0) + activity.get("prs", 0),
+            group="practice",
+            detail="A lower bound — only changes that announce the tool are counted.",
+        )
+
+    return out
 
 
 def _retro_lines(reports, aliases: frozenset[str]) -> tuple[list[str], int, int]:
@@ -343,6 +416,53 @@ def _poker_lines(reports, aliases: frozenset[str]) -> tuple[list[str], int, int]
         )
     lines.extend(outliers)
     return lines, voted, len(reports)
+
+
+def _activity_group(activity: EngineerActivity) -> EvidenceGroup:
+    """The engineer's tickets as structured rows, not a sentence about them.
+
+    Reuses ``ActivityEvidence`` — the shape standup already stores and the
+    browser already knows how to draw — so this costs a projection rather than a
+    second evidence vocabulary.
+    """
+    items = tuple(
+        ActivityEvidence(
+            kind=story.kind or "issue",
+            key=story.key,
+            title=story.title,
+            status=story.status,
+            repository=story.sprint,
+        )
+        for story in activity.stories[:_MAX_EVIDENCE_ROWS]
+    )
+    extra = len(activity.stories) - len(items)
+    return EvidenceGroup(
+        source=SOURCE_TICKETS,
+        label="Tickets worked",
+        items=items,
+        note=f"capped at {len(items)} of {len(activity.stories)}" if extra > 0 else "",
+    )
+
+
+def _delivery_group(shipped: list) -> EvidenceGroup:
+    """Shipped tickets credited to this engineer, as structured rows."""
+    items = tuple(
+        ActivityEvidence(
+            kind="issue",
+            key=str(getattr(item, "key", "")),
+            title=str(getattr(item, "title", "")),
+            status=str(getattr(item, "status", "")),
+            url=str(getattr(item, "url", "")),
+        )
+        for item in shipped[:_MAX_EVIDENCE_ROWS]
+    )
+    extra = len(shipped) - len(items)
+    return EvidenceGroup(
+        source=SOURCE_DELIVERY,
+        label="Shipped this period",
+        items=items,
+        note=f"capped at {len(items)} of {len(shipped)}" if extra > 0 else "",
+    )
 
 
 def _delivery_lines(items, aliases: frozenset[str]) -> list[str]:
@@ -467,6 +587,8 @@ def gather_engineer_evidence(
     poker_lines: list[str] = []
     delivery_lines: list[str] = []
     standup_stats: dict = {}
+    metrics: list[PerfMetric] = []
+    groups: list[EvidenceGroup] = []
 
     # ── Standup — per-member code, docs, self-reports, blockers, practices. ──
     try:
@@ -497,7 +619,8 @@ def gather_engineer_evidence(
 
     # ── Analysis — delivery stats + practice hygiene + AI markers. ───────────
     try:
-        analysis_lines = _read_analysis(db_path, aliases, jira_project, azdo_project)
+        analysis_lines, analysis_metrics = _read_analysis(db_path, aliases, jira_project, azdo_project)
+        metrics.extend(analysis_metrics)
         coverage.append(
             SourceCoverage(
                 SOURCE_ANALYSIS,
@@ -525,6 +648,17 @@ def gather_engineer_evidence(
         retro_lines = lines[:_MAX_RETRO_LINES]
         if participated and total:
             retro_lines.insert(0, f"Took part in {participated} of {total} retro(s) in this period.")
+        if total:
+            metrics.append(
+                PerfMetric(
+                    key="retros_attended",
+                    label="Retros attended",
+                    value=float(participated),
+                    denominator=float(total),
+                    group="ceremony",
+                    source=SOURCE_RETRO,
+                )
+            )
         state_ = COVERED if participated else (PARTIAL if total else NOT_CONFIGURED)
         coverage.append(SourceCoverage(SOURCE_RETRO, state_, _coverage_detail(state_, "retro", participated, total)))
     except Exception:  # noqa: BLE001
@@ -546,6 +680,18 @@ def gather_engineer_evidence(
                     reports.append(report)
         lines, voted, total = _poker_lines(reports, aliases)
         poker_lines = lines[:_MAX_POKER_LINES]
+        if total:
+            metrics.append(
+                PerfMetric(
+                    key="poker_sessions",
+                    label="Estimation sessions joined",
+                    value=float(1 if voted else 0),
+                    denominator=float(total),
+                    group="ceremony",
+                    source=SOURCE_POKER,
+                    detail=f"Voted on {voted} ticket(s).",
+                )
+            )
         state_ = COVERED if voted else (PARTIAL if total else NOT_CONFIGURED)
         coverage.append(
             SourceCoverage(
@@ -566,7 +712,20 @@ def gather_engineer_evidence(
 
         with ReportingStore(db_path) as store:
             report = store.get_latest_report()
-        delivery_lines = _delivery_lines(getattr(report, "delivered_items", ()), aliases)[:_MAX_DELIVERY_LINES]
+        delivered = getattr(report, "delivered_items", ()) or ()
+        shipped = [i for i in delivered if identity.matches(getattr(i, "assignee", ""), aliases)]
+        delivery_lines = _delivery_lines(delivered, aliases)[:_MAX_DELIVERY_LINES]
+        if shipped:
+            metrics.append(
+                PerfMetric(
+                    key="shipped_items",
+                    label="Items shipped",
+                    value=float(len(shipped)),
+                    group="delivery",
+                    source=SOURCE_DELIVERY,
+                )
+            )
+            groups.append(_delivery_group(shipped))
         coverage.append(
             SourceCoverage(
                 SOURCE_DELIVERY,
@@ -590,6 +749,29 @@ def gather_engineer_evidence(
         if gap_note:
             coverage.append(SourceCoverage(SOURCE_CODE, PARTIAL, gap_note))
 
+    if standup_stats.get("runs"):
+        metrics.append(
+            PerfMetric(
+                key="standup_runs",
+                label="Standups that named them",
+                value=float(standup_stats["matched"]),
+                denominator=float(standup_stats["runs"]),
+                group="ceremony",
+                source=SOURCE_STANDUP,
+            )
+        )
+    if activity.total_items:
+        metrics.append(
+            PerfMetric(
+                key="tickets_total",
+                label="Tickets worked",
+                value=float(activity.total_items),
+                group="volume",
+                source=SOURCE_TICKETS,
+            )
+        )
+        groups.append(_activity_group(activity))
+
     ev = EngineerEvidence(
         engineer=engineer,
         aliases=tuple(sorted(aliases)),
@@ -604,6 +786,8 @@ def gather_engineer_evidence(
         retro_lines=tuple(retro_lines),
         poker_lines=tuple(poker_lines),
         delivery_lines=tuple(delivery_lines),
+        metrics=tuple(metrics),
+        groups=tuple(groups),
         coverage=tuple(coverage),
     )
     ev = replace(ev, summary_md=format_evidence_md(ev))
@@ -652,8 +836,14 @@ def _resolve_db(db_path):
         return None
 
 
-def _read_analysis(db_path, aliases: frozenset[str], jira_project: str, azdo_project: str) -> list[str]:
-    """Per-member analysis metrics from the newest profile that carries them."""
+def _read_analysis(
+    db_path, aliases: frozenset[str], jira_project: str, azdo_project: str
+) -> tuple[list[str], list[PerfMetric]]:
+    """Per-member analysis signals from the newest profile that carries them.
+
+    Returns the prompt's prose and the same facts as numbers — both projected
+    from one row match, so they cannot disagree.
+    """
     from yeaboi.team_profile import TeamProfileStore
 
     with TeamProfileStore(db_path) as store:
@@ -667,10 +857,11 @@ def _read_analysis(db_path, aliases: frozenset[str], jira_project: str, azdo_pro
             profiles = store.list_profiles()
         for profile in profiles:
             _, examples = store.load_with_examples(profile.team_id)
-            lines = _analysis_lines(examples or {}, aliases)
+            rows = _analysis_rows(examples or {}, aliases)
+            lines = _analysis_lines(*rows)
             if lines:
-                return lines
-    return []
+                return lines, _analysis_metrics(*rows)
+    return [], []
 
 
 def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end: str):

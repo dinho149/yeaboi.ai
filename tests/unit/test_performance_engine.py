@@ -31,7 +31,7 @@ def _patch_llm(monkeypatch, content):
     )
 
 
-def _patch_activity(monkeypatch, stories=(), coverage=()):
+def _patch_activity(monkeypatch, stories=(), coverage=(), metrics=(), groups=()):
     """Stub the whole evidence gather — the engine's one deterministic input.
 
     ``coverage`` lets a test assert the artifact carries what was and was not
@@ -48,6 +48,8 @@ def _patch_activity(monkeypatch, stories=(), coverage=()):
                 engineer=engineer, current_sprint="Sprint 5", stories=tuple(stories), total_items=len(stories)
             ),
             coverage=tuple(SourceCoverage(*row) for row in coverage),
+            metrics=tuple(metrics),
+            groups=tuple(groups),
         ),
     )
 
@@ -263,3 +265,70 @@ class TestProvenanceWiring:
             assert "performance:Ada:one-on-one:2026-05-01" in review.inputs
             assert "jira:P-2" in review.inputs
             assert chain.verify().valid is True
+
+
+class TestEvidenceStamp:
+    """What ``_with_evidence`` puts on an artifact, and what it lets a page say."""
+
+    def test_the_numbers_and_rows_reach_the_artifact(self, monkeypatch, db_path):
+        from yeaboi.agent.state import ActivityEvidence, EvidenceGroup, PerfMetric
+
+        metric = PerfMetric(key="spill_rate", label="Spill rate", value=18.0, unit="%", source="analysis")
+        group = EvidenceGroup(source="code", label="Code", items=(ActivityEvidence(kind="pr", key="#91"),))
+        _patch_activity(monkeypatch, stories=(EngineerStory(key="YB-1"),), metrics=(metric,), groups=(group,))
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["a"]}))
+
+        prep = engine.run_one_on_one_prep("Ada", db_path=db_path, today=date(2026, 7, 12))
+        assert prep.metrics == (metric,)
+        assert prep.evidence_items == (group,)
+        assert prep.activity.total_items == 1
+
+    def test_a_fallback_artifact_still_says_what_was_scanned(self, monkeypatch, db_path):
+        # A run with no model is exactly when the lead most needs to know.
+        from yeaboi.agent.state import PerfMetric
+
+        metric = PerfMetric(key="spill_rate", value=18.0)
+        _patch_activity(monkeypatch, coverage=(("retro", "failed", "unreadable"),), metrics=(metric,))
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+
+        prep = engine.run_one_on_one_prep("Ada", db_path=db_path, today=date(2026, 7, 12))
+        assert prep.metrics == (metric,)
+        assert ("retro", "failed", "unreadable") in prep.evidence_coverage
+
+    def test_an_empty_section_inherits_the_state_of_the_source_that_would_have_fed_it(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, coverage=(("analysis", "not_configured", "No saved team analysis."),))
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["a"]}))
+
+        prep = engine.run_one_on_one_prep("Ada", db_path=db_path, today=date(2026, 7, 12))
+        states = dict((s, st) for s, st, _ in prep.section_states)
+        assert states["talking_points"] == "covered"  # it produced items
+        assert states["gaps"] == "not_configured"  # nobody looked — not "nothing found"
+
+    def test_a_populated_section_is_covered_whatever_its_sources_did(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, coverage=(("analysis", "failed", "unreadable"),))
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["a"], "gaps": ["thin on deploys"]}))
+
+        prep = engine.run_one_on_one_prep("Ada", db_path=db_path, today=date(2026, 7, 12))
+        assert dict((s, st) for s, st, _ in prep.section_states)["gaps"] == "covered"
+
+
+class TestCompletionCarriesTheEvidence:
+    def test_the_summary_cites_the_prep_it_followed(self, monkeypatch, db_path):
+        from yeaboi.agent.state import PerfMetric
+
+        metric = PerfMetric(key="spill_rate", value=18.0)
+        _patch_activity(monkeypatch, metrics=(metric,), coverage=(("code", "covered", "all of it"),))
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["a"]}))
+        engine.run_one_on_one_prep("Ada", db_path=db_path, today=date(2026, 7, 12))
+
+        _patch_llm(monkeypatch, json.dumps({"email_summary": "ok", "action_items": ["x"]}))
+        record = engine.complete_one_on_one("Ada", "we talked", db_path=db_path, deliver=False, today=date(2026, 7, 12))
+        assert record.metrics == (metric,)
+        assert ("code", "covered", "all of it") in record.evidence_coverage
+
+    def test_no_prior_prep_leaves_the_evidence_empty_rather_than_invented(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch)
+        _patch_llm(monkeypatch, json.dumps({"email_summary": "ok"}))
+        record = engine.complete_one_on_one("Ada", "we talked", db_path=db_path, deliver=False, today=date(2026, 7, 12))
+        assert record.metrics == ()
+        assert record.evidence_coverage == ()

@@ -24,7 +24,18 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview, annotations_from
+from yeaboi.agent.state import (
+    EngineerActivity,
+    EngineerStory,
+    OneOnOnePrep,
+    OneOnOneRecord,
+    PerformanceNote,
+    SixMonthReview,
+    annotations_from,
+    coverage_from,
+    evidence_groups_from,
+    metrics_from,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,20 +91,47 @@ def _prep_to_json(prep: OneOnOnePrep) -> str:
     return json.dumps(asdict(prep), ensure_ascii=False)
 
 
-def _coverage_from(raw) -> tuple[tuple[str, str, str], ...]:
-    """Rebuild (source, state, detail) rows from JSON or a masked artifact.
+def _activity_from(raw) -> EngineerActivity:
+    """Rebuild the EngineerActivity a prep or review was built from."""
+    if not isinstance(raw, dict):
+        return EngineerActivity()
+    return EngineerActivity(
+        engineer=str(raw.get("engineer", "")),
+        current_sprint=str(raw.get("current_sprint", "")),
+        previous_sprint=str(raw.get("previous_sprint", "")),
+        stories=tuple(
+            EngineerStory(
+                key=str(s.get("key", "")),
+                title=str(s.get("title", "")),
+                status=str(s.get("status", "")),
+                kind=str(s.get("kind", "")),
+                sprint=str(s.get("sprint", "current")),
+                source=str(s.get("source", "")),
+            )
+            for s in raw.get("stories", ()) or ()
+            if isinstance(s, dict)
+        ),
+        total_items=int(raw.get("total_items", 0) or 0),
+        sources=tuple(
+            (str(row[0]), int(row[1]))
+            for row in raw.get("sources", ()) or ()
+            if isinstance(row, (list, tuple)) and len(row) == 2
+        ),
+    )
 
-    Both round-trips hand these back as lists of lists, so rows are rebuilt as
-    tuples and anything not three-wide is dropped rather than crashing a reader.
+
+def _dict_to_note(d: dict) -> PerformanceNote:
+    """Reconstruct a PerformanceNote — what the notes table returns, as an artifact.
+
+    Registered for reconstruction so Anonymize masks a note like every other
+    performance artifact; it used to travel as a bare string and so was the one
+    thing on this page a lead could not publish safely.
     """
-    rows: list[tuple[str, str, str]] = []
-    for row in raw or ():
-        try:
-            source, state, detail = row
-        except (TypeError, ValueError):
-            continue
-        rows.append((str(source), str(state), str(detail)))
-    return tuple(rows)
+    return PerformanceNote(
+        engineer=d.get("engineer", ""),
+        date=d.get("date", ""),
+        text=d.get("text", ""),
+    )
 
 
 def _dict_to_prep(d: dict) -> OneOnOnePrep:
@@ -110,7 +148,11 @@ def _dict_to_prep(d: dict) -> OneOnOnePrep:
         activity_summary=d.get("activity_summary", ""),
         warnings=tuple(d.get("warnings", ())),
         evidence_sources=tuple(d.get("evidence_sources", ())),
-        evidence_coverage=_coverage_from(d.get("evidence_coverage")),
+        evidence_coverage=coverage_from(d.get("evidence_coverage")),
+        metrics=metrics_from(d.get("metrics")),
+        evidence_items=evidence_groups_from(d.get("evidence_items")),
+        section_states=coverage_from(d.get("section_states")),
+        activity=_activity_from(d.get("activity")),
         annotations=annotations_from(d.get("annotations")),
     )
 
@@ -131,6 +173,12 @@ def _dict_to_record(d: dict) -> OneOnOneRecord:
         action_items=tuple(d.get("action_items", ())),
         highlights=tuple(d.get("highlights", ())),
         warnings=tuple(d.get("warnings", ())),
+        delivery_state=d.get("delivery_state", ""),
+        evidence_sources=tuple(d.get("evidence_sources", ())),
+        evidence_coverage=coverage_from(d.get("evidence_coverage")),
+        metrics=metrics_from(d.get("metrics")),
+        evidence_items=evidence_groups_from(d.get("evidence_items")),
+        section_states=coverage_from(d.get("section_states")),
         annotations=annotations_from(d.get("annotations")),
     )
 
@@ -154,7 +202,11 @@ def _dict_to_review(d: dict) -> SixMonthReview:
         framework_used=d.get("framework_used", ""),
         warnings=tuple(d.get("warnings", ())),
         evidence_sources=tuple(d.get("evidence_sources", ())),
-        evidence_coverage=_coverage_from(d.get("evidence_coverage")),
+        evidence_coverage=coverage_from(d.get("evidence_coverage")),
+        metrics=metrics_from(d.get("metrics")),
+        evidence_items=evidence_groups_from(d.get("evidence_items")),
+        section_states=coverage_from(d.get("section_states")),
+        activity=_activity_from(d.get("activity")),
         annotations=annotations_from(d.get("annotations")),
     )
 
