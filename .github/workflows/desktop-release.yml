@@ -76,7 +76,10 @@ jobs:
       matrix:
         include:
           - { os: macos-14, name: macOS (arm64), arch: arm64, flag: mac }
-          - { os: macos-13, name: macOS (x64), arch: x64, flag: mac }
+          # The Intel lane. macos-13 is retired; `-intel` is how a
+          # non-arm mac runner is spelled now, and a native wheel in the
+          # bundled Python cannot be lipo'd, so x64 needs its own runner.
+          - { os: macos-15-intel, name: macOS (x64), arch: x64, flag: mac }
           - { os: windows-latest, name: Windows (x64), arch: x64, flag: win }
           - { os: ubuntu-latest, name: Linux (x64), arch: x64, flag: linux }
     steps:
