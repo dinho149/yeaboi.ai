@@ -55,7 +55,7 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Open-ended assistance runs at the `deep` tier (cowork/models.md) — a
+          # Open-ended assistance runs at the `deep` tier — a
           # person is waiting on it. That matches the action's implicit default, so
           # the `||` fallback just pins the prior behaviour. The turn cap is a cost
           # guard against runaway sessions, not a quality lever.
@@ -143,7 +143,7 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync --extra dev
 
-      # cowork/models.md: "Security never runs on `heavy`." Fable 5 reroutes
+      # "Security never runs on `heavy`." Fable 5 reroutes
       # cybersecurity queries to less capable models — fine for a chat, and
       # unacceptable for an unattended run that may edit fs_policy.py or a CSP
       # invariant, because you would not know which model actually read it.
@@ -182,7 +182,7 @@ jobs:
         uses: anthropics/claude-code-action@e2a4b761cd77a1138a5b41410eda9b28581f9bcd # v1.0.196
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # This is the one job the `heavy` tier exists for (cowork/models.md):
+          # This is the one job the `heavy` tier exists for:
           # human-selected by adding a label, unattended for up to 110 turns through
           # Linear ticket -> implement -> DoD gate -> code-reviewer -> PR, with CI
           # and a human merge as the net. Everything else in the fleet is shorter or
@@ -210,59 +210,31 @@ jobs:
             Implement GitHub issue #${{ steps.target.outputs.number }} in ${{ github.repository }}.
 
             1. Read the issue with `gh issue view ${{ steps.target.outputs.number }}` (including comments).
-            2. Read `cowork/definition-of-done.md` — it is the contract this change must satisfy.
-               If the issue carries a `workstream:<name>` label, also Read
-               `cowork/workstreams/<name>.md` and stay inside the paths it declares.
-            3. DoD item 1, before any code: spawn the `cowork-scribe` agent to open the Linear ticket
-               on team `Yeaboi` in state In Progress, labelled with the issue's `workstream:<name>`,
-               and to cross-link it with this issue both ways. Approval is when the ticket is
-               created — proposals do not get one, because most of them are answered no. Keep the
-               identifier for the PR body.
-
-               Linear is an account-scoped connector and this job supplies no `mcp_config`, so the
-               tool will often not exist in the runner. If the scribe reports it cannot reach Linear,
-               do NOT retry, do not hunt for an API key, and do not substitute another artefact:
-               write one line in the PR body saying DoD item 1 is deferred to merge, and carry on.
-               `pr-merged-close-loop` runs as a Claude routine with the connectors attached, and
-               already creates a missing ticket in Done rather than skipping it.
-            4. Create a branch named `feature/issue-${{ steps.target.outputs.number }}-<short-slug>` off main.
-            5. Implement the change following CLAUDE.md conventions (observability pillars,
+            2. Create a branch named `feature/issue-${{ steps.target.outputs.number }}-<short-slug>` off main.
+            3. Implement the change following CLAUDE.md conventions (observability pillars,
                TUI component standards, frozen-dataclass defaults, tests for every new function).
                Conventions are split across CLAUDE.md and `.claude/skills/*/SKILL.md` — Read
                the SKILL.md for each area you touch (see the skills index table in CLAUDE.md).
-            6. Verify: `make test` and `make lint` must both pass before you commit. If the change
+            4. Verify: `make test` and `make lint` must both pass before you commit. If the change
                touches `frontend/`, run `make web` and commit `src/yeaboi/web/static/` in the same
                commit. If it adds a capability, add its `CAPABILITIES` row and its `FeatureTip`.
-            7. Review, before opening the PR: spawn the `code-reviewer` agent on
+            5. Review, before opening the PR: spawn the `code-reviewer` agent on
                `git diff main...HEAD` with a one-paragraph description of what the issue asked for.
                Give it the diff and that description only — not your own reasoning, which is what
                makes the review independent. Resolve every finding it reports at `blocker` or
                `should-fix` severity: fix it, or state in the PR body why it is intentionally not
-               addressed. This is the same gate `cowork/sweep-procedure.md` puts on the auto lane,
-               and the work here is larger than anything the auto lane is allowed to touch.
-            8. Commit (lowercase imperative message + the Co-Authored-By trailer from CLAUDE.md),
+               addressed.
+            6. Commit (lowercase imperative message + the Co-Authored-By trailer from CLAUDE.md),
                push the branch, and open a PR against main whose body summarizes the change,
-               lists what was verified, carries a `Closes YEA-NN` line for the ticket from step 3
-               (the magic word is what makes the Linear GitHub integration attach the PR and move
-               the ticket to Done on merge — a bare Linear URL does neither), notes any DoD item
-               that genuinely does not apply, and closes the issue
-               (`Closes #${{ steps.target.outputs.number }}`). If step 3 could not create a ticket,
-               write the item-1-deferred-to-merge line instead of the `Closes YEA-NN` line.
-            9. Pass the labels to `gh pr create` itself — `--label cowork`, `--label semver:none`
-               (fleet PRs never bump the version: the release batch that ships them gets the one
-               bump, and a bump here collides with every other constituent at assembly), plus the
-               issue's `workstream:<name>` and `type:<kind>` labels if it had them (the daily
-               standup reads the type off the PR). Labelling in a second step means a run truncated
-               between the two leaves an unlabelled bot PR. That no longer goes unreviewed —
-               `claude-review.yml` and `scripts/pr_feedback.py` both also recognise the
-               `feature/issue-` branch namespace — but it does ship untagged in the standup,
-               so label it here rather than afterwards.
-            10. If step 3 produced a ticket, have `cowork-scribe` attach the PR to it and move it
-                to In Review. Then comment on the issue with a link to the PR.
-
-            Step 3 and step 10 are the ONLY Linear writes here, and they are the scribe's. Do not
-            post to Slack or Notion at all — the `pr-merged-close-loop` cowork routine owns DoD
-            items 8 and 9, and it runs on merge.
+               lists what was verified, and closes the issue
+               (`Closes #${{ steps.target.outputs.number }}`).
+            7. Pass the labels to `gh pr create` itself — `--label cowork`, `--label semver:none`
+               (unattended PRs never bump the version; the human merge decides the bump), plus the
+               issue's `type:<kind>` labels if it had them. Labelling in a second step means a run
+               truncated between the two leaves an unlabelled bot PR — `claude-review.yml` and
+               `scripts/pr_feedback.py` both also recognise the `feature/issue-` branch namespace,
+               but label it here rather than afterwards.
+            8. Comment on the issue with a link to the PR.
 
             If the issue is too ambiguous to implement safely, do NOT guess: comment on the
             issue with the specific questions that need answering, and stop. **End that

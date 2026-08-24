@@ -33,7 +33,7 @@ describe('TARGETS', () => {
 
 describe('EXTRAS', () => {
   it('ships what the desktop uses and leaves voice to be installed on demand', () => {
-    expect(EXTRAS.split(',').sort()).toEqual(['charts', 'core', 'mcp']);
+    expect(EXTRAS.split(',').sort()).toEqual(['charts', 'mcp']);
     expect(EXTRAS).not.toContain('voice');
   });
 });

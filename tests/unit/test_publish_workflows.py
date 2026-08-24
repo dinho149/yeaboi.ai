@@ -26,7 +26,6 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 PUBLISH = WORKFLOWS / "publish.yml"
 PUBLISH_BETA = WORKFLOWS / "publish-beta.yml"
-PUBLISH_CORE = WORKFLOWS / "publish-core.yml"
 CLAUDE_REVIEW = WORKFLOWS / "claude-review.yml"
 
 _spec = importlib.util.spec_from_file_location("pr_feedback", ROOT / "scripts" / "pr_feedback.py")
@@ -171,7 +170,7 @@ class TestTheOfficialReleaseIsTheTreeThatWasTested:
 
     def test_the_pin_is_the_pushed_commit_and_reads_no_marker(self):
         """The sign-off IS the merge now. The hand-test markers live on the batch
-        PR and gate `make beta-promote`; the workflow releases the pushed tree
+        PR and gated the old promotion flow; the workflow releases the pushed tree
         and must not resurrect the marker plumbing."""
         pin = next(step for step in load(PUBLISH)["jobs"]["check"]["steps"] if step.get("id") == "pin")
         run = pin["run"]
@@ -300,13 +299,8 @@ class TestOnlyTheOfficialReleaseIsLatest:
     def test_the_official_release_claims_latest(self):
         assert self._release_inputs(PUBLISH)["make_latest"] is True
 
-    def test_the_core_wheel_disclaims_latest(self):
-        """The sidecar is a dependency of the product, not the product."""
-        assert self._release_inputs(PUBLISH_CORE)["make_latest"] is False
-
     def test_the_channels_stay_on_separate_tag_namespaces(self):
         assert self._release_inputs(PUBLISH)["tag_name"].startswith("v")
-        assert self._release_inputs(PUBLISH_CORE)["tag_name"].startswith("core-v")
 
 
 class TestUnattendedBranchPrefixesAgree:
@@ -332,21 +326,3 @@ class TestUnattendedBranchPrefixesAgree:
     def test_every_machine_branch_is_covered_by_both(self, branch):
         assert branch.startswith(prf.UNATTENDED_BRANCH_PREFIXES)
         assert any(branch.startswith(prefix) for prefix in self._workflow_prefixes())
-
-
-class TestTheRepoSetupJobIsRedOnlyForRealProblems:
-    """`--strict` is right where the write can be attempted, and wrong where it cannot.
-
-    Without `AUTO_VERSION_PAT` the variable half 403s by design — the job warns
-    about exactly that two steps earlier. Failing on it puts a permanent red on a
-    repo that is behaving as documented, and a check that is always red is read
-    no more often than one that is always green.
-    """
-
-    SETUP = WORKFLOWS / "cowork-repo-setup.yml"
-
-    def test_strict_is_gated_on_the_token_that_makes_it_meaningful(self):
-        text = self.SETUP.read_text(encoding="utf-8")
-        apply_step = text.split("name: Apply", 1)[1].split("name: Verify", 1)[0]
-        assert "--strict" in apply_step
-        assert "HAS_PAT" in apply_step, "--strict runs unconditionally, so a missing PAT is a red job"

@@ -1,22 +1,19 @@
-"""The standup deterministic-aggregation seam — one pure function, two backends.
+"""The standup deterministic-aggregation seam — one pure function.
 
-``run_standup`` collects activity and reads session state (network + SQLite,
-Python-only), then hands EVERYTHING the deterministic middle of the pipeline
-consumes to ``aggregate_standup`` as one JSON-safe ``inputs`` dict: identity
-closure → roster filter → automation filter → category coverage → grouping →
+``run_standup`` collects activity and reads session state (network + SQLite),
+then hands EVERYTHING the deterministic middle of the pipeline consumes to
+``aggregate_standup`` as one JSON-safe ``inputs`` dict: identity closure →
+roster filter → automation filter → category coverage → grouping →
 day-over-day insights → practice detection → confidence. The result is the
-deterministic scaffold of the report — everything except LLM prose — and it is
-what the Go sidecar serves byte-identically as the ``standup.aggregate`` RPC
-(``go_aggregate``; see contracts/v1/rpc.md). Silent Python fallback as always:
-the Go path is never the only path.
+deterministic scaffold of the report — everything except LLM prose.
 
 Two invariants shape this module:
 
 - **The wire shape is the only shape.** ``aggregate_standup`` returns plain
   JSON types (dicts/lists/strs/numbers/bools) — never tuples or dataclasses —
-  so its output is byte-identical to the sidecar's after ``json.loads`` and the
-  rest of the engine cannot tell the backends apart. The ``*_from_wire``
-  helpers rehydrate dataclasses at the consumption boundary instead.
+  so the rest of the engine consumes one stable serialized form. The
+  ``*_from_wire`` helpers rehydrate dataclasses at the consumption boundary
+  instead.
 - **The one LLM interleave is hoisted out by protocol, not by code.** Practice
   adjudication (habits._adjudicate) runs INSIDE detection, so the RPC is
   idempotent and two-pass: pass 1 returns ``adjudication_cases``; the engine
@@ -146,10 +143,8 @@ def build_aggregate_inputs(
 def aggregate_standup(inputs: dict) -> dict:
     """The deterministic middle of the standup pipeline, as one pure function.
 
-    This is the REFERENCE implementation the Go port must match byte-for-byte
-    (tests/parity/test_standup_parity.py diffs the two outputs whole). It calls
-    the same engine/insights/habits/confidence helpers the inline block always
-    called — only the shapes at the boundary changed.
+    It calls the same engine/insights/habits/confidence helpers the inline
+    block always called — only the shapes at the boundary changed.
     """
     from yeaboi.standup import engine
 
@@ -322,44 +317,6 @@ def _member_skeletons(
             }
         )
     return skeletons
-
-
-# ---------------------------------------------------------------------------
-# Go sidecar dispatch (see contracts/v1/rpc.md; YEABOI_GO=0 opts out)
-# ---------------------------------------------------------------------------
-
-
-def go_aggregate(inputs: dict) -> dict | None:
-    """``standup.aggregate`` served by the sidecar, or None → Python computes.
-
-    Mirrors ``agentwatch/engine.py``'s dispatch exactly: discovery is automatic,
-    any ``CoreError`` downgrades to the Python path with one log line, and a
-    result missing its load-bearing keys is treated as a failure rather than
-    trusted. Emits no progress — the call is milliseconds of pure compute.
-    """
-    try:
-        from yeaboi import gocore
-
-        client = gocore.get_client()
-    except Exception as exc:  # noqa: BLE001 — dispatch must never sink a standup
-        logger.warning("gocore: client unavailable (%s: %s) — using the Python path", type(exc).__name__, exc)
-        return None
-    if client is None:
-        return None
-    from yeaboi.gocore import CoreError
-
-    try:
-        result = client.request("standup.aggregate", inputs)
-    except CoreError as exc:
-        logger.warning("gocore: standup.aggregate failed (%s) — falling back to Python", exc)
-        return None
-    if not isinstance(result, dict) or not all(
-        key in result for key in ("members", "grouped", "progress", "member_skeletons")
-    ):
-        logger.warning("gocore: standup.aggregate result malformed — falling back to Python")
-        return None
-    logger.info("gocore: standup.aggregate served by the sidecar")
-    return result
 
 
 # ---------------------------------------------------------------------------

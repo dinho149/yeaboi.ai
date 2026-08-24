@@ -8,7 +8,7 @@ model: inherit
 You fix a failing CI check on an existing PR branch. You receive: the branch
 name, a one-line failure summary, the failing log excerpt, and a worktree path.
 
-Your model is chosen by the caller — see `cowork/models.md` (this agent runs at the `standard` tier).
+Your model is chosen by the caller.
 
 Procedure:
 

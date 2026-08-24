@@ -47,8 +47,7 @@ Run a single test: `uv run pytest tests/unit/test_state.py -v`
 Run a single test class: `uv run pytest tests/unit/test_state.py::TestPriority -v`
 
 **CI runs the tests a change touches, not all of them.** `scripts/test_scope.py` maps changed paths
-onto areas (one per cowork workstream, so the fleet and CI share a vocabulary) and `ci.yml`'s `scope`
-job feeds the result to every other job. Three rules make it safe: `ALWAYS` runs the ~30 guards that
+onto areas and `ci.yml`'s `scope` job feeds the result to every other job. Three rules make it safe: `ALWAYS` runs the ~30 guards that
 scan the repo rather than importing a module; `GLOBAL` forces the whole suite for anything reached by
 everything (`conftest.py`, `sessions.py`, `ui/shared/`, `pyproject.toml`); and **any path the registry
 does not recognise runs everything**. The five required status checks never carry an `if:` — scoping
@@ -69,7 +68,7 @@ make wt-list                      # list worktrees (branch, clean/dirty, path)
 make wt-rm NAME=my-feature        # remove worktree dir + branch
 ```
 
-Slash commands (in `.claude/commands/`): `/wt` (worktree ops from inside a session), `/sync-main` (rebase on latest main + re-verify), `/ship` (independent review → full tests → commit → push → PR), `/babysit-prs` (survey open PRs, spawn fix agents for red CI), `/migrate` (fan out a mechanical migration across many files via parallel worktree agents), `/cowork` (drive the standing workstreams — see below).
+Slash commands (in `.claude/commands/`): `/wt` (worktree ops from inside a session), `/sync-main` (rebase on latest main + re-verify), `/ship` (independent review → full tests → commit → push → PR), `/babysit-prs` (survey open PRs, spawn fix agents for red CI), `/migrate` (fan out a mechanical migration across many files via parallel worktree agents).
 
 ### Verification loop
 
@@ -80,24 +79,6 @@ Slash commands (in `.claude/commands/`): `/wt` (worktree ops from inside a sessi
 ### Orchestration conventions
 
 When driving multiple features at once, work as an **orchestrator**: one main session, one background agent per feature, each in its own worktree (`make wt-headless`). The orchestrator kicks off agents, tracks them, reviews **final diffs** (not intermediate steps), and runs `/ship` per feature when green. Use `make test-fast` in the inner loop; the full `make test` runs at ship time.
-
-## Cowork (`cowork/`)
-
-**The fleet does exactly three things: it maintains what exists, it builds one provider integration at a time, and it rewrites the codebase in Go one wave at a time — and one workstream watches it do all of it.** Seventeen standing workstreams, each with a charter in `cowork/workstreams/` naming the paths it owns. Fourteen of them are *maintenance* (one per mode, plus the cross-cutting tui-ux, web-ux, platform and security) and may only return `bug`, `chore`, `docs` or `security`; `integrations` and `go-migration` are the two that build. Routines are **account-scoped, not repo files** — `cowork/` is the versioned source of truth their prompts point at, and `make cowork-check` is the doctor that fails when the two disagree.
-
-`cowork/definition-of-done.md` is the one contract, binding on routines *and* on `/ship`: Linear ticket, tests, lint, security, surface parity, observability, web bundles, Notion page, Slack post, review feedback.
-
-| Read | For |
-|---|---|
-| `cowork/README.md` | **Start here** — the loop, the routine table, setup, and the deploy lifecycle |
-| `cowork/house-rules.md` | The auto lane, the campaign lane, the migration lane, the proposal cap, the queue |
-| `cowork/sweep-procedure.md` | What a sweep does, step by step |
-| `cowork/models.md` | The only file that names a model — everything else names a tier |
-| `cowork/hygiene-lenses.md` | The standing detectors a routine runs before scouting |
-| `cowork/release-signoff.md` | The release batch: assemble, hand-test, merge |
-| `cowork/migration/program.md` | The Go rewrite program, wave by wave |
-
-`/cowork status | today | runs | deploy | run <name> | pause | resume | teardown` drives the fleet. Editing anything under `cowork/` is the `fleet` workstream's subject — read `cowork/workstreams/fleet.md` first, and note that the constitution (`house-rules.md`, `definition-of-done.md`, `sweep-procedure.md`, `models.md`, `crew.md`, and the three crew agents in `.claude/agents/`) sits outside every charter.
 
 ## Front End (`frontend/` → `src/yeaboi/web/static/`)
 
@@ -114,22 +95,8 @@ Everything else — the CSPs and what makes an export inert, the export capabili
 The sixth surface: an Electron shell whose renderer is a normal Vite/Preact ESM app (not a seventh IIFE bundle — that constraint is about `file://` and tunnel CSPs, neither of which applies here) over `yeaboi app`, the loopback HTTP backend in `src/yeaboi/app/`. The wire between them is pinned in `contracts/v1/app_http.md`.
 
 - **`make desktop-check`** is what CI runs: typecheck + vitest + the routes-manifest staleness gate. `desktop/src/renderer/routes.json` is the parity source; `npm run gen-manifest` in `desktop/` regenerates the committed `src/yeaboi/app/routes_manifest.json` that the Python suite reads.
-- **What ships is a released wheel, not this tree.** `make desktop-bundle VERSION=X.Y.Z` installs `yeaboi[mcp,charts,core]==X.Y.Z` from PyPI into a pinned python-build-standalone runtime at `desktop/resources/py`; electron-builder ships that as `Resources/py` and `sidecar.ts` spawns `Resources/py/bin/python3 -m yeaboi app`. `make desktop-pack` is the unsigned local smoke; `desktop-release.yml` does the signed three-OS build against a version that must already be on PyPI.
+- **What ships is a released wheel, not this tree.** `make desktop-bundle VERSION=X.Y.Z` installs `yeaboi[mcp,charts]==X.Y.Z` from PyPI into a pinned python-build-standalone runtime at `desktop/resources/py`; electron-builder ships that as `Resources/py` and `sidecar.ts` spawns `Resources/py/bin/python3 -m yeaboi app`. `make desktop-pack` is the unsigned local smoke; `desktop-release.yml` does the signed three-OS build against a version that must already be on PyPI.
 - **Brand assets are committed, not built.** `make desktop-icons` re-renders `desktop/build/` + the tray icons from the website's duck art (needs the `charts` extra); `tests/unit/test_desktop_icons.py` asserts the set without Pillow.
-
-## REQUIRED: Go sidecar dual maintenance
-
-Three Python surfaces are mirrored line-for-line in the Go sidecar (`go/`), with byte-level parity enforced by `tests/parity/` (`make parity`, and the `parity` CI job). Each Go file names its Python twin in its header.
-
-| Family | Python (the reference) | Go twin |
-|---|---|---|
-| agentwatch | `agentwatch/{collector,store,engine,security_checks}.py` | `go/internal/agentwatch/` |
-| standup core | `standup/{aggregate,references,relatedness,habits,automation,insights,confidence,categories}.py` + the engine's evidence helpers | `go/internal/standup/` |
-| analysis core | `analysis/{aggregate,code_health,coverage,practices}.py` + `ai_usage.py`'s classifier block (the marker tables, `_classify_ai_*`, `aggregate_ai_markers`, `_activity_bucket`, `_collect_samples`) + `doc_quality.py`'s scoring pieces (`_AI_DISCLOSURE_CONTEXT`, `_MIN_DOC_SAMPLE`/`doc_small_sample`, `_has_ai_disclosure`, `_CLEAR_MIN`/`_UNCLEAR_MAX`, `_count_syllables`, `_clarity_metrics`, `_usefulness_metrics`, `_analyse_page_asset`, `_aggregate_doc_assets`, `_doc_findings`, `_prioritize_doc_actions`, `_fallback_doc_quality_insights` — the read/cache plumbing around them is NOT mirrored) + `tools/team_learning.py`'s `_insight_item`/`_INSIGHT_MAX_ITEMS` | `go/internal/analysis/` |
-
-Python is the reference implementation. **Any behaviour change in those files MUST be mirrored in the Go twin** — otherwise `make parity` fails and the change cannot merge. Purely additive Python work that the sidecar does not serve (new prose, new store columns, rendering) is exempt; when in doubt, run `make parity`.
-
-**One constant outside those files couples the two languages**: `sessions.py`'s `CURRENT_SCHEMA_VERSION`, mirrored by `currentSchemaVersion` in `go/internal/agentwatch/store.go`. Go refuses a database newer than it understands rather than writing behind Python's migrations, so bumping the schema without raising the Go ceiling makes the sidecar refuse every upgraded database — the agentwatch family silently reverts to the Python path with CI fully green. `tests/unit/test_gocore_packaging.py` fails on the drift; raise the Go constant once the new migration is mirrored (or leave it deliberately, and say why, when the sidecar must not write behind it).
 
 ## Code Style
 

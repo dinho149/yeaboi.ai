@@ -47,7 +47,7 @@ const TARGETS = {
 // What the desktop needs out of the distribution. `voice` is deliberately
 // absent — its model runtime is larger than everything else combined, and the
 // app installs it on demand (see the voice setup flow, M11).
-const EXTRAS = 'mcp,charts,core';
+const EXTRAS = 'mcp,charts';
 
 // Directories inside site-packages that are pure weight. Each `__pycache__`
 // also matters on macOS, where every file in the tree gets its own signature.

@@ -1,19 +1,10 @@
 name: CI
 
-# `chore/go-migration` is the Go rewrite's long-lived integration branch: every
-# wave PR is based on it and merges into it, and one PR carries the lot to main
-# at W19. `branches:` on `pull_request` filters the BASE ref, so omitting it here
-# does not merely skip CI on a wave — it strands the wave. `pr_feedback.py` waits
-# on a workflow run named `CI` (CI_WORKFLOW_NAME) and reports `pending` until one
-# concludes, `claude-review.yml` triggers on this workflow's `workflow_run`, and
-# the migration lane may not apply `feedback-override`. The result is a required
-# context that never resolves and no operator action that clears it.
-# See cowork/routines/cron/go-migration-campaign.md.
 on:
   push:
-    branches: [main, chore/go-migration]
+    branches: [main]
   pull_request:
-    branches: [main, chore/go-migration]
+    branches: [main]
 
 # Least-privilege token — these jobs only check out code and run tests.
 permissions:
@@ -44,8 +35,6 @@ jobs:
       full: ${{ steps.scope.outputs.full }}
       unit_paths: ${{ steps.scope.outputs.unit_paths }}
       slow_paths: ${{ steps.scope.outputs.slow_paths }}
-      go: ${{ steps.scope.outputs.go }}
-      parity: ${{ steps.scope.outputs.parity }}
       web: ${{ steps.scope.outputs.web }}
       desktop: ${{ steps.scope.outputs.desktop }}
       site: ${{ steps.scope.outputs.site }}
@@ -105,8 +94,6 @@ jobs:
               echo "full=true"
               echo "unit_paths=tests/unit/ tests/*.py"
               echo "slow_paths=tests/integration/ tests/contract/"
-              echo "go=true"
-              echo "parity=true"
               echo "web=true"
               echo "desktop=true"
               echo "site=true"
@@ -206,76 +193,6 @@ jobs:
       # and both publish workflows run; only CI splits the two halves, because
       # only CI has a second job already covering one of them.
       - run: make test-slow
-
-  # ── Go core (the yeaboi-core sidecar) ────────────────────────────────────
-  # Build + vet + test the Go tree, then hand the binary to the parity job.
-  # The binary is never committed; this is where it comes from.
-  go:
-    name: Go core
-    runs-on: ubuntu-latest
-    needs: scope
-    # Gated on the Go tree, the contract, the packaging dir, and the mirrored
-    # Python families named in CLAUDE.md's dual-maintenance section — a change to
-    # any twin must still prove parity. Not a required context, so a skip is free.
-    if: needs.scope.outputs.go == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
-      - run: make go-lint
-      - run: make go-test
-      - run: make go-build
-      - uses: actions/upload-artifact@v7
-        with:
-          name: yeaboi-core
-          path: bin/yeaboi-core
-          retention-days: 1
-      # The yeaboi[core] wheel end-to-end: build it for this platform via the
-      # hatch_build.py hook, install it into a clean venv, and prove the two
-      # things a user's install depends on — binary_path() resolves inside the
-      # wheel and the binary answers core.hello. publish-core.yml builds with
-      # the same hook, so a hook regression fails PRs here, not the release.
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - name: Wheel smoke (yeaboi-core)
-        run: |
-          uv python install 3.12
-          uv build --wheel packaging/yeaboi-core -o dist-core
-          uv venv --python 3.12 wheel-smoke-venv
-          uv pip install --python wheel-smoke-venv/bin/python dist-core/*.whl
-          wheel-smoke-venv/bin/python - <<'EOF'
-          import json, subprocess
-          from yeaboi_core import binary_path
-          path = binary_path()
-          proc = subprocess.run(
-              [path], input='{"jsonrpc": "2.0", "id": 1, "method": "core.hello", "params": {}}\n',
-              capture_output=True, text=True, timeout=30, check=True,
-          )
-          result = json.loads(proc.stdout.splitlines()[0])["result"]
-          assert result["contract_version"] == 1, result
-          print(f"wheel smoke ok: {path} -> {result['name']} {result['version']}")
-          EOF
-
-  # ── Python ↔ Go parity ───────────────────────────────────────────────────
-  # tests/parity skips itself when the binary is absent (keeping `make test`
-  # pytest-only); HERE it runs unskipped, so implementation drift can't merge.
-  parity:
-    name: Python ↔ Go parity
-    runs-on: ubuntu-latest
-    needs: [scope, go]
-    if: needs.scope.outputs.parity == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - run: uv python install 3.11
-      - run: uv sync --extra dev
-      - uses: actions/download-artifact@v8
-        with:
-          name: yeaboi-core
-          path: bin
-      - run: chmod +x bin/yeaboi-core
-      - run: YEABOI_CORE_BIN=$PWD/bin/yeaboi-core uv run pytest tests/parity -v
 
   # ── Golden evaluators ────────────────────────────────────────────────────
   # LLM-output quality checks against the golden dataset.

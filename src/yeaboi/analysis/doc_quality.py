@@ -91,12 +91,9 @@ _DOC_CACHE_TASK = "documentation_page_score"
 # AI-disclosure gate — cached v2 page scores were built from structure-less text
 # and must not be reused.
 #
-# This version is the cache's ONLY invalidation lever, and since the sidecar
-# seam the cache can hold Go-computed assets: the key carries no engine or
-# binary version, so a scoring fix on the Go side alone (a divergence the
-# parity fixtures missed) MUST bump this constant too, or the poisoned rows
-# are served forever — including after the user sets YEABOI_GO=0, because
-# the Python path reads the same cache.
+# This version is the cache's ONLY invalidation lever: the key carries no
+# engine version, so any scoring change MUST bump this constant too, or the
+# stale rows are served forever.
 _DOC_SCORING_VERSION = "deterministic-v3"
 _EMPTY_BODY = "empty page body"
 
@@ -336,9 +333,8 @@ def _doc_cache_key(meta: dict) -> str:
 def _write_doc_cache(scoreable: list[dict], assets: list[dict], db_path) -> None:
     """Persist the freshly scored assets, one cache row per cache-miss page.
 
-    ``scoreable``/``assets`` are the seam's aligned in/out lists (the dispatch
-    validates the count before trusting a sidecar result). This replaces the
-    old in-worker checkpoint write, so it is one batch after scoring; cached
+    ``scoreable``/``assets`` are the seam's aligned in/out lists. This replaces
+    the old in-worker checkpoint write, so it is one batch after scoring; cached
     entries hold only derived assets — never page bodies. Best-effort, like
     every other touch of this cache.
     """
@@ -1052,7 +1048,6 @@ def run_doc_quality(
         from yeaboi.analysis.aggregate import (
             build_score_docs_inputs,
             doc_signal_from_wire,
-            go_score_docs,
             score_docs,
             scoreable_doc_pages,
         )
@@ -1061,7 +1056,7 @@ def run_doc_quality(
         _report_doc_progress(progress, f"Assembling quality results for {len(scoreable)} documentation pages")
         score_started = time.monotonic()
         inputs = build_score_docs_inputs(pages=pages)
-        scored = go_score_docs(inputs) or score_docs(inputs)
+        scored = score_docs(inputs)
         signal = doc_signal_from_wire(scored["signal"])
         assets = scored["assets"]
         _write_doc_cache(scoreable, assets, db_path)

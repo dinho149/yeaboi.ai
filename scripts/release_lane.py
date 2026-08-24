@@ -2,8 +2,8 @@
 """Which lane a merge to `main` came from — the fleet's, or a human's.
 
 `publish.yml` asks this once per push and releases on the answer: a human's merge
-cuts the official `X.Y.Z` on the spot, the fleet's publishes `X.Y.ZrcN` and waits
-for somebody to sign the batch off.
+cuts the official `X.Y.Z` on the spot, an unattended one publishes `X.Y.ZrcN`
+and waits for a human merge to ship it.
 
 **The predicate is not defined here.** `scripts/pr_feedback.py` owns it, and it is
 the same one `claude-review.yml` and the pr-feedback gate use to decide whether a

@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """Run the optional CI jobs this branch's diff needs, before the PR exists.
 
-`make test` proves the Python suite and nothing else. CI checks eight further
+`make test` proves the Python suite and nothing else. CI checks several further
 things — the ruff format check, gitleaks, actionlint, the front-end bundles, the
-docs site, the Go sidecar, the parity suite unskipped, the golden evaluators and
-the wheel's contents — and every one of them used to be discovered *after* the
-PR was open, minutes later, on a branch already pushed.
+docs site, the golden evaluators and the wheel's contents — and every one of
+them used to be discovered *after* the PR was open, minutes later, on a branch
+already pushed.
 
 Which of them a diff needs is not a judgement call: `scripts/test_scope.py`
 already computes it for CI's `scope` job, and already carries the rule that makes
 narrowing safe — anything it cannot classify runs everything. Nothing called it
 with `--base` until this script.
 
-Two conventions it inherits from the rest of the fleet:
+Two conventions:
 
 * **Never silently narrow.** Every skipped job is printed with the reason it was
-  skipped, the way `make beta-check` lists the angles a batch did not reach. A
-  run that says nothing about what it left out reads as "covered everything".
+  skipped. A run that says nothing about what it left out reads as "covered
+  everything".
 * **An unreadable scope is not an empty one.** If the selector crashes, or hands
   back something unparseable, run every job rather than none — a `|| true` here
   would turn a broken selector into a silent green.
@@ -43,8 +43,6 @@ SCOPE = ROOT / "scripts" / "test_scope.py"
 # would otherwise just never run locally, and a selector's failure mode is
 # silence.
 JOB_TARGETS: dict[str, tuple[str, ...]] = {
-    "go": ("go-lint", "go-test", "go-build"),
-    "parity": ("parity",),
     "web": ("web-check",),
     "desktop": ("desktop-check",),
     "site": ("site-check",),
@@ -56,8 +54,6 @@ JOB_TARGETS: dict[str, tuple[str, ...]] = {
 # The binary each job needs before it can run at all. A job whose toolchain is
 # absent is reported and skipped, not failed — see the module docstring.
 JOB_TOOLCHAIN: dict[str, str] = {
-    "go": "go",
-    "parity": "go",
     "web": "npm",
     "desktop": "npm",
 }
@@ -97,9 +93,9 @@ def decide(changed: list[str]) -> tuple[dict[str, bool], str]:
     Takes the path list rather than a ref, and feeds it over `--changed-files -`.
     `--base` would have been the obvious call and is wrong here: in
     `test_scope.main` the source arguments are a mutually-exclusive group, so
-    `--base` is a *committed-only* merge-base diff. `cowork-builder` runs this
+    `--base` is a *committed-only* merge-base diff. Unattended agents run this
     gate before it commits, and a partially-committed branch would then skip
-    `web`/`go`/`parity`/`package` for anything living only in the working tree —
+    `web`/`package` for anything living only in the working tree —
     a gate passing on work it never saw.
 
     Returns (jobs, note). A selector that cannot be read returns every job true

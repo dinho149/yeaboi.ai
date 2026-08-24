@@ -75,7 +75,7 @@ class TestTheModelTier:
     Asserting that `"type:security"` and `"YEABOI_MODEL_DEEP"` both appear in the
     script proves nothing: swapping the two branches keeps every substring in
     place and routes security straight to `heavy`, which is the one thing
-    cowork/models.md forbids. These execute it instead.
+    the model policy forbids. These execute it instead.
     """
 
     @staticmethod
@@ -104,8 +104,7 @@ class TestTheModelTier:
         ("labels", "title"),
         [
             (["type:security", "workstream:web-ux"], "[security][web-ux] unpkg lenis has no SRI"),
-            # The workstream axis. models.md scopes the rule to "any auto-lane item
-            # in the `security` workstream", and these are separate labels — a
+            # The workstream axis: type and workstream are separate labels — a
             # security-workstream bug is `[bug][security]`, which a type-only check
             # never sees. #172, the first issue this job ever received, was the
             # other shape.

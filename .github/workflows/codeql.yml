@@ -23,7 +23,7 @@ on:
   pull_request:
     branches: [main, chore/go-migration]
   schedule:
-    # Tuesdays, offset from the cowork security sweep's Monday run and off the hour
+    # Tuesdays, off the hour
     # (":00" is the most contended slot and queues these ~3h late).
     - cron: "29 7 * * 2" # Tuesdays 07:29 UTC
 

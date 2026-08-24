@@ -120,17 +120,3 @@ class TestItCannotDoMoreThanReFire:
         triggers = claude[True] if True in claude else claude["on"]
         assert "issue" in triggers["workflow_dispatch"]["inputs"]
         assert "workflow_dispatch" in claude["jobs"]["implement"]["if"]
-
-
-class TestTheLabelIsRealEverywhereItIsUsed:
-    def test_cowork_setup_creates_it(self):
-        """A label a workflow applies but `make cowork-setup` never creates does
-        nothing at all, silently — and the thing it silently fails to do here is
-        stop the loop."""
-        import sys
-
-        sys.path.insert(0, str(REPO_ROOT / "scripts"))
-        import cowork_setup as setup
-
-        assert "implement-blocked" in {label.name for label in setup.expected_labels()}
-        assert "implement-blocked" in setup.KEEP_LABELS, "teardown would strip the record off every issue"

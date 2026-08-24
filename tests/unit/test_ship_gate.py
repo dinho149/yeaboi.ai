@@ -150,7 +150,7 @@ class TestPreflightCoversEveryJob:
             preflight,
             "decide",
             lambda changed: (
-                {"go": False, "parity": False, "web": False, "site": True, "package": False, "eval": False},
+                {"web": False, "site": True, "package": False, "eval": False},
                 "",
             ),
         )
@@ -159,25 +159,25 @@ class TestPreflightCoversEveryJob:
         assert preflight.main(["--base", "origin/main", "--list"]) == 0
         out = capsys.readouterr().out
         assert "running: site" in out
-        for job in ("go", "parity", "web", "package", "eval"):
+        for job in ("web", "package", "eval"):
             assert f"skipped {job} —" in out, f"preflight ran without {job} and never said so"
 
     def test_a_missing_toolchain_is_reported_not_failed(self, monkeypatch, capsys):
-        """cowork-builder's sandbox has no Go and no Node, and a standup fix needs `go`.
+        """An unattended sandbox has no Node, and a front-end fix needs `web`.
 
         Failing the unattended lane on an environment fact rather than on the diff
         is an outage, not a gate. CI has the toolchains.
         """
         preflight = _preflight()
         monkeypatch.setattr(
-            preflight, "decide", lambda changed: (dict.fromkeys(preflight.JOB_TARGETS, False) | {"go": True}, "")
+            preflight, "decide", lambda changed: (dict.fromkeys(preflight.JOB_TARGETS, False) | {"web": True}, "")
         )
-        monkeypatch.setattr(preflight, "changed_paths", lambda base: ["src/yeaboi/standup/aggregate.py"])
+        monkeypatch.setattr(preflight, "changed_paths", lambda base: ["frontend/src/retro/App.tsx"])
         monkeypatch.setattr(preflight.shutil, "which", lambda name: None)
 
         assert preflight.main(["--base", "origin/main", "--list"]) == 0
         out = capsys.readouterr().out
-        assert "skipped go — go is not on PATH" in out
+        assert "skipped web — npm is not on PATH" in out
 
     def test_job_selection_sees_uncommitted_work(self):
         """`--base` in test_scope.py is committed-only; the ship gate runs before the commit.
@@ -185,7 +185,7 @@ class TestPreflightCoversEveryJob:
         The source arguments there are a mutually-exclusive group, so a `--base`
         call cannot also read the working tree. preflight passes the union over
         `--changed-files -` instead; a partially-committed branch would otherwise
-        skip web/go/parity/package for anything living only in the working tree.
+        skip web/package for anything living only in the working tree.
         """
         source = (ROOT / "scripts" / "preflight.py").read_text()
         assert '"--changed-files", "-"' in source, (

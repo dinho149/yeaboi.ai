@@ -306,8 +306,7 @@ jobs:
           # zero cost is the signature of an AUTH failure, not a model one. Check
           # `apiKeySource` and `api_error_status` in the run log before touching
           # this line.
-          # Model comes from the `fast` tier in cowork/models.md, via a repo
-          # variable. The `||` fallback is what this job ran on before the tier
+          # Model comes from the `fast` tier repo variable. The `||` fallback is what this job ran on before the tier
           # table existed — an unset variable reverts, it does not break.
           claude_args: >-
             --model ${{ vars.YEABOI_MODEL_FAST || 'claude-haiku-4-5-20251001' }} --max-turns 15 --allowedTools "Bash,Read,Edit,Write"

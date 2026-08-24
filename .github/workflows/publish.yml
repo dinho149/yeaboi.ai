@@ -2,25 +2,13 @@ name: Publish to PyPI
 
 # The OFFICIAL release, and the only thing in this repo that can produce one.
 #
-# ONE LANE RELEASES. A merge whose PR is a human's — including the batch PR
-# that `scripts/batch_assemble.py` opens over the fleet's accumulated work —
-# cuts the official X.Y.Z on the spot, from exactly the merged tree. A merge
-# whose PR is the fleet's — `cowork`-labelled, or an unattended branch prefix —
-# publishes X.Y.ZrcN and nothing else. Fleet PRs are not normally merged at all
-# any more: they wait open and ship inside a batch PR a human has hand-tested
-# (see release-signoff.md in the cowork docs), so the fleet lane here is a
-# BACKSTOP against a fleet PR reaching `main` directly, not the everyday path.
+# ONE LANE RELEASES. A merge whose PR is a human's cuts the official X.Y.Z on
+# the spot, from exactly the merged tree. A merge whose PR is unattended —
+# `cowork`-labelled, or an unattended branch prefix — publishes X.Y.ZrcN and
+# nothing else, a BACKSTOP against an unattended PR reaching `main` directly.
 #
 # The gate exists because unattended work should not reach `pip install yeaboi`
-# without somebody signing for it — and a human's merge IS that signature. The
-# batch merge is signed twice over: the hand-test recorded on the batch PR, and
-# the merge itself.
-#
-# There is no `issues:` trigger and no promotion-label path any more. Releasing
-# used to be a label landing on a weekly ask issue, with the release pinned to
-# a marker naming a pre-release tag; under the batch model the sign-off IS the
-# merge, so the pushed commit and the tested tree are the same thing and no
-# marker plumbing is needed.
+# without somebody signing for it — and a human's merge IS that signature.
 #
 # The workflow filename MUST stay "publish.yml" to keep PyPI's OIDC trusted-
 # publisher configuration valid.
@@ -71,14 +59,10 @@ jobs:
         # pr-feedback gate and `claude-review.yml` already trust. Nothing about
         # it is re-spelled in this file; see that script for why.
         #
-        # Only the `cowork` label OR an unattended prefix marks the fleet lane —
+        # Only the `cowork` label OR an unattended prefix marks the unattended lane —
         # never authorship. `claude[bot]` authors plenty of human-driven PRs from
         # `/ship`, and a maintainer merging one has signed for it just as surely
-        # as if they had typed it. The batch PR relies on this exactly: its head
-        # is `batch/…` and it carries no `cowork` label, so a signed batch
-        # classifies `human` and releases — one stray `cowork` label on it would
-        # take the fleet branch here and silently release nothing, which is why
-        # `batch_assemble.py` and `beta_signoff.py` both refuse that shape.
+        # as if they had typed it.
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,9 +73,9 @@ jobs:
           # EVERY associated PR, not `.[0]`. This endpoint can return more than
           # one — an open PR that rebased onto main, a cherry-pick — in an order
           # it does not document, so taking the first is taking an arbitrary one.
-          # release_lane.py resolves the list with any-fleet-wins, because of the
+          # release_lane.py resolves the list with any-unattended-wins: of the
           # two ways a wrong pick goes, one makes a human merge wait and the
-          # other publishes a fleet merge to PyPI, which has no delete.
+          # other publishes an unattended merge to PyPI, which has no delete.
           #
           # `if length == 0 then null` rather than a bare `.[] | …`: jq cannot
           # iterate over the null an empty array yields, so the bare form exits 5
@@ -117,10 +101,9 @@ jobs:
             exit 0
           fi
           if [ "$VERDICT" = "fleet" ]; then
-            # An anomaly under the batch model, not the everyday path: fleet PRs
-            # wait for a batch rather than merging. A fleet PR merged here by
-            # hand still ships to users only with the NEXT human-lane merge.
-            echo "::notice::fleet-lane merge reached main directly — publishing a pre-release only; it ships with the next human merge."
+            # An unattended-lane merge ships to users only with the NEXT
+            # human-lane merge.
+            echo "::notice::unattended merge reached main directly — publishing a pre-release only; it ships with the next human merge."
             echo "unattended=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::human merge — cutting the official release."
@@ -128,10 +111,9 @@ jobs:
           fi
       - id: pin
         if: steps.lane.outputs.unattended != 'true'
-        # The released tree IS the pushed commit. Under the batch model the
-        # sign-off is the merge itself — the hand-test markers live on the batch
-        # PR and gate `make beta-promote`, not this workflow — so there is no
-        # marker to resolve and nothing to fall back from. The step survives as
+        # The released tree IS the pushed commit: the sign-off is the merge
+        # itself, so there is no marker to resolve and nothing to fall back
+        # from. The step survives as
         # the single place every later job reads its `ref:` from, because
         # testing one tree and shipping another is the failure this pin exists
         # to make impossible.
@@ -258,7 +240,7 @@ jobs:
           # `v<version>` is tagged HERE, so it must land on the tree that was
           # built and uploaded. Tagging main instead would leave the released
           # wheel and the tag describing different code, and every later
-          # `git log <tag>..` — the next batch, the announcement — would be wrong.
+          # `git log <tag>..` — the announcement, the next release — would be wrong.
           ref: ${{ needs.check.outputs.sha }}
           fetch-depth: 0
       - uses: actions/download-artifact@v8
@@ -270,7 +252,7 @@ jobs:
           # Publishing without tagging is the one unrecoverable ordering here:
           # PyPI has the final, and nothing announces it. A thin body is fine.
           if [ ! -s /tmp/notes/notes.md ]; then
-            echo "::warning::batch manifest missing — releasing with a minimal body."
+            echo "::warning::release notes missing — releasing with a minimal body."
             echo "Release v${{ needs.check.outputs.version }}." > /tmp/notes/notes.md
           fi
       - name: Create tag and GitHub Release
@@ -279,5 +261,5 @@ jobs:
           tag_name: v${{ needs.check.outputs.version }}
           name: v${{ needs.check.outputs.version }}
           body_path: /tmp/notes/notes.md
-          generate_release_notes: true # appended under the batch manifest
+          generate_release_notes: true # appended under the manifest body
           make_latest: true # the official `v*` release is the one "Latest" points at

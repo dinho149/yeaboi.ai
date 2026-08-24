@@ -6,11 +6,8 @@ secrets / risky bash along the way. This module reuses that machinery for a
 single known file instead of a full-tree sweep.
 
 It deliberately lives here rather than as new public API on
-``agentwatch/collector.py``: the agentwatch family is mirrored line-for-line
-in the Go sidecar under the byte-parity contract, so the mirrored files stay
-untouched and this thin adapter imports their internals instead. If the
-sidecar ever needs this seam, promoting it is a deliberate dual-maintenance
-change — not a side effect of the ship mode.
+``agentwatch/collector.py``: this thin adapter imports that family's internals
+instead of widening its surface as a side effect of the ship mode.
 
 Reading ``~/.claude/projects`` is already permitted (and read-only) under
 ``fs_policy``'s built-in rules; the transcript filename is the session id, so

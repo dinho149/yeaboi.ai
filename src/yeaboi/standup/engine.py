@@ -1677,9 +1677,7 @@ def run_standup(
     # 4b. Deterministic aggregation: identity closure → roster filter → bot
     #     filter → coverage → grouping → day-over-day insights → practice
     #     detection → confidence. One pure function of the collected inputs
-    #     (aggregate.aggregate_standup), served byte-identically by the Go
-    #     sidecar when one is discovered (standup.aggregate — see
-    #     contracts/v1/rpc.md; YEABOI_GO=0 opts out), silent Python fallback.
+    #     (aggregate.aggregate_standup).
     #
     #     The practice adjudicator is the one LLM interleave in that block, so
     #     it is hoisted out by protocol: pass 1 returns the still-unattributed
@@ -1710,7 +1708,7 @@ def run_standup(
         today=date_str,
         want_adjudication=adjudicator is not None,
     )
-    result = aggregate.go_aggregate(inputs) or aggregate.aggregate_standup(inputs)
+    result = aggregate.aggregate_standup(inputs)
     cases = aggregate.cases_from_wire(result.get("adjudication_cases") or ())
     # Hoisted out of the branch: the provenance log records every drop below,
     # and a run with no adjudicator simply has none to record.
@@ -1723,7 +1721,7 @@ def run_standup(
             dropped = []
         if dropped:
             inputs = {**inputs, "dropped_case_ids": dropped}
-            result = aggregate.go_aggregate(inputs) or aggregate.aggregate_standup(inputs)
+            result = aggregate.aggregate_standup(inputs)
 
     members = list(result["members"])
     for dupe in result.get("merged") or ():

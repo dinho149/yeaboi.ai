@@ -195,7 +195,7 @@ class TestProse:
     def test_no_local_sessions_is_stated_as_a_coverage_note(self, db_path):
         # An environment with no ~/.claude history in the window says so, rather
         # than reporting a quiet day: "the agents were idle" and "this machine
-        # can't see them" would otherwise look identical. The cowork routine no
+        # can't see them" would otherwise look identical. A scheduled cloud run no
         # longer relies on this note — it passes include_local_sessions=False and
         # gets the distinct one — but a local run against an empty window still
         # lands here, which is the case this pins.
@@ -326,7 +326,6 @@ class TestTrackerOnly:
         _seed_session(db_path)
         called = []
         monkeypatch.setattr(engine, "_deterministic_standup_digest", lambda **kw: called.append(kw))
-        monkeypatch.setattr(engine, "_go_standup_digest", lambda **kw: called.append(kw))
         digest = engine.run_agent_standup(db_path=db_path, today=MONDAY, include_local_sessions=False)
         assert called == [], "the local half ran despite include_local_sessions=False"
         assert digest.sessions_worked == 0

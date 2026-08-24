@@ -4,7 +4,7 @@ name: Implement reconcile
 # `claude.yml`'s implement job only ever observed its EDGE (`issues: labeled`).
 # Everything that can go wrong between the two was therefore unrecoverable:
 #
-#   - a second ✅ is a no-op. `cowork_relay.py` emits `gh issue edit --add-label`,
+#   - a second ✅ is a no-op. The relay emitted `gh issue edit --add-label`,
 #     which does nothing when the label is already there. Issue #172 was approved
 #     five times between 2026-08-09 and 08-11 and built once.
 #   - a run that fired and produced nothing left no retry. #172's did exactly

@@ -2673,7 +2673,7 @@ class TestPracticeFeedbackReachesTheRun:
 
 
 class TestAggregateDispatchProtocol:
-    """run_standup's use of the aggregate seam: backend choice + two-pass adjudication."""
+    """run_standup's use of the aggregate seam: two-pass adjudication."""
 
     def _canned_llm(self, monkeypatch):
         llm_json = json.dumps({"members": [], "team_summary": "ok"})
@@ -2681,31 +2681,6 @@ class TestAggregateDispatchProtocol:
             "yeaboi.agent.llm.get_llm",
             lambda **k: type("L", (), {"invoke": lambda self, m: type("R", (), {"content": llm_json})()})(),
         )
-
-    def test_go_result_wins_over_python(self, monkeypatch, db_path, seeded_session):
-        _patch_common(monkeypatch, items=[], counts=[("jira", 0)])
-        self._canned_llm(monkeypatch)
-        from yeaboi.standup import aggregate
-
-        real = aggregate.aggregate_standup
-        served = {"n": 0}
-
-        def fake_go(inputs):
-            served["n"] += 1
-            return real(inputs)
-
-        monkeypatch.setattr(aggregate, "go_aggregate", fake_go)
-        python_calls = {"n": 0}
-
-        def spy_python(inputs):
-            python_calls["n"] += 1
-            return real(inputs)
-
-        monkeypatch.setattr(aggregate, "aggregate_standup", spy_python)
-        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
-        assert served["n"] == 1
-        assert python_calls["n"] == 0  # the sidecar result was used as-is
-        assert report.date == "2026-07-10"
 
     def test_two_pass_feeds_dropped_case_ids_back(self, monkeypatch, db_path, seeded_session):
         _patch_common(monkeypatch, items=[], counts=[("jira", 0)])

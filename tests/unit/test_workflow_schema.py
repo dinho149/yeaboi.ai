@@ -134,7 +134,7 @@ class TestTheGateSurvives:
 # names (`Lint`, `Format check`) that match no posted check.
 #
 # Nothing in this repo can edit that ruleset, so this list is a copy — and a copy
-# is exactly what needs a test. `make cowork-check` probes the live one.
+# is exactly what needs a test.
 REQUIRED_CONTEXTS = frozenset(
     {
         "Unit tests",

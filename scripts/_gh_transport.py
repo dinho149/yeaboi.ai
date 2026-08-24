@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
 """One GitHub transport for every script in ``scripts/``.
 
-Three scripts here talk to GitHub — ``cowork_setup.py`` (labels, variables, the
-merge-gate probe), ``pr_feedback.py`` (the PR review gate) and
-``cowork_relay.py`` (the Slack reaction relay) — and until now all three did it
-the same way: ``subprocess.run(["gh", ...])``.
+The scripts here that talk to GitHub — ``pr_feedback.py`` (the PR review gate)
+foremost — used to do it with ``subprocess.run(["gh", ...])``.
 
 That is fine on a developer's machine and fine on an Actions runner, and it is
-broken in the one place the fleet actually runs unattended. A cloud routine
-session is handed a GitHub *token* and no CLI, so every one of those calls
-failed. `cron/cd-deploy.md` reported it loudly because it runs under
-``--strict``; the rest failed quietly, which is worse.
+broken in unattended cloud sessions, which are handed a GitHub *token* and no
+CLI, so every one of those calls failed.
 
 So: `gh` when it is there, the REST API with ``GH_TOKEN``/``GITHUB_TOKEN`` when
-it is not, and one module rather than three copies — the transport is the kind
-of code that is wrong in the same way three times if it is written three times.
+it is not, and one shared module rather than a copy per caller.
 
 **stdlib only.** Nothing from ``src/yeaboi`` and nothing off PyPI, so every
 caller stays runnable in a checkout with no environment built. That is a
 constraint on this file specifically, not a general one.
 
 Callers keep their own reporting. This module returns results and never prints:
-``cowork_setup.py`` degrades through ``STRICT.note``, ``pr_feedback.py`` prints
-to stderr and exits non-zero, and a shared printer would have to please both.
+``pr_feedback.py`` prints to stderr and exits non-zero, and a shared printer
+would have to please every caller.
 """
 
 from __future__ import annotations

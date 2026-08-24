@@ -310,22 +310,20 @@ def _no_real_gh_calls(monkeypatch):
     itself. That is deliberate and is the only level that works for everyone:
     ``test_gh_transport.py`` calls ``transport.gh`` directly on purpose — proving a
     missing binary degrades to 127 rather than a traceback — and stubs
-    ``transport._run`` beneath it, while ``test_cowork_setup.py`` stubs
-    ``transport.gh`` above it. Both are legitimate, both share this MonkeyPatch
-    instance, and a stub at either level lands after ours and wins. What is left
-    over is precisely the case with no stub at all, which is the one that reaches
-    the network.
+    ``transport._run`` beneath it. Both levels are legitimate, both share this
+    MonkeyPatch instance, and a stub at either level lands after ours and wins.
+    What is left over is precisely the case with no stub at all, which is the one
+    that reaches the network.
 
     **There can be more than one ``_gh_transport``, and patching the wrong one is
     silent.** ``scripts/`` is not a package, and the two loaders disagree about who
-    owns the name: ``cowork_setup`` and ``cowork_relay`` do a plain ``import
-    _gh_transport``, binding whatever object exists at their load time, while
-    ``test_gh_transport.py`` builds a *fresh* module off the file path and assigns
-    it over ``sys.modules["_gh_transport"]``. Collection is alphabetical, so in a
-    full-suite run the registry entry is the fresh object and ``cowork_setup``
-    still holds the original — patching only the registry leaves the module that
-    caused the incident unguarded, and the guard's own proof passes when run on one
-    file because there the two happen to coincide.
+    owns the name: a script does a plain ``import _gh_transport``, binding whatever
+    object exists at its load time, while ``test_gh_transport.py`` builds a *fresh*
+    module off the file path and assigns it over ``sys.modules["_gh_transport"]``.
+    Collection is alphabetical, so in a full-suite run the registry entry is the
+    fresh object and a plain-importing script still holds the original — patching
+    only the registry leaves that module unguarded, and the guard's own proof
+    passes when run on one file because there the two happen to coincide.
 
     So every distinct transport object reachable from the loaded scripts modules is
     patched, deduped by identity. If none was imported there is nothing to block
@@ -334,15 +332,7 @@ def _no_real_gh_calls(monkeypatch):
     import sys as _sys
 
     reachable = []
-    for name in (
-        "_gh_transport",
-        "cowork_setup",
-        "cowork_relay",
-        "pr_feedback",
-        "beta_signoff",
-        "batch_assemble",
-        "migration_progress",
-    ):
+    for name in ("_gh_transport", "pr_feedback"):
         module = _sys.modules.get(name)
         if module is None:
             continue
@@ -381,19 +371,3 @@ def _no_real_gh_calls(monkeypatch):
             raise RealGitHubWriteBlocked(f"test tried to reach the real GitHub API: {method} {url}")
 
         monkeypatch.setattr(transport, "_urlopen", _blocked_http)
-
-
-@pytest.fixture(autouse=True)
-def _no_ambient_sidecar(monkeypatch):
-    """Unit and integration tests always exercise the pure-Python path.
-
-    YEABOI_GO unset means *auto* since the yeaboi[core] wheel shipped: a dev
-    with the wheel installed (or yeaboi-core on PATH) would otherwise have the
-    whole agentwatch suite silently served by the Go sidecar — passing locally
-    against Go and failing CI against Python, or vice versa. Tests that
-    exercise the dispatch itself set their own YEABOI_GO / fake binary; they
-    share this MonkeyPatch instance, so their setenv lands after ours and wins.
-    The parity suite is unaffected — it constructs CoreClient directly from
-    YEABOI_CORE_BIN and never consults the flag.
-    """
-    monkeypatch.setenv("YEABOI_GO", "0")

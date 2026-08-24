@@ -6,11 +6,11 @@ interesting once the rest of the suite has been imported.
 
 This exists because the guard was, for one commit, patching a module object
 nothing called. `scripts/` is not a package and the two loaders disagree about
-who owns the name `_gh_transport`: `cowork_setup` and `cowork_relay` do a plain
-import, binding whatever object exists at their load time, while
-`test_gh_transport.py` builds a fresh module off the file path and assigns it
-over `sys.modules`. Collection is alphabetical, so in a full-suite run the
-registry entry is the fresh object and `cowork_setup` still holds the original.
+who owns the name `_gh_transport`: scripts do a plain import, binding whatever
+object exists at their load time, while `test_gh_transport.py` builds a fresh
+module off the file path and assigns it over `sys.modules`. Collection is
+alphabetical, so in a full-suite run the registry entry is the fresh object and
+a plain-importing script still holds the original.
 
 The guard's own proof passed at the time — run against one file, where the two
 coincide. That is the failure mode this file is here to make impossible: it
@@ -23,7 +23,7 @@ import sys
 
 import pytest
 
-SPAWNERS = ("cowork_setup", "cowork_relay", "pr_feedback", "beta_signoff", "batch_assemble", "migration_progress")
+SPAWNERS = ("pr_feedback",)
 
 
 def _loaded_transports() -> dict[str, object]:
@@ -52,8 +52,7 @@ def test_the_suite_really_does_load_more_than_one_transport():
 
 def test_every_loaded_transport_carries_the_guard():
     """The invariant that was silently false. One unguarded object is one module
-    that can shell out to the real `gh` — and the one that did was `cowork_setup`,
-    the module the incident came from."""
+    that can shell out to the real `gh`."""
     unguarded = [name for name, transport in _loaded_transports().items() if "_blocked" not in repr(transport._run)]
     assert not unguarded, f"these transports can still spawn the real gh: {unguarded}"
 

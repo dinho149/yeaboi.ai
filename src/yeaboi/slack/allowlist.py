@@ -10,9 +10,8 @@ not "anyone who can see the channel".
 Machine-wide in ``~/.yeaboi/.env`` beside the token and the channel, rather than
 per session. A per-session allowlist would just give an attacker a session to
 pick, and would make "who may approve this" a question with N different answers.
-And not a repo-versioned table either, which is how the cowork fleet's relay
-does it: that works because a reviewer already reads that repo, and a
-``pip install yeaboi`` user has no such repo to review.
+And not a repo-versioned table either: that only works when a reviewer already
+reads the repo, and a ``pip install yeaboi`` user has no such repo to review.
 
 Three rules, all of them failing closed:
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 
 from yeaboi.analysis import aggregate
 from yeaboi.team_profile import AiAdoptionSignal
@@ -177,59 +176,6 @@ class TestSignalWire:
         assert "repos_scanned" not in wire
 
 
-class TestGoDispatch:
-    """Both analysis seams: Go results win; any failure → Python."""
-
-    def test_no_client_means_python_path(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: None)
-        assert aggregate.go_classify(_classify_inputs()) is None
-        assert aggregate.go_score(_score_inputs()) is None
-
-    def test_client_construction_failure_returns_none(self, monkeypatch):
-        def boom():
-            raise RuntimeError("spawn failed")
-
-        monkeypatch.setattr("yeaboi.gocore.get_client", boom)
-        assert aggregate.go_classify(_classify_inputs()) is None
-        assert aggregate.go_score(_score_inputs()) is None
-
-    def test_core_error_returns_none_for_fallback(self, monkeypatch):
-        from yeaboi.gocore import CoreError
-
-        class BrokenClient:
-            def request(self, *args, **kwargs):
-                raise CoreError("sidecar exploded")
-
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: BrokenClient())
-        assert aggregate.go_classify(_classify_inputs()) is None
-        assert aggregate.go_score(_score_inputs()) is None
-
-    def test_malformed_results_return_none(self, monkeypatch):
-        class FakeClient:
-            def request(self, method, params, on_progress=None, timeout=None):
-                return {"signal": {}} if method == "analysis.classify_markers" else {"member_activity": []}
-
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
-        assert aggregate.go_classify(_classify_inputs()) is None
-        assert aggregate.go_score(_score_inputs()) is None
-
-    def test_good_results_are_returned_verbatim(self, monkeypatch, caplog):
-        canned_classify = aggregate.classify_markers(_classify_inputs())
-        canned_score = aggregate.score_code(_score_inputs())
-
-        class FakeClient:
-            def request(self, method, params, on_progress=None, timeout=None):
-                assert method in ("analysis.classify_markers", "analysis.score_code")
-                return canned_classify if method == "analysis.classify_markers" else canned_score
-
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
-        with caplog.at_level(logging.INFO, logger="yeaboi.analysis.aggregate"):
-            assert aggregate.go_classify(_classify_inputs()) == canned_classify
-            assert aggregate.go_score(_score_inputs()) == canned_score
-        assert "analysis.classify_markers served by the sidecar" in caplog.text
-        assert "analysis.score_code served by the sidecar" in caplog.text
-
-
 def _doc_pages() -> list[dict]:
     return [
         {
@@ -389,54 +335,3 @@ class TestDocSignalWire:
         from yeaboi.team_profile import DocQualitySignal
 
         assert aggregate.doc_signal_from_wire({}) == DocQualitySignal()
-
-
-class TestGoDocsDispatch:
-    """analysis.score_docs dispatch: Go results win; any failure → Python."""
-
-    def test_no_client_means_python_path(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: None)
-        assert aggregate.go_score_docs(_docs_inputs()) is None
-
-    def test_core_error_returns_none_for_fallback(self, monkeypatch):
-        from yeaboi.gocore import CoreError
-
-        class BrokenClient:
-            def request(self, *args, **kwargs):
-                raise CoreError("sidecar exploded")
-
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: BrokenClient())
-        assert aggregate.go_score_docs(_docs_inputs()) is None
-
-    def test_malformed_results_return_none(self, monkeypatch):
-        class FakeClient:
-            def request(self, method, params, on_progress=None, timeout=None):
-                return {"assets": []}
-
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
-        assert aggregate.go_score_docs(_docs_inputs()) is None
-
-    def test_asset_count_mismatch_returns_none(self, monkeypatch):
-        canned = aggregate.score_docs(_docs_inputs())
-        short = {**canned, "assets": canned["assets"][:1]}
-
-        class FakeClient:
-            def request(self, method, params, on_progress=None, timeout=None):
-                return short
-
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
-        # A one-short asset list would mis-key the post-seam cache writes.
-        assert aggregate.go_score_docs(_docs_inputs()) is None
-
-    def test_good_results_are_returned_verbatim(self, monkeypatch, caplog):
-        canned = aggregate.score_docs(_docs_inputs())
-
-        class FakeClient:
-            def request(self, method, params, on_progress=None, timeout=None):
-                assert method == "analysis.score_docs"
-                return canned
-
-        monkeypatch.setattr("yeaboi.gocore.get_client", lambda: FakeClient())
-        with caplog.at_level(logging.INFO, logger="yeaboi.analysis.aggregate"):
-            assert aggregate.go_score_docs(_docs_inputs()) == canned
-        assert "analysis.score_docs served by the sidecar" in caplog.text

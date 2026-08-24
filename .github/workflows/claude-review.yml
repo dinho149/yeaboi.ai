@@ -234,7 +234,7 @@ jobs:
             files rather than reading everything — an 80% review that posts beats
             a 100% review that runs out of turns. If you notice you are close to
             the turn limit, stop investigating and post what you have.
-          # Review stays on the `deep` tier (cowork/models.md) — judgment quality is
+          # Review stays on the `deep` tier — judgment quality is
           # the point, and volume is already gated to green PRs by workflow_run.
           # That is what the action's implicit default already gave it; the `||`
           # fallback pins the prior behaviour explicitly.

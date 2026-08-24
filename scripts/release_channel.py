@@ -1,17 +1,8 @@
 #!/usr/bin/env python3
 """The release channel's arithmetic: which pre-release this commit is, and what is in it.
 
-**Partly superseded by the batch release model, and slated for retirement with
-it.** Fleet work now ships via a batch PR a human assembles, hand-tests and
-merges (`scripts/batch_assemble.py` + `scripts/beta_signoff.py`, see
-`cowork/release-signoff.md`); the promotion-issue machinery this module rendered
-markers for is gone, and `beta_signoff.py` no longer imports it — the `tracks`
-plumbing in `pending()` has no sign-off consumer left. What still runs:
-`publish-beta.yml` calls `--next-rc`/`--write`, `publish.yml` calls
-`--check-promotable` and `--release-notes`, and `cowork_evening.py` reads
-`pending()` for the digest footer. Once the beta channel retires (one full batch
-cycle after cutover, per the ci-and-release skill), the pre-release half of this
-file goes with it.
+What runs: `publish-beta.yml` calls `--next-rc`/`--write`, and `publish.yml`
+calls `--check-promotable` and `--release-notes`.
 
 `publish-beta.yml` publishes a PyPI *pre-release* (``X.Y.ZrcN``) on every
 release-worthy merge to `main` — all human-lane now; `publish.yml` publishes the
@@ -300,10 +291,8 @@ def _tracks(commits: list[str], changed: list[str]) -> dict:
     * subjects (backup) — `integration(<provider>):`, which is the only way a reach
       angle shows up at all, since it touches no provider module.
 
-    ``required`` was what the issue-era `beta_signoff.promote` refused on; the
-    batch-model sign-off computes its own required set from the batch PR's diff
-    and no longer reads this. It is kept accurate while the module lives (the
-    digest still renders `tracks`), and it is False for a track with nothing in
+    ``required`` has no sign-off consumer any more. It is kept accurate while
+    the module lives, and it is False for a track with nothing in
     it — an empty checklist reads as "signed off" when it means "never asked".
 
     ``carried_forward`` is conservative on purpose: a track carries only when
