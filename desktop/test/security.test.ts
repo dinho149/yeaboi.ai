@@ -2,9 +2,13 @@
 // may navigate, and which backend routes the renderer may ask the proxy for.
 // Both are pure, so neither needs Electron to be tested.
 
-import { describe, expect, it } from 'vitest';
-import { rendererMayCall } from '../src/main/api-proxy';
+import { describe, expect, it, vi } from 'vitest';
 import { navigationAllowed } from '../src/main/permissions';
+
+// api-proxy imports ipcMain as a value, and CI installs no Electron binary —
+// so the real module throws on import and takes the whole file with it.
+vi.mock('electron', () => ({ ipcMain: { handle: () => {} } }));
+const { rendererMayCall } = await import('../src/main/api-proxy');
 
 describe('navigationAllowed', () => {
   it('allows the loopback backend on any port', () => {
