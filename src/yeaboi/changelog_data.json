@@ -2,9 +2,46 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.29.0",
+      "date": "2026-08-24",
+      "summary": "Performance mode now shows what a run is actually doing, not just a static action label. While gathering evidence from seven sources and running an LLM, a live loading screen paints a phase-based checklist showing which source is running right now, which are done, which had no data, and which failed. Each source's status is derived from the SourceCoverage row it just produced, so what the lead watches tick past and what the final artifact shows cannot disagree. Every phase reaches a terminal state (completed, no_data, failed, or fallback), and the checklist lives on-screen at every terminal height from 16 rows up. Export moved from a pre-generation action to the artifact page \u2014 there's nothing to export until an artifact exists. A critical bug fix: detail view's Export, Share Online and Anonymize all re-resolved the engineer's latest artifact by a fixed ladder instead of using the one on screen, causing shares to publish the wrong artifact. All three now go through the displayed artifact.",
+      "highlights": [
+        {
+          "text": "Live progress screen shows exactly what's happening: which source is running now, which are done, which hit no data, which failed",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "Phase-based checklist with terminal states: each source settles as completed, no_data, failed, or fallback when it finishes",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "Source status is derived from the SourceCoverage row just produced, so the screen and the final artifact always agree",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "Checklist rendering anchors on the running row and stays on-screen at every terminal height from 16\u201340 rows",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "Export, Share Online and Anonymize now act on the artifact shown on screen, not a re-derived latest artifact",
+          "areas": [
+            "performance"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.28.0",
       "date": "2026-08-23",
-      "summary": "Performance mode now renders structured metrics and evidence instead of plaintext prose across all surfaces: TUI, web exports, Cloudflare shares, and CLI. The engine computes real figures once (12 of 14 stories, 4.1d cycle time, 62% with tests) and projects them two ways — prompt prose for the LLM and structured records for the UI — so the numbers quoted to the model are the numbers the page renders. New persisted data shapes (PerfMetric, EvidenceGroup, PerformanceNote) preserve evidence as linked rows and metrics as numbers. TUI rendering gained stat tiles, evidence rows, and repositioned the coverage strip from the foot of long artifacts to the headline, fixing three bugs: long lines were unreachable when scrolling, the status banner scrolled out of view, and empty sections rendered nothing at all.",
+      "summary": "Performance mode now renders structured metrics and evidence instead of plaintext prose across all surfaces: TUI, web exports, Cloudflare shares, and CLI. The engine computes real figures once (12 of 14 stories, 4.1d cycle time, 62% with tests) and projects them two ways \u2014 prompt prose for the LLM and structured records for the UI \u2014 so the numbers quoted to the model are the numbers the page renders. New persisted data shapes (PerfMetric, EvidenceGroup, PerformanceNote) preserve evidence as linked rows and metrics as numbers. TUI rendering gained stat tiles, evidence rows, and repositioned the coverage strip from the foot of long artifacts to the headline, fixing three bugs: long lines were unreachable when scrolling, the status banner scrolled out of view, and empty sections rendered nothing at all.",
       "highlights": [
         {
           "text": "Structured performance metrics: numbers stay numbers throughout the pipeline, not stringified into prose and thrown away",
@@ -56,7 +93,7 @@
           ]
         },
         {
-          "text": "Compatibility shims for 3.10: datetime.UTC, StrEnum rendering, and ISO format date parsing all work consistently across 3.10–3.14",
+          "text": "Compatibility shims for 3.10: datetime.UTC, StrEnum rendering, and ISO format date parsing all work consistently across 3.10\u20133.14",
           "areas": [
             "general"
           ]
@@ -68,7 +105,7 @@
           ]
         },
         {
-          "text": "Expanded CI testing: floor verification on Python 3.10, compatibility matrix on 3.11–3.14, and new guards to prevent Python version constraints from creeping back in",
+          "text": "Expanded CI testing: floor verification on Python 3.10, compatibility matrix on 3.11\u20133.14, and new guards to prevent Python version constraints from creeping back in",
           "areas": [
             "general"
           ]
@@ -149,7 +186,7 @@
       "summary": "Slack integration is now two-way: reactions and replies on ceremony posts control ceremonies, vote on practice signals, and correct artifacts. With both SLACK_BOT_TOKEN and SLACK_CHANNEL_ID configured, ceremony delivery posts via chat.postMessage and records an anchor row, while a background polling job reads the channel every N minutes and applies what it finds. Four acts exist: emoji reactions on the post control pause/resume/skip, vote reactions on signal replies apply verdicts, short text replies (pause/resume/skip/ack) call the same store functions, and any other threaded reply becomes an attributed correction. All four acts are free, reversible database writes with no LLM anywhere in the inbound path, and the allowlist is empty by default (making the poll a no-op). The Slack column moved from the Ceremonies page to a page-level fact line, showing post status, channel, and token/reader configuration. A one-shot ceremony skip flag and artifact leases for concurrent edits round out the delivery improvements.",
       "highlights": [
         {
-          "text": "Reactions and replies on Slack posts now control ceremonies: ⏸ ▶️ 🚫 on the post pause/resume/skip; 👍/👎 on signal replies cast verdicts",
+          "text": "Reactions and replies on Slack posts now control ceremonies: \u23f8 \u25b6\ufe0f \ud83d\udeab on the post pause/resume/skip; \ud83d\udc4d/\ud83d\udc4e on signal replies cast verdicts",
           "areas": [
             "standup"
           ]

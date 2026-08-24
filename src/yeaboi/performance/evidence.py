@@ -48,6 +48,9 @@ SOURCE_RETRO = "retro"
 SOURCE_POKER = "poker"
 SOURCE_DELIVERY = "delivery"
 
+# Not an evidence source — the optional live scan, which only reports progress.
+PHASE_GAP_SCAN = "gap_scan"
+
 # The two vocabularies above, as ordered tuples plus reader-facing labels. Two
 # modes now draw the same coverage dot from the same word, and a hand-written
 # copy in TypeScript is what would drift with nothing to notice — so these are
@@ -102,6 +105,59 @@ class SourceCoverage:
     source: str = ""
     state: str = ""  # covered | partial | failed | not_configured
     detail: str = ""
+
+
+# Coverage words → the shared progress vocabulary (analysis/progress.py). The
+# checklist a caller draws is derived from the SourceCoverage row the section
+# just produced, so the live rows and the artifact's own coverage strip cannot
+# disagree about what a source contributed.
+_COVERAGE_STATUS = {
+    COVERED: "completed",
+    PARTIAL: "partial",
+    FAILED: "failed",
+    NOT_CONFIGURED: "no_data",
+}
+assert set(_COVERAGE_STATUS) == set(COVERAGE_STATES), "every coverage word needs a progress status"
+
+
+# Progress-only labels for ids that are not evidence sources. Kept out of
+# EVIDENCE_SOURCE_LABELS, which is codegen'd into the front end's enums and
+# describes what a coverage dot means — the live scan has no dot.
+_PHASE_LABELS = {PHASE_GAP_SCAN: "Live scan"}
+
+
+def _emit(on_progress, source: str, status: str, *, detail: str = "") -> None:
+    """Send one source lifecycle event. None-safe, so sections emit unconditionally.
+
+    Callers key their phase checklist on the SOURCE_* id; the label rides along
+    for consumers that render an event on its own.
+    """
+    from yeaboi.analysis.progress import send_component_progress
+
+    label = EVIDENCE_SOURCE_LABELS.get(source) or _PHASE_LABELS.get(source, source)
+    send_component_progress(
+        on_progress,
+        component_id=source,
+        label=label,
+        status=status,
+        detail=detail,
+    )
+
+
+def _emit_coverage(on_progress, coverage: list, source: str) -> None:
+    """Close out a section by echoing the SourceCoverage row it appended for ``source``.
+
+    A section that appended none resolves as ``failed``: every declared phase
+    must reach a terminal state.
+    """
+    if on_progress is None:
+        return
+    row = next((c for c in reversed(coverage) if c.source == source), None)
+    if row is None:
+        _emit(on_progress, source, "failed", detail="Could not be read.")
+        return
+    # An unrecognised word falls to "failed": ✓ is the one mark this must never invent.
+    _emit(on_progress, source, _COVERAGE_STATUS.get(row.state, "failed"), detail=row.detail)
 
 
 @dataclass(frozen=True)
@@ -544,11 +600,16 @@ def gather_engineer_evidence(
     sprints: int = 2,
     deep_scan: bool = False,
     db_path=None,
+    on_progress=None,
 ) -> EngineerEvidence:
     """Read every mode's history for one engineer. Never raises.
 
     Saved stores are read first (free); ``deep_scan`` additionally permits one
     capped live multi-source collection over the stretch no saved standup covered.
+
+    ``on_progress``: optional callable taking one lifecycle event per source
+    (see ``analysis/progress.py``), so a caller can draw a live checklist. Each
+    source reports ``running`` and then whatever its own SourceCoverage row says.
     """
     state = state or {}
     logger.info(
@@ -568,6 +629,7 @@ def gather_engineer_evidence(
     coverage: list[SourceCoverage] = []
 
     # ── Tickets — the existing gatherer, now alias-aware and deduped. ────────
+    _emit(on_progress, SOURCE_TICKETS, "running")
     activity = activity_mod.gather_engineer_activity(
         engineer,
         state=state,
@@ -583,6 +645,7 @@ def gather_engineer_evidence(
             f"{activity.total_items} ticket(s) from " + (", ".join(s for s, _ in activity.sources) or "no tracker"),
         )
     )
+    _emit_coverage(on_progress, coverage, SOURCE_TICKETS)
 
     # Built before the no-database exit below: the tickets came from the tracker,
     # not from saved history, so they are evidence on a machine that has never
@@ -604,6 +667,9 @@ def gather_engineer_evidence(
 
     db_path = _resolve_db(db_path)
     if db_path is None:
+        # Nothing saved to read — settle every remaining source.
+        for source in (SOURCE_STANDUP, SOURCE_ANALYSIS, SOURCE_RETRO, SOURCE_POKER, SOURCE_DELIVERY):
+            _emit(on_progress, source, "no_data", detail="No saved history on this machine.")
         ev = EngineerEvidence(
             engineer=engineer,
             aliases=tuple(sorted(aliases)),
@@ -627,6 +693,7 @@ def gather_engineer_evidence(
     standup_stats: dict = {}
 
     # ── Standup — per-member code, docs, self-reports, blockers, practices. ──
+    _emit(on_progress, SOURCE_STANDUP, "running")
     try:
         from yeaboi.standup.store import StandupStore
 
@@ -652,8 +719,10 @@ def gather_engineer_evidence(
         coverage.append(SourceCoverage(SOURCE_STANDUP, state_, _coverage_detail(state_, "standup", matched, runs)))
         coverage.append(_category_coverage(SOURCE_CODE, standup_stats["code_covered"], runs, bool(code_lines)))
         coverage.append(_category_coverage(SOURCE_DOCUMENTATION, standup_stats["docs_covered"], runs, bool(doc_lines)))
+    _emit_coverage(on_progress, coverage, SOURCE_STANDUP)
 
     # ── Analysis — delivery stats + practice hygiene + AI markers. ───────────
+    _emit(on_progress, SOURCE_ANALYSIS, "running")
     try:
         analysis_lines, analysis_metrics, profiles_seen = _read_analysis(db_path, aliases, jira_project, azdo_project)
         metrics.extend(analysis_metrics)
@@ -674,8 +743,10 @@ def gather_engineer_evidence(
     except Exception:  # noqa: BLE001
         logger.debug("performance evidence: analysis read failed (non-fatal)", exc_info=True)
         coverage.append(SourceCoverage(SOURCE_ANALYSIS, FAILED, "The team analysis profile could not be read."))
+    _emit_coverage(on_progress, coverage, SOURCE_ANALYSIS)
 
     # ── Retro — their cards, their action items, their attendance. ───────────
+    _emit(on_progress, SOURCE_RETRO, "running")
     try:
         from yeaboi.retro.store import RetroStore
 
@@ -705,8 +776,10 @@ def gather_engineer_evidence(
     except Exception:  # noqa: BLE001
         logger.debug("performance evidence: retro read failed (non-fatal)", exc_info=True)
         coverage.append(SourceCoverage(SOURCE_RETRO, FAILED, "The retro history could not be read."))
+    _emit_coverage(on_progress, coverage, SOURCE_RETRO)
 
     # ── Poker — how their estimates track where the team lands. ──────────────
+    _emit(on_progress, SOURCE_POKER, "running")
     try:
         from yeaboi.poker.store import PokerStore
 
@@ -746,8 +819,10 @@ def gather_engineer_evidence(
     except Exception:  # noqa: BLE001
         logger.debug("performance evidence: poker read failed (non-fatal)", exc_info=True)
         coverage.append(SourceCoverage(SOURCE_POKER, FAILED, "The poker history could not be read."))
+    _emit_coverage(on_progress, coverage, SOURCE_POKER)
 
     # ── Reporting — what actually shipped under their name. ──────────────────
+    _emit(on_progress, SOURCE_DELIVERY, "running")
     try:
         from yeaboi.reporting.store import ReportingStore
 
@@ -784,11 +859,17 @@ def gather_engineer_evidence(
     except Exception:  # noqa: BLE001
         logger.debug("performance evidence: reporting read failed (non-fatal)", exc_info=True)
         coverage.append(SourceCoverage(SOURCE_DELIVERY, FAILED, "The delivery report could not be read."))
+    _emit_coverage(on_progress, coverage, SOURCE_DELIVERY)
 
     # ── Live gap-fill — only when asked, only over what nothing covered. ─────
     if deep_scan:
+        _emit(on_progress, PHASE_GAP_SCAN, "running")
         extra_code, extra_docs, gap_note, gap_outcome = _gap_fill(
-            aliases, db_path=db_path, period_start=period_start, period_end=period_end
+            aliases,
+            db_path=db_path,
+            period_start=period_start,
+            period_end=period_end,
+            on_progress=on_progress,
         )
         had_code, had_docs = len(code_lines), len(doc_lines)
         code_lines = (code_lines + extra_code)[:_MAX_CODE_LINES]
@@ -799,6 +880,13 @@ def gather_engineer_evidence(
                 added_code=len(code_lines) - had_code,
                 added_docs=len(doc_lines) - had_docs,
             )
+        # Settled after the note is written, so the row says what the scan found.
+        _emit(
+            on_progress,
+            PHASE_GAP_SCAN,
+            {"ok": "completed", "skipped": "no_data"}.get(gap_outcome, "failed"),
+            detail=gap_note,
+        )
         if gap_note:
             coverage = _amend_coverage(coverage, SOURCE_CODE, gap_note, gap_outcome, bool(code_lines))
 
@@ -962,7 +1050,7 @@ def _read_analysis(
         return [], [], len(profiles)
 
 
-def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end: str):
+def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end: str, on_progress=None):
     """One capped live multi-source scan, reusing the standup's saved scope.
 
     The lead configures sources once, in standup; this borrows that scope rather
@@ -985,8 +1073,14 @@ def _gap_fill(aliases: frozenset[str], *, db_path, period_start: str, period_end
         from yeaboi.standup import categories, collector
         from yeaboi.standup.engine import _group_activity_by_author
 
+        # The collector reports plain strings; they ride as the running row's
+        # detail so the scan's sub-steps stay on the one checklist line.
+        def _scan_step(message: str) -> None:
+            _emit(on_progress, PHASE_GAP_SCAN, "running", detail=str(message))
+
         bundle = collector.collect_recent_activity(
             since=since,
+            on_progress=_scan_step if on_progress is not None else None,
             jira_project=config.get("jira_project", "") or "",
             azdo_project=config.get("azdo_project", "") or "",
             github_owners=config.get("github_owners") or None,

@@ -585,3 +585,70 @@ class TestStandupRunsAreCountedOnce:
         stats = evidence._standup_lines([report], frozenset({"ada lovelace", "ada"}))
 
         assert stats["matched"] == 1, "one standup named her; 'N of M runs' must never exceed M"
+
+
+class TestProgressReporting:
+    """The live checklist is derived from the coverage the run itself produced.
+
+    Deriving rather than writing a second status is the whole point: the rows a
+    lead watches tick past and the coverage strip on the artifact they end up
+    reading can never disagree about what a source contributed.
+    """
+
+    def _events(self, db_path, **over):
+        seen: list = []
+        ev = evidence.gather_engineer_evidence(ENGINEER, db_path=db_path, on_progress=seen.append, **{**PERIOD, **over})
+        return ev, seen
+
+    def test_every_event_is_a_well_formed_lifecycle_event(self, db_path):
+        from yeaboi.analysis.progress import is_component_progress
+
+        _ev, seen = self._events(db_path)
+        assert seen
+        assert all(is_component_progress(e) for e in seen)
+
+    def test_every_source_opens_and_settles(self, db_path):
+        _ev, seen = self._events(db_path)
+        for source in evidence.EVIDENCE_SOURCES:
+            if source in (evidence.SOURCE_CODE, evidence.SOURCE_DOCUMENTATION):
+                continue  # sub-categories of standup — they carry no phase of their own
+            statuses = [e["status"] for e in seen if e["component_id"] == source]
+            assert statuses, f"{source} never reported"
+            assert statuses[0] == "running", f"{source} settled without starting"
+            assert statuses[-1] != "running", f"{source} never settled"
+
+    def test_each_terminal_status_matches_that_sources_coverage(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_standup("2026-08-10", summary="Shipped it."))
+        ev, seen = self._events(db_path)
+        expected = {evidence.COVERED: "completed", evidence.PARTIAL: "partial", evidence.NOT_CONFIGURED: "no_data"}
+        for source in (evidence.SOURCE_STANDUP, evidence.SOURCE_RETRO, evidence.SOURCE_POKER):
+            last = [e for e in seen if e["component_id"] == source][-1]
+            assert last["status"] == expected[_coverage(ev, source).state]
+            assert last["detail"] == _coverage(ev, source).detail
+
+    def test_a_broken_store_settles_as_failed_rather_than_hanging(self, db_path, monkeypatch):
+        class _Boom:
+            def __init__(self, *a, **k):
+                raise RuntimeError("corrupt table")
+
+        monkeypatch.setattr("yeaboi.retro.store.RetroStore", _Boom)
+        _ev, seen = self._events(db_path)
+        assert [e for e in seen if e["component_id"] == evidence.SOURCE_RETRO][-1]["status"] == "failed"
+
+    def test_no_database_still_settles_every_source(self, tmp_path):
+        # A machine that has never run a standup still settles every row.
+        seen: list = []
+        evidence.gather_engineer_evidence(ENGINEER, db_path=tmp_path / "absent.db", on_progress=seen.append, **PERIOD)
+        settled = {e["component_id"] for e in seen if e["status"] != "running"}
+        assert {
+            evidence.SOURCE_TICKETS,
+            evidence.SOURCE_STANDUP,
+            evidence.SOURCE_ANALYSIS,
+            evidence.SOURCE_RETRO,
+            evidence.SOURCE_POKER,
+            evidence.SOURCE_DELIVERY,
+        } <= settled
+
+    def test_no_callback_is_the_default(self, db_path):
+        assert evidence.gather_engineer_evidence(ENGINEER, db_path=db_path, **PERIOD).engineer == ENGINEER

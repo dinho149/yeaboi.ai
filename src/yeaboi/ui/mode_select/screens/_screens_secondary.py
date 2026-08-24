@@ -2166,11 +2166,34 @@ def _fmt_mmss(seconds: float) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
+def _window_phase_rows(rows: list, order: list, anchor_id: str, budget: int) -> list:
+    """Trim a phase checklist to ``budget`` rows, keeping the one that is running.
+
+    A plain tail slice drops the head, which on a declared checklist is where
+    the active row sits while everything below it is still pending — leaving a
+    screen with nothing spinning on it.
+
+    ``anchor_id`` is the component to keep visible, chosen by emission order
+    rather than by position: an undeclared id draws after every declared one, so
+    the row furthest down the screen is not necessarily the newest.
+    """
+    if budget >= len(rows) or budget <= 0:
+        return rows[-budget:] if 0 < budget < len(rows) else rows
+    anchor = order.index(anchor_id) if anchor_id in order else 0
+    # One row of look-ahead past the active one, then filled forward so the
+    # budget is never left unused — early on, that is the rest of the checklist.
+    # Clamped to ``anchor`` so the look-ahead can never push the active row out.
+    start = min(anchor, max(0, min(anchor + 2, len(rows)) - budget))
+    return rows[start : start + budget]
+
+
 def _build_activity_progress_rows(
     progress: list,
     *,
     theme,
     anim_tick: float,
+    phases: tuple[tuple[str, str], ...] = (),
+    max_rows: int | None = None,
 ) -> list[Text]:
     """Render honest, theme-aware lifecycle rows for a worker's activity.
 
@@ -2179,29 +2202,56 @@ def _build_activity_progress_rows(
     activity history instead of being incorrectly promoted to "completed".
     Active rows spin (braille, like the chat's build checklist) and carry a
     per-stage elapsed; structured runs get a ``[n/total] · total m:ss`` footer.
+
+    ``phases`` is an optional ``(component_id, label)`` checklist the caller
+    expects: those ids draw in that order, ones not yet seen as a dim pending
+    row, so the whole shape of the run is visible from the first frame. Ids
+    outside it still render, after — the run stays honest about what it did.
+
+    ``max_rows`` caps the returned rows. Trimming happens here rather than in
+    the caller because only this function knows which rows are pending: the
+    window is anchored on the running row, which must stay visible at any
+    terminal height.
     """
     from yeaboi.analysis.progress import is_component_progress
 
     component_states: dict[str, dict] = {}
     component_order: list[str] = []
     legacy_activity: list[str] = []
+    newest_id = ""  # last event emitted; a running one always wins
+    running_id = ""
     for item in progress:
         if is_component_progress(item):
             component_id = item["component_id"]
             if component_id not in component_states:
                 component_order.append(component_id)
             component_states[component_id] = item
+            newest_id = component_id
+            if item["status"] == "running":
+                running_id = component_id
+            elif running_id == component_id:
+                running_id = ""  # it settled
         elif isinstance(item, str):
             legacy_activity.append(item)
 
+    declared = {pid for pid, _ in phases}
+    if phases:
+        component_order = [pid for pid, _ in phases] + [c for c in component_order if c not in declared]
+
     dots = "." * (int(anim_tick * 2) % 4)
     spin = _ACTIVITY_SPINNER[int(anim_tick * 10) % len(_ACTIVITY_SPINNER)]
+    pending_labels = dict(phases)
     rows: list[Text] = []
     if component_order:
         for component_id in component_order:
-            event = component_states[component_id]
+            event = component_states.get(component_id)
+            if event is None:  # declared but not started yet
+                rows.append(Text(_PAD + f"  ○ {pending_labels[component_id]}", style=theme.muted, justify="left"))
+                continue
             status = event["status"]
-            label = event["label"]
+            # A declared phase keeps the caller's wording, so a row reads the
+            # same before and after it runs; undeclared ids use their own label.
+            label = pending_labels.get(component_id, event["label"])
             detail = str(event.get("detail", "") or "")
             if status == "completed":
                 marker, style, suffix = "✓", theme.accent, f" · {detail}" if detail else ""
@@ -2243,7 +2293,12 @@ def _build_activity_progress_rows(
                 marker, style = spin, f"bold {theme.accent_bright}"
             rows.append(Text(_PAD + f"  {marker} {label}{suffix}", style=style, justify="left"))
 
-        if any(bool(component_states[item].get("read_only")) for item in component_order):
+        read_only = any(bool(component_states.get(item, {}).get("read_only")) for item in component_order)
+        if max_rows is not None:
+            reserved = 1 + (1 if read_only else 0) + (1 if legacy_activity else 0)  # footer + optional notes
+            rows = _window_phase_rows(rows, component_order, running_id or newest_id, max_rows - reserved)
+
+        if read_only:
             rows.append(
                 Text(
                     _PAD + "      Repository access is read-only — no files are modified.",
@@ -2254,7 +2309,7 @@ def _build_activity_progress_rows(
         if legacy_activity:
             rows.append(Text(_PAD + f"      ↳ {legacy_activity[-1]}", style=theme.muted, justify="left"))
         _terminal = {"completed", "partial", "no_data", "fallback", "failed"}
-        resolved = sum(1 for c in component_order if component_states[c]["status"] in _terminal)
+        resolved = sum(1 for c in component_order if component_states.get(c, {}).get("status") in _terminal)
         rows.append(
             Text(
                 _PAD + f"  [{resolved}/{len(component_order)}] · total {_fmt_mmss(anim_tick)}",
@@ -3916,8 +3971,37 @@ _PERFORMANCE_ACTION_NOTES = {
     "6mo Review": "Draft a six-month review from six months of delivery evidence.",
     "Notes": "Jot a private note to feed into the next prep or review.",
     "History": "Browse, open and export everything saved for this engineer.",
-    "Export": "Write the most recent artifact to Markdown and HTML.",
 }
+
+# The checklists the performance loading screen declares, keyed on the ids the
+# engine and the evidence gatherer emit (performance/evidence.py SOURCE_*,
+# performance/engine.py PHASE_*). Ids these miss — the optional live scan —
+# still render, appended after.
+_PERF_EVIDENCE_PHASES: tuple[tuple[str, str], ...] = (
+    ("tickets", "Gather tickets"),
+    ("standup", "Read standup history"),
+    ("analysis", "Read team analysis"),
+    ("retro", "Read retro history"),
+    ("poker", "Read estimation history"),
+    ("delivery", "Read delivery reports"),
+)
+PERF_PREP_PHASES: tuple[tuple[str, str], ...] = _PERF_EVIDENCE_PHASES + (
+    ("model", "Ask the model"),
+    ("save", "Save & export"),
+)
+# The same sweep over a six-month window rather than two sprints, plus the
+# ceremony history and competency framework only a review reads.
+PERF_REVIEW_PHASES: tuple[tuple[str, str], ...] = _PERF_EVIDENCE_PHASES + (
+    ("context", "Read ceremonies & framework"),
+    ("model", "Ask the model"),
+    ("save", "Save & export"),
+)
+PERF_COMPLETE_PHASES: tuple[tuple[str, str], ...] = (
+    ("prior", "Read the prior prep"),
+    ("model", "Ask the model"),
+    ("email", "Send the summary"),
+    ("save", "Save & export"),
+)
 
 
 # A roster longer than this, or a terminal shorter than this, gets the compact
@@ -4035,7 +4119,7 @@ def _build_performance_screen(
 
     message = performance_data.get("message", "")
 
-    actions = performance_data.get("actions") or ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "Export", "Back"]
+    actions = performance_data.get("actions") or ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History"]
 
     def _focused_engineer() -> tuple[str, str]:
         """The engineer the page is pointed at, and their one-line status hint."""
@@ -5679,6 +5763,7 @@ def _build_standup_progress_screen(
     theme=None,
     title=None,
     label: str = "Generating standup",
+    phases: tuple[tuple[str, str], ...] = (),
 ) -> Panel:
     """Build a worker-thread progress screen (spinner + phase steps).
 
@@ -5687,6 +5772,9 @@ def _build_standup_progress_screen(
     so the user must see live progress instead of a frozen input box. Defaults to the
     Daily Standup look; ``theme``/``title``/``label`` let any mode reuse the identical
     screen with its own accent (this is "the consistent loading screen").
+
+    ``phases`` declares the checklist a mode expects, so steps show pending
+    before they start rather than appearing one at a time.
     """
     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
@@ -5708,8 +5796,10 @@ def _build_standup_progress_screen(
         Text(""),
     ]
 
-    progress_rows = _build_activity_progress_rows(progress, theme=theme, anim_tick=anim_tick)
     max_visible_steps = max(2, height - 15)
+    progress_rows = _build_activity_progress_rows(
+        progress, theme=theme, anim_tick=anim_tick, phases=phases, max_rows=max_visible_steps
+    )
     body.extend(progress_rows[-max_visible_steps:])
 
     inner_h = height - 4

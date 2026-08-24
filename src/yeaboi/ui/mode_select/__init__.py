@@ -7678,35 +7678,12 @@ def _performance_get_transcript(console, live, read_key, frame_time, supports_ti
     return text, referenced_images(text, attachments)
 
 
-def _performance_latest_artifact(engineer: str) -> tuple[object, str] | None:
-    """Return the engineer's most recent artifact as (artifact, kind), or None.
-
-    Priority mirrors usefulness: review > completion > prep.
-    """
-    from yeaboi.performance.store import PerformanceStore
-
-    with PerformanceStore(_ana_dbp) as store:
-        review = store.get_latest_review(engineer)
-        completions = store.get_recent_completions(engineer, limit=1)
-        prep = store.get_latest_prep(engineer)
-    if review is not None:
-        return review, "review"
-    if completions:
-        return completions[0], "completion"
-    if prep is not None:
-        return prep, "prep"
-    return None
-
-
-def _performance_export(engineer: str) -> str:
-    """Re-export the engineer's most recent artifact (review > completion > prep)."""
+def _performance_export(artifact, *, engineer: str, kind: str) -> str:
+    """Write one performance artifact to Markdown + HTML."""
     from yeaboi.performance import export
 
-    found = _performance_latest_artifact(engineer)
-    if found is None:
-        logger.info("performance export: nothing to export yet for engineer=%s", engineer)
-        return "Nothing to export yet — generate a 1:1 prep or review first."
-    artifact, kind = found
+    if kind == "note":
+        return "Notes aren't exported to files individually — use Copy/Publish."
     try:
         paths = export.export_artifact(artifact, engineer=engineer, kind=kind)
         logger.info("performance export: wrote %s for engineer=%s to %s", kind, engineer, paths["markdown"].parent)
@@ -9121,19 +9098,17 @@ def _run_team_analysis_results(
             sel = 0
 
 
-def _performance_document(engineer: str) -> tuple[str, str] | str:
-    """Return (title, markdown) for the engineer's latest artifact, or an error message."""
+def _performance_document(artifact, *, engineer: str, kind: str) -> tuple[str, str] | str:
+    """Return (title, markdown) for one performance artifact, or an error message."""
     from yeaboi.performance import export
 
-    found = _performance_latest_artifact(engineer)
-    if found is None:
-        return "Nothing to export yet — generate a 1:1 prep or review first."
-    artifact, kind = found
     builders = {
         "prep": (export.build_prep_markdown, "1:1 Prep"),
         "completion": (export.build_completion_markdown, "1:1 Summary"),
         "review": (export.build_review_markdown, "6-Month Review"),
     }
+    if kind not in builders:
+        return "That artifact cannot be published."
     build, label = builders[kind]
     return f"{label} — {engineer}", build(artifact)
 
@@ -9317,7 +9292,9 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         "detail_kind": "",
         "detail_title": "",
     }
-    roster_actions = ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History", "Export"]  # back tab covers Back
+    # Only the things that create something. Export and Share Online live on the
+    # artifact those produce — there is nothing to export before one exists.
+    roster_actions = ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History"]  # back tab covers Back
     detail_actions = ["Export", "Share Online", "Anonymize"]  # back tab covers Back
     # Anonymize state: None = real artifact; an AnonymizedOutput = mask the detail lines.
     anon = None
@@ -9401,6 +9378,13 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         )
         live.update(_last_panel)
 
+    def _shown_artifact() -> tuple[object, str]:
+        """The artifact the detail view is displaying, and its kind.
+
+        What Export, Share Online and Anonymize all act on.
+        """
+        return state["detail_artifact"], state["detail_kind"]
+
     def _show_detail(artifact, kind: str, title: str, message: str) -> None:
         state["view"] = "detail"
         state["detail_artifact"] = artifact
@@ -9410,18 +9394,66 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         state["sel"] = 0
         state["scroll"] = 0
 
+    def _generate(run, *, heading: str, phases) -> object:
+        """Run one engine on a worker thread behind the live phase checklist.
+
+        ``run`` takes the ``on_progress`` callback the engines emit lifecycle
+        events on; those drive the checklist, so the screen says which source is
+        being read rather than only that something is happening.
+        """
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+        from yeaboi.ui.shared._components import PERFORMANCE_THEME, performance_title
+
+        progress: list = []
+
+        def _frame(elapsed: float) -> None:
+            w, h = console.size
+            live.update(
+                _build_standup_progress_screen(
+                    list(progress),
+                    width=w,
+                    height=max(10, h - 1),
+                    elapsed=elapsed,
+                    anim_tick=elapsed,
+                    theme=PERFORMANCE_THEME,
+                    title=performance_title(width=w),
+                    label=heading,
+                    phases=phases,
+                )
+            )
+
+        result = _run_on_worker(
+            lambda: run(progress.append),
+            _frame,
+            frame_time,
+            drain=read_key if supports_timeout else None,
+        )
+        # What each phase ended on, so a "it hung on X" report is answerable
+        # from ~/.yeaboi/logs/performance/ without reproducing the run.
+        settled = {
+            e["component_id"]: e["status"] for e in progress if isinstance(e, dict) and e.get("status") != "running"
+        }
+        logger.info("performance: %s finished — phases %s", heading, settled)
+        return result
+
     def _run_action(label: str, engineer: str) -> None:
         """Run one AI/notes action for the selected engineer (blocks briefly)."""
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            PERF_COMPLETE_PHASES,
+            PERF_PREP_PHASES,
+            PERF_REVIEW_PHASES,
+        )
+
         try:
             if label == "1:1 Prep":
                 from yeaboi.performance.engine import run_one_on_one_prep
 
-                state["message"] = f"Generating 1:1 prep for {engineer}…"
-                prep = _run_on_worker(
-                    lambda: run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp),
-                    lambda _e: _render(),
-                    frame_time,
-                    drain=read_key if supports_timeout else None,
+                prep = _generate(
+                    lambda on_progress: run_one_on_one_prep(
+                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress
+                    ),
+                    heading=f"1:1 Prep — {engineer}",
+                    phases=PERF_PREP_PHASES,
                 )
                 logger.info("performance: 1:1 prep generated for engineer=%s", engineer)
                 _duck_react("artifact_done")
@@ -9435,14 +9467,17 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 transcript, transcript_images = transcript_result
                 from yeaboi.performance.engine import complete_one_on_one
 
-                state["message"] = f"Completing the 1:1 for {engineer}…"
-                record = _run_on_worker(
-                    lambda: complete_one_on_one(
-                        engineer, transcript, session_id=session_id, db_path=_ana_dbp, images=transcript_images
+                record = _generate(
+                    lambda on_progress: complete_one_on_one(
+                        engineer,
+                        transcript,
+                        session_id=session_id,
+                        db_path=_ana_dbp,
+                        images=transcript_images,
+                        on_progress=on_progress,
                     ),
-                    lambda _e: _render(),
-                    frame_time,
-                    drain=read_key if supports_timeout else None,
+                    heading=f"1:1 Summary — {engineer}",
+                    phases=PERF_COMPLETE_PHASES,
                 )
                 sent = "email sent" if not record.warnings else "see notices"
                 logger.info("performance: 1:1 completed for engineer=%s (%s)", engineer, sent)
@@ -9451,12 +9486,12 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             elif label == "6mo Review":
                 from yeaboi.performance.engine import run_six_month_review
 
-                state["message"] = f"Generating the 6-month review for {engineer}…"
-                review = _run_on_worker(
-                    lambda: run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp),
-                    lambda _e: _render(),
-                    frame_time,
-                    drain=read_key if supports_timeout else None,
+                review = _generate(
+                    lambda on_progress: run_six_month_review(
+                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress
+                    ),
+                    heading=f"6-Month Review — {engineer}",
+                    phases=PERF_REVIEW_PHASES,
                 )
                 logger.info("performance: 6-month review generated for engineer=%s", engineer)
                 _duck_react("artifact_done")
@@ -9540,19 +9575,6 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                         # Browse this engineer's saved artifacts (open / delete / export).
                         _run_performance_hub(console, live, read_key, frame_time, supports_timeout, engineer)
                         roster_hints[:] = _performance_roster_hints(roster)
-                    elif label == "Export":
-                        msg = _export_via_picker(
-                            console,
-                            live,
-                            read_key,
-                            frame_time,
-                            supports_timeout,
-                            mode="performance",
-                            files_export=lambda: _performance_export(engineer),
-                            get_document=lambda: _performance_document(engineer),
-                        )
-                        if msg is not None:
-                            state["message"] = msg
                     else:
                         _run_action(label, engineer)
                         # An action may have changed open-action counts / added a
@@ -9581,9 +9603,10 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                     state["select_time"] = time.monotonic()  # replay the reveal on return
                 elif label == "Export" and roster:
                     engineer = roster[state["selected"]]
+                    artifact, kind = _shown_artifact()
                     logger.info("performance: Export pressed in detail view for engineer=%s", engineer)
                     if anon is not None:  # export the masked copy, matching the screen
-                        doc = _performance_document(engineer)
+                        doc = _performance_document(artifact, engineer=engineer, kind=kind)
                         msg = (
                             doc
                             if isinstance(doc, str)
@@ -9608,37 +9631,33 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                             frame_time,
                             supports_timeout,
                             mode="performance",
-                            files_export=lambda: _performance_export(engineer),
-                            get_document=lambda: _performance_document(engineer),
+                            files_export=lambda: _performance_export(artifact, engineer=engineer, kind=kind),
+                            get_document=lambda: _performance_document(artifact, engineer=engineer, kind=kind),
                         )
                     if msg is not None:
                         state["message"] = msg
                 elif label == "Share Online" and roster:
-                    engineer = roster[state["selected"]]
-                    found = _performance_latest_artifact(engineer)
-                    if found is None:
-                        state["message"] = "Nothing to share yet."
-                    else:
-                        artifact, kind = found
-                        from yeaboi.sharing.documents import performance_document
-                        from yeaboi.ui.shared._components import PERFORMANCE_THEME, performance_title
+                    artifact, kind = _shown_artifact()
+                    from yeaboi.sharing.documents import performance_document
+                    from yeaboi.ui.shared._components import PERFORMANCE_THEME, performance_title
 
-                        _run_output_share_flow(
-                            console,
-                            live,
-                            read_key,
-                            frame_time,
-                            supports_timeout,
-                            document=performance_document(artifact, kind=kind, anon=anon),
-                            theme=PERFORMANCE_THEME,
-                            title_fn=performance_title,
-                        )
+                    _run_output_share_flow(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        document=performance_document(artifact, kind=kind, anon=anon),
+                        theme=PERFORMANCE_THEME,
+                        title_fn=performance_title,
+                    )
                 elif label == "Anonymize" and roster:
                     engineer = roster[state["selected"]]
+                    artifact, kind = _shown_artifact()
                     logger.info("performance: Anonymize pressed in detail view for engineer=%s", engineer)
                     from yeaboi.ui.shared._components import PERFORMANCE_THEME, performance_title
 
-                    doc = _performance_document(engineer)
+                    doc = _performance_document(artifact, engineer=engineer, kind=kind)
                     if isinstance(doc, str):
                         state["message"] = doc
                     else:
@@ -9678,7 +9697,8 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                     )
                     if adj is not None and adj.strip():
                         anon_instruction = f"{anon_instruction}\n{adj.strip()}".strip()
-                        doc = _performance_document(engineer)
+                        artifact, kind = _shown_artifact()
+                        doc = _performance_document(artifact, engineer=engineer, kind=kind)
                         if not isinstance(doc, str):
                             res = _run_anonymize_pass(
                                 console,
