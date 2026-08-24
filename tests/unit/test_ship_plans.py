@@ -53,30 +53,45 @@ class TestLatestPlan:
             "yeaboi.persistence.load_graph_state",
             lambda _id: {"stories": [_story("US-P")]} if _id == "proj-1" else None,
         )
-        stories, pid, name = plans.latest_plan_with_stories(db_path=tmp_path / "none.db")
+        state, pid, name = plans.latest_plan_with_work(db_path=tmp_path / "none.db")
         assert pid == "proj-1"
         assert name == "Todo App"
-        assert stories[0].id == "US-P"
+        assert state["stories"][0].id == "US-P"
 
     def test_falls_back_to_the_session_store(self, tmp_path):
         db = _session_db(tmp_path, "new-abc-2026", {"stories": [_story("US-S")], "project_name": "Legacy"})
-        picked = plans.latest_plan_with_stories(db_path=db)
+        picked = plans.latest_plan_with_work(db_path=db)
         assert picked is not None
-        stories, sid, name = picked
+        state, sid, name = picked
         assert sid == "new-abc-2026"
-        assert stories[0].id == "US-S"
+        assert state["stories"][0].id == "US-S"
         assert name == "Legacy"
 
-    def test_none_when_no_store_has_stories(self, tmp_path):
+    def test_none_when_no_store_has_a_plan(self, tmp_path):
         db = _session_db(tmp_path, "new-empty", {"questionnaire": None})  # intake-only shape
-        assert plans.latest_plan_with_stories(db_path=db) is None
+        assert plans.latest_plan_with_work(db_path=db) is None
 
-    def test_a_project_with_zero_story_count_is_skipped(self, tmp_path, monkeypatch):
+    def test_a_plan_decomposed_only_as_far_as_its_epics_is_still_found(self, tmp_path, monkeypatch):
+        # Ship targets epics, stories and tasks; gating on stories alone made a
+        # half-decomposed plan invisible to both the picker and the engine.
+        from yeaboi.agent.state import Feature, Priority
+
+        proj = SimpleNamespace(id="proj-e", name="Epics only", story_count=0)
+        monkeypatch.setattr("yeaboi.persistence.load_projects", lambda: [proj])
+        monkeypatch.setattr(
+            "yeaboi.persistence.load_graph_state",
+            lambda _id: {"features": [Feature(id="F1", title="Core", description="d", priority=Priority.HIGH)]},
+        )
+        state, pid, _ = plans.latest_plan_with_work(db_path=tmp_path / "none.db")
+        assert pid == "proj-e"
+        assert state["features"][0].id == "F1"
+
+    def test_an_empty_project_is_skipped_for_a_session_that_has_a_plan(self, tmp_path, monkeypatch):
         proj = SimpleNamespace(id="p0", name="Intake only", story_count=0)
         monkeypatch.setattr("yeaboi.persistence.load_projects", lambda: [proj])
+        monkeypatch.setattr("yeaboi.persistence.load_graph_state", lambda _id: {"questionnaire": None})
         db = _session_db(tmp_path, "new-s", {"stories": [_story("US-S")]})
-        # Skips the zero-story project, falls through to the session with stories.
-        _, sid, _ = plans.latest_plan_with_stories(db_path=db)
+        _, sid, _ = plans.latest_plan_with_work(db_path=db)
         assert sid == "new-s"
 
 
@@ -108,13 +123,14 @@ class TestLoadPlanState:
 
 
 class TestEngineUsesBothStores:
-    def test_load_story_reads_a_project_plan(self, tmp_path, monkeypatch):
+    def test_load_target_reads_a_project_plan(self, tmp_path, monkeypatch):
         from yeaboi.ship import engine
 
         monkeypatch.setattr(
             "yeaboi.persistence.load_graph_state",
             lambda _id: {"stories": [_story("US-E")], "tasks": []} if _id == "proj-e" else None,
         )
-        story, tasks, resolved = engine._load_story("proj-e", "US-E", tmp_path / "none.db")
-        assert story.id == "US-E"
+        target, resolved, _name = engine._load_target("proj-e", "US-E", "", tmp_path / "none.db")
+        assert target.id == "US-E"
+        assert target.level == "story"
         assert resolved == "proj-e"

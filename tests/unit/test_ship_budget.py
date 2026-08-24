@@ -155,7 +155,7 @@ class TestSelfHealing:
     def test_dead_process_frees_its_reservation(self, budget_dir, clock, monkeypatch):
         first = budget.reserve()
         assert first.allowed
-        monkeypatch.setattr(budget, "_is_process_alive", lambda pid: False)
+        monkeypatch.setattr(budget, "process_alive", lambda pid: False)
         second = budget.reserve()
         assert second.allowed, second.reason
 

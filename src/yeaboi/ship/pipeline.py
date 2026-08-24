@@ -21,6 +21,7 @@ import urllib.parse
 from dataclasses import dataclass
 
 from yeaboi.agent.state import ShipValidation, Task, UserStory
+from yeaboi.ship.scope import ShipTarget
 from yeaboi.ship.worktree import WorktreeError, WorktreeRecord, _git
 from yeaboi.tools.local_git import git_subprocess_env
 
@@ -35,61 +36,132 @@ _GITHUB_REMOTE_RE = re.compile(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?
 
 
 # ---------------------------------------------------------------------------
-# Story → prompt
+# Plan item → prompt
 # ---------------------------------------------------------------------------
 
+_RUN_CONTRACT = (
+    "",
+    "Run contract:",
+    "- Work only inside this repository checkout.",
+    "- Follow the repository's existing conventions and test layout.",
+    "- You have file-edit permissions and no shell: edit files only. The",
+    "  pipeline runs validation, commits your work, and pushes only after",
+    "  a human approves the diff — do not attempt git or gh commands.",
+    "- If you cannot complete the work, say why plainly and change nothing.",
+)
 
-def find_story(state: dict, story_id: str) -> tuple[UserStory, list[Task]]:
-    """The story and its tasks from a loaded planning state.
+_HEADLINE = {
+    "epic": "Implement the following epic in this repository",
+    "story": "Implement the following user story in this repository",
+    "task": "Carry out the following implementation task in this repository",
+}
 
-    Raises ValueError with the available ids when the story is not there —
-    the caller turns that into a failed artifact, never a traceback.
+
+def _criteria_block(story: UserStory, *, heading: str = "Acceptance criteria:") -> list[str]:
+    """A story's acceptance criteria as flat sentences.
+
+    ``flat_text`` is what renders both shapes the plan can carry — the
+    Given/When/Then triple and the free-text criterion a "bullets" plan writes.
+    Reading the triple directly turns every free-text criterion into
+    "Given , when , then ." by the time it reaches the agent.
     """
-    stories = [s for s in state.get("stories") or [] if getattr(s, "id", "") == story_id]
-    if not stories:
-        available = ", ".join(getattr(s, "id", "?") for s in state.get("stories") or []) or "none"
-        raise ValueError(f"story {story_id!r} not found in this plan (available: {available})")
-    tasks = [t for t in state.get("tasks") or [] if getattr(t, "story_id", "") == story_id]
-    return stories[0], tasks
+    # Emptiness is a property of the fields, not of the rendered sentence: an
+    # all-blank criterion still renders as "Given , when , then".
+    filled = [c for c in story.acceptance_criteria or () if (c.text or c.given or c.when or c.then).strip()]
+    lines = [c.flat_text.rstrip(".") for c in filled]
+    if not lines:
+        return []
+    return ["", heading, *[f"{i}. {line}." for i, line in enumerate(lines, start=1)]]
 
 
-def build_prompt(story: UserStory, tasks: list[Task]) -> str:
-    """The coding agent's instruction, assembled from the plan's own artifacts.
+def _task_block(task: Task, *, heading_level: str = "###") -> list[str]:
+    lines = ["", f"{heading_level} {task.title or task.id}", task.ai_prompt or task.description]
+    if task.test_plan:
+        lines.append(f"Test plan: {task.test_plan}")
+    return lines
+
+
+def build_prompt(target: ShipTarget, *, project_name: str = "") -> str:
+    """The coding agent's instruction for one plan item, at any level.
 
     ``Task.ai_prompt`` is already an ARC-structured instruction written for AI
-    coding assistants (see the task decomposer); this frames the story around
-    them and adds the run contract: work in place, commit, never push — the
-    pipeline owns everything after the diff exists.
+    coding assistants (see the task decomposer); this frames the item around
+    whichever of them are in scope and adds the run contract: work in place,
+    commit, never push — the pipeline owns everything after the diff exists.
     """
-    lines: list[str] = [
-        f"Implement the following user story in this repository: {story.title or story.id}",
-        "",
-        story.text,
-        "",
-        "Acceptance criteria:",
-    ]
-    for index, criterion in enumerate(story.acceptance_criteria, start=1):
-        lines.append(f"{index}. Given {criterion.given}, when {criterion.when}, then {criterion.then}.")
-    if tasks:
-        lines.append("")
-        lines.append("Tasks (in order):")
-        for task in tasks:
-            lines.append("")
-            lines.append(f"### {task.title}")
-            lines.append(task.ai_prompt or task.description)
-            if task.test_plan:
-                lines.append(f"Test plan: {task.test_plan}")
+    lines: list[str] = [f"{_HEADLINE.get(target.level, _HEADLINE['story'])}: {target.title or target.id}"]
+    context = [bit for bit in (f"Project: {project_name}" if project_name else "", _parent_line(target)) if bit]
+    if context:
+        lines += ["", *context]
+    lines += _body(target)
+    lines += list(_RUN_CONTRACT)
+    return "\n".join(lines)
+
+
+def _parent_line(target: ShipTarget) -> str:
+    """Where this item sits — an item handed over with no context is a guess."""
+    if not target.parent_title:
+        return ""
+    label = {"story": "Epic", "task": "User story"}.get(target.level, "")
+    if not label:
+        return ""
+    detail = f" — {target.parent_summary}" if target.parent_summary else ""
+    return f"{label}: {target.parent_title}{detail}"
+
+
+def _body(target: ShipTarget) -> list[str]:
+    if target.level == "task":
+        return _task_body(target)
+    if target.level == "epic":
+        return _epic_body(target)
+    return _story_body(target)
+
+
+def _story_body(target: ShipTarget) -> list[str]:
+    lines = ["", target.summary]
+    story = target.stories[0] if target.stories else None
+    if story is not None:
+        lines += _criteria_block(story)
+    if target.tasks:
+        lines += ["", "Tasks (in order):"]
+        for task in target.tasks:
+            lines += _task_block(task)
+    return lines
+
+
+def _task_body(target: ShipTarget) -> list[str]:
+    task = target.tasks[0] if target.tasks else None
+    lines: list[str] = []
+    if task is not None:
+        lines += ["", task.ai_prompt or task.description or task.title]
+        if task.test_plan:
+            lines += ["", f"Test plan: {task.test_plan}"]
+    # A task says what to change; only its story says what "correct" means.
+    story = target.stories[0] if target.stories else None
+    if story is not None:
+        lines += _criteria_block(story, heading="Acceptance criteria for the story this task belongs to:")
+    lines += ["", "Only this task is in scope — do not implement the rest of the story."]
+    return lines
+
+
+def _epic_body(target: ShipTarget) -> list[str]:
+    lines = ["", target.summary] if target.summary else []
+    if not target.stories:
+        lines += ["", "This epic has no stories in the plan; implement it from the description above."]
+        return lines
+    tasks_by_story: dict[str, list[Task]] = {}
+    for task in target.tasks:
+        tasks_by_story.setdefault(task.story_id, []).append(task)
     lines += [
         "",
-        "Run contract:",
-        "- Work only inside this repository checkout.",
-        "- Follow the repository's existing conventions and test layout.",
-        "- You have file-edit permissions and no shell: edit files only. The",
-        "  pipeline runs validation, commits your work, and pushes only after",
-        "  a human approves the diff — do not attempt git or gh commands.",
-        "- If you cannot complete the story, say why plainly and change nothing.",
+        f"All {len(target.stories)} user stories below are in scope. Implement them in order:",
     ]
-    return "\n".join(lines)
+    for index, story in enumerate(target.stories, start=1):
+        lines += ["", f"## {index}. {story.title or story.id}", story.text]
+        lines += _criteria_block(story)
+        for task in tasks_by_story.get(story.id, []):
+            lines += _task_block(task, heading_level="####")
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -300,8 +372,13 @@ def build_pr_body(run_summary: str, gate_comment: str) -> str:
     return body
 
 
-def push_and_open_pr(record: WorktreeRecord, *, title: str, body: str) -> FinalizeResult:
+def push_and_open_pr(record: WorktreeRecord, *, title: str, body: str, base: str = "") -> FinalizeResult:
     """Push the branch and open a PR (API when a token exists, else a URL).
+
+    ``base`` targets the PR at another branch instead of the default one — a
+    batch stacks each story on the one before it, and a stacked PR opened
+    against the default branch would show every earlier story's diff too.
+    It must already be pushed; the batch pushes in order, so it is.
 
     Never raises. On a non-GitHub remote the push still happens and the
     detail says what to do next — the branch is the deliverable, the PR is
@@ -326,14 +403,13 @@ def push_and_open_pr(record: WorktreeRecord, *, title: str, body: str) -> Finali
             from yeaboi.tools.github import _get_github_client
 
             gh_repo = _get_github_client().get_repo(f"{owner}/{name}")
-            pr = gh_repo.create_pull(title=title, body=body, head=record.branch, base=gh_repo.default_branch)
+            pr = gh_repo.create_pull(title=title, body=body, head=record.branch, base=base or gh_repo.default_branch)
             logger.info("Opened PR %s", pr.html_url)
             return FinalizeResult(pushed=True, pr_url=pr.html_url, detail=f"opened PR #{pr.number}")
         except Exception as exc:
             logger.warning("PR creation failed: %s", exc)
             # Fall through to the compare URL — the push already succeeded.
-    compare = (
-        f"https://github.com/{owner}/{name}/compare/{urllib.parse.quote(record.branch, safe='')}"
-        f"?expand=1&title={urllib.parse.quote(title)}"
-    )
+    head = urllib.parse.quote(record.branch, safe="")
+    spec = f"{urllib.parse.quote(base, safe='')}...{head}" if base else head
+    compare = f"https://github.com/{owner}/{name}/compare/{spec}?expand=1&title={urllib.parse.quote(title)}"
     return FinalizeResult(pushed=True, pr_url=compare, detail="branch pushed; open the PR from this URL")

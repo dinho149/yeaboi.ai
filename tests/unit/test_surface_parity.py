@@ -361,7 +361,16 @@ CAPABILITIES: dict[str, dict] = {
         # subprocess for many minutes behind the server's engine lock, and the
         # approval gate is a human decision made at a terminal (the
         # output-sharing precedent).
-        "engines": {("yeaboi.ship.engine", "run_ship")},
+        # resume_ship is the second entry point, not a second capability: it
+        # re-enters the same pipeline for a run abandoned at the gate, which is
+        # otherwise stranded (only the engine writes `approved` and opens the PR).
+        # run_ship_batch is the third: one launch, N stacked story runs, for an
+        # epic shipped as one PR per story (`ship run <EPIC> --split`).
+        "engines": {
+            ("yeaboi.ship.engine", "run_ship"),
+            ("yeaboi.ship.engine", "resume_ship"),
+            ("yeaboi.ship.engine", "run_ship_batch"),
+        },
         "mcp_tools": {"ship_history", "ship_status"},
         "tui_mode": "ship",
         "cli": {"ship"},
@@ -460,6 +469,7 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "agents standup": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
     "ship run": ("yeaboi.ship.engine", "run_ship"),
+    "ship resume": ("yeaboi.ship.engine", "resume_ship"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -473,6 +483,7 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
     "perf complete": {"session": "session_id"},
     "perf review": {"session": "session_id", "months": "period_months"},
     "ship run": {"session": "session_id", "check": "check_command"},
+    "ship resume": {"check": "check_command"},
     "analyze": {
         "project": "project_key",
         "sprints": "sprint_count",
@@ -507,7 +518,9 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "agents cost": {"format", "strict"},
     "agents standup": {"format", "strict"},
     "agents security": {"format", "strict"},
-    "ship run": {"format", "strict"},
+    # --split picks the entry point (run_ship_batch) rather than a run_ship param.
+    "ship run": {"format", "strict", "split"},
+    "ship resume": {"format", "strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -537,6 +550,16 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
     },
     "ship run": {
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
+        "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
+        "base_ref": "batch plumbing — run_ship_batch stacks each story on the branch before it",
+        "pr_base": "batch plumbing — the stacked PR's target branch, set by run_ship_batch",
+        "batch_id": "batch bookkeeping stamped by run_ship_batch; --split is how a user asks for one",
+        "batch_item_id": "batch bookkeeping stamped by run_ship_batch — the epic its members came from",
+        "batch_index": "batch bookkeeping stamped by run_ship_batch",
+        "batch_total": "batch bookkeeping stamped by run_ship_batch",
+    },
+    "ship resume": {
         "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
         "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
     },
@@ -739,6 +762,75 @@ class TestTips:
             assert tip.mode_key is None or tip.mode_key in card_keys, (
                 f"tip {tip.key!r} jumps to unknown card {tip.mode_key!r}\n{_TIP_HOW_TO}"
             )
+
+
+# ---------------------------------------------------------------------------
+# 3c. Saved sessions — every mode card that records runs lands on a hub the
+#     user can reopen finished work from. Model: the same two-way set-equality
+#     as the tip check above, keyed on cards rather than capabilities.
+# ---------------------------------------------------------------------------
+
+# Cards that deliberately have no saved-sessions hub. A reason is required and is
+# length-checked, like Exempt — "no time" must not pass for "nothing to save".
+SAVED_SESSIONS_EXEMPT: dict[str, str] = {
+    "team-analysis": "saved analyses ARE the card's landing list (_build_project_list_screen)",
+    "project-planning": "saved projects and roadmaps ARE the card's landing list",
+    "performance": "artifacts are per-engineer — the hub opens from the roster's History action",
+    "usage": "a live dashboard over the usage DB; every view already spans the whole history",
+    "settings": "a live config editor — there is no completed session to re-open",
+    "agent-usage": "opens instantly on the last saved report (AgentWatchStore.latest_report); "
+    "list_reports exists and a browsable hub is queued follow-up work",
+    "agent-advisor": "opens instantly on the last saved report (AgentWatchStore.latest_report); "
+    "list_reports exists and a browsable hub is queued follow-up work",
+    "agent-standup": "opens instantly on the last saved report (AgentWatchStore.latest_report); "
+    "list_reports exists and a browsable hub is queued follow-up work",
+    "agent-security": "opens instantly on the last saved report (AgentWatchStore.latest_report); "
+    "list_reports exists and a browsable hub is queued follow-up work",
+}
+
+_SAVED_SESSIONS_HOW_TO = (
+    "Fix: give the card a saved-sessions hub — wire its dispatch branch through "
+    "_run_mode_hub(...) in src/yeaboi/ui/mode_select/__init__.py and register it in "
+    "SAVED_SESSION_HUBS there — or record a SAVED_SESSIONS_EXEMPT entry in "
+    "tests/unit/test_surface_parity.py saying why this card has nothing to re-open."
+)
+
+
+class TestSavedSessions:
+    """A finished run the user cannot get back to is a run they lost.
+
+    Five of the mode cards grew a saved-runs hub organically and Ship shipped
+    without one, which is exactly the failure mode a registry check exists for:
+    the requirement lived only in the habit of copying a neighbouring mode.
+    """
+
+    def _card_keys(self) -> set[str]:
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
+
+        return {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
+
+    def test_every_card_lands_on_a_saved_sessions_hub(self):
+        from yeaboi.ui.mode_select import SAVED_SESSION_HUBS
+
+        expected = self._card_keys() - set(SAVED_SESSIONS_EXEMPT)
+        actual = set(SAVED_SESSION_HUBS)
+        assert actual == expected, (
+            f"saved-sessions hubs vs mode cards differ.\n"
+            f"  cards with no hub: {sorted(expected - actual)}\n"
+            f"  hubs for an unknown/exempt card: {sorted(actual - expected)}\n{_SAVED_SESSIONS_HOW_TO}"
+        )
+
+    def test_registered_hubs_are_callable(self):
+        from yeaboi.ui.mode_select import SAVED_SESSION_HUBS
+
+        for key, hub in SAVED_SESSION_HUBS.items():
+            assert callable(hub), f"SAVED_SESSION_HUBS[{key!r}] is not callable"
+
+    def test_exempt_reasons_are_meaningful(self):
+        card_keys = self._card_keys()
+        for key, reason in SAVED_SESSIONS_EXEMPT.items():
+            assert key in card_keys, f"SAVED_SESSIONS_EXEMPT names unknown mode card {key!r}"
+            assert len(reason) > 10, f"SAVED_SESSIONS_EXEMPT[{key!r}] needs a real reason, got {reason!r}"
 
 
 # ---------------------------------------------------------------------------

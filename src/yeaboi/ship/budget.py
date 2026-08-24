@@ -145,7 +145,13 @@ def looks_like_quota_error(error_output: str) -> bool:
     return bool(_QUOTA_ERROR_RE.search(error_output or ""))
 
 
-def _is_process_alive(pid: int) -> bool:
+def process_alive(pid: int) -> bool:
+    """Whether *pid* names a live process. Shared with the engine's resume check.
+
+    A pid owned by another user reads as alive: it exists, and refusing is the
+    harmless direction for both callers.
+    """
+
     if pid <= 0:
         return False
     try:
@@ -237,7 +243,7 @@ def _prune(data: dict, now: float) -> dict:
         age = now - float(entry.get("at", 0))
         if age >= ACTIVE_STALE_S:
             continue
-        if not _is_process_alive(int(entry.get("pid", 0))):
+        if not process_alive(int(entry.get("pid", 0))):
             continue
         active.append(entry)
     pruned = dict(data)

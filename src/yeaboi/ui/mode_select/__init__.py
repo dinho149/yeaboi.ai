@@ -6062,6 +6062,10 @@ def _run_mode_hub(
     ``new_message`` is what the list says after ``run_new`` returns. Performance passes
     "" because its "+ New" opens the roster, which the user may simply browse and leave.
 
+    A bespoke ``open_snapshot`` can call its ``run_action("Reload")`` after doing
+    something that changed the run, so the list behind it is re-read rather than
+    left describing the run as it was.
+
     ``extra_label``/``extra_action`` (both optional callables) add one fixed card
     below "+ New run" — standup uses it for "Set up a schedule". ``extra_label()``
     returns the card text (recomputed on every reload so status stays fresh; empty
@@ -6184,12 +6188,19 @@ def _run_mode_hub(
                 if editing is not None:
                     editing.close()
         if act == "Delete":
-            delete_run(run)
-            _reload("Run deleted.")
+            # A mode whose delete can be refused says why; the rest return None.
+            _reload(delete_run(run) or "Run deleted.")
             return True, None
         if act == "Run again":
             run_new()
             _reload(new_message)
+            return True, None
+        if act == "Reload":
+            # Not a button. A bespoke ``open_snapshot`` sends this after it did
+            # something that changed the run — ship's Resume finishes a run and
+            # opens a PR — so the list behind it is not left describing the run
+            # as it was before.
+            _reload("")
             return True, None
         return False, None
 
@@ -6319,8 +6330,7 @@ def _run_mode_hub(
             # Delete-confirmation popup is modal: Enter confirms, Esc cancels.
             if k in ("enter", " "):
                 run = runs[selected]
-                delete_run(run)
-                _reload("Run deleted.")
+                _reload(delete_run(run) or "Run deleted.")
             elif k in ("esc", "q"):
                 confirm = False
                 voice.clear_sticky()
@@ -12961,6 +12971,413 @@ def _landing_first_frame(category: str, *, width: int, height: int):
     )
 
 
+# A hub row that stands for a whole batch rather than one run.
+_BATCH_PREFIX = "batch:"
+
+
+def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Ship saved-runs hub → landing for the Ship card.
+
+    Opening a saved run replays the gate screen in snapshot mode — the same rows
+    the approver saw, patch included. A run still parked at the gate is offered a
+    Resume, which finishes it: approve pushes and opens the PR.
+    """
+    from yeaboi.ship.engine import _resumable_reason
+    from yeaboi.ship.export import _title as _ship_title_of
+    from yeaboi.ship.export import build_ship_markdown, export_ship
+    from yeaboi.ship.store import ShipRunBusyError, ShipStore
+    from yeaboi.ui.mode_select._ship import run_ship_page
+    from yeaboi.ui.mode_select.screens._project_cards import RunSummary
+    from yeaboi.ui.mode_select.screens._screens_agents import _relative_age
+    from yeaboi.ui.mode_select.screens._screens_ship import _build_ship_gate_screen
+    from yeaboi.ui.shared._click import button_click, parse_click
+    from yeaboi.ui.shared._components import SHIP_THEME, ship_title
+    from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
+
+    def _run(run_id: str):
+        with ShipStore(_ana_dbp) as store:
+            return store.get_run(run_id)
+
+    def _events(run_id: str):
+        with ShipStore(_ana_dbp) as store:
+            return store.gate_events(run_id)
+
+    def _single_summary(run) -> RunSummary:
+        # Resumable leads: the card's subtitle is cropped to the card width,
+        # and "this run can still be finished" is the one thing on the row a
+        # user must not miss.
+        bits = ["⟳ resumable"] if not _resumable_reason(run) else []
+        bits.append(run.branch or run.repo.rsplit("/", 1)[-1])
+        if run.diff_stat:
+            bits.append(run.diff_stat.splitlines()[-1].strip())
+        if run.cost_usd:
+            bits.append(f"${run.cost_usd:.2f}")
+        return RunSummary(
+            "ship",
+            run.run_id,
+            f"{run.item_id or run.run_id} — {run.status.replace('_', ' ')}",
+            " · ".join(b for b in bits if b),
+            _relative_age(run.created_at),
+        )
+
+    def _batch_summary(members: list) -> RunSummary:
+        """One row for a whole batch — N stacked story runs from one epic."""
+        head = members[0]
+        shipped = sum(1 for m in members if m.status == "approved")
+        total = head.batch_total or len(members)
+        stopped = next((m for m in members if m.status not in ("approved", "planned")), None)
+        if any(not _resumable_reason(m) for m in members):
+            lead = "⟳ resumable"
+        elif shipped < total:
+            lead = "⏸ paused" if stopped is None else f"⏸ {stopped.status}"
+        else:
+            lead = "✓ complete"
+        bits = [lead, f"{len(members)} of {total} started"]
+        cost = sum(m.cost_usd for m in members)
+        if cost:
+            bits.append(f"${cost:.2f}")
+        return RunSummary(
+            "ship",
+            f"{_BATCH_PREFIX}{head.batch_id}",
+            f"{head.batch_item_id or head.batch_id} — {shipped}/{total} stories shipped",
+            " · ".join(bits),
+            _relative_age(max((m.created_at for m in members), default="")),
+        )
+
+    def load_runs():
+        # Read once per open/reload, never per frame: each row carries the run's
+        # stored patch (capped at 20k chars), so this is the expensive call.
+        with ShipStore(_ana_dbp) as store:
+            runs = store.list_runs(limit=50)
+        # Grouped from the rows already read, not re-queried per batch: each row
+        # carries the run's stored patch, so a second listing is megabytes.
+        by_batch: dict[str, list] = {}
+        for run in runs:
+            if run.batch_id:
+                by_batch.setdefault(run.batch_id, []).insert(0, run)  # oldest first = batch order
+        out = []
+        seen_batches: set[str] = set()
+        for run in runs:  # newest first
+            if not run.batch_id:
+                out.append(_single_summary(run))
+                continue
+            # A batch is one row, not N: its members are stacked on each other
+            # and only make sense read together.
+            if run.batch_id in seen_batches:
+                continue
+            seen_batches.add(run.batch_id)
+            out.append(_batch_summary(by_batch[run.batch_id]))
+        return out
+
+    def _members(batch_id: str) -> list:
+        with ShipStore(_ana_dbp) as store:
+            return store.batch_runs(batch_id)
+
+    def _selected(summary) -> list:
+        """The runs behind a row — one for a single run, all of them for a batch."""
+        key = str(summary.run_id)
+        if key.startswith(_BATCH_PREFIX):
+            return _members(key[len(_BATCH_PREFIX) :])
+        run = _run(key)
+        return [run] if run is not None else []
+
+    def files_export(summary):
+        runs = [r for r in _selected(summary) if r.run_id]
+        if not runs:
+            return "That run is no longer available."
+        parent = None
+        for run in runs:
+            parent = export_ship(run, gate_events=_events(run.run_id))["markdown"].parent
+        label = f"{len(runs)} run records" if len(runs) > 1 else "Markdown"
+        return f"Exported to {parent}  ({label})"
+
+    def get_document(summary):
+        runs = [r for r in _selected(summary) if r.run_id]
+        if not runs:
+            return "That run is no longer available."
+        if len(runs) == 1:
+            return _ship_title_of(runs[0]), build_ship_markdown(runs[0], gate_events=_events(runs[0].run_id))
+        head = runs[0]
+        body = "\n\n---\n\n".join(build_ship_markdown(r, gate_events=_events(r.run_id)) for r in runs)
+        return f"Ship batch — {head.batch_item_id or head.batch_id}", body
+
+    def delete_run(summary) -> str:
+        """Delete the runs behind a row. Returns "" or why nothing was deleted."""
+        with ShipStore(_ana_dbp) as store:
+            for run in _selected(summary):
+                if run.run_id:
+                    try:
+                        store.delete_run(run.run_id)
+                    except ShipRunBusyError as exc:
+                        return str(exc)
+        return ""
+
+    def _open_ship_batch(summary, run_action) -> None:
+        """The members of one batch, as their own list.
+
+        A batch row stands for N stacked runs; this is where they are read
+        individually, and where an unfinished one is picked back up.
+        """
+        from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
+
+        batch_id = str(summary.run_id)[len(_BATCH_PREFIX) :]
+
+        def _member_action(member):
+            """Snapshot actions bound to ONE member of the batch.
+
+            The hub binds its action closure to the row it opened, and this row
+            stands for the whole stack — so Export and Delete must be rebound to
+            the member here or they act on every run in the batch.
+            """
+
+            def act(label: str) -> tuple[bool, str | None]:
+                nonlocal stale, stale_message
+                if label == "Export":
+                    return False, _export_via_picker(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        mode="ship",
+                        files_export=lambda r=member: files_export(r),
+                        get_document=lambda r=member: get_document(r),
+                    )
+                if label == "Delete":
+                    stale_message = delete_run(member)
+                    stale = "refused" if stale_message else "deleted"
+                    return True, None
+                if label == "Reload":
+                    stale = "changed"
+                    return True, None
+                return True, None  # Back, and anything a future action adds
+
+            return act
+
+        sel = 0
+        msg = ""
+        stale = ""  # why the lists around us need re-reading: "deleted" | "changed" | "refused"
+        stale_message = ""  # a delete the store refused, and its reason
+        members: list = []
+        rows: list = []
+        head = None
+        unfinished = False
+
+        def _read() -> bool:
+            """Re-read the batch. False when nothing is left to show.
+
+            Read on open and after the two keys that change the list, never per
+            frame: every member carries its own stored patch, and each row's
+            resumable check reads the worktree registry off disk.
+            """
+            nonlocal members, rows, head, unfinished
+            members = _members(batch_id)
+            if not members:
+                return False
+            head = members[0]
+            unfinished = len(members) < (head.batch_total or len(members)) or any(
+                m.status != "approved" for m in members
+            )
+            rows = [
+                RunSummary(
+                    "ship",
+                    m.run_id,
+                    f"{m.batch_index}. {m.item_id} — {m.status.replace('_', ' ')}",
+                    " · ".join(
+                        b
+                        for b in (
+                            "⟳ resumable" if not _resumable_reason(m) else "",
+                            m.branch,
+                            m.pr_url,
+                        )
+                        if b
+                    ),
+                    _relative_age(m.created_at),
+                )
+                for m in members
+            ]
+            return True
+
+        if not _read():
+            return
+        while True:
+            sel = max(0, min(sel, len(rows) - 1))
+            w, h = console.size
+            panel = _build_run_hub_screen(
+                rows,
+                sel,
+                title_fn=ship_title,
+                subtitle=f"Batch {head.batch_item_id or batch_id} — enter opens a run"
+                + (" · c continues" if unfinished else ""),
+                message=msg,
+                width=w,
+                height=max(10, h - 1),
+                new_label="",
+                theme=SHIP_THEME,
+            )
+            live.update(panel)
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _pos = parse_click(k)
+            if _pos is not None:
+                # The builder publishes its card rows as (y0, y1, index); this
+                # view has no per-card buttons, so y alone decides.
+                hit = next((i for y0, y1, i in getattr(panel, "_card_regions", []) or [] if y0 <= _pos[1] <= y1), None)
+                if hit is None or hit >= len(rows):
+                    continue
+                sel = hit
+                k = "enter"
+            if k in ("esc", "q"):
+                return
+            if k == "up":
+                sel = (sel - 1) % len(rows)
+            elif k == "down":
+                sel = (sel + 1) % len(rows)
+            elif k == "c" and unfinished:
+                from yeaboi.ui.mode_select._ship import continue_batch_page
+
+                msg = continue_batch_page(
+                    console,
+                    live,
+                    read_key,
+                    frame_time,
+                    supports_timeout,
+                    item_id=head.batch_item_id,
+                    repo=head.repo,
+                    session_id=head.session_id,
+                    # The batch does not store its check command; a member that
+                    # actually ran does, and continuing must not quietly stop
+                    # validating.
+                    check_command=next((m.validation.command for m in members if m.validation.configured), ""),
+                )
+                run_action("Reload")  # the batch just moved — the list behind us is stale
+                if not _read():
+                    return
+            elif k in ("enter", " "):
+                open_ship_snapshot(rows[sel], _member_action(rows[sel]))
+                if stale:
+                    if stale == "deleted":
+                        msg = "Run deleted."
+                        sel = max(0, sel - 1)
+                    elif stale == "refused":
+                        msg = stale_message
+                    stale, stale_message = "", ""
+                    if not _read():
+                        return
+                    run_action("Reload")  # the member changed — the list behind us is stale
+
+    def open_ship_snapshot(summary, run_action) -> None:
+        """The saved run, rendered through the gate screen it was approved on.
+
+        A bespoke loop rather than the shared one (the ``open_snapshot`` seam
+        standup also uses) for one reason: a run still parked at the gate gets a
+        Resume button, and the shared action set has no idea what that means.
+        """
+        if str(summary.run_id).startswith(_BATCH_PREFIX):
+            _open_ship_batch(summary, run_action)
+            return
+        run = _run(summary.run_id)
+        if run is None:
+            return
+        stuck = not _resumable_reason(run)
+        actions = (["Resume"] if stuck else []) + ["Export", "Delete", "Back"]
+        sel = 0
+        offset = 0
+        scroll_meta: dict = {}
+        msg = ""
+        panel = None
+        logger.info("ship hub: opened run %s (%s, resumable=%s)", run.run_id, run.status, stuck)
+
+        def _render() -> None:
+            nonlocal panel
+            w, h = console.size
+            panel = _build_ship_gate_screen(
+                run,
+                action_sel=sel,
+                width=w,
+                height=max(10, h - 1),
+                message=msg,
+                diff_offset=offset,
+                scroll_meta=scroll_meta,
+                actions=actions,
+                snapshot=True,
+            )
+            live.update(panel)
+
+        _render()
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            clicked = parse_click(k)
+            if clicked is not None:
+                idx = button_click(console, panel, *clicked, actions) if panel is not None else None
+                if idx is None:
+                    continue
+                sel = idx
+                k = "enter"
+            if k in SCROLL_KEYS:
+                offset = coalesce_scroll(offset, k, scroll_meta, read_key)
+            elif k == "left":
+                sel = max(0, sel - 1)
+            elif k in ("right", "tab"):
+                sel = min(len(actions) - 1, sel + 1)
+            elif k in ("enter", " "):
+                act = actions[sel]
+                if act == "Resume":
+                    from yeaboi.ui.mode_select._ship import resume_run_page
+
+                    resume_run_page(console, live, read_key, frame_time, supports_timeout, run.run_id)
+                    run_action("Reload")  # the run just changed — the list behind us is stale
+                    return
+                leave, m = run_action(act)
+                if leave:
+                    return
+                if m is not None:
+                    msg = m
+            elif k in ("esc", "q"):
+                return
+            _render()
+
+    _run_mode_hub(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        mode="ship",
+        title_fn=ship_title,
+        share_theme=SHIP_THEME,
+        subtitle="Saved ship runs",
+        empty_title="No ship runs yet",
+        empty_subtitle="Press Enter to hand a plan item to a supervised coding agent",
+        new_label="+ New run",
+        load_runs=load_runs,
+        open_snapshot=open_ship_snapshot,
+        files_export=files_export,
+        get_document=get_document,
+        delete_run=delete_run,
+        run_new=lambda: run_ship_page(console, live, read_key, frame_time, supports_timeout),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Saved-sessions hubs — the landing screen of every mode card that records runs
+# ---------------------------------------------------------------------------
+
+#: Mode-card key → the saved-sessions hub that card lands on. A mode that stores
+#: runs MUST appear here: the hub is how a user reopens finished work instead of
+#: it being overwritten by the next run. ``TestSavedSessions`` in
+#: tests/unit/test_surface_parity.py holds this table and ``_MODE_CARDS`` to
+#: two-way set equality, so a new card either lands on a hub or records a
+#: reasoned exemption. The dispatch below routes through this table rather than
+#: naming each function, so the registry cannot claim a hub the app does not use.
+SAVED_SESSION_HUBS = {
+    "daily-standup": _run_standup_hub,
+    "retro": _run_retro_hub,
+    "poker": _run_poker_hub,
+    "reporting": _run_reporting_hub,
+    "ship": _run_ship_hub,
+}
+
+
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
 ) -> tuple[str, str | None, str | None] | None:
@@ -14383,7 +14800,7 @@ def select_mode(
                 logger.info("Daily Standup mode selected")
                 # Route all records to logs/standup/standup.log while the page runs.
                 with mode_log("standup"):
-                    _run_standup_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    SAVED_SESSION_HUBS["daily-standup"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue
@@ -14392,7 +14809,7 @@ def select_mode(
             if chosen["key"] == "retro":
                 logger.info("Retro mode selected")
                 with mode_log("retro"):
-                    _run_retro_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    SAVED_SESSION_HUBS["retro"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue
@@ -14401,7 +14818,7 @@ def select_mode(
             if chosen["key"] == "poker":
                 logger.info("Poker mode selected")
                 with mode_log("poker"):
-                    _run_poker_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    SAVED_SESSION_HUBS["poker"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue
@@ -14425,23 +14842,21 @@ def select_mode(
             if chosen["key"] == "reporting":
                 logger.info("Reporting mode selected")
                 with mode_log("reporting"):
-                    _run_reporting_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    SAVED_SESSION_HUBS["reporting"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue
 
-            # ── Route: Ship mode → supervised story → PR pipeline ────────
+            # ── Route: Ship mode → supervised plan-item → PR pipeline ────
             if chosen["key"] == "ship":
                 logger.info("Ship mode selected")
                 with mode_log("ship"):
                     # Beta gate first: the mode launches a coding agent against
                     # the user's own repository, so the caveat comes before the
-                    # story picker. Shown once ever; a decline returns to the
-                    # menu unrecorded.
+                    # hub. Shown once ever; a decline returns to the menu
+                    # unrecorded.
                     if show_beta_notice(live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="ship"):
-                        from yeaboi.ui.mode_select._ship import run_ship_page
-
-                        run_ship_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        SAVED_SESSION_HUBS["ship"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue

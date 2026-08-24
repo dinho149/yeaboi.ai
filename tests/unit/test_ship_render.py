@@ -26,7 +26,7 @@ class TestFormatRun:
     def test_full_run_shows_the_gate_facts(self):
         run = ShipRun(
             run_id="run-1",
-            story_id="US-001",
+            item_id="US-001",
             branch="ship/run-1",
             status="awaiting_approval",
             diff_stat="src/app.py | 10 ++\n2 files changed",
@@ -46,19 +46,19 @@ class TestFormatRun:
         assert "⚠ one warning" in out
 
     def test_no_validation_is_a_visible_warning(self):
-        out = _render(format_run_rich(ShipRun(run_id="r", story_id="US-1", status="failed")))
+        out = _render(format_run_rich(ShipRun(run_id="r", item_id="US-1", status="failed")))
         assert "nothing was proven" in out
 
     def test_empty_run_renders_without_crashing(self):
         out = _render(format_run_rich(ShipRun()))
-        assert "(no story)" in out
+        assert "(no plan item)" in out
 
     def test_the_gate_rendering_carries_the_patch_and_the_worktree(self):
         # show_diff is what the CLI gate passes: approving a push on a file
         # count is not review.
         run = ShipRun(
             run_id="run-1",
-            story_id="US-001",
+            item_id="US-001",
             worktree="/tmp/wt/run-1",
             diff_stat="src/app.py | 2 +-\n1 file changed",
             diff_text="@@ -1 +1 @@\n-old = 1\n+new = 2\n",
@@ -70,7 +70,7 @@ class TestFormatRun:
         assert "src/app.py" in out  # the whole stat, not only its last line
 
     def test_the_summary_rendering_stays_a_summary(self):
-        run = ShipRun(run_id="r", story_id="US-1", diff_text="@@ -1 +1 @@\n+leaked into the summary\n")
+        run = ShipRun(run_id="r", item_id="US-1", diff_text="@@ -1 +1 @@\n+leaked into the summary\n")
         assert "leaked into the summary" not in _render(format_run_rich(run))
 
     def test_control_characters_in_the_patch_never_reach_the_terminal(self):
@@ -79,7 +79,7 @@ class TestFormatRun:
         # what the approver is reading before they answer the prompt.
         run = ShipRun(
             run_id="r",
-            story_id="US-1",
+            item_id="US-1",
             diff_stat="1 file changed",
             diff_text="+innocent\n+\x1b[2J\x1b[Hwiped\n",
         )
@@ -88,7 +88,7 @@ class TestFormatRun:
         assert "wiped" in out
 
     def test_an_unreadable_patch_is_a_warning_at_the_gate(self):
-        run = ShipRun(run_id="r", story_id="US-1", diff_stat="1 file changed", diff_text="")
+        run = ShipRun(run_id="r", item_id="US-1", diff_stat="1 file changed", diff_text="")
         out = _render(format_run_rich(run, show_diff=True))
         assert "could not be read" in out
 
@@ -100,8 +100,8 @@ class TestFormatHistory:
 
     def test_rows_carry_story_status_and_pr(self):
         runs = [
-            ShipRun(run_id="r2", story_id="US-002", status="approved", created_at="2026-08-17T10:00:00", pr_url="u"),
-            ShipRun(run_id="r1", story_id="US-001", status="failed"),  # created_at legitimately empty
+            ShipRun(run_id="r2", item_id="US-002", status="approved", created_at="2026-08-17T10:00:00", pr_url="u"),
+            ShipRun(run_id="r1", item_id="US-001", status="failed"),  # created_at legitimately empty
         ]
         out = _render(format_history_rich(runs))
         assert "US-002" in out

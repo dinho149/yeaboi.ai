@@ -72,8 +72,11 @@ def format_run_rich(run: ShipRun, *, show_diff: bool = False) -> Group:
     """
     lines: list[Text] = []
     header = Text()
-    header.append(f"{run.story_id or '(no story)'} ", style="bold")
+    header.append(f"{run.item_id or '(no plan item)'} ", style="bold")
+    header.append(f"({run.level}) ", style="dim")
     header.append(f"[{run.status}]", style=_STATUS_STYLE.get(run.status, ""))
+    if run.batch_total:
+        header.append(f"  story {run.batch_index}/{run.batch_total}", style="dim")
     if run.run_id:
         header.append(f"  {run.run_id}", style="dim")
     lines.append(header)
@@ -122,12 +125,13 @@ def format_run_rich(run: ShipRun, *, show_diff: bool = False) -> Group:
 def format_history_rich(runs: list[ShipRun]) -> Group:
     """Recent runs, one line each, newest first."""
     if not runs:
-        return Group(Text("No ship runs yet — `yeaboi ship run <STORY>` starts one.", style="dim"))
+        return Group(Text("No ship runs yet — `yeaboi ship run <ITEM>` starts one.", style="dim"))
     lines: list[Text] = []
     for run in runs:
         line = Text()
         line.append(f"{run.created_at[:16]:16}  ", style="dim")
-        line.append(f"{run.story_id:12}  ", style="bold")
+        line.append(f"{run.item_id:20}  ", style="bold")
+        line.append(f"{run.level:6}", style="dim")
         line.append(f"{run.status:18}", style=_STATUS_STYLE.get(run.status, ""))
         if run.cost_usd:
             line.append(f"  ${run.cost_usd:.2f}", style="dim")

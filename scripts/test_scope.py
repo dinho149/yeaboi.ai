@@ -311,6 +311,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_tips*.py",
             "tests/unit/test_mode_cards.py",
             "tests/unit/test_mode_select_callsites.py",
+            "tests/unit/test_*hub*.py",  # the saved-sessions hubs are a TUI surface
             "tests/unit/test_version_row.py",
             "tests/unit/test_formatters.py",
             "tests/unit/test_usage_*.py",

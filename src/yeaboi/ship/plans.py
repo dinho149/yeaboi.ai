@@ -11,12 +11,16 @@ yeaboi keeps completed plans in two places, by entry path:
 Ship was written against the SQLite store only, so a plan built in the chat — the
 primary planning UX — is invisible to it: the picker shows "no stories" over a
 plan that plainly exists. This module is the one place that reconciles the two,
-used by both the picker (``_load_stories``) and the engine (``_load_story``) so
+used by both the picker (``_load_plan``) and the engine (``_load_target``) so
 they can never disagree about where a plan lives.
 
 Identifiers do not collide between the stores (project ids are UUIDs, session
 ids are ``new-<hex>-<date>``), so :func:`load_plan_state` can try one then the
 other and return the first that resolves.
+
+"Has a plan" means any of epics, stories or tasks — ship targets all three, and
+gating on stories alone made a plan that was decomposed only as far as its epics
+invisible to both the picker and the engine.
 """
 
 from __future__ import annotations
@@ -29,8 +33,11 @@ logger = logging.getLogger(__name__)
 _SESSION_SCAN = 25  # bounded recent-session window; the chat store is the primary source anyway
 
 
-def _has_stories(state: dict | None) -> bool:
-    return bool(state and state.get("stories"))
+_WORK_KEYS = ("features", "stories", "tasks")
+
+
+def _has_work(state: dict | None) -> bool:
+    return bool(state) and any(state.get(key) for key in _WORK_KEYS)
 
 
 def load_plan_state(identifier: str, db_path: Path | None = None) -> dict | None:
@@ -49,7 +56,7 @@ def load_plan_state(identifier: str, db_path: Path | None = None) -> dict | None
     except Exception:  # noqa: BLE001 — an unreadable project store must not crash ship
         logger.debug("ship plans: project-store read failed for %s", identifier, exc_info=True)
         project_state = None
-    if _has_stories(project_state):
+    if _has_work(project_state):
         return project_state
 
     try:
@@ -66,25 +73,27 @@ def load_plan_state(identifier: str, db_path: Path | None = None) -> dict | None
     return session_state or project_state
 
 
-def latest_plan_with_stories(db_path: Path | None = None) -> tuple[list, str, str] | None:
-    """The most recent plan that actually has stories: ``(stories, id, name)``.
+def latest_plan_with_work(db_path: Path | None = None) -> tuple[dict, str, str] | None:
+    """The most recent plan that actually has work in it: ``(state, id, name)``.
 
     Prefers the interactive project store (where the planning chat saves), then
     falls back to a bounded scan of the newest SQLite sessions. Returns ``None``
-    when neither store holds a plan with stories — the honest "generate a plan
-    first" case. The returned id is what :func:`load_plan_state` reloads by, so
-    the picker and the run agree on the source.
+    when neither store holds a plan — the honest "generate a plan first" case.
+    The returned id is what :func:`load_plan_state` reloads by, so the picker
+    and the run agree on the source.
+
+    The whole state comes back, not just its stories: the picker builds an
+    outline over epics, stories and tasks, and the engine resolves an id at any
+    of the three.
     """
     # 1) Interactive projects — load_projects() is sorted most-recent-first.
     try:
         from yeaboi.persistence import load_graph_state, load_projects  # noqa: PLC0415
 
         for project in load_projects():
-            if getattr(project, "story_count", 0) <= 0:
-                continue
             state = load_graph_state(project.id)
-            if _has_stories(state):
-                return list(state["stories"]), project.id, getattr(project, "name", "")
+            if _has_work(state):
+                return state, project.id, getattr(project, "name", "")
     except Exception:  # noqa: BLE001
         logger.debug("ship plans: scanning the project store failed", exc_info=True)
 
@@ -96,9 +105,9 @@ def latest_plan_with_stories(db_path: Path | None = None) -> tuple[list, str, st
         with SessionStore(db_path or get_db_path()) as sessions:
             for sid in sessions.recent_session_ids(_SESSION_SCAN):
                 state = sessions.load_state(sid)
-                if _has_stories(state):
+                if _has_work(state):
                     name = str(state.get("project_name") or "")
-                    return list(state["stories"]), sid, name
+                    return state, sid, name
     except Exception:  # noqa: BLE001
         logger.debug("ship plans: scanning the session store failed", exc_info=True)
 

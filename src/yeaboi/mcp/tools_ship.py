@@ -1,4 +1,4 @@
-"""MCP tools: ship — read the supervised story → PR runs and the launch budget.
+"""MCP tools: ship — read the supervised plan-item → PR runs and the launch budget.
 
 Read-only by design. Launching a run is deliberately NOT an MCP tool: a run
 holds a live subprocess for many minutes behind the server's single engine

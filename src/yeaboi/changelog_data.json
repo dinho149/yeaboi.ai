@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.30.0",
+      "date": "2026-08-24",
+      "summary": "Ship mode now works on any part of your plan, not just a single user story. Pick an epic, a story or an individual task and hand it to a supervised coding agent. For an epic you also choose how it lands: Together, as one branch and one pull request for the whole epic, or Separately, as one pull request per story with each stacked on the one before it so a reviewer sees only that story's changes. If a story fails partway through, the ones already shipped keep their pull requests, and relaunching the epic picks up where it stopped instead of starting over. Finished runs now live on their own saved-sessions screen, so they can be reopened, exported or deleted rather than being lost to the next run. Acceptance criteria written as plain bullets now reach the coding agent; previously only Given/When/Then ones did.",
+      "highlights": [
+        {
+          "text": "Ship an epic, a story or a single task — not just a story",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Ship a whole epic as one pull request, or as one stacked pull request per story",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "A failed story stops the run and keeps what already shipped; relaunching resumes there",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Finished ship runs get a saved-sessions screen for reopening, exporting and deleting",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Bullet-style acceptance criteria now reach the coding agent instead of being dropped",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.29.0",
       "date": "2026-08-24",
       "summary": "Performance mode now shows what a run is actually doing, not just a static action label. While gathering evidence from seven sources and running an LLM, a live loading screen paints a phase-based checklist showing which source is running right now, which are done, which had no data, and which failed. Each source's status is derived from the SourceCoverage row it just produced, so what the lead watches tick past and what the final artifact shows cannot disagree. Every phase reaches a terminal state (completed, no_data, failed, or fallback), and the checklist lives on-screen at every terminal height from 16 rows up. Export moved from a pre-generation action to the artifact page \u2014 there's nothing to export until an artifact exists. A critical bug fix: detail view's Export, Share Online and Anonymize all re-resolved the engineer's latest artifact by a fixed ladder instead of using the one on screen, causing shares to publish the wrong artifact. All three now go through the displayed artifact.",
