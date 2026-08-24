@@ -469,6 +469,7 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "agents standup": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
     "ship run": ("yeaboi.ship.engine", "run_ship"),
+    "ship resume": ("yeaboi.ship.engine", "resume_ship"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -482,6 +483,7 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
     "perf complete": {"session": "session_id"},
     "perf review": {"session": "session_id", "months": "period_months"},
     "ship run": {"session": "session_id", "check": "check_command"},
+    "ship resume": {"check": "check_command"},
     "analyze": {
         "project": "project_key",
         "sprints": "sprint_count",
@@ -518,6 +520,7 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "agents security": {"format", "strict"},
     # --split picks the entry point (run_ship_batch) rather than a run_ship param.
     "ship run": {"format", "strict", "split"},
+    "ship resume": {"format", "strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -555,6 +558,10 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "batch_item_id": "batch bookkeeping stamped by run_ship_batch — the epic its members came from",
         "batch_index": "batch bookkeeping stamped by run_ship_batch",
         "batch_total": "batch bookkeeping stamped by run_ship_batch",
+    },
+    "ship resume": {
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
+        "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
     },
 }
 

@@ -1375,6 +1375,63 @@ class TestShipCommand:
         # git's own words when the rev-parse fails, ours when it returns empty.
         assert "not a git" in capsys.readouterr().err
 
+    def test_resume_parses_with_defaults(self):
+        args = build_parser().parse_args(["ship", "resume", "run-abc"])
+        assert (args.command, args.ship_command, args.run_id) == ("ship", "resume", "run-abc")
+        assert args.check == ""
+        assert args.timeout_minutes == 30
+        assert args.format == "text"
+        assert args.strict is False
+
+    def test_resume_refuses_without_a_terminal(self, monkeypatch, capsys, tmp_path):
+        # The gate prompts at this terminal, so a piped invocation must be told
+        # so rather than blocking on a read nobody can answer.
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["ship", "resume", "run-abc"])
+        assert _run_subcommand(args) == 2
+        assert "interactive terminal" in capsys.readouterr().err
+
+    def test_a_split_run_keeps_its_json_parseable(self, capsys):
+        # The batch table is prose. Printed before the document — as it was —
+        # it makes `--format json` unparseable for every scripted caller.
+        from yeaboi.agent.state import ShipRun
+        from yeaboi.cli import _ship_report
+
+        args = build_parser().parse_args(["ship", "run", "F1", "--split", "--format", "json"])
+        members = [
+            ShipRun(run_id="r1", item_id="US-1", level="story", status="approved", batch_index=1, batch_total=2),
+            ShipRun(run_id="", item_id="US-2", level="story", status="planned", batch_index=2, batch_total=2),
+        ]
+        assert _ship_report(args, _console(), members[0], batch=members) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["item_id"] == "US-1"
+        assert payload["story_id"] == "US-1"  # the legacy mirror survives a batch
+        assert [m["item_id"] for m in payload["batch"]] == ["US-1", "US-2"]
+        assert "diff_text" not in payload["batch"][0]  # listing shape: no patches
+
+    def test_a_split_run_prints_the_batch_table_in_text_mode(self, capsys):
+        from yeaboi.agent.state import ShipRun
+        from yeaboi.cli import _ship_report
+
+        args = build_parser().parse_args(["ship", "run", "F1", "--split"])
+        members = [
+            ShipRun(run_id="r1", item_id="US-1", level="story", status="approved", batch_index=1, batch_total=2),
+            ShipRun(
+                run_id="",
+                item_id="US-2",
+                level="story",
+                status="planned",
+                batch_index=2,
+                batch_total=2,
+                warnings=("hourly-budget (2/2 in last hour)",),
+            ),
+        ]
+        console = _console(io.StringIO())
+        assert _ship_report(args, console, members[0], batch=members) == 0
+        out = console.file.getvalue()
+        assert "1 of 2 stories shipped" in out
+        assert "hourly-budget" in out
+
     def test_run_accepts_an_epic_with_split(self):
         args = build_parser().parse_args(["ship", "run", "F1", "--level", "epic", "--split"])
         assert (args.item_id, args.level, args.split) == ("F1", "epic", True)

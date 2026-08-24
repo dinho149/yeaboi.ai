@@ -106,6 +106,7 @@ def _dict_to_run(data: dict) -> ShipRun:
         branch=str(data.get("branch", "")),
         worktree=str(data.get("worktree", "")),
         base_sha=str(data.get("base_sha", "")),
+        pr_base=str(data.get("pr_base", "")),
         status=str(data.get("status", "planned")),
         phases=tuple(
             ShipPhase(
@@ -352,16 +353,22 @@ class ShipStore:
             return []
         return [r for r in reversed(self.list_runs(limit=_BATCH_SCAN)) if r.batch_id == batch_id]
 
-    def open_batch_id(self, item_id: str, repo: str) -> str:
-        """The newest unfinished batch for *item_id* in *repo*, or "".
+    def open_batch(self, item_id: str, repo: str, story_ids: tuple[str, ...] = ()) -> tuple[str, list[ShipRun]]:
+        """The newest unfinished batch for *item_id* in *repo*: ``(id, members)``.
 
-        "Unfinished" means at least one member did not end approved. Relaunching
-        an epic continues that batch instead of opening a second one over the
-        same stories — which is what makes a batch stopped by the launch budget
-        resumable with no new command.
+        Relaunching an epic continues that batch instead of opening a second one
+        over the same stories — which is what makes a batch stopped by the launch
+        budget resumable with no new command.
+
+        "Unfinished" is measured against *story_ids*, the stories the epic has
+        **now**: a batch is done when every one of them has an approved member.
+        Counting members instead would read a batch holding a rejected attempt as
+        forever unfinished, and a batch whose epic has since grown a story as
+        finished — so the same relaunch would re-ship a clean epic from scratch
+        while a messy one adopted its old batch.
         """
         if not item_id:
-            return ""
+            return "", []
         # One listing, grouped in memory: each row carries the run's stored patch,
         # so re-reading per candidate batch would be megabytes of JSON per call.
         grouped: dict[str, list[ShipRun]] = {}
@@ -373,10 +380,12 @@ class ShipStore:
                 order.append(run.batch_id)
             grouped.setdefault(run.batch_id, []).append(run)
         for batch_id in order:
-            members = grouped[batch_id]
-            if len(members) < members[0].batch_total or any(m.status != "approved" for m in members):
-                return batch_id
-        return ""
+            members = list(reversed(grouped[batch_id]))  # oldest first — batch order
+            approved = {m.item_id for m in members if m.status == "approved"}
+            wanted = set(story_ids) if story_ids else {m.item_id for m in members}
+            if not wanted <= approved or len(members) < members[0].batch_total:
+                return batch_id, members
+        return "", []
 
     def gate_events(self, run_id: str) -> list[tuple[str, str, str]]:
         """(event, detail, created_at) oldest first — the gate's audit trail."""

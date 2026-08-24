@@ -164,3 +164,30 @@ class TestSplitStoryIds:
 
     def test_an_epic_with_no_stories_splits_over_nothing(self):
         assert scope.split_story_ids(scope.find_target({"features": [_epic()]}, "F1")) == ()
+
+
+class TestUngrouped:
+    """The synthetic bucket is on screen, so Enter on it has to mean something."""
+
+    def test_it_resolves_to_a_target_rather_than_an_unknown_id(self):
+        state = {"features": [_epic()], "stories": [_story("US-X", "F-GONE")], "tasks": [_task("T-X", "US-X")]}
+        target = scope.find_target(state, scope.UNGROUPED_ID)
+        assert target.level == "epic"
+        assert target.title == scope.UNGROUPED_TITLE
+        assert [s.id for s in target.stories] == ["US-X"]
+        assert [t.id for t in target.tasks] == ["T-X"]
+
+    def test_it_can_be_split_over_its_orphan_stories(self):
+        state = {"features": [], "stories": [_story("US-X", "F-GONE"), _story("US-Y", "F-GONE")], "tasks": []}
+        assert scope.split_story_ids(scope.find_target(state, scope.UNGROUPED_ID)) == ("US-X", "US-Y")
+
+    def test_orphan_tasks_are_counted_in_the_bucket_s_detail(self):
+        state = {"features": [], "stories": [], "tasks": [_task("T-X", "US-GONE"), _task("T-Y", "US-GONE")]}
+        row = next(r for r in scope.outline(state) if r.id == scope.UNGROUPED_ID)
+        assert row.detail == "0 stories · 2 tasks"
+
+    def test_a_task_only_bucket_carries_the_tasks(self):
+        state = {"features": [], "stories": [], "tasks": [_task("T-X", "US-GONE")]}
+        target = scope.find_target(state, scope.UNGROUPED_ID)
+        assert [t.id for t in target.tasks] == ["T-X"]
+        assert scope.split_story_ids(target) == ()

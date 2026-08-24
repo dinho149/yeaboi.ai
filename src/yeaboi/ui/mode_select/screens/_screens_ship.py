@@ -219,7 +219,11 @@ def _build_ship_pick_screen(
         )
         parts.append(Text(f"{PAD}↑/↓ move · space expand · s scope · r repo · c check", style="dim", no_wrap=True))
     parts.append(Text(""))
-    parts.append(Text(message, style=theme.warn if message else "", justify="center"))
+    # The one row here whose length the caller does not control: a wrapping
+    # message would eat the slack _PICK_CHROME_ROWS budgets and crop the buttons.
+    parts.append(
+        Text(message, style=theme.warn if message else "", justify="center", no_wrap=True, overflow="ellipsis")
+    )
     parts.append(Text(""))
     parts.extend(build_action_buttons(SHIP_PICK_ACTIONS, action_sel))
     return build_page_panel(Group(*parts), theme=theme, height=height)

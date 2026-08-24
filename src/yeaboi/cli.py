@@ -2766,7 +2766,10 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
                 cancel_event=cancel,
             )
             batch.extend(members)
-            return members[-1] if members else None
+            # The last member that actually ran. A stopped batch ends in
+            # unstarted rows, which were never persisted and describe nothing.
+            started = [m for m in members if m.run_id]
+            return started[-1] if started else (members[-1] if members else None)
         return engine.run_ship(
             args.item_id,
             repo,
@@ -2779,10 +2782,7 @@ def _ship_run(args: argparse.Namespace, console: Console) -> int:
             cancel_event=cancel,
         )
 
-    run = _ship_supervise(console, _work, mine=mine)
-    if batch:
-        _print_batch(console, batch)
-    return _ship_report(args, console, run)
+    return _ship_report(args, console, _ship_supervise(console, _work, mine=mine), batch=batch)
 
 
 def _print_batch(console: Console, members: list) -> None:
@@ -2884,8 +2884,12 @@ def _ship_supervise(console: Console, run_engine, *, mine: list[str]):
     return result_box[0]
 
 
-def _ship_report(args: argparse.Namespace, console: Console, run) -> int:
-    """Print a finished run and pick the exit code. Shared by run and resume."""
+def _ship_report(args: argparse.Namespace, console: Console, run, *, batch: list | None = None) -> int:
+    """Print a finished run and pick the exit code. Shared by run and resume.
+
+    ``batch`` is every member of a ``--split`` run; nothing but the members'
+    own rows may reach stdout before the JSON document, or it stops parsing.
+    """
     import json
     from dataclasses import asdict
 
@@ -2897,10 +2901,16 @@ def _ship_report(args: argparse.Namespace, console: Console, run) -> int:
     for warning in run.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
     if args.format == "json":
+        from yeaboi.ship.store import listing_dict
+
         payload = asdict(run)
         payload["story_id"] = payload["item_id"]  # the legacy mirror every ship payload carries
+        if batch:
+            payload["batch"] = [listing_dict(m) for m in batch]
         print(json.dumps(payload, indent=2))
     else:
+        if batch:
+            _print_batch(console, batch)
         console.print(format_run_rich(run))
     if args.strict and run.status != "approved":
         print(f"strict: run ended {run.status} — exit 3", file=sys.stderr)

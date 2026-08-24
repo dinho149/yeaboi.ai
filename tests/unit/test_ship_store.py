@@ -315,26 +315,47 @@ class TestBatchReads:
         with ShipStore(tmp_path / "s.db") as store:
             store.record_run(_member("r1", "US-1", 1))
             store.record_run(_member("r2", "US-2", 2, status="rejected"))
-            assert store.open_batch_id("F1", "/tmp/proj") == "b1"
+            found, members = store.open_batch("F1", "/tmp/proj", ("US-1", "US-2", "US-3"))
+            assert found == "b1"
+            assert [m.run_id for m in members] == ["r1", "r2"]  # oldest first
 
     def test_a_batch_with_members_still_unstarted_is_unfinished(self, tmp_path):
         with ShipStore(tmp_path / "s.db") as store:
             store.record_run(_member("r1", "US-1", 1))  # batch_total is 3
-            assert store.open_batch_id("F1", "/tmp/proj") == "b1"
+            assert store.open_batch("F1", "/tmp/proj", ("US-1", "US-2", "US-3"))[0] == "b1"
 
     def test_a_fully_approved_batch_is_finished(self, tmp_path):
         with ShipStore(tmp_path / "s.db") as store:
             for index, sid in enumerate(("US-1", "US-2", "US-3"), start=1):
                 store.record_run(_member(f"r{index}", sid, index))
-            assert store.open_batch_id("F1", "/tmp/proj") == ""
+            assert store.open_batch("F1", "/tmp/proj", ("US-1", "US-2", "US-3")) == ("", [])
+
+    def test_a_batch_whose_epic_grew_a_story_is_unfinished_again(self, tmp_path):
+        # Done is measured against the stories the epic has NOW, so a plan that
+        # gained one continues the batch instead of re-shipping every story.
+        with ShipStore(tmp_path / "s.db") as store:
+            for index, sid in enumerate(("US-1", "US-2", "US-3"), start=1):
+                store.record_run(_member(f"r{index}", sid, index))
+            assert store.open_batch("F1", "/tmp/proj", ("US-1", "US-2", "US-3", "US-4"))[0] == "b1"
+
+    def test_a_rejected_member_does_not_wedge_the_batch_open_forever(self, tmp_path):
+        # The rejected story is retried on the relaunch, and once it is approved
+        # the batch closes — counting members would have kept it open.
+        with ShipStore(tmp_path / "s.db") as store:
+            store.record_run(_member("r1", "US-1", 1))
+            store.record_run(_member("r2", "US-2", 2, status="rejected"))
+            store.record_run(_member("r3", "US-3", 3))
+            assert store.open_batch("F1", "/tmp/proj", ("US-1", "US-2", "US-3"))[0] == "b1"
+            store.record_run(_member("r4", "US-2", 2))  # the retry lands approved
+            assert store.open_batch("F1", "/tmp/proj", ("US-1", "US-2", "US-3")) == ("", [])
 
     def test_a_batch_in_another_repo_is_not_adopted(self, tmp_path):
         with ShipStore(tmp_path / "s.db") as store:
             store.record_run(_member("r1", "US-1", 1, status="rejected"))
-            assert store.open_batch_id("F1", "/somewhere/else") == ""
+            assert store.open_batch("F1", "/somewhere/else", ("US-1",)) == ("", [])
 
     def test_no_batch_at_all_is_the_empty_string(self, tmp_path):
         with ShipStore(tmp_path / "s.db") as store:
-            assert store.open_batch_id("F1", "/tmp/proj") == ""
-            assert store.open_batch_id("", "/tmp/proj") == ""
+            assert store.open_batch("F1", "/tmp/proj", ("US-1",)) == ("", [])
+            assert store.open_batch("", "/tmp/proj", ("US-1",)) == ("", [])
             assert store.batch_runs("") == []

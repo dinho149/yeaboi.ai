@@ -24,11 +24,14 @@ from yeaboi.agent.state import (
 )
 from yeaboi.ship.scope import OutlineRow
 from yeaboi.ui.mode_select.screens._screens_ship import (
+    _MIN_OUTLINE_ROWS,
+    _PICK_CHROME_ROWS,
     SCOPE_SPLIT,
     _build_ship_gate_screen,
     _build_ship_pick_screen,
     _build_ship_progress_screen,
     _build_ship_result_screen,
+    outline_window,
 )
 
 
@@ -539,3 +542,27 @@ class TestSnapshotScreen:
         meta: dict = {}
         self._snap(self._run(), height=22, scroll_meta=meta)
         assert "max_offset" in meta and "viewport_h" in meta
+
+
+class TestOutlineWindow:
+    """The slice of the tree that is drawn. Height-derived, so the buttons live."""
+
+    def test_a_short_tree_is_drawn_whole(self):
+        assert outline_window(4, 0, 40) == (0, 4)
+
+    def test_a_long_tree_centres_on_the_selection(self):
+        start, count = outline_window(100, 50, 40)
+        assert start <= 50 < start + count
+        assert count == 40 - _PICK_CHROME_ROWS
+
+    def test_the_window_never_runs_past_either_end(self):
+        assert outline_window(100, 0, 40)[0] == 0
+        start, count = outline_window(100, 99, 40)
+        assert start + count == 100
+
+    def test_a_terminal_too_short_still_draws_some_rows(self):
+        # Below the 84x40 floor the chrome alone exceeds the height; the outline
+        # collapses to its minimum rather than to zero rows or a negative slice.
+        start, count = outline_window(50, 25, 10)
+        assert count == _MIN_OUTLINE_ROWS
+        assert 0 <= start <= 50 - count

@@ -348,8 +348,9 @@ def run_ship_batch(
       no separate resume — the fuse allows two launches an hour, so a large epic
       *will* stop partway, and that is the intended shape, not a failure.
     """
+    logger.info("Ship batch requested: %s (level=%s) in %s", item_id, level or "inferred", repo)
     try:
-        target, _resolved, _name = _load_target(session_id, item_id, level, db_path)
+        target, resolved_session, _name = _load_target(session_id, item_id, level, db_path)
     except Exception as exc:  # noqa: BLE001
         blank = ShipRun(item_id=item_id, level=level or "epic", repo=repo, created_at=_now_iso())
         return (_failed(blank, f"could not load {level or 'plan item'}: {exc}"),)
@@ -367,8 +368,10 @@ def run_ship_batch(
     store: ShipStore | None = None
     try:
         store = ShipStore(db_path)
-        batch_id = store.open_batch_id(item_id, repo) or _new_batch_id(item_id)
-        shipped = {m.item_id: m for m in store.batch_runs(batch_id) if m.status == "approved"}
+        batch_id, members = store.open_batch(item_id, repo, story_ids)
+        adopted = bool(batch_id)
+        batch_id = batch_id or _new_batch_id(item_id)
+        shipped = {m.item_id: m for m in members if m.status == "approved"}
     except Exception as exc:  # noqa: BLE001 — a locked store is a failed batch, not a crash
         logger.warning("Could not open the ship store for a batch: %s", exc)
         blank = ShipRun(item_id=item_id, level=target.level, repo=repo, created_at=_now_iso())
@@ -378,6 +381,14 @@ def run_ship_batch(
             store.close()
 
     total = len(story_ids)
+    logger.info(
+        "Batch %s: %s %s over %d stories, %d already shipped",
+        batch_id,
+        "continuing" if adopted else "opening",
+        item_id,
+        total,
+        len(shipped),
+    )
     results: list[ShipRun] = []
     previous_branch = ""
     stop_reason = ""
@@ -399,7 +410,10 @@ def run_ship_batch(
             story_id,
             repo,
             level="story",
-            session_id=session_id,
+            # The plan is pinned once: with the caller's session_id often empty,
+            # each member would otherwise re-resolve "the latest plan with work"
+            # and a batch could straddle two plans.
+            session_id=resolved_session,
             check_command=check_command,
             timeout_minutes=timeout_minutes,
             db_path=db_path,
@@ -421,6 +435,13 @@ def run_ship_batch(
             logger.info("Batch %s stopped at %s: %s", batch_id, story_id, stop_reason)
             continue
         previous_branch = member.branch or previous_branch
+    logger.info(
+        "Batch %s finished: %d of %d approved%s",
+        batch_id,
+        sum(1 for r in results if r.status == "approved"),
+        total,
+        f" (stopped: {stop_reason})" if stop_reason else "",
+    )
     return tuple(results)
 
 
@@ -580,6 +601,7 @@ def resume_ship(
             on_progress=on_progress,
             on_agent_line=on_agent_line,
             cancel_event=cancel_event,
+            pr_base=run.pr_base,
             ensure_budget=_ensure_budget,
             revalidate=bool(check_command),
         )
@@ -649,7 +671,9 @@ def _run_phases(
     except worktree.WorktreeError as exc:
         _report(on_progress, "ship-setup", "Preparing isolated worktree", "failed", detail=str(exc))
         _abort(store, _failed(run, str(exc), phase="setup"))
-    run = replace(run, repo=record.repo, branch=record.branch, worktree=record.path, base_sha=record.base_sha)
+    run = replace(
+        run, repo=record.repo, branch=record.branch, worktree=record.path, base_sha=record.base_sha, pr_base=pr_base
+    )
     run = _with_phase(run, "setup", f"worktree at {record.path}", started)
     run = store.record_run(replace(run, status="running"))
     _report(on_progress, "ship-setup", "Preparing isolated worktree", "completed")

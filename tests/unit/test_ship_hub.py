@@ -173,3 +173,58 @@ class TestExportAndDelete:
         out = _render(_open_hub(hub_db, ["esc"], monkeypatch)[-1])
         assert "US-002" not in out
         assert "US-001" in out
+
+
+@pytest.fixture()
+def batch_db(tmp_path, monkeypatch):
+    """A store holding one two-member batch and nothing else."""
+    import yeaboi.ui.mode_select as mode_select
+
+    db = tmp_path / "sessions.db"
+    monkeypatch.setattr(mode_select, "_ana_dbp", db)
+    with ShipStore(db) as store:
+        for index, story in enumerate(("US-1", "US-2"), start=1):
+            store.record_run(
+                ShipRun(
+                    run_id=f"r{index}",
+                    item_id=story,
+                    level="story",
+                    repo="/tmp/proj",
+                    branch=f"ship/{story.lower()}",
+                    status="approved",
+                    validation=ShipValidation(configured=True, command="make test", passed=True, exit_code=0),
+                    batch_id="b1",
+                    batch_item_id="F1",
+                    batch_index=index,
+                    batch_total=2,
+                    created_at=f"2026-08-0{index}T12:00:00",
+                )
+            )
+    return db
+
+
+class TestBatchRows:
+    def test_a_batch_is_one_row_that_counts_what_shipped(self, batch_db, monkeypatch):
+        out = _render(_open_hub(batch_db, ["esc"], monkeypatch)[-1])
+        assert "F1" in out
+        assert "2/2" in out
+
+    def test_opening_the_row_lists_its_members(self, batch_db, monkeypatch):
+        # The last frame is the hub list we backed out to, so look at the frames
+        # the batch view painted before the escapes.
+        frames = [_render(f) for f in _open_hub(batch_db, ["enter", "esc", "esc"], monkeypatch)]
+        assert any("US-1" in f and "US-2" in f and "Batch F1" in f for f in frames)
+
+    def test_deleting_one_member_keeps_the_rest_of_the_batch(self, batch_db, monkeypatch):
+        # The hub binds its action closure to the row it opened — the whole
+        # batch. Reused inside a member, Delete would wipe every stacked run.
+        _open_hub(batch_db, ["enter", "enter", "right", "enter"], monkeypatch)
+        with ShipStore(batch_db) as store:
+            assert [r.run_id for r in store.batch_runs("b1")] == ["r2"]
+
+    def test_deleting_the_whole_batch_from_the_list_still_takes_every_member(self, batch_db, monkeypatch):
+        # The batch row itself is the one place that means "all of them".
+        with ShipStore(batch_db) as store:
+            for run in store.batch_runs("b1"):
+                store.delete_run(run.run_id)
+            assert store.batch_runs("b1") == []

@@ -287,6 +287,16 @@ def _launch(
         mine[0] = run_id
         if not board_enabled:
             return
+        previous = board_box[0]
+        if previous is not None:
+            # A batch calls this once per member. ShipServer binds a fixed port,
+            # so leaving the last one up both leaks a server and a tunnel and
+            # stops the next member's board from binding at all.
+            board_box[0] = None
+            try:
+                previous.stop()
+            except Exception:  # noqa: BLE001 — see below; a board must never sink the run
+                logger.warning("Ship: could not stop the previous live board", exc_info=True)
         try:
             from yeaboi.ship.live import ShipBoardSession
 
@@ -322,7 +332,10 @@ def _launch(
             }
             if split:
                 members = engine.run_ship_batch(item_id, repo, **common)
-                result_box[0] = members[-1] if members else None
+                # The last member that actually ran. A stopped batch ends in
+                # unstarted rows, which were never persisted and describe nothing.
+                started = [m for m in members if m.run_id]
+                result_box[0] = started[-1] if started else (members[-1] if members else None)
                 result_box[2] = members
             else:
                 result_box[0] = engine.run_ship(item_id, repo, **common)
@@ -498,7 +511,14 @@ def _drive_progress(
     """The progress/gate render loop, extracted so the board teardown is a
     single ``finally`` around it regardless of how the loop exits."""
     note_box = [""]  # which batch member is in flight, if any
+    shown = ""  # the run the checklist is currently describing
     while thread.is_alive():
+        if mine[0] and mine[0] != shown:
+            # A batch moved on. The checklist is keyed by phase, so the previous
+            # member's completed validate/gate/finalize rows would stand until
+            # this one reached them — clear before draining the new member's.
+            shown = mine[0]
+            events_by_id.clear()
         while True:
             try:
                 item = progress_q.get_nowait()

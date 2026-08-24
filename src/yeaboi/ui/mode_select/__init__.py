@@ -13117,8 +13117,42 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
         from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
 
         batch_id = str(summary.run_id)[len(_BATCH_PREFIX) :]
+
+        def _member_action(member):
+            """Snapshot actions bound to ONE member of the batch.
+
+            The hub binds its action closure to the row it opened, and this row
+            stands for the whole stack — so Export and Delete must be rebound to
+            the member here or they act on every run in the batch.
+            """
+
+            def act(label: str) -> tuple[bool, str | None]:
+                nonlocal stale
+                if label == "Export":
+                    return False, _export_via_picker(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        mode="ship",
+                        files_export=lambda r=member: files_export(r),
+                        get_document=lambda r=member: get_document(r),
+                    )
+                if label == "Delete":
+                    delete_run(member)
+                    stale = "deleted"
+                    return True, None
+                if label == "Reload":
+                    stale = "changed"
+                    return True, None
+                return True, None  # Back, and anything a future action adds
+
+            return act
+
         sel = 0
         msg = ""
+        stale = ""  # why the lists around us need re-reading: "deleted" | "changed"
         while True:
             members = _members(batch_id)
             if not members:
@@ -13147,20 +13181,29 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
             ]
             sel = max(0, min(sel, len(rows) - 1))
             w, h = console.size
-            live.update(
-                _build_run_hub_screen(
-                    rows,
-                    sel,
-                    title_fn=ship_title,
-                    subtitle=f"Batch {head.batch_item_id or batch_id} — enter opens a run"
-                    + (" · c continues" if unfinished else ""),
-                    message=msg,
-                    width=w,
-                    height=max(10, h - 1),
-                    new_label="",
-                )
+            panel = _build_run_hub_screen(
+                rows,
+                sel,
+                title_fn=ship_title,
+                subtitle=f"Batch {head.batch_item_id or batch_id} — enter opens a run"
+                + (" · c continues" if unfinished else ""),
+                message=msg,
+                width=w,
+                height=max(10, h - 1),
+                new_label="",
+                theme=SHIP_THEME,
             )
+            live.update(panel)
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _pos = parse_click(k)
+            if _pos is not None:
+                # The builder publishes its card rows as (y0, y1, index); this
+                # view has no per-card buttons, so y alone decides.
+                hit = next((i for y0, y1, i in getattr(panel, "_card_regions", []) or [] if y0 <= _pos[1] <= y1), None)
+                if hit is None or hit >= len(rows):
+                    continue
+                sel = hit
+                k = "enter"
             if k in ("esc", "q"):
                 return
             if k == "up":
@@ -13186,7 +13229,13 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
                 )
                 run_action("Reload")  # the batch just moved — the list behind us is stale
             elif k in ("enter", " "):
-                open_ship_snapshot(rows[sel], run_action)
+                open_ship_snapshot(rows[sel], _member_action(rows[sel]))
+                if stale:
+                    if stale == "deleted":
+                        msg = "Run deleted."
+                        sel = max(0, sel - 1)
+                    stale = ""
+                    run_action("Reload")  # the member changed — the list behind us is stale
 
     def open_ship_snapshot(summary, run_action) -> None:
         """The saved run, rendered through the gate screen it was approved on.
@@ -13270,7 +13319,7 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
         share_theme=SHIP_THEME,
         subtitle="Saved ship runs",
         empty_title="No ship runs yet",
-        empty_subtitle="Press Enter to hand a story to a supervised coding agent",
+        empty_subtitle="Press Enter to hand a plan item to a supervised coding agent",
         new_label="+ New run",
         load_runs=load_runs,
         open_snapshot=open_ship_snapshot,
@@ -14776,8 +14825,8 @@ def select_mode(
                 with mode_log("ship"):
                     # Beta gate first: the mode launches a coding agent against
                     # the user's own repository, so the caveat comes before the
-                    # story picker. Shown once ever; a decline returns to the
-                    # menu unrecorded.
+                    # hub. Shown once ever; a decline returns to the menu
+                    # unrecorded.
                     if show_beta_notice(live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="ship"):
                         SAVED_SESSION_HUBS["ship"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True

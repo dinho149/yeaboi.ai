@@ -181,3 +181,84 @@ def _render(panel, width: int = 84, height: int = 40) -> str:
     console = Console(file=io.StringIO(), width=width, height=height)
     console.print(panel)
     return console.file.getvalue()
+
+
+class TestVisibleRows:
+    """Expansion is recomputed from (rows, expanded) every frame, never stored."""
+
+    @staticmethod
+    def _tree():
+        from yeaboi.ship.scope import OutlineRow
+
+        return [
+            OutlineRow(key="epic:F1", level="epic", id="F1", title="One", detail="", depth=0),
+            OutlineRow(key="story:S1", level="story", id="S1", title="A", detail="", depth=1, parent_key="epic:F1"),
+            OutlineRow(key="task:T1", level="task", id="T1", title="a", detail="", depth=2, parent_key="story:S1"),
+            OutlineRow(key="epic:F2", level="epic", id="F2", title="Two", detail="", depth=0),
+        ]
+
+    def test_nothing_expanded_shows_only_the_epics(self):
+        assert [r.key for r in _ship._visible_rows(self._tree(), set())] == ["epic:F1", "epic:F2"]
+
+    def test_a_grandchild_stays_hidden_while_its_parent_is(self):
+        # The task's own parent (the story) is expanded, but the story is not
+        # drawn — a parent test alone would leak the task onto the screen.
+        visible = _ship._visible_rows(self._tree(), {"story:S1"})
+        assert [r.key for r in visible] == ["epic:F1", "epic:F2"]
+
+    def test_expanding_the_whole_chain_shows_every_row(self):
+        visible = _ship._visible_rows(self._tree(), {"epic:F1", "story:S1"})
+        assert [r.key for r in visible] == ["epic:F1", "story:S1", "task:T1", "epic:F2"]
+
+
+class TestBatchMessage:
+    def test_a_finished_batch_counts_what_shipped(self):
+        members = [_batch_member("US-1", "approved"), _batch_member("US-2", "approved")]
+        assert _ship._batch_message(members) == "Batch complete — 2 of 2 stories shipped."
+
+    def test_a_stopped_batch_names_the_reason_in_the_stopping_run_s_words(self):
+        members = [
+            _batch_member("US-1", "approved"),
+            _batch_member("US-2", "rejected", warnings=("hourly-budget (2/2 in last hour)",)),
+            _batch_member("US-3", "planned", warnings=("never started",)),
+        ]
+        message = _ship._batch_message(members)
+        assert message.startswith("Batch stopped — 1 of 3 stories shipped.")
+        assert "hourly-budget (2/2 in last hour)" in message
+
+    def test_no_members_says_nothing(self):
+        assert _ship._batch_message([]) == ""
+
+
+def _batch_member(item_id: str, status: str, *, warnings: tuple[str, ...] = ()) -> ShipRun:
+    return ShipRun(run_id=f"r-{item_id}", item_id=item_id, level="story", status=status, warnings=warnings)
+
+
+class TestContinueBatch:
+    """Continuing is the same call as launching — run_ship_batch adopts the batch."""
+
+    def test_it_forwards_the_epic_and_the_check_command_to_a_split_launch(self, monkeypatch):
+        seen: dict = {}
+
+        def _fake_launch(*_a, **kw):
+            seen.update(kw)
+            return "done"
+
+        monkeypatch.setattr(_ship, "_launch", _fake_launch)
+        result = _ship.continue_batch_page(
+            None,
+            None,
+            None,
+            0.05,
+            True,
+            item_id="F1",
+            repo="/tmp/proj",
+            session_id="sess-1",
+            check_command="make test",
+        )
+        assert result == "done"
+        # A continuation that quietly stopped validating would be the worst
+        # kind of surprise, so the command has to travel with it.
+        assert seen["check_command"] == "make test"
+        assert (seen["item_id"], seen["level"], seen["split"]) == ("F1", "epic", True)
+        assert seen["session_id"] == "sess-1"

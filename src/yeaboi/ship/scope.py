@@ -18,12 +18,9 @@ links come from the ``feature_id`` / ``story_id`` fields only.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from yeaboi.agent.state import Feature, Task, UserStory
-
-logger = logging.getLogger(__name__)
 
 LEVELS: tuple[str, ...] = ("epic", "story", "task")
 
@@ -110,6 +107,7 @@ def outline(state: dict | None) -> list[OutlineRow]:
         stories = stories_by_epic.get(epic_id, [])
         epic_key = f"epic:{epic_id}"
         task_count = sum(len(tasks_by_story.get(getattr(s, "id", ""), [])) for s in stories)
+        task_count += len(tasks_by_story.get(epic_id, []))  # orphan tasks, in the Ungrouped bucket
         rows.append(
             OutlineRow(
                 key=epic_key,
@@ -196,6 +194,8 @@ def find_target(state: dict | None, item_id: str, *, level: str = "") -> ShipTar
     features, stories_by_epic, tasks_by_story = _group(state)
 
     if level in ("", "epic"):
+        if item_id == UNGROUPED_ID:
+            return _ungrouped_target(stories_by_epic, tasks_by_story)
         for feature in features:
             if str(getattr(feature, "id", "")) == item_id:
                 return _epic_target(feature, stories_by_epic, tasks_by_story)
@@ -221,6 +221,29 @@ def _available(state: dict | None, level: str) -> str:
         ids = [str(getattr(i, "id", "?")) for i in _items(state, key)]
         parts.append(f"{name}: {', '.join(ids) if ids else 'none'}")
     return "available — " + "; ".join(parts)
+
+
+def _ungrouped_target(
+    stories_by_epic: dict[str, list[UserStory]],
+    tasks_by_story: dict[str, list[Task]],
+) -> ShipTarget:
+    """The synthetic epic the picker shows orphans under, as something shippable.
+
+    The row is on screen, so Enter on it has to mean something; without this it
+    resolves to "not in this plan" against ids the user never typed.
+    """
+    stories = tuple(stories_by_epic.get(UNGROUPED_ID, []))
+    tasks: list[Task] = list(tasks_by_story.get(UNGROUPED_ID, []))
+    for story in stories:
+        tasks.extend(tasks_by_story.get(str(getattr(story, "id", "")), []))
+    return ShipTarget(
+        level="epic",
+        id=UNGROUPED_ID,
+        title=UNGROUPED_TITLE,
+        summary="Work that names no parent in the plan.",
+        stories=stories,
+        tasks=tuple(tasks),
+    )
 
 
 def _epic_target(

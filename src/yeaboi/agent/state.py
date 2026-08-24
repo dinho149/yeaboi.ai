@@ -1900,6 +1900,10 @@ class ShipRun:
     branch: str = ""
     worktree: str = ""
     base_sha: str = ""
+    # The branch this run's PR targets, "" for the repo default. Persisted
+    # because only the artifact knows it: resuming a stranded batch member has
+    # nothing else to rebuild its stack parent from.
+    pr_base: str = ""
     status: str = "planned"  # one of SHIP_STATUSES
     phases: tuple[ShipPhase, ...] = ()
     validation: ShipValidation = ShipValidation()

@@ -487,6 +487,28 @@ class TestResume:
         assert run.status == "approved", run.warnings
         assert run.pr_url or "pushed" in " ".join(p.detail for p in run.phases)
 
+    def test_a_resumed_batch_member_still_targets_its_stack_parent(self, ship_env, monkeypatch):
+        # pr_base cannot be recomputed at resume time, so it is persisted: a
+        # member pushed against the default branch re-shows every earlier
+        # story's diff, which is the whole failure stacking exists to prevent.
+        monkeypatch.setattr(budget, "process_alive", lambda pid: False)
+        run_id = _abandon_at_the_gate(ship_env)
+        with ShipStore(ship_env.db) as store:
+            store.save_run(replace(store.get_run(run_id), pr_base="ship/US-000"))
+        monkeypatch.setattr(engine, "_load_target", lambda sid, item_id, level, db: (_target(), "sess-1", "Proj"))
+        seen: list[str] = []
+        real_push = engine.pipeline.push_and_open_pr
+
+        def _push_spy(record, *, title, body, base=""):
+            seen.append(base)
+            return real_push(record, title=title, body=body, base=base)
+
+        monkeypatch.setattr(engine.pipeline, "push_and_open_pr", _push_spy)
+        resolver = _resume_resolver(ship_env.db, ["approved"])
+        engine.resume_ship(run_id, db_path=ship_env.db, driver=FakeDriver())
+        resolver.join(timeout=30)
+        assert seen == ["ship/US-000"]
+
     def test_approving_a_resume_spends_no_launch_budget(self, ship_env, monkeypatch):
         monkeypatch.setattr(budget, "process_alive", lambda pid: False)
         run_id = _abandon_at_the_gate(ship_env)
