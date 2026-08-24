@@ -351,7 +351,7 @@ class TestRoadmapPlan:
 
 class TestShipStories:
     def test_carries_the_default_repo_and_the_empty_message(self, app, monkeypatch):
-        monkeypatch.setattr("yeaboi.ship.plans.latest_plan_with_stories", lambda: None)
+        monkeypatch.setattr("yeaboi.ship.plans.latest_plan_with_work", lambda: None)
         payload = body(request(app, "GET", "/api/ship/stories"))
         assert payload["stories"] == []
         assert payload["default_repo"]
@@ -361,7 +361,7 @@ class TestShipStories:
         def _boom():
             raise RuntimeError("db locked")
 
-        monkeypatch.setattr("yeaboi.ship.plans.latest_plan_with_stories", _boom)
+        monkeypatch.setattr("yeaboi.ship.plans.latest_plan_with_work", _boom)
         assert "Could not read saved plans" in body(request(app, "GET", "/api/ship/stories"))["problem"]
 
 
