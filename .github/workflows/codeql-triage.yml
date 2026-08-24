@@ -104,7 +104,7 @@ jobs:
 
       - name: Fix and propose with Claude
         if: steps.detect.outputs.found == 'true'
-        uses: anthropics/claude-code-action@e2a4b761cd77a1138a5b41410eda9b28581f9bcd # v1.0.196
+        uses: anthropics/claude-code-action@dcb57747bfceeaa1fa72638cae52295d1d853d4a # v1.0.199
         env:
           GH_TOKEN: ${{ github.token }}
         with:
