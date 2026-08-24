@@ -23,6 +23,13 @@ interface Bridge {
   onEvent: (callback: (event: unknown) => void) => void;
   onNavigate: (callback: (route: string) => void) => void;
   setPetEnabled: (enabled: boolean) => Promise<unknown>;
+  appMeta: () => Promise<unknown>;
+  onUpdateState: (callback: (state: unknown) => void) => void;
+  getUpdateState: () => Promise<unknown>;
+  checkForUpdate: () => Promise<unknown>;
+  downloadUpdate: () => Promise<unknown>;
+  installUpdate: () => Promise<unknown>;
+  onAbout: (callback: () => void) => void;
   platform: string;
 }
 
@@ -95,3 +102,39 @@ export interface VersionMeta {
 }
 
 export const getVersion = (): Promise<VersionMeta> => apiGet<VersionMeta>('/api/meta/version');
+
+/** The shell's own versions. Not a backend call — main is the only thing that
+ *  knows what Electron build this is or whether the app is packaged. */
+export interface ShellMeta {
+  version: string;
+  electron: string;
+  chrome: string;
+  platform: string;
+  arch: string;
+  packaged: boolean;
+}
+
+export const getShellMeta = (): Promise<ShellMeta> => bridge().appMeta() as Promise<ShellMeta>;
+
+export type UpdateState =
+  | { kind: 'unsupported'; reason: string }
+  | { kind: 'idle'; version?: string }
+  | { kind: 'checking' }
+  | { kind: 'available'; version: string }
+  | { kind: 'downloading'; version: string; percent: number }
+  | { kind: 'ready'; version: string }
+  | { kind: 'error'; message: string };
+
+export const getUpdateState = (): Promise<UpdateState> => bridge().getUpdateState() as Promise<UpdateState>;
+export const checkForUpdate = (): Promise<UpdateState> => bridge().checkForUpdate() as Promise<UpdateState>;
+export const downloadUpdate = (): Promise<UpdateState> => bridge().downloadUpdate() as Promise<UpdateState>;
+export const installUpdate = (): Promise<unknown> => bridge().installUpdate();
+
+export function onUpdateState(callback: (state: UpdateState) => void): void {
+  bridge().onUpdateState((state) => callback(state as UpdateState));
+}
+
+/** The tray asking for the About panel. */
+export function onAbout(callback: () => void): void {
+  bridge().onAbout(callback);
+}

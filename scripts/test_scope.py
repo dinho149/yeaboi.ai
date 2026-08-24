@@ -356,6 +356,9 @@ AREAS: tuple[Area, ...] = (
         "platform",
         src=(
             "src/yeaboi/cli.py",
+            # `python -m yeaboi` — the same CLI, and how the desktop's bundled
+            # interpreter starts the backend.
+            "src/yeaboi/__main__.py",
             # The desktop backend: the loopback API server `yeaboi app` binds.
             # Cross-mode shared infrastructure like mcp/ below — it dispatches
             # into every mode's tools without owning any of them.

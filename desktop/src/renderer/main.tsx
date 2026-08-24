@@ -9,9 +9,22 @@ import { Duck } from '@design/primitives/Duck';
 import { Wordmark } from '@design/primitives/Wordmark';
 import { type ComponentType, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { getBackendState, getVersion, onAmbientEvent, onBackendState, onNavigate, platform, setPetEnabled } from './api';
-import { SHORTCUTS_EVENT, isTyping, openShortcuts } from './palette';
+import {
+  type UpdateState,
+  getBackendState,
+  getUpdateState,
+  getVersion,
+  onAbout,
+  onAmbientEvent,
+  onBackendState,
+  onNavigate,
+  onUpdateState,
+  platform,
+  setPetEnabled,
+} from './api';
+import { SHORTCUTS_EVENT, isTyping } from './palette';
 import { type AmbienceState, betaKeyFor, duckVoice, getAmbience, loadQuips } from './ambience';
+import { AboutPanel } from './components/AboutPanel';
 import { BetaGate } from './components/BetaGate';
 import { CommandPalette } from './components/CommandPalette';
 import { ConsentModal } from './components/ConsentModal';
@@ -157,15 +170,29 @@ function Splash({ backend }: { backend: Backend }) {
 interface SidebarProps {
   active: string;
   version: string;
+  /** True while an update is waiting — the pill wears a dot, nothing more. */
+  update: boolean;
   ambience: AmbienceState | null;
   offline: boolean;
   jamming: boolean;
   onJamming: (playing: boolean) => void;
   onAnswer: () => void;
+  onAbout: () => void;
   onPet: (enabled: boolean) => void;
 }
 
-function Sidebar({ active, version, ambience, offline, jamming, onJamming, onAnswer, onPet }: SidebarProps) {
+function Sidebar({
+  active,
+  version,
+  update,
+  ambience,
+  offline,
+  jamming,
+  onJamming,
+  onAnswer,
+  onAbout,
+  onPet,
+}: SidebarProps) {
   // The three /settings/* routes collapse into one footer entry — the page owns
   // its own tab bar. Everything else is grouped by navGroup above.
   return (
@@ -227,8 +254,9 @@ function Sidebar({ active, version, ambience, offline, jamming, onJamming, onAns
             </label>
           </>
         )}
-        <button type="button" class="sidebar-version" onClick={openShortcuts}>
-          {version ? `yeaboi ${version}` : 'yeaboi desktop'} · ?
+        <button type="button" class="sidebar-version" onClick={onAbout}>
+          {version ? `yeaboi ${version}` : 'yeaboi desktop'}
+          {update ? <span class="update-dot" aria-hidden="true" /> : null}
         </button>
       </div>
     </nav>
@@ -244,6 +272,8 @@ function App() {
   const [palette, setPalette] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [version, setVersion] = useState('');
+  const [about, setAbout] = useState(false);
+  const [update, setUpdate] = useState<UpdateState>({ kind: 'idle' });
   const [consentSignal, setConsentSignal] = useState(0);
   // Where a sticky notice sends you when the duck is clicked.
   const [answerRoute, setAnswerRoute] = useState('');
@@ -299,6 +329,7 @@ function App() {
       } else if (event.key === 'Escape') {
         setPalette(false);
         setSheet(false);
+        setAbout(false);
       }
     };
     const onSheet = () => setSheet(true);
@@ -312,6 +343,9 @@ function App() {
 
   useEffect(() => {
     getVersion().then((meta) => setVersion(meta.version), () => undefined);
+    getUpdateState().then(setUpdate, () => undefined);
+    onUpdateState(setUpdate);
+    onAbout(() => setAbout(true));
   }, []);
 
   const answer = useCallback(() => {
@@ -334,11 +368,13 @@ function App() {
       <Sidebar
         active={path}
         version={version}
+        update={update.kind === 'available' || update.kind === 'ready'}
         ambience={ambience}
         offline={false}
         jamming={jamming}
         onJamming={setJamming}
         onAnswer={answer}
+        onAbout={() => setAbout(true)}
         onPet={onPet}
       />
       <main class="content">{gated ? null : <Page />}</main>
@@ -352,6 +388,7 @@ function App() {
         />
       )}
       <ConsentModal signal={consentSignal} />
+      {about && <AboutPanel onClose={() => setAbout(false)} />}
       {palette && <CommandPalette onClose={() => setPalette(false)} />}
       {sheet && <ShortcutsSheet platform={platform()} onClose={() => setSheet(false)} />}
       {ambience && (

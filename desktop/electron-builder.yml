@@ -1,0 +1,102 @@
+# How the shell becomes an installable, signed application.
+#
+# Three things are load-bearing and easy to break silently:
+#
+#   * `resources/py` is staged by scripts/fetch-python.mjs and shipped as an
+#     extraResource, NOT inside the asar — sidecar.ts spawns a real interpreter
+#     at Resources/py, and a binary inside an asar cannot be executed. The
+#     `files` exclusion below is what keeps it from being packed twice.
+#   * every Mach-O in that Python tree is signed and notarized on macOS, which
+#     is why the staging step prunes __pycache__ and test trees.
+#   * the version comes from package.json, and the Python it bundles comes from
+#     PyPI — the release workflow sets both from one input.
+
+appId: ai.yeaboi.desktop
+productName: yeaboi
+copyright: Copyright © yeaboi
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**
+  - resources/**
+  - '!resources/py/**'
+  - package.json
+
+extraResources:
+  - from: resources/py
+    to: py
+
+# No native modules — skipping the rebuild saves a toolchain on every runner.
+npmRebuild: false
+asar: true
+
+publish:
+  provider: github
+  owner: dinho149
+  repo: yeaboi.ai
+  releaseType: draft
+
+mac:
+  category: public.app-category.developer-tools
+  # The app is English-only; Electron's other 50-odd .lproj bundles are ~40 MB
+  # of resources nothing reads.
+  electronLanguages: [en, en-US]
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip # electron-updater needs the zip; the dmg is what people click
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  notarize: true
+  extendInfo:
+    # Dictation records through the renderer (M11), so the mic prompt is real
+    # and needs a sentence a person can act on.
+    NSMicrophoneUsageDescription: yeaboi uses the microphone only while you hold the dictation button, to turn speech into text on this machine.
+    # The duck climbs the Dock by asking the Dock where its icons are.
+    NSAppleEventsUsageDescription: yeaboi asks the Dock for its position so the desktop duck can perch on it.
+
+dmg:
+  background: build/dmg-background.png
+  window: { width: 540, height: 380 }
+  # DMG_ICON_Y in scripts/gen_desktop_icons.py draws the arrow on this line.
+  contents:
+    - { x: 150, y: 190, type: file }
+    - { x: 390, y: 190, type: link, path: /Applications }
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+  # Azure Trusted Signing. The credentials arrive as environment variables
+  # (AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET); an unsigned
+  # local build simply has none of them set and skips this.
+  azureSignOptions:
+    publisherName: yeaboi
+    endpoint: https://weu.codesigning.azure.net
+    certificateProfileName: yeaboi
+    codeSigningAccountName: yeaboi
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  shortcutName: yeaboi
+
+linux:
+  icon: build/icons
+  category: Development
+  synopsis: AI Scrum Master, and a watcher of AI coding agents
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]

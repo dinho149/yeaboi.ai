@@ -17,10 +17,12 @@ import { Pet, type PetNotice } from './pet';
 import { installPermissionHandlers } from './permissions';
 import { Sidecar } from './sidecar';
 import { AppTray } from './tray';
+import { Updater } from './updater';
 
 const sidecar = new Sidecar();
 const pet = new Pet();
 const events = new EventReader(sidecar);
+const updater = new Updater();
 let mainWindow: BrowserWindow | null = null;
 let tray: AppTray | null = null;
 
@@ -68,6 +70,13 @@ function openApp(route = ''): void {
   window.show();
   window.focus();
   if (route) window.webContents.send('app:navigate', route);
+}
+
+/** Bring the window forward with the About panel open. The panel is a modal,
+ *  not a route, so the tray asks for it rather than navigating to it. */
+function showAbout(): void {
+  openApp();
+  mainWindow?.webContents.send('app:about');
 }
 
 /** The pet's on/off state lives in the backend so the terminal, the tray and
@@ -121,6 +130,24 @@ if (!gotLock) {
       await setPetPreference(Boolean(enabled));
       return { enabled: pet.on };
     });
+    // What the About panel shows about the shell itself; everything else it
+    // knows (the yeaboi version, the bundled Python) comes from the backend.
+    ipcMain.handle('app:meta', () => ({
+      version: app.getVersion(),
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged,
+    }));
+    ipcMain.handle('update:get-state', () => updater.current);
+    ipcMain.handle('update:check', () => updater.check());
+    ipcMain.handle('update:download', () => updater.download());
+    ipcMain.handle('update:install', () => updater.install());
+    updater.onState((state) => {
+      tray?.setUpdateState(state);
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send('update:state', state);
+    });
     sidecar.onState((state) => {
       console.log(`[backend] ${state.kind}${state.kind === 'down' ? `: ${state.reason}` : ''}`);
       // Same stripping as the pull half: the handshake (token) stays in main.
@@ -155,6 +182,14 @@ if (!gotLock) {
     createMainWindow();
     tray = new AppTray(pet, {
       open: () => openApp(),
+      about: () => showAbout(),
+      // One menu item for the whole update sequence: it does whatever the
+      // state it is showing says it does.
+      update: () => {
+        if (updater.current.kind === 'ready') updater.install();
+        else if (updater.current.kind === 'available') void updater.download();
+        else void updater.check();
+      },
       togglePet: (enabled) => void setPetPreference(enabled),
       quit: () => app.quit(),
     });

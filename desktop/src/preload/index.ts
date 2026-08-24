@@ -22,6 +22,16 @@ export interface YeaboiBridge {
   setPetEnabled: (enabled: boolean) => Promise<unknown>;
   /** Open one live board in its own top-level window, by id. */
   openBoard: (boardId: string) => Promise<unknown>;
+  /** The shell's own identity — versions the backend cannot know. */
+  appMeta: () => Promise<unknown>;
+  /** Self-update: state, then the three steps a person drives. */
+  onUpdateState: (callback: (state: unknown) => void) => void;
+  getUpdateState: () => Promise<unknown>;
+  checkForUpdate: () => Promise<unknown>;
+  downloadUpdate: () => Promise<unknown>;
+  installUpdate: () => Promise<unknown>;
+  /** The tray asking for the About panel, which is a modal and not a route. */
+  onAbout: (callback: () => void) => void;
   platform: string;
 }
 
@@ -49,6 +59,17 @@ const bridge: YeaboiBridge = {
   openBoard: (boardId) => ipcRenderer.invoke('boards:open', boardId),
   onBackendState: (callback) => {
     ipcRenderer.on('backend:state', (_event, state: unknown) => callback(state));
+  },
+  appMeta: () => ipcRenderer.invoke('app:meta'),
+  onUpdateState: (callback) => {
+    ipcRenderer.on('update:state', (_event, state: unknown) => callback(state));
+  },
+  getUpdateState: () => ipcRenderer.invoke('update:get-state'),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onAbout: (callback) => {
+    ipcRenderer.on('app:about', () => callback());
   },
   platform: process.platform,
 };
