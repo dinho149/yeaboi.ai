@@ -14,7 +14,7 @@ import { callApi, registerApiProxy } from './api-proxy';
 import { closeAllBoardWindows, registerBoardWindows } from './boards';
 import { EventReader, broadcast } from './events';
 import { Pet, type PetNotice } from './pet';
-import { installPermissionHandlers } from './permissions';
+import { installPermissionHandlers, navigationAllowed } from './permissions';
 import { Sidecar } from './sidecar';
 import { AppTray } from './tray';
 import { Updater } from './updater';
@@ -96,9 +96,7 @@ async function setPetPreference(enabled: boolean): Promise<void> {
 // Global hardening for every webContents this app ever creates (boards, pet).
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-navigate', (event, url) => {
-    const allowed =
-      url.startsWith('http://127.0.0.1') || (process.env['ELECTRON_RENDERER_URL'] ?? '') === url.split('#')[0];
-    if (!allowed) event.preventDefault();
+    if (!navigationAllowed(url, process.env['ELECTRON_RENDERER_URL'])) event.preventDefault();
   });
   contents.on('will-attach-webview', (event) => event.preventDefault());
 });

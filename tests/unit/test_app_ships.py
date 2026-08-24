@@ -58,7 +58,7 @@ class _Engine:
         )
         if self.block is not None:
             self.block.wait(timeout=5)
-        return ShipRun(run_id=self.run_id, story_id=story_id, repo=repo, status="pr_open", pr_url="https://pr/1")
+        return ShipRun(run_id=self.run_id, item_id=story_id, repo=repo, status="pr_open", pr_url="https://pr/1")
 
 
 class _Board:
@@ -122,6 +122,26 @@ class TestRun:
 
     def test_an_unknown_key_has_no_snapshot(self, db):
         assert ShipSupervisor(db_path=db).snapshot("nope") is None
+
+    def test_a_run_waiting_at_its_gate_does_not_hold_the_engine_lock(self, db, monkeypatch):
+        # The gate waits on a human with no timeout. Under the process-wide
+        # engine lock that would stall the chat, every dashboard and every MCP
+        # tool until the diff was answered.
+        from yeaboi.mcp.runtime import _ENGINE_LOCK
+
+        gate = threading.Event()
+        monkeypatch.setattr("yeaboi.ship.engine.run_ship", _Engine(block=gate))
+        ships = ShipSupervisor(db_path=db)
+        key = ships.start(story_id="US-1", story_title="", repo="/r", session_id="", check_command="")["key"]
+        session = ships.run(key)
+        for _ in range(500):  # wait until the run is actually inside the engine
+            if session.components:
+                break
+            time.sleep(0.01)
+        assert _ENGINE_LOCK.acquire(blocking=False), "a parked ship run is holding the shared engine lock"
+        _ENGINE_LOCK.release()
+        gate.set()
+        _settle(session)
 
     def test_every_launched_run_is_listed(self, db, monkeypatch):
         monkeypatch.setattr("yeaboi.ship.engine.run_ship", _Engine())
@@ -231,7 +251,7 @@ class TestGate:
         from yeaboi.ship.store import ShipStore
 
         with ShipStore(db) as store:
-            store.record_run(ShipRun(run_id=run_id, story_id="US-1", repo="/r", status=status))
+            store.record_run(ShipRun(run_id=run_id, item_id="US-1", repo="/r", status=status))
 
     def test_an_open_gate_appears_in_the_snapshot(self, db, monkeypatch):
         gate = threading.Event()

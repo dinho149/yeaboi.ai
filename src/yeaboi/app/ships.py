@@ -151,7 +151,6 @@ class ShipSupervisor:
 
     def _work(self, session: ShipRunSession) -> None:
         from yeaboi.analysis.progress import is_component_progress
-        from yeaboi.mcp.runtime import _ENGINE_LOCK
         from yeaboi.ship import engine
 
         def _on_run_id(run_id: str) -> None:
@@ -172,22 +171,30 @@ class ShipSupervisor:
                 board.note_agent_line(line)
 
         try:
-            # Engines are one-at-a-time process-wide. Never fork this lock.
-            with _ENGINE_LOCK:
-                session.result = engine.run_ship(
-                    session.story_id,
-                    session.repo,
-                    session_id=session.session_id,
-                    check_command=session.check_command,
-                    db_path=self._db_path,
-                    on_progress=_on_progress,
-                    on_run_id=_on_run_id,
-                    # Enabling the board turns on the driver's stream-json path;
-                    # a plain run keeps the unchanged one-shot json flow.
-                    on_agent_line=_on_agent_line if self._board_enabled() else None,
-                    cancel_event=session.cancel,
-                    driver=self._driver,
-                )
+            # Deliberately NOT under mcp.runtime's _ENGINE_LOCK, which every
+            # other engine call takes. A ship run parks at its approval gate
+            # until a human answers, so holding a process-wide mutex across it
+            # would freeze the chat, every dashboard and every tool for as long
+            # as the diff sits unread. A run isolates itself in its own
+            # worktree and the store's CAS arbitrates the gate, so nothing here
+            # needs the lock.
+            session.result = engine.run_ship(
+                session.story_id,
+                session.repo,
+                # The desktop picker lists stories, so say so rather than
+                # letting the engine infer a level from a colliding id.
+                level="story",
+                session_id=session.session_id,
+                check_command=session.check_command,
+                db_path=self._db_path,
+                on_progress=_on_progress,
+                on_run_id=_on_run_id,
+                # Enabling the board turns on the driver's stream-json path;
+                # a plain run keeps the unchanged one-shot json flow.
+                on_agent_line=_on_agent_line if self._board_enabled() else None,
+                cancel_event=session.cancel,
+                driver=self._driver,
+            )
         except BaseException as exc:  # noqa: BLE001 — the engine shouldn't raise; belt and braces
             session.failure = f"The run stopped unexpectedly: {exc}"
             logger.error("ship supervisor: run %s crashed", session.key, exc_info=True)

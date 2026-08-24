@@ -22,6 +22,33 @@ export function permitted(_permission: string, fromAppWindow: boolean): boolean 
   return fromAppWindow;
 }
 
+/**
+ * Where a window in this app may navigate: the loopback backend, or the dev
+ * server when one is running. Everything else is refused and, if it came from
+ * a link, opened in the OS browser instead.
+ *
+ * Compared by parsed host and origin rather than by string prefix. A prefix
+ * test on `http://127.0.0.1` also accepts `http://127.0.0.1.example.com/`,
+ * and a page that navigated there would still hold the preload bridge — an
+ * authed path to settings writes, exports and ship launches.
+ */
+export function navigationAllowed(url: string, devServerUrl?: string): boolean {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return false;
+  }
+  if (target.protocol === 'http:' && (target.hostname === '127.0.0.1' || target.hostname === 'localhost')) return true;
+  if (!devServerUrl) return false;
+  try {
+    // The dev server's own hash routes are the app navigating within itself.
+    return new URL(devServerUrl).origin === target.origin;
+  } catch {
+    return false;
+  }
+}
+
 /** The slice of a session this module touches. */
 export interface PermissionSession {
   setPermissionRequestHandler(

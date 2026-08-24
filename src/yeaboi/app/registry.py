@@ -105,6 +105,7 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/boards", routes_boards.boards, "retro-board"),
     AppRoute("POST", "/api/boards/retro", routes_boards.start_retro, "retro-board"),
     AppRoute("GET", "/api/boards/{board_id}", routes_boards.board, "retro-board"),
+    AppRoute("GET", "/api/boards/{board_id}/host", routes_boards.board_host, "retro-board"),
     AppRoute("POST", "/api/boards/{board_id}/link", routes_boards.retry_link, "retro-board"),
     AppRoute("GET", "/api/boards/{board_id}/invite", routes_boards.invite, "retro-board"),
     AppRoute("POST", "/api/boards/{board_id}/actions", routes_boards.generate_actions, "retro-board"),

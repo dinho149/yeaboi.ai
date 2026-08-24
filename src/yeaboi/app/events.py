@@ -94,8 +94,15 @@ class EventBus:
         Yields ``data:`` frames for events and ``: ping`` comments when idle.
         The subscription is torn down in ``finally`` however the consumer
         stops — close, broken pipe, or GeneratorExit.
+
+        Subscribing happens here rather than on first iteration, so a refused
+        subscription is an error the caller can still answer with a status
+        code; inside the generator it would land after ``200 OK`` and read as
+        a stream that simply never says anything.
         """
-        q = self.subscribe()
+        return self._frames(self.subscribe(), ping_seconds)
+
+    def _frames(self, q: queue.Queue[dict], ping_seconds: float) -> Iterator[bytes]:
         try:
             yield b": connected\n\n"
             while True:

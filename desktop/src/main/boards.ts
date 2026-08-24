@@ -4,8 +4,9 @@
 //
 // * a board page sends `X-Frame-Options: DENY`, so it can never be embedded;
 // * the host URL carries the admin token that makes its holder the host, so it
-//   never crosses into the renderer. The renderer asks for a board *by id* and
-//   main fetches the URL itself.
+//   never crosses into the renderer. The renderer asks for a board *by id*; the
+//   URL is served only by `/api/boards/{id}/host`, which main fetches itself
+//   and the proxy refuses to relay (`api-proxy.ts`'s MAIN_ONLY).
 //
 // A board window is not the app: no preload, sandboxed, its own partition, and
 // navigation pinned to the loopback origin it opened on. Everything else — an
@@ -22,7 +23,6 @@ interface BoardSnapshot {
   board_id: string;
   kind: string;
   title: string;
-  host_url: string;
 }
 
 export function registerBoardWindows(sidecar: Sidecar): void {
@@ -41,21 +41,29 @@ export function registerBoardWindows(sidecar: Sidecar): void {
     const handshake = sidecar.handshake;
     if (!handshake) return { ok: false, error: 'backend is not running' };
     let board: BoardSnapshot;
+    let hostUrl: string;
     try {
-      const response = await fetch(`${handshake.url}/api/boards/${boardId}`, {
-        headers: { Authorization: `Bearer ${handshake.token}` },
-      });
+      const get = (suffix: string) =>
+        fetch(`${handshake.url}/api/boards/${boardId}${suffix}`, {
+          headers: { Authorization: `Bearer ${handshake.token}` },
+        });
+      const response = await get('');
       if (!response.ok) return { ok: false, error: `no live board ${boardId}` };
       board = (await response.json()) as BoardSnapshot;
+      // The host link is a second call because it is a secret: it is served
+      // only to main, and never rides in the snapshot the app itself reads.
+      const hostResponse = await get('/host');
+      if (!hostResponse.ok) return { ok: false, error: `no host link for board ${boardId}` };
+      hostUrl = ((await hostResponse.json()) as { host_url: string }).host_url;
     } catch (error) {
       return { ok: false, error: `could not read the board: ${(error as Error).message}` };
     }
-    openWindow(boardId, board);
+    openWindow(boardId, board, hostUrl);
     return { ok: true };
   });
 }
 
-function openWindow(boardId: string, board: BoardSnapshot): void {
+function openWindow(boardId: string, board: BoardSnapshot, hostUrl: string): void {
   const window = new BrowserWindow({
     width: 1180,
     height: 800,
@@ -75,7 +83,7 @@ function openWindow(boardId: string, board: BoardSnapshot): void {
   windows.set(boardId, window);
   window.on('closed', () => windows.delete(boardId));
 
-  const origin = new URL(board.host_url).origin;
+  const origin = new URL(hostUrl).origin;
   window.webContents.on('will-navigate', (event, url) => {
     if (!url.startsWith(origin)) event.preventDefault();
   });
@@ -83,7 +91,7 @@ function openWindow(boardId: string, board: BoardSnapshot): void {
     if (url.startsWith('https://') || url.startsWith('http://')) void shell.openExternal(url);
     return { action: 'deny' };
   });
-  void window.loadURL(board.host_url);
+  void window.loadURL(hostUrl);
 }
 
 /** Close one board's window, if it has one. Called when the board ends. */

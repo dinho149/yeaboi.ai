@@ -214,6 +214,7 @@ cancelling it does nothing.
 | POST | `/api/boards/retro` | open a retro board for the latest session; 409 when there is none |
 | POST | `/api/boards/poker` | open a poker table over an already-fetched ticket list |
 | GET | `/api/boards/{board_id}` | one board's host controls and current contents |
+| GET | `/api/boards/{board_id}/host` | the private host link — main process only |
 | POST | `/api/boards/{board_id}/link` | try the secure link again after a failure |
 | GET | `/api/boards/{board_id}/invite` | the one link a teammate gets, code in the fragment |
 | POST | `/api/boards/{board_id}/actions` | draft this retro's action items (one LLM call) |
@@ -224,16 +225,21 @@ cancelling it does nothing.
 | POST | `/api/poker/tickets` | fetch the tickets one scope would estimate |
 
 A **board snapshot** is
-`{board_id, kind, title, session_id, project_name, started_at, host_url,
-share_url, display_code, link, state}`. `kind` is `retro` or `poker`.
-`state` is the board's own contents — `{grids, carried}` for a retro, the
-poker table snapshot for poker.
+`{board_id, kind, title, session_id, project_name, started_at, share_url,
+display_code, link, state}`. `kind` is `retro` or `poker`. `state` is the
+board's own contents — `{grids, carried}` for a retro, the poker table snapshot
+for poker. It carries no secret, so anything may draw it.
 
-**`host_url` is private.** It carries the admin token that makes its holder the
-host; it is returned because opening the board window needs it, and it must
-never be handed out as an invite. `/api/boards/{id}/invite` is what a teammate
-gets, and it is empty until the tunnel lands — before then there is no address
-that works for a reader.
+**The host link is private, and has a route to itself.** `GET
+/api/boards/{id}/host` answers `{host_url}`, which carries the admin token that
+makes its holder the host. It is deliberately not a snapshot field: exactly one
+caller wants it — the shell's main process, opening the board window — and
+everything else that lists or draws a board would only be carrying a token
+around. The Electron proxy refuses to relay this path on the renderer's behalf
+(`api-proxy.ts`'s `MAIN_ONLY`), so the token stays in main. It must never be
+handed out as an invite: `/api/boards/{id}/invite` is what a teammate gets, and
+it is empty until the tunnel lands — before then there is no address that works
+for a reader.
 
 A **link** is `{state, status, url, failed, expired, starting, notice}`, the
 same shape on a board and on a share. `state` is `idle`, `starting`, `ready`,
@@ -389,8 +395,18 @@ for the full intake is a backend decision, not a renderer one.
 | POST | `/api/ship/runs/{key}/cancel` | wind the run down cooperatively |
 
 `ship_history` and `ship_status` stay MCP-read-only. Launching is not a tool: a
-run holds a coding-agent subprocess for many minutes behind the engine lock, and
-the gate is a human decision — which a human-owned desktop app satisfies.
+run holds a coding-agent subprocess for many minutes and the gate is a human
+decision — which a human-owned desktop app satisfies. Unlike every other engine
+call, a supervised run does **not** take the process-wide engine lock: it parks
+at its gate until a person answers, and holding the lock there would stop the
+chat, the dashboards and every tool for as long as the diff went unread.
+
+**Known narrowing — the desktop ships stories only.** The terminal picker can
+target an epic, a story or a task, and can split an epic into one stacked PR per
+story (`ship.scope`, `engine.run_ship_batch`). These routes offer the story
+level alone: `/api/ship/stories` lists stories and a run is always
+`run_ship(level="story")`. Neither parity registry can see this — one checks
+route paths, the other terminal constructs — so it is written down here.
 
 **A ship run does not stream.** It lives in the backend and a surface polls
 `GET /api/ship/runs/{key}`, because a renderer reload must not be able to

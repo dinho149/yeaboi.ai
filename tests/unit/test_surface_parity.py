@@ -423,6 +423,10 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "ship",
         "cli": {"ship"},
         "skill": "ship",
+        # Present, but story-level only: the desktop cannot yet target an epic
+        # or a task, nor split an epic into stacked PRs. A route-set check
+        # cannot see a narrowing inside a route, so it is named here and in
+        # contracts/v1/app_http.md.
         "desktop": {"/humans/ship", "/humans/ship/run"},
     },
 }

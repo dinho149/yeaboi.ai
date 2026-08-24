@@ -124,9 +124,11 @@ def cancel_op(app, request: Request) -> Response:
 
 def events(app, request: Request) -> Response:
     """The ambient SSE feed. One long-lived response per subscriber."""
-    return Response(
-        content_type="text/event-stream", stream=app.bus.sse_stream(), headers=(("X-Accel-Buffering", "no"),)
-    )
+    try:
+        stream = app.bus.sse_stream()
+    except RuntimeError as exc:  # the subscriber cap — say so instead of streaming nothing
+        raise HTTPError(503, str(exc)) from None
+    return Response(content_type="text/event-stream", stream=stream, headers=(("X-Accel-Buffering", "no"),))
 
 
 def shutdown(app, request: Request) -> Response:

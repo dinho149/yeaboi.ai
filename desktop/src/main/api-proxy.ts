@@ -17,6 +17,17 @@ interface ApiInit {
 
 const ALLOWED_METHODS = new Set(['GET', 'POST']);
 
+// Routes main calls on its own behalf and the renderer may not, because what
+// they answer with is a secret the renderer has no use for. Without this the
+// proxy is a blind relay: moving a token to its own route would hide it from
+// the payload and still hand it over to anyone who asked for the path.
+const MAIN_ONLY = [/^\/api\/boards\/[a-f0-9]{1,32}\/host$/];
+
+/** Whether the renderer may ask the proxy for this path. */
+export function rendererMayCall(path: string): boolean {
+  return !MAIN_ONLY.some((pattern) => pattern.test(path.split('?')[0] ?? ''));
+}
+
 /** One authed call to the backend. The only place the bearer token is used.
  *
  * Exported because main itself is a client: the tray reads and writes the
@@ -49,6 +60,9 @@ export function registerApiProxy(sidecar: Sidecar): void {
     if (typeof path !== 'string' || !path.startsWith('/api/')) {
       return { status: 400, body: { error: 'path must start with /api/' } };
     }
+    if (!rendererMayCall(path)) {
+      return { status: 403, body: { error: 'that route is not available over the proxy' } };
+    }
     const options = (init ?? {}) as ApiInit;
     const method = (options.method ?? 'GET').toUpperCase();
     if (!ALLOWED_METHODS.has(method)) {
@@ -63,6 +77,9 @@ export function registerApiProxy(sidecar: Sidecar): void {
   ipcMain.handle('api:stream', async (event, path: unknown, init: unknown, streamId: unknown): Promise<ApiResult> => {
     if (typeof path !== 'string' || !path.startsWith('/api/')) {
       return { status: 400, body: { error: 'path must start with /api/' } };
+    }
+    if (!rendererMayCall(path)) {
+      return { status: 403, body: { error: 'that route is not available over the proxy' } };
     }
     if (typeof streamId !== 'string' || !STREAM_ID.test(streamId)) {
       return { status: 400, body: { error: 'invalid stream id' } };

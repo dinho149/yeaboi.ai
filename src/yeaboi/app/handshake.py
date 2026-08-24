@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -62,7 +63,15 @@ def write_handshake(handshake: Handshake) -> Path:
     from yeaboi.config import restrict_permissions
 
     path = handshake_path()
-    path.write_text(json.dumps(asdict(handshake), separators=(",", ":"), sort_keys=True), encoding="utf-8")
+    payload = json.dumps(asdict(handshake), separators=(",", ":"), sort_keys=True)
+    # Created 0600, not chmod'ed to it afterwards: the file holds the bearer
+    # token, and between write and chmod it would be readable by anyone.
+    path.unlink(missing_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    try:
+        os.write(fd, payload.encode("utf-8"))
+    finally:
+        os.close(fd)
     restrict_permissions(path, mode=0o600)
     logger.info("handshake written: %s (pid=%d)", path, handshake.pid)
     return path

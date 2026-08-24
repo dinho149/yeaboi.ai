@@ -77,6 +77,10 @@ class SecureLink:
         self._status = ""
         self._url = ""
         self._expired = False
+        #: Set by stop(). A tunnel that is still being built has not been
+        #: published yet, so stop() cannot reach it; the worker checks this
+        #: before publishing and tears down its own tunnel instead.
+        self._stopping = False
 
     # -- what a caller draws ----------------------------------------------
 
@@ -161,6 +165,7 @@ class SecureLink:
                 self._set_share_state("off")
                 return
             self._state, self._status, self._expired = STATE_STARTING, _FETCHING, False
+            self._stopping = False
 
         logger.info("%s: starting secure link setup", self.surface)
         threading.Thread(target=self._worker, name=f"{self.surface}-tunnel-setup", daemon=True).start()
@@ -169,9 +174,13 @@ class SecureLink:
         """Stop the tunnel. Safe to call more than once, and mid-setup.
 
         ``CloudflareTunnel.stop`` also cancels an in-flight ``start``, which is
-        why the worker publishes the tunnel *before* starting it.
+        why the worker publishes the tunnel *before* starting it. Between the
+        two there is still a window where there is nothing to reach, so the
+        flag set here is what the worker checks before it publishes: without it
+        a board closed during setup leaves a cloudflared child running.
         """
         with self._lock:
+            self._stopping = True
             tunnel, self._tunnel, self._url = self._tunnel, None, ""
         if tunnel is None:
             return
@@ -239,7 +248,19 @@ class SecureLink:
             # Published before start(), which blocks for the whole handshake
             # budget: stop() must be able to reach a tunnel that is still coming
             # up, or closing a board mid-setup orphans a cloudflared child.
-            self._set(tunnel=transport.tunnel)
+            # Publish-or-abandon under one lock, so a stop() that arrived while
+            # the transport was being built cannot be missed by both sides.
+            with self._lock:
+                abandoned = self._stopping
+                if not abandoned:
+                    self._tunnel = transport.tunnel
+            if abandoned:
+                logger.info("%s: link stopped during setup — tearing the tunnel down unstarted", self.surface)
+                try:
+                    transport.tunnel.stop()
+                except Exception:  # noqa: BLE001 — teardown must never raise into the worker
+                    logger.debug("%s: abandoned tunnel stop failed", self.surface, exc_info=True)
+                return
             url = transport.tunnel.start(timeout=START_TIMEOUT_SECONDS)
             if not url:
                 transport.tunnel.stop()

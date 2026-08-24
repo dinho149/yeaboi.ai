@@ -13,6 +13,7 @@ surface can be driven in tests by calling :meth:`AppServer.handle` with a
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,9 +34,12 @@ logger = logging.getLogger(__name__)
 #: policy. Same-origin API calls are all the app ever needs.
 APP_CSP = policy(connect_src="'self'", form_action="'none'")
 
-#: The largest body the app will read. A JSON API has no business accepting
-#: more, and an unbounded ``Content-Length`` is a free way to exhaust memory.
-MAX_BODY_BYTES = 2 * 1024 * 1024
+#: The largest body the app will read; an unbounded ``Content-Length`` is a
+#: free way to exhaust memory. It has to clear the biggest thing a route
+#: advertises — a pasted image, base64'd (``routes_chat.MAX_IMAGE_BYTES``,
+#: which grows by a third on the wire) — or the cap here rejects an attachment
+#: the handler promised to accept, before the handler ever sees it.
+MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
 class AppRequestHandler(BaseHTTPRequestHandler):
@@ -53,18 +57,43 @@ class AppRequestHandler(BaseHTTPRequestHandler):
         return self.server.app  # type: ignore[attr-defined]
 
     def _read_body(self) -> bytes:
+        self._oversize = False
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             return b""
-        if length <= 0 or length > MAX_BODY_BYTES:
+        if length <= 0:
+            return b""
+        if length > MAX_BODY_BYTES:
+            # An over-cap body is never drained, so this connection cannot be
+            # reused: on HTTP/1.1 the unread megabytes would be parsed as the
+            # next request line and fail a call the client did nothing wrong in.
+            self._oversize = True
+            self.close_connection = True
             return b""
         return self.rfile.read(length)
 
     def _handle(self, method: str, *, body: bool = True) -> None:
-        request = parse_request(method, self.path, dict(self.headers), self._read_body())
+        raw = self._read_body()
+        if self._oversize:
+            send_document(
+                self,
+                413,
+                json.dumps({"error": f"request body too large (max {MAX_BODY_BYTES // (1024 * 1024)} MB)"}).encode(),
+                "application/json",
+                csp=APP_CSP,
+            )
+            return
+        request = parse_request(method, self.path, dict(self.headers), raw)
         response = self._app.handle(request)
         if response.stream is not None:
+            if not body:
+                # HEAD must not open a stream: subscribing costs one of the
+                # feed's few slots and nothing would ever read it.
+                response.stream.close()
+                send_headers(self, response.code, csp=APP_CSP, extra=(("Content-Type", response.content_type),))
+                self.end_headers()
+                return
             self._write_stream(response)
             return
         if body:

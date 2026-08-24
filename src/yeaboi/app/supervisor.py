@@ -52,11 +52,13 @@ class BoardSession:
     _stopped: bool = field(default=False, repr=False)
 
     def snapshot(self) -> dict:
-        """Everything a host surface draws, with no secret in it but the host link.
+        """Everything a host surface draws, with no secret in it.
 
-        ``host_url`` carries the admin token, so it is the one field a caller
-        must treat as private — it is here because the host controls need it to
-        open the board window, and nowhere else.
+        The host URL is deliberately absent: it carries the admin token that
+        makes its holder the host, and it is wanted by exactly one caller — the
+        thing that opens the board window. That caller asks :attr:`host_url`
+        through a route of its own, so the token never rides in the payload
+        every board list hands out.
         """
         return {
             "board_id": self.board_id,
@@ -65,12 +67,16 @@ class BoardSession:
             "session_id": self.session_id,
             "project_name": self.project_name,
             "started_at": self.started_at,
-            "host_url": self.server.url,
             "share_url": self.server.share_url,
             "display_code": self.server.display_code,
             "link": self.link.snapshot(),
             "state": self._state(),
         }
+
+    @property
+    def host_url(self) -> str:
+        """The private host link, admin token and all. Never put it in a snapshot."""
+        return self.server.url
 
     def _state(self) -> dict:
         """The board's own contents — cards for a retro, the table for poker."""

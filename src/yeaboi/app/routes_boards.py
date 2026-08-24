@@ -5,9 +5,10 @@ these routes are the *host controls* around it. A surface starts a board, polls
 its snapshot while the ceremony runs, retries the secure link if it failed, and
 closes it — which is also what flushes the ceremony to its mode's store.
 
-``host_url`` is the one private field in a snapshot: it carries the admin token
-that makes its holder the host. It is returned because opening the board window
-needs it, and it must never be handed out as an invite.
+A snapshot carries no secret. The host link — which holds the admin token that
+makes its holder the host — is served only by ``GET /api/boards/{id}/host``,
+because exactly one caller opens the board window and everything else that
+draws a board would only be carrying the token around.
 
 Poker setup is two calls, not one: ``GET /api/poker/options`` answers what this
 machine can offer, ``POST /api/poker/tickets`` fetches a scope, and the ticket
@@ -32,6 +33,15 @@ def boards(app, request: Request) -> Response:
 def board(app, request: Request) -> Response:
     """``GET /api/boards/{board_id}`` — one board's host controls and contents."""
     return json_response(_require(app, request).snapshot())
+
+
+def board_host(app, request: Request) -> Response:
+    """``GET /api/boards/{board_id}/host`` — the private host link.
+
+    Its own route because it is its own secret: the shell's main process opens
+    the board window with it, and nothing that draws a board ever needs it.
+    """
+    return json_response({"host_url": _require(app, request).host_url})
 
 
 def start_retro(app, request: Request) -> Response:

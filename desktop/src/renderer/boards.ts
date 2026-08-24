@@ -38,8 +38,6 @@ export interface BoardSnapshot {
   session_id: string;
   project_name: string;
   started_at: string;
-  /** Private: carries the admin token. Opens the board window, never an invite. */
-  host_url: string;
   share_url: string;
   display_code: string;
   link: LinkState;

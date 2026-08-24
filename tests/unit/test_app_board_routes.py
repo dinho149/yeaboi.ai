@@ -103,6 +103,21 @@ class TestBoardReads:
         body = json.loads(request(app, "GET", "/api/boards/p1").body)
         assert body["state"] == {"tickets": []}
 
+    def test_no_snapshot_carries_the_admin_token(self, app):
+        # The host link is served by its own route, so that listing boards or
+        # drawing one never hands the admin secret to the caller.
+        _session(app)
+        for path in ("/api/boards", "/api/boards/b1"):
+            assert "admin=" not in request(app, "GET", path).body.decode()
+
+    def test_the_host_link_has_its_own_route(self, app):
+        _session(app)
+        body = json.loads(request(app, "GET", "/api/boards/b1/host").body)
+        assert "admin=" in body["host_url"]
+
+    def test_an_unknown_boards_host_link_is_404(self, app):
+        assert request(app, "GET", "/api/boards/nope/host").code == 404
+
     def test_unknown_board_is_404(self, app):
         assert request(app, "GET", "/api/boards/nope").code == 404
 

@@ -7,6 +7,8 @@ open, snapshot, flush, close — be asserted in-process.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from yeaboi.app.supervisor import BoardSession, BoardSupervisor, ShareSession
@@ -59,11 +61,16 @@ def _board(kind="retro", *, board_id="b1", server=None) -> BoardSession:
 
 
 class TestBoardSnapshot:
-    def test_carries_the_host_link_and_the_code(self):
-        snapshot = _board().snapshot()
-        assert snapshot["display_code"] == "DUCK-42"
-        # host_url is the one private field — the admin secret rides in it.
-        assert "admin=" in snapshot["host_url"]
+    def test_carries_the_code(self):
+        assert _board().snapshot()["display_code"] == "DUCK-42"
+
+    def test_the_host_link_is_never_in_a_snapshot(self):
+        # It carries the admin secret, and a snapshot is drawn by anything
+        # that lists boards. Only the host_url property serves it.
+        board = _board()
+        assert "host_url" not in board.snapshot()
+        assert "admin=" not in json.dumps(board.snapshot())
+        assert "admin=" in board.host_url
 
     def test_retro_state_is_its_cards(self):
         assert set(_board().snapshot()["state"]) == {"grids", "carried"}
