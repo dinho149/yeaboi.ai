@@ -2,7 +2,13 @@
 // offers while it is being typed.
 
 import { describe, expect, it } from 'vitest';
-import { CHAT_COMMANDS, matchingCommands, parseCommand, unknownCommandNotice } from '../src/renderer/commands';
+import {
+  CHAT_COMMANDS,
+  completionFor,
+  matchingCommands,
+  parseCommand,
+  unknownCommandNotice,
+} from '../src/renderer/commands';
 
 describe('parseCommand', () => {
   it('leaves ordinary prose alone', () => {
@@ -89,5 +95,29 @@ describe('the registry', () => {
     for (const command of CHAT_COMMANDS) {
       expect(parseCommand(`/${command.name}`)).not.toEqual({ kind: 'unknown', name: command.name });
     }
+  });
+});
+
+describe('completionFor', () => {
+  it('finishes a half-typed verb once only one is left', () => {
+    expect(completionFor('/fo')?.name).toBe('form');
+  });
+
+  it('leaves a finished verb alone, so Enter sends it', () => {
+    expect(completionFor('/form')).toBeNull();
+  });
+
+  it('never eats an argument', () => {
+    // "/edit 6" is a command with an argument, not a prefix of "/edit" —
+    // completing it would throw the 6 away and open the panel instead.
+    expect(completionFor('/edit 6')).toBeNull();
+  });
+
+  it('does nothing while more than one command still matches', () => {
+    expect(completionFor('/s')).toBeNull();
+  });
+
+  it('does nothing for prose', () => {
+    expect(completionFor('four engineers')).toBeNull();
   });
 });

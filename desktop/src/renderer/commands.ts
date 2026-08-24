@@ -86,6 +86,21 @@ export function matchingCommands(line: string): ChatCommand[] {
   return CHAT_COMMANDS.filter((command) => command.name.startsWith(typed));
 }
 
+/**
+ * The command Enter should finish typing, or null when Enter means send.
+ *
+ * Only while the verb is still half-typed and the menu has narrowed to one:
+ * `/edit 6` is a finished command carrying an argument, not a prefix of
+ * `/edit`, and completing it would throw the argument away.
+ */
+export function completionFor(line: string): ChatCommand | null {
+  const typed = line.trim();
+  if (!typed.startsWith('/') || /\s/.test(typed)) return null;
+  const matches = matchingCommands(typed);
+  const only = matches.length === 1 ? matches[0] : undefined;
+  return only && typed !== `/${only.name}` ? only : null;
+}
+
 /** What an unknown /word gets told. Never a graph turn — slash input is local. */
 export function unknownCommandNotice(name: string): string {
   return `/${name} isn't a command — /help lists them.`;

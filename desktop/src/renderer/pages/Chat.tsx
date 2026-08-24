@@ -13,7 +13,7 @@ import { Duck } from '@design/primitives/Duck';
 import { useEffect, useRef, useState } from 'react';
 import { MicButton } from '../components/MicButton';
 import { QuestionsPanel } from '../components/QuestionsPanel';
-import { matchingCommands, parseCommand, unknownCommandNotice } from '../commands';
+import { completionFor, matchingCommands, parseCommand, unknownCommandNotice } from '../commands';
 import { openShortcuts } from '../palette';
 import { appendSpoken, toBase64 } from '../voice';
 import { getAmbience, setAmbience } from '../ambience';
@@ -308,10 +308,9 @@ export function Chat() {
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              // A half-typed verb completes rather than submitting: the menu is
-              // showing exactly one command, and that is what was meant.
-              const only = menu.length === 1 && draft.trim() !== `/${menu[0]?.name}` ? menu[0] : null;
-              if (only) setDraft(`/${only.name}`);
+              // A half-typed verb completes rather than submitting.
+              const complete = completionFor(draft);
+              if (complete) setDraft(`/${complete.name}`);
               else void submit(draft);
             } else if (e.key === 'Escape' && menu.length) {
               e.preventDefault();

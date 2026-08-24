@@ -458,6 +458,9 @@ AREAS: tuple[Area, ...] = (
 # as good as no guard at all.
 ALWAYS: tuple[str, ...] = (
     "tests/unit/test_surface_parity.py",
+    # Its finer-grained twin: reads the terminal's own tables and the committed
+    # desktop manifest, so no changed module implies it either.
+    "tests/unit/test_tui_parity.py",
     "tests/unit/test_tips.py",
     # Guards the migration bar against the file it renders from:
     # `cowork/migration/program.md` is INERT (prose), so a checkbox flip or a
