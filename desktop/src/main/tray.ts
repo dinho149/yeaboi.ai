@@ -7,13 +7,42 @@
 
 import { Menu, Tray, app, nativeImage } from 'electron';
 import trayIconPath from '../../resources/duck-tray.png?asset';
+// The macOS menu bar paints template images itself, so the duck goes in as
+// alpha only and comes out right in light mode, dark mode and under a tint.
+// Its @2x sibling ships beside it in resources/ and Electron picks it up by
+// name — an import would only re-emit the same file under a second one.
+import trayTemplatePath from '../../resources/duck-trayTemplate.png?asset';
 import type { Pet } from './pet';
+import type { UpdateState } from './updater';
 
 /** Menu-bar icons are measured in points; 20 is the conventional height. */
 const TRAY_ICON_SIZE = 20;
 
+/** The update item says where the update got to, not what the menu does — a
+ *  "Check for updates…" that already found one reads as if nothing happened. */
+export function updateLabel(state: UpdateState): string {
+  switch (state.kind) {
+    case 'checking':
+      return 'Checking for updates…';
+    case 'available':
+      return `Download yeaboi ${state.version}`;
+    case 'downloading':
+      return `Downloading ${state.version} — ${state.percent}%`;
+    case 'ready':
+      return `Restart to update to ${state.version}`;
+    case 'error':
+      return 'Check for updates… (last check failed)';
+    case 'unsupported':
+      return 'Updates are managed outside the app';
+    default:
+      return 'Check for updates…';
+  }
+}
+
 export interface TrayActions {
   open: () => void;
+  about: () => void;
+  update: () => void;
   togglePet: (enabled: boolean) => void;
   quit: () => void;
 }
@@ -21,6 +50,7 @@ export interface TrayActions {
 export class AppTray {
   private tray: Tray | null = null;
   private petEnabled = false;
+  private update: UpdateState = { kind: 'idle' };
 
   constructor(
     private readonly pet: Pet,
@@ -29,9 +59,11 @@ export class AppTray {
 
   create(petEnabled: boolean): void {
     this.petEnabled = petEnabled;
+    const template = process.platform === 'darwin';
     const icon = nativeImage
-      .createFromPath(trayIconPath)
+      .createFromPath(template ? trayTemplatePath : trayIconPath)
       .resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+    icon.setTemplateImage(template);
     this.tray = new Tray(icon);
     this.tray.setToolTip('yeaboi');
     this.tray.on('click', () => this.actions.open());
@@ -42,6 +74,11 @@ export class AppTray {
    *  no checkbox — the toggle can also be flipped from the app's own settings). */
   setPetEnabled(enabled: boolean): void {
     this.petEnabled = enabled;
+    this.render();
+  }
+
+  setUpdateState(state: UpdateState): void {
+    this.update = state;
     this.render();
   }
 
@@ -68,6 +105,8 @@ export class AppTray {
         { label: 'Come here', enabled: this.petEnabled, click: () => this.pet.recenter() },
         { type: 'separator' },
         { label: `yeaboi ${app.getVersion()}`, enabled: false },
+        { label: updateLabel(this.update), enabled: this.update.kind !== 'unsupported', click: () => this.actions.update() },
+        { label: 'About yeaboi', click: () => this.actions.about() },
         { label: 'Quit yeaboi', click: () => this.actions.quit() },
       ]),
     );

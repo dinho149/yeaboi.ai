@@ -281,6 +281,32 @@ desktop-build: ## Build the desktop main/preload/renderer bundles into desktop/o
 	@test -d desktop/node_modules || $(MAKE) desktop-install
 	cd desktop && npm run build
 
+# --- Desktop packaging (electron-builder) ------------------------------------
+#
+# What ships is an application around a RELEASED wheel, not around this tree:
+# `desktop-bundle` installs yeaboi==VERSION from PyPI into a pinned
+# python-build-standalone runtime, and electron-builder wraps that. VERSION
+# defaults to the version line here, which is only correct once it is released
+# — pass VERSION=X.Y.Z to bundle anything else.
+VERSION ?= $(shell grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+
+desktop-icons: ## Re-render the committed icon set from the website duck art (needs the charts extra)
+	uv run --extra charts python scripts/gen_desktop_icons.py
+
+desktop-bundle: ## Stage the bundled Python for this platform (VERSION=X.Y.Z, must be on PyPI)
+	@test -d desktop/node_modules || $(MAKE) desktop-install
+	cd desktop && node scripts/fetch-python.mjs --version $(VERSION)
+
+desktop-pack: ## Unsigned local package into desktop/dist (a smoke test, not a release)
+	@test -d desktop/resources/py || $(MAKE) desktop-bundle
+	$(MAKE) desktop-build
+	cd desktop && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --dir --publish never
+
+desktop-dist: ## Signed installers into desktop/dist — needs the signing env vars (CI does this)
+	$(MAKE) desktop-bundle
+	$(MAKE) desktop-build
+	cd desktop && npx electron-builder --publish never
+
 # --- Docs site (docs/ → yeaboi.ai via GitHub Pages) --------------------------
 #
 # NOT the same thing as the web-* targets above: those build the app's React

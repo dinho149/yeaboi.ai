@@ -20,6 +20,11 @@ eggs/
 node_modules/
 frontend/.vite/
 
+# electron-builder's buildResources directory — icons, entitlements, the DMG
+# backdrop. All committed (rendered by scripts/gen_desktop_icons.py, which
+# needs the charts extra), and caught by the unanchored `build/` glob above.
+!desktop/build/
+
 # Virtual environments
 .venv/
 venv/
