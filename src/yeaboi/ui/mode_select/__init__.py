@@ -7679,11 +7679,7 @@ def _performance_get_transcript(console, live, read_key, frame_time, supports_ti
 
 
 def _performance_export(artifact, *, engineer: str, kind: str) -> str:
-    """Write one performance artifact to Markdown + HTML.
-
-    Takes the artifact rather than looking one up: the detail view exports what
-    is on screen, which is not necessarily the engineer's newest artifact.
-    """
+    """Write one performance artifact to Markdown + HTML."""
     from yeaboi.performance import export
 
     if kind == "note":
@@ -9385,9 +9381,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
     def _shown_artifact() -> tuple[object, str]:
         """The artifact the detail view is displaying, and its kind.
 
-        Export / Share Online / Anonymize all act on this rather than on the
-        engineer's newest saved artifact — what you are looking at is what gets
-        written and published.
+        What Export, Share Online and Anonymize all act on.
         """
         return state["detail_artifact"], state["detail_kind"]
 
@@ -9428,12 +9422,19 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 )
             )
 
-        return _run_on_worker(
+        result = _run_on_worker(
             lambda: run(progress.append),
             _frame,
             frame_time,
             drain=read_key if supports_timeout else None,
         )
+        # What each phase ended on, so a "it hung on X" report is answerable
+        # from ~/.yeaboi/logs/performance/ without reproducing the run.
+        settled = {
+            e["component_id"]: e["status"] for e in progress if isinstance(e, dict) and e.get("status") != "running"
+        }
+        logger.info("performance: %s finished — phases %s", heading, settled)
+        return result
 
     def _run_action(label: str, engineer: str) -> None:
         """Run one AI/notes action for the selected engineer (blocks briefly)."""

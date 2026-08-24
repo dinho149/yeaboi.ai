@@ -2166,12 +2166,33 @@ def _fmt_mmss(seconds: float) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
+def _window_phase_rows(rows: list, order: list, states: dict, budget: int) -> list:
+    """Trim a phase checklist to ``budget`` rows, keeping the one that is running.
+
+    A plain tail slice drops the head, which on a declared checklist is where
+    the active row sits while everything below it is still pending — leaving a
+    screen with nothing spinning on it.
+    """
+    if budget >= len(rows) or budget <= 0:
+        return rows[-budget:] if 0 < budget < len(rows) else rows
+    anchor = 0
+    for i, component_id in enumerate(order):
+        if component_id in states:
+            anchor = i  # the last row that has started: running, or the newest settled
+    # One row of look-ahead past the active one, then filled forward so the
+    # budget is never left unused — early on, that is the rest of the checklist.
+    # Clamped to ``anchor`` so the look-ahead can never push the active row out.
+    start = min(anchor, max(0, min(anchor + 2, len(rows)) - budget))
+    return rows[start : start + budget]
+
+
 def _build_activity_progress_rows(
     progress: list,
     *,
     theme,
     anim_tick: float,
     phases: tuple[tuple[str, str], ...] = (),
+    max_rows: int | None = None,
 ) -> list[Text]:
     """Render honest, theme-aware lifecycle rows for a worker's activity.
 
@@ -2185,6 +2206,11 @@ def _build_activity_progress_rows(
     expects: those ids draw in that order, ones not yet seen as a dim pending
     row, so the whole shape of the run is visible from the first frame. Ids
     outside it still render, after — the run stays honest about what it did.
+
+    ``max_rows`` caps the returned rows. Trimming happens here rather than in
+    the caller because only this function knows which rows are pending: the
+    window is anchored on the running row, which must stay visible at any
+    terminal height.
     """
     from yeaboi.analysis.progress import is_component_progress
 
@@ -2259,7 +2285,12 @@ def _build_activity_progress_rows(
                 marker, style = spin, f"bold {theme.accent_bright}"
             rows.append(Text(_PAD + f"  {marker} {label}{suffix}", style=style, justify="left"))
 
-        if any(bool(component_states.get(item, {}).get("read_only")) for item in component_order):
+        read_only = any(bool(component_states.get(item, {}).get("read_only")) for item in component_order)
+        if max_rows is not None:
+            reserved = 1 + (1 if read_only else 0) + (1 if legacy_activity else 0)  # footer + optional notes
+            rows = _window_phase_rows(rows, component_order, component_states, max_rows - reserved)
+
+        if read_only:
             rows.append(
                 Text(
                     _PAD + "      Repository access is read-only — no files are modified.",
@@ -3950,8 +3981,13 @@ PERF_PREP_PHASES: tuple[tuple[str, str], ...] = _PERF_EVIDENCE_PHASES + (
     ("model", "Ask the model"),
     ("save", "Save & export"),
 )
-# The same sweep over a six-month window rather than two sprints.
-PERF_REVIEW_PHASES: tuple[tuple[str, str], ...] = PERF_PREP_PHASES
+# The same sweep over a six-month window rather than two sprints, plus the
+# ceremony history and competency framework only a review reads.
+PERF_REVIEW_PHASES: tuple[tuple[str, str], ...] = _PERF_EVIDENCE_PHASES + (
+    ("context", "Read ceremonies & framework"),
+    ("model", "Ask the model"),
+    ("save", "Save & export"),
+)
 PERF_COMPLETE_PHASES: tuple[tuple[str, str], ...] = (
     ("prior", "Read the prior prep"),
     ("model", "Ask the model"),
@@ -5752,8 +5788,10 @@ def _build_standup_progress_screen(
         Text(""),
     ]
 
-    progress_rows = _build_activity_progress_rows(progress, theme=theme, anim_tick=anim_tick, phases=phases)
     max_visible_steps = max(2, height - 15)
+    progress_rows = _build_activity_progress_rows(
+        progress, theme=theme, anim_tick=anim_tick, phases=phases, max_rows=max_visible_steps
+    )
     body.extend(progress_rows[-max_visible_steps:])
 
     inner_h = height - 4

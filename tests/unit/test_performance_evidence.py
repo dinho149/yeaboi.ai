@@ -637,8 +637,7 @@ class TestProgressReporting:
         assert [e for e in seen if e["component_id"] == evidence.SOURCE_RETRO][-1]["status"] == "failed"
 
     def test_no_database_still_settles_every_source(self, tmp_path):
-        # The early exit used to leave a caller's rows pending forever, which
-        # reads as a hang on a machine that has simply never run a standup.
+        # A machine that has never run a standup still settles every row.
         seen: list = []
         evidence.gather_engineer_evidence(ENGINEER, db_path=tmp_path / "absent.db", on_progress=seen.append, **PERIOD)
         settled = {e["component_id"] for e in seen if e["status"] != "running"}

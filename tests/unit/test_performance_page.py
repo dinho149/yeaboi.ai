@@ -258,3 +258,52 @@ class TestOutputActionsUseWhatIsOnScreen:
         _run(_keys("enter", "enter", "right", "enter", "esc", "esc"))
 
         assert shared == [(shown, "prep")]
+
+
+class TestTheExportHelpersOnTheirOwn:
+    """The two artifact-taking helpers, called for real rather than patched away."""
+
+    def test_a_prep_exports_to_markdown_and_html(self, tmp_path, monkeypatch):
+        from yeaboi.agent.state import OneOnOnePrep
+
+        written: list = []
+        monkeypatch.setattr(
+            "yeaboi.performance.export.export_artifact",
+            lambda art, *, engineer, kind: (
+                written.append((art, engineer, kind)) or {"markdown": tmp_path / "prep-2026-08-24.md"}
+            ),
+        )
+        prep = OneOnOnePrep(engineer="Ada", date="2026-08-24")
+        msg = mode_select._performance_export(prep, engineer="Ada", kind="prep")
+        assert written == [(prep, "Ada", "prep")]
+        assert "Markdown + HTML" in msg
+
+    def test_a_note_says_why_it_cannot_be_a_file(self, tmp_path):
+        # The hub renders notes; they have no exporter of their own.
+        msg = mode_select._performance_export(object(), engineer="Ada", kind="note")
+        assert "Copy/Publish" in msg
+
+    def test_an_export_failure_is_reported_not_raised(self, monkeypatch):
+        def _boom(*a, **k):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("yeaboi.performance.export.export_artifact", _boom)
+        msg = mode_select._performance_export(object(), engineer="Ada", kind="prep")
+        assert msg.startswith("Export failed:")
+
+    def test_the_document_titles_each_kind(self):
+        from yeaboi.agent.state import OneOnOnePrep, SixMonthReview
+
+        title, markdown = mode_select._performance_document(
+            OneOnOnePrep(engineer="Ada", date="2026-08-24"), engineer="Ada", kind="prep"
+        )
+        assert title == "1:1 Prep — Ada"
+        assert markdown
+
+        title, _ = mode_select._performance_document(SixMonthReview(engineer="Ada"), engineer="Ada", kind="review")
+        assert title == "6-Month Review — Ada"
+
+    def test_an_unpublishable_kind_says_so_instead_of_raising(self):
+        msg = mode_select._performance_document(object(), engineer="Ada", kind="note")
+        assert isinstance(msg, str)
+        assert "cannot be published" in msg

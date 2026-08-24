@@ -61,11 +61,13 @@ PHASE_MODEL = "model"
 PHASE_SAVE = "save"
 PHASE_PRIOR = "prior"
 PHASE_EMAIL = "email"
+PHASE_CONTEXT = "context"
 _PHASE_LABELS = {
     PHASE_MODEL: "Ask the model",
     PHASE_SAVE: "Save & export",
     PHASE_PRIOR: "Read the prior prep",
     PHASE_EMAIL: "Send the summary",
+    PHASE_CONTEXT: "Read ceremonies & framework",
 }
 
 
@@ -376,6 +378,8 @@ def complete_one_on_one(
 
     if not (transcript or "").strip():
         logger.warning("complete_one_on_one: empty transcript for %s", engineer)
+        for phase in (PHASE_PRIOR, PHASE_MODEL, PHASE_EMAIL, PHASE_SAVE):
+            _emit(on_progress, phase, "no_data", detail="No transcript to work from.")
         return _fallback_completion(engineer, date_str, transcript, ["No transcript provided."])
 
     _emit(on_progress, PHASE_PRIOR, "running")
@@ -702,15 +706,24 @@ def run_six_month_review(
     )
     delivery = evidence.activity
 
+    _emit(on_progress, PHASE_CONTEXT, "running")
     ceremony_summary = ""
+    ceremony_failed = False
     try:
         from yeaboi.agent.ceremony_history import gather_ceremony_context
 
         ceremony_summary = gather_ceremony_context(state.get("project_name", "")).summary_md
     except Exception as e:  # noqa: BLE001 — ceremony context is best-effort
         logger.warning("run_six_month_review: ceremony context failed: %s", e)
+        ceremony_failed = True
 
     framework_text, framework_label, is_custom = _load_framework()
+    _emit(
+        on_progress,
+        PHASE_CONTEXT,
+        "partial" if ceremony_failed else "completed",
+        detail=("Ceremony history unreadable; " if ceremony_failed else "") + framework_label,
+    )
 
     from yeaboi.prompts.performance import get_six_month_review_prompt
 

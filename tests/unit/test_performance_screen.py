@@ -410,3 +410,90 @@ class TestPerformanceLoadingChecklist:
         out = self._render_progress([self._event("tickets", "completed", label="Tickets")], ())
         assert "✓ Tickets" in out
         assert "○" not in out
+
+
+class TestPhaseIdsMatchWhatTheEnginesEmit:
+    """A renamed id would show a permanently pending row and a total never reached.
+
+    The checklists spell their component ids as literals; these are the two-way
+    equality that keeps them tied to the constants the emitters actually use.
+    """
+
+    def test_the_evidence_phases_are_exactly_the_evidence_sources_that_emit(self):
+        from yeaboi.performance import evidence
+        from yeaboi.ui.mode_select.screens._screens_secondary import _PERF_EVIDENCE_PHASES
+
+        declared = {pid for pid, _ in _PERF_EVIDENCE_PHASES}
+        # Code and documentation are sub-categories of standup; they carry a
+        # coverage row but no phase of their own.
+        emitting = set(evidence.EVIDENCE_SOURCES) - {evidence.SOURCE_CODE, evidence.SOURCE_DOCUMENTATION}
+        assert declared == emitting
+
+    def test_the_engine_phases_are_exactly_the_engine_phase_constants(self):
+        from yeaboi.performance import engine
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            PERF_COMPLETE_PHASES,
+            PERF_PREP_PHASES,
+        )
+
+        declared = {pid for pid, _ in PERF_PREP_PHASES + PERF_COMPLETE_PHASES}
+        engine_ids = {engine.PHASE_MODEL, engine.PHASE_SAVE, engine.PHASE_PRIOR, engine.PHASE_EMAIL}
+        assert engine_ids <= declared, "an engine phase nothing declares renders as an unknown row"
+
+    def test_the_review_declares_the_context_phase_it_emits(self):
+        from yeaboi.performance import engine
+        from yeaboi.ui.mode_select.screens._screens_secondary import PERF_REVIEW_PHASES
+
+        assert engine.PHASE_CONTEXT in {pid for pid, _ in PERF_REVIEW_PHASES}
+
+
+class TestTheRunningRowSurvivesAShortTerminal:
+    """A checklist taller than the viewport must not hide the row that is moving."""
+
+    def _rows(self, progress, height):
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            PERF_PREP_PHASES,
+            _build_standup_progress_screen,
+        )
+        from yeaboi.ui.shared._components import PERFORMANCE_THEME, performance_title
+
+        panel = _build_standup_progress_screen(
+            progress,
+            width=100,
+            height=height,
+            elapsed=3.0,
+            anim_tick=3.0,
+            theme=PERFORMANCE_THEME,
+            title=performance_title(width=100),
+            label="1:1 Prep",
+            phases=PERF_PREP_PHASES,
+        )
+        return _render(panel)
+
+    def _started(self, done, running):
+        from yeaboi.analysis.progress import append_component_progress
+
+        events: list = []
+        for cid in done:
+            append_component_progress(events, component_id=cid, label=cid, status="completed")
+        append_component_progress(events, component_id=running, label=running, status="running")
+        return events
+
+    def test_the_first_phase_is_visible_before_anything_finishes(self):
+        # A 24-row terminal renders the page at height 23; eight phases plus a
+        # footer do not fit, and a plain tail slice drops the one that is running.
+        out = self._rows(self._started((), "tickets"), 23)
+        assert "Gather tickets" in out
+
+    def test_the_running_row_is_visible_at_every_height(self):
+        progress = self._started(("tickets", "standup"), "analysis")
+        for height in (16, 18, 20, 23, 30, 40):
+            assert "Read team analysis" in self._rows(progress, height), f"hidden at height {height}"
+
+    def test_a_late_phase_is_visible_once_it_is_the_one_running(self):
+        done = ("tickets", "standup", "analysis", "retro", "poker", "delivery", "model")
+        assert "Save & export" in self._rows(self._started(done, "save"), 23)
+
+    def test_the_footer_counts_the_whole_checklist_not_the_window(self):
+        out = self._rows(self._started(("tickets", "standup"), "analysis"), 23)
+        assert "[2/8]" in out

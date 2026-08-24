@@ -117,6 +117,7 @@ _COVERAGE_STATUS = {
     FAILED: "failed",
     NOT_CONFIGURED: "no_data",
 }
+assert set(_COVERAGE_STATUS) == set(COVERAGE_STATES), "every coverage word needs a progress status"
 
 
 # Progress-only labels for ids that are not evidence sources. Kept out of
@@ -146,8 +147,8 @@ def _emit(on_progress, source: str, status: str, *, detail: str = "") -> None:
 def _emit_coverage(on_progress, coverage: list, source: str) -> None:
     """Close out a section by echoing the SourceCoverage row it appended for ``source``.
 
-    A section that appended none (its store raised before recording one) still
-    resolves, as ``failed`` — a checklist row that never settles reads as a hang.
+    A section that appended none resolves as ``failed``: every declared phase
+    must reach a terminal state.
     """
     if on_progress is None:
         return
@@ -155,7 +156,8 @@ def _emit_coverage(on_progress, coverage: list, source: str) -> None:
     if row is None:
         _emit(on_progress, source, "failed", detail="Could not be read.")
         return
-    _emit(on_progress, source, _COVERAGE_STATUS.get(row.state, "completed"), detail=row.detail)
+    # An unrecognised word falls to "failed": ✓ is the one mark this must never invent.
+    _emit(on_progress, source, _COVERAGE_STATUS.get(row.state, "failed"), detail=row.detail)
 
 
 @dataclass(frozen=True)
@@ -665,8 +667,7 @@ def gather_engineer_evidence(
 
     db_path = _resolve_db(db_path)
     if db_path is None:
-        # Nothing saved to read: settle every remaining source rather than
-        # leaving a caller's checklist rows pending, which reads as a hang.
+        # Nothing saved to read — settle every remaining source.
         for source in (SOURCE_STANDUP, SOURCE_ANALYSIS, SOURCE_RETRO, SOURCE_POKER, SOURCE_DELIVERY):
             _emit(on_progress, source, "no_data", detail="No saved history on this machine.")
         ev = EngineerEvidence(
@@ -879,8 +880,7 @@ def gather_engineer_evidence(
                 added_code=len(code_lines) - had_code,
                 added_docs=len(doc_lines) - had_docs,
             )
-        # Settled after the note is written, so the checklist row says what the
-        # scan contributed rather than only that it finished.
+        # Settled after the note is written, so the row says what the scan found.
         _emit(
             on_progress,
             PHASE_GAP_SCAN,
