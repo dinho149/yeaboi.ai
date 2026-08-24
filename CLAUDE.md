@@ -109,6 +109,14 @@ Every browser-facing page — the retro and poker live boards, the share gate, t
 
 Everything else — the CSPs and what makes an export inert, the export capability flags, the `enums.ts` codegen rule, the payload rules, and the two Python/TS wire guards — is in the **`web-frontend`** skill. Read it before touching `frontend/`, `src/yeaboi/web/`, or any exporter.
 
+## Desktop app (`desktop/` — Electron over `yeaboi app`)
+
+The sixth surface: an Electron shell whose renderer is a normal Vite/Preact ESM app (not a seventh IIFE bundle — that constraint is about `file://` and tunnel CSPs, neither of which applies here) over `yeaboi app`, the loopback HTTP backend in `src/yeaboi/app/`. The wire between them is pinned in `contracts/v1/app_http.md`.
+
+- **`make desktop-check`** is what CI runs: typecheck + vitest + the routes-manifest staleness gate. `desktop/src/renderer/routes.json` is the parity source; `npm run gen-manifest` in `desktop/` regenerates the committed `src/yeaboi/app/routes_manifest.json` that the Python suite reads.
+- **What ships is a released wheel, not this tree.** `make desktop-bundle VERSION=X.Y.Z` installs `yeaboi[mcp,charts,core]==X.Y.Z` from PyPI into a pinned python-build-standalone runtime at `desktop/resources/py`; electron-builder ships that as `Resources/py` and `sidecar.ts` spawns `Resources/py/bin/python3 -m yeaboi app`. `make desktop-pack` is the unsigned local smoke; `desktop-release.yml` does the signed three-OS build against a version that must already be on PyPI.
+- **Brand assets are committed, not built.** `make desktop-icons` re-renders `desktop/build/` + the tray icons from the website's duck art (needs the `charts` extra); `tests/unit/test_desktop_icons.py` asserts the set without Pillow.
+
 ## REQUIRED: Go sidecar dual maintenance
 
 Three Python surfaces are mirrored line-for-line in the Go sidecar (`go/`), with byte-level parity enforced by `tests/parity/` (`make parity`, and the `parity` CI job). Each Go file names its Python twin in its header.
@@ -186,7 +194,10 @@ Every new feature MUST include all three pillars before it can be considered com
 
 ## REQUIRED: Surface Parity
 
-yeaboi ships on **six surfaces**: the TUI, CLI flags/subcommands, the Python engines, the MCP server, the Claude Code plugin skills, and the desktop app (rolling out — its `CAPABILITIES` column uses `Exempt("desktop: scheduled milestone …")` entries as the rollout ledger; burn the relevant one down whenever you land a desktop page). Features MUST NOT land TUI-only. This is machine-enforced by `tests/unit/test_surface_parity.py` — a declarative capability registry plus discovery checks over engines, MCP tools, `_MODE_CARDS`, `build_parser()`, plugin skills, and the desktop route manifest (`src/yeaboi/app/routes_manifest.json`).
+yeaboi ships on **six surfaces**: the TUI, CLI flags/subcommands, the Python engines, the MCP server, the Claude Code plugin skills, and the desktop app. Features MUST NOT land TUI-only. This is machine-enforced by **two** registries, and they ask different questions:
+
+- `tests/unit/test_surface_parity.py` — does this *capability* exist on every surface? A declarative registry plus discovery checks over engines, MCP tools, `_MODE_CARDS`, `build_parser()`, plugin skills, and the desktop route manifest (`src/yeaboi/app/routes_manifest.json`). The desktop rollout is over: every row carries real routes or a reasoned `Exempt`, and a `desktop: scheduled milestone …` exemption can no longer be reintroduced.
+- `tests/unit/test_tui_parity.py` — do the *constructs a mode is made of* reach the window? A slash command, a settings section, a keyboard gesture is none of them a capability, and each can land in the terminal alone with the first registry fully green. `TERMINAL_ONLY` names what the desktop deliberately does differently, with the reason.
 
 The contract:
 

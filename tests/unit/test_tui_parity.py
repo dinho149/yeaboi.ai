@@ -70,6 +70,14 @@ class TestTerminalOnly:
         for construct, reason in TERMINAL_ONLY.items():
             assert len(reason) > 30, f"{construct}: an absence needs a reason, not a label — got {reason!r}"
 
+    def test_the_upgrade_reason_names_something_that_exists(self):
+        """Every entry above says the desktop does the job another way. That is
+        a claim, and this one is checkable: the update path has to be there."""
+        desktop = REPO_ROOT / "desktop" / "src"
+        assert (desktop / "main" / "updater.ts").exists()
+        assert (desktop / "renderer" / "components" / "AboutPanel.tsx").exists()
+        assert "electron-updater" in (REPO_ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
+
     def test_no_absence_is_secretly_present(self, manifest):
         # A construct listed here that the desktop actually ships is a stale
         # entry, and a stale entry is how a registry starts lying.

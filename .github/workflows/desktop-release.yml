@@ -1,0 +1,146 @@
+name: Desktop release
+
+# Build, sign, notarize and publish the Electron app.
+#
+# This lane does NOT ride the Python release. `publish.yml` puts a wheel on
+# PyPI; this workflow takes a wheel that is ALREADY there and wraps it in an
+# application. The version is therefore an input, never something derived from
+# the tree: a desktop build has to be reproducible from a released artifact,
+# and a rebuild of yesterday's app must bundle yesterday's yeaboi.
+#
+# The pinned version must be a final. An rc reaches PyPI on every version-moving
+# push to main, and shipping one inside a signed installer would put unreviewed
+# code on someone's machine with a notarized ticket vouching for it.
+#
+# Secrets, all of them optional in the sense that a missing one fails the OS it
+# belongs to and nothing else:
+#   CSC_LINK / CSC_KEY_PASSWORD                       — the Apple Developer ID cert
+#   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID  — notarization
+#   AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET — Windows signing
+
+on:
+  workflow_dispatch:
+    inputs:
+      yeaboi_version:
+        description: "the released yeaboi X.Y.Z to bundle (must exist on PyPI)"
+        required: true
+  push:
+    tags: ["desktop-v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.event.inputs.yeaboi_version || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve the release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: pick
+        # A tag push carries the version in its own name; a dispatch is told.
+        # Either way it is checked against PyPI before three runners spend
+        # twenty minutes discovering the wheel does not exist.
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.yeaboi_version }}"
+          else
+            version="${GITHUB_REF_NAME#desktop-v}"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$version' is not a final X.Y.Z — the desktop never ships a pre-release"
+            exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/yeaboi/$version/json")
+          if [ "$code" != "200" ]; then
+            echo "::error::yeaboi $version is not on PyPI (HTTP $code) — release it first"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "bundling yeaboi $version"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: resolve
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # electron-builder publishes the draft release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, name: macOS (arm64), arch: arm64, flag: mac }
+          - { os: macos-13, name: macOS (x64), arch: x64, flag: mac }
+          - { os: windows-latest, name: Windows (x64), arch: x64, flag: win }
+          - { os: ubuntu-latest, name: Linux (x64), arch: x64, flag: linux }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install desktop dependencies
+        run: npm ci
+        working-directory: desktop
+
+      # The app carries the same version as the yeaboi it bundles. One number
+      # for a person to say out loud, and the auto-updater compares it.
+      - name: Stamp the app version
+        run: npm version "${{ needs.resolve.outputs.version }}" --no-git-tag-version --allow-same-version
+        working-directory: desktop
+
+      - name: Stage the bundled Python
+        run: node scripts/fetch-python.mjs --version "${{ needs.resolve.outputs.version }}" --arch ${{ matrix.arch }}
+        working-directory: desktop
+
+      - name: Build the renderer and main bundles
+        run: npm run build
+        working-directory: desktop
+
+      - name: Build, sign and publish
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: npx electron-builder --${{ matrix.flag }} --${{ matrix.arch }} --publish always
+
+      # Gatekeeper's own opinion of what was just built. Notarization can report
+      # success and still leave an app macOS refuses to open, and the only place
+      # that shows up otherwise is a user's Downloads folder.
+      - name: Assess the signed app
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          app=$(find dist -maxdepth 3 -name 'yeaboi.app' | head -1)
+          echo "assessing $app"
+          spctl --assess --type execute --verbose=4 "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+        working-directory: desktop
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: desktop-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.exe
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/latest*.yml
+          if-no-files-found: error
