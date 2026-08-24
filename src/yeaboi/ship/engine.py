@@ -36,7 +36,7 @@ from yeaboi.analysis.progress import send_component_progress
 from yeaboi.ship import budget, costing, pipeline, scope, worktree
 from yeaboi.ship.driver import ClaudeCodeDriver, DriverResult
 from yeaboi.ship.scope import ShipTarget
-from yeaboi.ship.store import ShipStore
+from yeaboi.ship.store import ShipStore, driven_elsewhere
 
 logger = logging.getLogger(__name__)
 
@@ -505,7 +505,7 @@ def _resumable_reason(run: ShipRun) -> str:
     """
     if run.status != "awaiting_approval":
         return f"only a run waiting at the gate can be resumed (this one is {run.status})"
-    if run.owner_pid and run.owner_pid != os.getpid() and budget.process_alive(run.owner_pid):
+    if driven_elsewhere(run):
         return f"another yeaboi process (pid {run.owner_pid}) is still driving this run"
     try:
         record = worktree.get_record(run.run_id)

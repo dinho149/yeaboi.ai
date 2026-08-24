@@ -6188,8 +6188,8 @@ def _run_mode_hub(
                 if editing is not None:
                     editing.close()
         if act == "Delete":
-            delete_run(run)
-            _reload("Run deleted.")
+            # A mode whose delete can be refused says why; the rest return None.
+            _reload(delete_run(run) or "Run deleted.")
             return True, None
         if act == "Run again":
             run_new()
@@ -6330,8 +6330,7 @@ def _run_mode_hub(
             # Delete-confirmation popup is modal: Enter confirms, Esc cancels.
             if k in ("enter", " "):
                 run = runs[selected]
-                delete_run(run)
-                _reload("Run deleted.")
+                _reload(delete_run(run) or "Run deleted.")
             elif k in ("esc", "q"):
                 confirm = False
                 voice.clear_sticky()
@@ -12986,7 +12985,7 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
     from yeaboi.ship.engine import _resumable_reason
     from yeaboi.ship.export import _title as _ship_title_of
     from yeaboi.ship.export import build_ship_markdown, export_ship
-    from yeaboi.ship.store import ShipStore
+    from yeaboi.ship.store import ShipRunBusyError, ShipStore
     from yeaboi.ui.mode_select._ship import run_ship_page
     from yeaboi.ui.mode_select.screens._project_cards import RunSummary
     from yeaboi.ui.mode_select.screens._screens_agents import _relative_age
@@ -13102,11 +13101,16 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
         body = "\n\n---\n\n".join(build_ship_markdown(r, gate_events=_events(r.run_id)) for r in runs)
         return f"Ship batch — {head.batch_item_id or head.batch_id}", body
 
-    def delete_run(summary):
+    def delete_run(summary) -> str:
+        """Delete the runs behind a row. Returns "" or why nothing was deleted."""
         with ShipStore(_ana_dbp) as store:
             for run in _selected(summary):
                 if run.run_id:
-                    store.delete_run(run.run_id)
+                    try:
+                        store.delete_run(run.run_id)
+                    except ShipRunBusyError as exc:
+                        return str(exc)
+        return ""
 
     def _open_ship_batch(summary, run_action) -> None:
         """The members of one batch, as their own list.
@@ -13127,7 +13131,7 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
             """
 
             def act(label: str) -> tuple[bool, str | None]:
-                nonlocal stale
+                nonlocal stale, stale_message
                 if label == "Export":
                     return False, _export_via_picker(
                         console,
@@ -13140,8 +13144,8 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
                         get_document=lambda r=member: get_document(r),
                     )
                 if label == "Delete":
-                    delete_run(member)
-                    stale = "deleted"
+                    stale_message = delete_run(member)
+                    stale = "refused" if stale_message else "deleted"
                     return True, None
                 if label == "Reload":
                     stale = "changed"
@@ -13152,11 +13156,24 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
 
         sel = 0
         msg = ""
-        stale = ""  # why the lists around us need re-reading: "deleted" | "changed"
-        while True:
+        stale = ""  # why the lists around us need re-reading: "deleted" | "changed" | "refused"
+        stale_message = ""  # a delete the store refused, and its reason
+        members: list = []
+        rows: list = []
+        head = None
+        unfinished = False
+
+        def _read() -> bool:
+            """Re-read the batch. False when nothing is left to show.
+
+            Read on open and after the two keys that change the list, never per
+            frame: every member carries its own stored patch, and each row's
+            resumable check reads the worktree registry off disk.
+            """
+            nonlocal members, rows, head, unfinished
             members = _members(batch_id)
             if not members:
-                return
+                return False
             head = members[0]
             unfinished = len(members) < (head.batch_total or len(members)) or any(
                 m.status != "approved" for m in members
@@ -13179,6 +13196,11 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
                 )
                 for m in members
             ]
+            return True
+
+        if not _read():
+            return
+        while True:
             sel = max(0, min(sel, len(rows) - 1))
             w, h = console.size
             panel = _build_run_hub_screen(
@@ -13228,13 +13250,19 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
                     check_command=next((m.validation.command for m in members if m.validation.configured), ""),
                 )
                 run_action("Reload")  # the batch just moved — the list behind us is stale
+                if not _read():
+                    return
             elif k in ("enter", " "):
                 open_ship_snapshot(rows[sel], _member_action(rows[sel]))
                 if stale:
                     if stale == "deleted":
                         msg = "Run deleted."
                         sel = max(0, sel - 1)
-                    stale = ""
+                    elif stale == "refused":
+                        msg = stale_message
+                    stale, stale_message = "", ""
+                    if not _read():
+                        return
                     run_action("Reload")  # the member changed — the list behind us is stale
 
     def open_ship_snapshot(summary, run_action) -> None:

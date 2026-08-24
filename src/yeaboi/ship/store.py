@@ -39,6 +39,23 @@ from yeaboi.agent.state import SHIP_STATUSES, ShipPhase, ShipRun, ShipValidation
 
 logger = logging.getLogger(__name__)
 
+
+class ShipRunBusyError(RuntimeError):
+    """A write was refused because another live process is driving that run."""
+
+
+def driven_elsewhere(run: ShipRun) -> bool:
+    """Whether a *different* live process owns *run*.
+
+    Shared by the resume check and the delete guard so the two cannot drift. A
+    reused pid reads as "still owned" and both callers refuse, which is the
+    harmless direction.
+    """
+    from yeaboi.ship import budget
+
+    return bool(run.owner_pid) and run.owner_pid != os.getpid() and budget.process_alive(run.owner_pid)
+
+
 # How far back a batch lookup reads. A batch is at most a few runs and is
 # continued within hours, so this is generous; the alternative is a story
 # column on a table that deliberately stores the artifact as one JSON blob.
@@ -301,7 +318,18 @@ class ShipStore:
         The worktree removal is best-effort and deliberately keeps the branch
         (``worktree.remove``'s default): the row is bookkeeping, the branch is the
         work, and discarding a listing must never discard commits.
+
+        Raises :class:`ShipRunBusyError` when another live process is parked at this
+        run's gate. That process polls its own row for a resolution and would
+        read a deleted row as "no answer yet", waiting forever on a checkout this
+        call had already force-removed underneath it.
         """
+        run = self.get_run(run_id)
+        if run is not None and run.status == "awaiting_approval" and driven_elsewhere(run):
+            raise ShipRunBusyError(
+                f"another yeaboi process (pid {run.owner_pid}) is waiting at this run's gate — "
+                "answer or cancel it there first"
+            )
         self._conn.execute("BEGIN IMMEDIATE")
         try:
             cursor = self._conn.execute("DELETE FROM ship_runs WHERE run_id = ?", (run_id,))

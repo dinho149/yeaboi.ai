@@ -14,7 +14,7 @@ import threading
 import pytest
 
 from yeaboi.agent.state import ShipPhase, ShipRun, ShipValidation
-from yeaboi.ship.store import ShipStore, _dict_to_run
+from yeaboi.ship.store import ShipRunBusyError, ShipStore, _dict_to_run
 
 
 @pytest.fixture()
@@ -214,6 +214,53 @@ class TestDeleteRun:
             store.delete_run("r1")
             assert store.get_run("r2") is not None
             assert [e[0] for e in store.gate_events("r2")] == ["rejected"]
+
+    def test_a_live_owner_at_the_gate_refuses_the_delete(self, tmp_path, monkeypatch):
+        """The owning process polls its own row and would wait on a deleted one forever."""
+        from yeaboi.ship import budget, worktree
+
+        removed = []
+        monkeypatch.setattr(worktree, "remove", lambda run_id, **kw: removed.append(run_id))
+        monkeypatch.setattr(budget, "process_alive", lambda pid: True)
+        with ShipStore(tmp_path / "s.db") as store:
+            store.record_run(
+                ShipRun(run_id="r1", item_id="US-1", status="awaiting_approval", owner_pid=os.getpid() + 1)
+            )
+            with pytest.raises(ShipRunBusyError):
+                store.delete_run("r1")
+            assert store.get_run("r1") is not None
+            assert removed == []  # the checkout it is driving is still there
+
+    def test_a_dead_owner_does_not_block_the_delete(self, tmp_path, monkeypatch):
+        from yeaboi.ship import budget, worktree
+
+        monkeypatch.setattr(worktree, "remove", lambda run_id, **kw: None)
+        monkeypatch.setattr(budget, "process_alive", lambda pid: False)
+        with ShipStore(tmp_path / "s.db") as store:
+            store.record_run(
+                ShipRun(run_id="r1", item_id="US-1", status="awaiting_approval", owner_pid=os.getpid() + 1)
+            )
+            assert store.delete_run("r1") is True
+
+    def test_our_own_run_is_never_busy(self, tmp_path, monkeypatch):
+        """Deleting from the hub that owns the run is the ordinary case."""
+        from yeaboi.ship import budget, worktree
+
+        monkeypatch.setattr(worktree, "remove", lambda run_id, **kw: None)
+        monkeypatch.setattr(budget, "process_alive", lambda pid: True)
+        with ShipStore(tmp_path / "s.db") as store:
+            store.record_run(ShipRun(run_id="r1", item_id="US-1", status="awaiting_approval", owner_pid=os.getpid()))
+            assert store.delete_run("r1") is True
+
+    def test_a_finished_run_is_deletable_whoever_owns_it(self, tmp_path, monkeypatch):
+        """Only a run parked at the gate has anyone waiting on it."""
+        from yeaboi.ship import budget, worktree
+
+        monkeypatch.setattr(worktree, "remove", lambda run_id, **kw: None)
+        monkeypatch.setattr(budget, "process_alive", lambda pid: True)
+        with ShipStore(tmp_path / "s.db") as store:
+            store.record_run(ShipRun(run_id="r1", item_id="US-1", status="approved", owner_pid=os.getpid() + 1))
+            assert store.delete_run("r1") is True
 
     def test_a_stuck_worktree_does_not_fail_the_delete(self, tmp_path, monkeypatch):
         from yeaboi.ship import worktree

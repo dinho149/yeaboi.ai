@@ -222,6 +222,23 @@ class TestBatchRows:
         with ShipStore(batch_db) as store:
             assert [r.run_id for r in store.batch_runs("b1")] == ["r2"]
 
+    def test_the_member_list_is_read_once_per_open_not_once_per_frame(self, batch_db, monkeypatch):
+        """Every member row carries its own stored patch, and its own disk check.
+
+        An idle frame must cost nothing: re-reading here is megabytes of JSON
+        parsing plus a worktree-registry read per member, sixty times a second.
+        """
+        calls = []
+        original = ShipStore.batch_runs
+        monkeypatch.setattr(
+            ShipStore,
+            "batch_runs",
+            lambda self, batch_id: (calls.append(batch_id), original(self, batch_id))[1],
+        )
+        # "" is an idle frame: no key, the loop turns over and repaints.
+        _open_hub(batch_db, ["enter", "", "", "", "", "", "", "", "esc", "esc"], monkeypatch)
+        assert calls == ["b1"]
+
     def test_deleting_the_whole_batch_from_the_list_still_takes_every_member(self, batch_db, monkeypatch):
         # The batch row itself is the one place that means "all of them".
         with ShipStore(batch_db) as store:
