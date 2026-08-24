@@ -87,11 +87,14 @@
  * The duck.
  *
  * Deliberately outside the theme blocks: the mascot is one fixed illustration,
- * so its colours must not shift with the palette. Values are lifted from the
- * TUI's own sprite (`ui/shared/_screensaver.py:_PALETTE`, keys "G" and "O"), so
- * the terminal duck, the docs duck and the tunnel duck are literally the same
- * bird. Before this the mascot's green appeared in no palette at all, which is
- * why it never looked like it belonged to the page it sat on.
+ * so its colours must not shift with the palette.
+ *
+ * These two are the canonical brand values — the web, the docs, the tunnel
+ * pages and the desktop app's icon set (`scripts/gen_desktop_icons.py`) all
+ * draw from here. The terminal runs its own adaptation in
+ * `ui/shared/_mascot.py::MASCOT_PALETTE` (green rgb(34,158,122), bill
+ * rgb(250,176,44)), tuned for the sprite's flat blocks rather than lifted from
+ * this file; they are the same bird, not the same numbers.
  *
  * Not used to paint the sprite itself — that is a PNG. These tint the things
  * that belong to it: the perch, the speech bubble edge, the offline "asleep"

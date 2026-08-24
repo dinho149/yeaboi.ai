@@ -32,6 +32,7 @@ from rich.panel import Panel
 from rich.table import Table as RichTable
 from rich.text import Text
 
+from yeaboi.standup.dashboard import card_order, card_title, member_active, other_members
 from yeaboi.ui.shared._components import PAD, Theme
 from yeaboi.ui.shared._row_ctx import RowCtx
 
@@ -56,61 +57,20 @@ class _StandupCtx(RowCtx):
 # ---------------------------------------------------------------------------
 
 
-def standup_card_order(data: dict) -> list[str]:
-    """Return the ordered card keys for the current standup data.
+#: Titles the terminal decorates; everything else comes from the shared table.
+_TUI_CARD_TITLES = {"notices": "⚠ Notices"}
 
-    With no generated report yet only Schedule is available. With a report the
-    standup user's own card is a top-level "my_update" row and everyone else
-    lives under a single "team" row — expanded inline into ``member:<name>``
-    sub-rows when ``data["team_expanded"]`` is set. Notices appears only when
-    needed.
-    """
-    report = data.get("report")
-    if report is None:
-        return ["schedule"]
-    order = ["summary", "my_update", "team"]
-    if data.get("team_expanded"):
-        order += [f"member:{m.name}" for m in _team_members(data)]
-    # Only when a disagreement was actually detected — same earn-the-card rule
-    # as "gaps" below: an empty Conflicts card would advertise, not report.
-    if getattr(report, "conflicts", ()):
-        order.append("conflicts")
-    order += ["activity"]
-    # Only when a transcript has actually been reviewed — an empty card would
-    # advertise a feature the user hasn't used rather than report a result.
-    # A nudge IS a result ("3 standups went unchecked"), so it earns the card on
-    # the same terms rather than being an exception to them.
-    if data.get("review") is not None or data.get("nudge"):
-        order.append("gaps")
-    order += ["schedule"]
-    if report.warnings:
-        order.append("notices")
-    return order
-
-
-def _team_members(data: dict) -> list:
-    """Member updates excluding the standup user (their card is "my_update")."""
-    report = data.get("report")
-    if report is None:
-        return []
-    my_name = data.get("my_name", "")
-    return [m for m in report.member_updates if m.name != my_name]
+#: The card vocabulary is shared with the desktop dashboard — see
+#: :mod:`yeaboi.standup.dashboard`. Only the rendering below is TUI-specific.
+standup_card_order = card_order
+_team_members = other_members
 
 
 def _confidence_style(theme: Theme, label: str) -> str:
     return {"On track": theme.good, "At risk": theme.warn, "Behind": theme.bad}.get(label, theme.muted)
 
 
-def _member_is_active(m) -> bool:
-    """True when the member has attributed activity today.
-
-    Reports saved before ``activity_count`` existed deserialize with 0 for
-    everyone — fall back to the summary text so old standups don't render the
-    whole team as quiet.
-    """
-    if getattr(m, "activity_count", 0):
-        return True
-    return bool(m.summary) and m.summary != "No activity detected."
+_member_is_active = member_active
 
 
 def _member(data: dict, name: str):
@@ -129,18 +89,7 @@ def _confidence_text(report) -> str:
 
 def standup_card_title(key: str, data: dict) -> str:
     """Human title for a card key; member sub-rows are just the member's name."""
-    if key.startswith("member:"):
-        return key[len("member:") :]
-    return {
-        "summary": "Team Summary",
-        "my_update": "My Update",
-        "team": "Team",
-        "conflicts": "Conflicts",
-        "activity": "Activity",
-        "gaps": "Transcript Review",
-        "schedule": "Schedule",
-        "notices": "⚠ Notices",
-    }.get(key, key)
+    return _TUI_CARD_TITLES.get(key) or card_title(key, data)
 
 
 def standup_card_teaser(key: str, data: dict) -> str:

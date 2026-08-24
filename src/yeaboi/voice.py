@@ -229,6 +229,44 @@ def probe_voice_backend(*, force: bool = False) -> tuple[bool, str]:
     return _backend_probe
 
 
+#: What a surface that brings its own microphone needs installed. Dictation is
+#: two halves — capture and transcription — and only the terminal owns both.
+TRANSCRIBE_PACKAGES: tuple[str, ...] = ("faster-whisper",)
+
+
+def can_transcribe() -> tuple[bool, str]:
+    """Return ``(available, reason)`` for transcription alone.
+
+    The desktop records with ``getUserMedia`` and uploads the blob, so
+    ``sounddevice`` and PortAudio never enter the picture there — asking
+    :func:`is_voice_available` would refuse a machine that can transcribe
+    perfectly well, and install ~50 MB of audio backend to fix a problem it does
+    not have.
+    """
+    if not _installed("faster_whisper"):
+        return False, f"Install the speech engine: {voice_install_command()}"
+    return True, ""
+
+
+def transcription_state() -> str:
+    """:func:`voice_state` for a surface that captures audio itself.
+
+    The same four words asked of the smaller stack. The PortAudio branch of
+    :func:`unsupported_blocker` is deliberately not consulted: it can only
+    report a microphone this surface never opens. What remains is the
+    ctranslate2 wheel gate, which constrains both surfaces equally.
+    """
+    if can_transcribe()[0]:
+        return "ready"
+
+    from yeaboi import voice_install
+    from yeaboi.config import is_voice_install_offer_enabled
+
+    if voice_install.unsupported_reason():
+        return "unsupported"
+    return "installable" if is_voice_install_offer_enabled() else "declined"
+
+
 def voice_state() -> str:
     """One vocabulary for every dictation surface: how to talk about voice here.
 

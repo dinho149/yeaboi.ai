@@ -31,6 +31,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # without importing this module (engine imports them — reverse would cycle).
 from yeaboi.analysis import repo_inventory
 from yeaboi.analysis.cancellation import AnalysisCancelledError
+from yeaboi.analysis.setup import available_doc_sources, available_trackers, scannable_code_sources
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def _resolve_components(
         return {"delivery": _pick("delivery"), "code": _pick("code"), "docs": _pick("docs")}
 
     if source == "both":
-        delivery = _available_sources()
+        delivery = available_trackers()
     elif source in _DELIVERY_SOURCES:
         delivery = [source]
     else:
@@ -112,8 +113,8 @@ def _resolve_components(
         delivery = [detected] if detected in _DELIVERY_SOURCES else []
     result = {
         "delivery": delivery,
-        "code": _available_code_sources() if include_ai_usage else [],
-        "docs": _available_doc_sources() if include_doc_quality else [],
+        "code": scannable_code_sources() if include_ai_usage else [],
+        "docs": available_doc_sources() if include_doc_quality else [],
     }
     return result
 
@@ -167,96 +168,6 @@ def _generate_samples(profile, examples: dict, warnings: list[str]) -> dict | No
         logger.warning("Sample-ticket generation failed: %s", exc)
         warnings.append(f"Sample-ticket generation failed: {exc}")
         return None
-
-
-def _available_sources() -> list[str]:
-    """Which trackers are configured (creds present). Ordered jira-first — the
-    same precedence as ``_detect_source`` — so 'both' output is deterministic."""
-    available: list[str] = []
-    try:
-        from yeaboi.config import get_jira_base_url, get_jira_token
-
-        if get_jira_base_url() and get_jira_token():
-            available.append("jira")
-    except Exception:
-        pass
-    try:
-        from yeaboi.config import get_azure_devops_org_url, get_azure_devops_token
-
-        if get_azure_devops_org_url() and get_azure_devops_token():
-            available.append("azdevops")
-    except Exception:
-        pass
-    return available
-
-
-def _available_code_sources() -> list[str]:
-    """Which remote code hosts are configured (GitHub, Azure Repos). Used to build
-    the picker's Code row and to default ``components=None``."""
-    out: list[str] = []
-    try:
-        from yeaboi.config import get_github_token, get_team_analysis_github_owners
-
-        if get_team_analysis_github_owners() and get_github_token():
-            out.append("github")
-    except Exception:
-        pass
-    try:
-        from yeaboi.config import get_azure_devops_token, get_team_analysis_azdo_projects
-
-        if get_team_analysis_azdo_projects() and get_azure_devops_token():
-            out.append("azdo")
-    except Exception:
-        pass
-    return out
-
-
-def _offerable_code_sources() -> list[str]:
-    """Which code hosts the setup wizard may OFFER, as opposed to scan unattended.
-
-    Deliberately distinct from :func:`_available_code_sources`, which answers
-    "scannable with zero further input" and drives the headless component default
-    (``_default_components``). GitHub needs only a token here because the wizard
-    discovers the owners itself (``_run_code_scope_select``) — whereas a headless
-    run has nobody to ask, so it still requires configured owners. Azure is the
-    same in both: its project list falls back to ``AZURE_DEVOPS_PROJECT``."""
-    out: list[str] = []
-    try:
-        from yeaboi.config import get_github_token
-
-        if get_github_token():
-            out.append("github")
-    except Exception:
-        pass
-    try:
-        from yeaboi.config import get_azure_devops_token, get_team_analysis_azdo_projects
-
-        if get_team_analysis_azdo_projects() and get_azure_devops_token():
-            out.append("azdo")
-    except Exception:
-        pass
-    return out
-
-
-def _available_doc_sources() -> list[str]:
-    """Which doc platforms are configured (Confluence, Notion). Used to build the
-    picker's Docs row."""
-    out: list[str] = []
-    try:
-        from yeaboi.config import get_confluence_base_url, get_confluence_token
-
-        if get_confluence_token() and get_confluence_base_url():
-            out.append("confluence")
-    except Exception:
-        pass
-    try:
-        from yeaboi.config import get_notion_token
-
-        if get_notion_token():
-            out.append("notion")
-    except Exception:
-        pass
-    return out
 
 
 # Headline rows shown in the 'both' side-by-side comparison. Each entry is

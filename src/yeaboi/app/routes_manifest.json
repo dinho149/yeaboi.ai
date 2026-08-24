@@ -1,0 +1,313 @@
+{
+  "schema_version": 2,
+  "routes": [
+    {
+      "path": "/home",
+      "capability": null,
+      "title": "Home"
+    },
+    {
+      "path": "/whats-new",
+      "capability": null,
+      "title": "What's New"
+    },
+    {
+      "path": "/feedback",
+      "capability": null,
+      "title": "Feedback"
+    },
+    {
+      "path": "/usage",
+      "capability": "usage",
+      "title": "Usage"
+    },
+    {
+      "path": "/humans/planning",
+      "capability": "planning",
+      "title": "Planning"
+    },
+    {
+      "path": "/humans/planning/chat",
+      "capability": "planning",
+      "title": "Planning · Chat"
+    },
+    {
+      "path": "/humans/planning/plan",
+      "capability": "planning",
+      "title": "The plan"
+    },
+    {
+      "path": "/humans/planning/sessions",
+      "capability": "sessions",
+      "title": "Saved plans"
+    },
+    {
+      "path": "/humans/planning/roadmap",
+      "capability": "roadmap",
+      "title": "Planning · Roadmap intake"
+    },
+    {
+      "path": "/humans/analysis",
+      "capability": "team-analysis",
+      "title": "Analysis"
+    },
+    {
+      "path": "/humans/analysis/new",
+      "capability": "team-analysis",
+      "title": "Analysis · New"
+    },
+    {
+      "path": "/humans/analysis/results",
+      "capability": "team-analysis",
+      "title": "Analysis · Results"
+    },
+    {
+      "path": "/humans/standup",
+      "capability": "standup",
+      "title": "Standup"
+    },
+    {
+      "path": "/humans/standup/setup",
+      "capability": "standup",
+      "title": "Standup · Setup"
+    },
+    {
+      "path": "/humans/standup/schedule",
+      "capability": "standup",
+      "title": "Standup · Schedule"
+    },
+    {
+      "path": "/humans/standup/review",
+      "capability": "standup",
+      "title": "Standup · Transcript review"
+    },
+    {
+      "path": "/humans/retro",
+      "capability": "retro-board",
+      "title": "Retro"
+    },
+    {
+      "path": "/humans/retro/board",
+      "capability": "retro-board",
+      "title": "Retro · Board"
+    },
+    {
+      "path": "/humans/poker",
+      "capability": "scrum-poker",
+      "title": "Poker"
+    },
+    {
+      "path": "/humans/poker/new",
+      "capability": "scrum-poker",
+      "title": "Poker · New session"
+    },
+    {
+      "path": "/humans/poker/board",
+      "capability": "scrum-poker",
+      "title": "Poker · Table"
+    },
+    {
+      "path": "/humans/performance",
+      "capability": "performance",
+      "title": "Performance"
+    },
+    {
+      "path": "/humans/performance/engineer",
+      "capability": "performance",
+      "title": "Performance · Engineer"
+    },
+    {
+      "path": "/humans/reporting",
+      "capability": "reporting",
+      "title": "Reporting"
+    },
+    {
+      "path": "/humans/reporting/new",
+      "capability": "reporting",
+      "title": "Reporting · New report"
+    },
+    {
+      "path": "/humans/reporting/style",
+      "capability": "reporting",
+      "title": "Reporting · Deck style"
+    },
+    {
+      "path": "/humans/ship",
+      "capability": "ship",
+      "title": "Ship"
+    },
+    {
+      "path": "/humans/ship/run",
+      "capability": "ship",
+      "title": "Ship · Run"
+    },
+    {
+      "path": "/agents/usage",
+      "capability": "agent-usage",
+      "title": "Agent Usage"
+    },
+    {
+      "path": "/agents/advisor",
+      "capability": "agent-advisor",
+      "title": "Agent Advisor"
+    },
+    {
+      "path": "/agents/standup",
+      "capability": "agent-standup",
+      "title": "Agent Standup"
+    },
+    {
+      "path": "/agents/security",
+      "capability": "agent-security",
+      "title": "Agent Security"
+    },
+    {
+      "path": "/ceremonies",
+      "capability": "ceremonies",
+      "title": "Ceremonies"
+    },
+    {
+      "path": "/ceremonies/slack",
+      "capability": "slack-inbound",
+      "title": "Ceremonies · Slack"
+    },
+    {
+      "path": "/provenance",
+      "capability": "provenance",
+      "title": "Provenance"
+    },
+    {
+      "path": "/settings/credentials",
+      "capability": "settings",
+      "title": "Settings · Credentials"
+    },
+    {
+      "path": "/settings/sharing",
+      "capability": "settings",
+      "title": "Settings · Sharing"
+    },
+    {
+      "path": "/settings/system",
+      "capability": "settings",
+      "title": "Settings · System"
+    },
+    {
+      "path": "/setup",
+      "capability": "settings",
+      "title": "Setup"
+    },
+    {
+      "path": "dialog:export",
+      "capability": "output-sharing",
+      "title": "Export"
+    },
+    {
+      "path": "dialog:share",
+      "capability": "output-sharing",
+      "title": "Share online"
+    },
+    {
+      "path": "action:anonymize",
+      "capability": "anonymize",
+      "title": "Anonymize output"
+    },
+    {
+      "path": "action:edit-artifact",
+      "capability": "artifact-editing",
+      "title": "Correct a shared artifact"
+    }
+  ],
+  "settings_tabs": [
+    {
+      "route": "/settings/credentials",
+      "title": "Credentials",
+      "sections": [
+        "provider",
+        "jira",
+        "azure",
+        "github",
+        "notion",
+        "slack"
+      ]
+    },
+    {
+      "route": "/settings/sharing",
+      "title": "Sharing",
+      "sections": [
+        "sharing"
+      ]
+    },
+    {
+      "route": "/settings/system",
+      "title": "System",
+      "sections": [
+        "storage",
+        "standup",
+        "voice",
+        "advanced"
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "name": "help",
+      "tui": "help",
+      "help": "shortcuts and everything you can type"
+    },
+    {
+      "name": "export",
+      "tui": "export",
+      "help": "save the plan and/or chat transcript"
+    },
+    {
+      "name": "skip",
+      "tui": "skip",
+      "help": "skip the current question"
+    },
+    {
+      "name": "defaults",
+      "tui": "defaults",
+      "help": "accept defaults for all remaining questions"
+    },
+    {
+      "name": "form",
+      "tui": "form",
+      "help": "see every question in one panel and answer them in any order"
+    },
+    {
+      "name": "finish",
+      "tui": "finish",
+      "help": "answer the remaining questions with defaults"
+    },
+    {
+      "name": "summary",
+      "tui": "summary",
+      "help": "show your answers so far"
+    },
+    {
+      "name": "questions",
+      "tui": "questions",
+      "help": "see what I'll ask and what's already answered"
+    },
+    {
+      "name": "edit",
+      "tui": "edit",
+      "help": "browse your answers (/edit 6 re-asks one) or refine the last artifact"
+    },
+    {
+      "name": "small",
+      "tui": "small",
+      "help": "switch to a Small plan"
+    },
+    {
+      "name": "large",
+      "tui": "large",
+      "help": "switch to a Large plan"
+    },
+    {
+      "name": "duck",
+      "tui": "duck",
+      "help": "mute or unmute the duck's speech bubble"
+    }
+  ]
+}

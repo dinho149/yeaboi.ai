@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What the hardened runtime has to be told to allow. Each line is something the
+  app actually does; nothing here is speculative.
+
+  JIT and unsigned executable memory: V8, and CPython's own allocator.
+  dyld environment variables: the bundled Python sets its own before exec.
+  Library validation off: the in-app voice install adds native wheels to the
+    bundle after it was signed, and the hardened runtime would refuse to load
+    a dylib this team did not sign.
+  Network client: the app talks to model providers and trackers.
+  Network server: the loopback API, the retro/poker/ship board servers.
+  Audio input: dictation (M11), which records in the renderer.
+  Apple events: the desktop duck asks the Dock where its icons are.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+</dict>
+</plist>

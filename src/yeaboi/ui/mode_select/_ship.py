@@ -23,6 +23,7 @@ from pathlib import Path
 from rich.console import Console
 
 from yeaboi.analysis.progress import is_component_progress
+from yeaboi.ship.setup import load_plan, resolve_target
 from yeaboi.ui.mode_select.screens._screens_ship import (
     SHIP_GATE_ACTIONS,
     SHIP_PICK_ACTIONS,
@@ -35,28 +36,6 @@ from yeaboi.ui.mode_select.screens._screens_ship import (
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
-
-
-def _load_plan() -> tuple[dict, str, str, str]:
-    """(state, plan_id, project_name, message) for the latest saved plan. Never raises.
-
-    Reads across BOTH plan stores (the interactive chat's project store and the
-    SQLite session store) via ``ship.plans``, and picks the latest plan that
-    actually has work in it — so a completed plan is never shadowed by a newer,
-    empty session, and a chat-built plan is not invisible just because ship used
-    to read only SQLite.
-    """
-    from yeaboi.ship import plans
-
-    try:
-        picked = plans.latest_plan_with_work()
-    except Exception as exc:  # noqa: BLE001 — an unreadable store must not crash the menu
-        logger.warning("Ship page: could not load plans: %s", exc)
-        return {}, "", "", "Could not read saved plans — see logs."
-    if picked is None:
-        return {}, "", "", ""
-    state, plan_id, name = picked
-    return state, plan_id, name, ""
 
 
 def _visible_rows(rows: list, expanded: set[str]) -> list:
@@ -76,35 +55,12 @@ def _visible_rows(rows: list, expanded: set[str]) -> list:
     return visible
 
 
-def _resolve_target(repo: str) -> tuple[str, str]:
-    """(the git toplevel this run will touch, a user-facing problem or "").
-
-    The toplevel, not the typed path, is what every later write targets —
-    ``git worktree add`` writes into ``<toplevel>/.git`` and the push runs from
-    there. Consent is checked with ``is_relative_to`` containment, so granting a
-    *subdirectory* would not grant the toplevel: resolving first is what keeps
-    the consent prompt honest about what is about to be touched.
-    """
-    from yeaboi.ship import worktree
-
-    try:
-        top = worktree.resolve_repo(Path(repo).expanduser())
-    except worktree.WorktreeError as exc:
-        return "", str(exc)
-    try:
-        if worktree.is_dirty(top):
-            return str(top), f"{top} has uncommitted changes — commit or stash first"
-    except worktree.WorktreeError as exc:
-        return str(top), str(exc)
-    return str(top), ""
-
-
 def run_ship_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Enter Ship from the menu; returns when the user backs out."""
     from yeaboi.ship import scope
     from yeaboi.ui.mode_select.screens._screens_ship import SCOPE_ONE, SCOPE_SPLIT
 
-    state, session_id, project_name, message = _load_plan()
+    state, session_id, project_name, message = load_plan()
     rows = scope.outline(state)
     logger.info("Ship page opened: %d plan rows from session %s", len(rows), session_id or "(none)")
     parents = {r.parent_key for r in rows if r.parent_key}
@@ -244,7 +200,7 @@ def _launch(
     """
     from yeaboi.ui.shared._consent import _preflight_path_consent
 
-    repo, problem = _resolve_target(repo)
+    repo, problem = resolve_target(repo)
     if problem:
         return problem
     if not _preflight_path_consent(

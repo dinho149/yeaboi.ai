@@ -208,6 +208,7 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/azdevops_sync.py",
             "src/yeaboi/sync_naming.py",
             "src/yeaboi/export_targets.py",
+            "src/yeaboi/exporting.py",
             "src/yeaboi/ticket_text.py",
             "src/yeaboi/markdown_convert.py",
         ),
@@ -218,6 +219,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_sync_naming.py",
             "tests/unit/test_azure_devops.py",
             "tests/unit/test_export_targets.py",
+            "tests/unit/test_exporting.py",
             "tests/unit/test_ticket_text.py",
             "tests/unit/test_markdown_convert.py",
             "tests/unit/test_local_git.py",
@@ -286,6 +288,7 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/voice.py",
             "src/yeaboi/voice_install.py",
             "src/yeaboi/music.py",
+            "src/yeaboi/ambience.py",
             "src/yeaboi/os_open.py",
             # Provider credential verification (live pings, format checks) used
             # by both the setup wizard and the pre-mode LLM gate; its own tests
@@ -308,6 +311,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_input_raw_mode.py",
             "tests/unit/test_screensaver.py",
             "tests/unit/test_music*.py",
+            "tests/unit/test_ambience.py",
             "tests/unit/test_tips*.py",
             "tests/unit/test_mode_cards.py",
             "tests/unit/test_mode_select_callsites.py",
@@ -352,6 +356,24 @@ AREAS: tuple[Area, ...] = (
         "platform",
         src=(
             "src/yeaboi/cli.py",
+            # `python -m yeaboi` — the same CLI, and how the desktop's bundled
+            # interpreter starts the backend.
+            "src/yeaboi/__main__.py",
+            # The desktop backend: the loopback API server `yeaboi app` binds.
+            # Cross-mode shared infrastructure like mcp/ below — it dispatches
+            # into every mode's tools without owning any of them.
+            "src/yeaboi/app/",
+            # The Electron shell over that backend. No Python test imports it —
+            # the desktop job (below, in JOBS) is what actually checks it — but
+            # claiming it here keeps a desktop-only diff from forcing the full
+            # Python suite as "unrecognised path".
+            "desktop/",
+            # Its brand assets: rendered here, committed there, and asserted by
+            # tests/unit/test_desktop_icons.py without Pillow.
+            "scripts/gen_desktop_icons.py",
+            # The headless settings service the desktop settings pages write
+            # through — allowlisted config writes, masked reads.
+            "src/yeaboi/settings/",
             "src/yeaboi/telemetry.py",
             "src/yeaboi/feedback.py",
             "src/yeaboi/setup_wizard.py",
@@ -377,6 +399,9 @@ AREAS: tuple[Area, ...] = (
         ),
         tests=(
             "tests/unit/test_cli_*.py",
+            "tests/unit/test_app_*.py",
+            "tests/unit/test_desktop_*.py",
+            "tests/unit/test_settings_*.py",
             "tests/unit/test_feedback.py",
             "tests/unit/test_setup_wizard.py",
             "tests/unit/test_update_*.py",
@@ -440,6 +465,9 @@ AREAS: tuple[Area, ...] = (
 # as good as no guard at all.
 ALWAYS: tuple[str, ...] = (
     "tests/unit/test_surface_parity.py",
+    # Its finer-grained twin: reads the terminal's own tables and the committed
+    # desktop manifest, so no changed module implies it either.
+    "tests/unit/test_tui_parity.py",
     "tests/unit/test_tips.py",
     # Guards the migration bar against the file it renders from:
     # `cowork/migration/program.md` is INERT (prose), so a checkbox flip or a
@@ -592,6 +620,10 @@ JOBS: tuple[Job, ...] = (
     Job("go", ("go/", "contracts/", "packaging/yeaboi-core/", "src/yeaboi/gocore/", "tests/parity/") + _MIRRORED),
     Job("parity", ("go/", "contracts/", "packaging/yeaboi-core/", "src/yeaboi/gocore/", "tests/parity/") + _MIRRORED),
     Job("web", ("frontend/", "src/yeaboi/web/", "scripts/gen_web_types.py")),
+    # The Electron shell's typecheck + vitest + routes-manifest staleness gate.
+    # The design/shared dirs are aliased into the renderer, so a change there
+    # can break a desktop typecheck that `web` alone would not catch.
+    Job("desktop", ("desktop/", "frontend/src/design/", "frontend/src/shared/", "src/yeaboi/app/routes_manifest.json")),
     Job("site", ("docs/", "scripts/gen_site_seo.py", "scripts/gen_og_card.py")),
     # `packaging/` covers the `yeaboi-core` wheel's `hatch_build.py` hook; there
     # is no root-level build hook or MANIFEST.in to name.

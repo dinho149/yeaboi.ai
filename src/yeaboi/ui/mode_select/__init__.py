@@ -22,9 +22,13 @@ from pathlib import Path
 
 from rich.console import Console
 
+from yeaboi.analysis import setup as analysis_setup
 from yeaboi.logging_setup import attach_mode_handler, mode_log
 from yeaboi.logging_setup import detach as detach_mode_handler
 from yeaboi.paths import get_db_path as _get_db_path
+from yeaboi.retro.setup import NO_SESSION_MESSAGE
+from yeaboi.sharing.link import SecureLink
+from yeaboi.standup import schedule as schedule_module
 from yeaboi.timeparse import parse_date, parse_datetime
 from yeaboi.ui.mode_select.screens._project_cards import (  # noqa: F401
     ProfileSummary,
@@ -2654,66 +2658,11 @@ def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_
 def _collect_standup_data(message: str = "") -> dict:
     """Gather Daily Standup dashboard data for the most recent session.
 
-    The standup page targets the most recently modified session. Returns the
-    session name, saved standup config, OS-schedule status, and the latest
-    generated StandupReport (if any).
+    Shared with the desktop dashboard — see :func:`yeaboi.standup.dashboard.collect`.
     """
-    from yeaboi.config import get_standup_user_name
+    from yeaboi.standup.dashboard import collect
 
-    data: dict = {
-        "message": message,
-        "session_id": "",
-        "session_name": "",
-        "my_name": get_standup_user_name(),
-        "config": None,
-        "report": None,
-        "schedule": {},
-        "review": None,
-        "gap_issues": [],
-    }
-    try:
-        from yeaboi.sessions import SessionStore, make_display_name
-
-        with SessionStore(_ana_dbp) as store:
-            session_id = store.get_latest_session_id()
-            if not session_id:
-                return data
-            data["session_id"] = session_id
-            meta = store.get_session(session_id) or {}
-            data["session_name"] = make_display_name(meta) if meta else session_id
-    except Exception:
-        logger.warning("standup: failed to resolve latest session", exc_info=True)
-        return data
-
-    session_id = data["session_id"]
-    try:
-        from yeaboi.standup.store import StandupStore
-
-        with StandupStore(_ana_dbp) as store:
-            data["config"] = store.load_config(session_id)
-            data["report"] = store.get_latest_report(session_id)
-            # The most recent transcript review + the gap→issue ledger, so the
-            # Transcript Review card can show which gaps are already filed.
-            data["review"] = store.get_latest_review(session_id)
-            data["gap_issues"] = store.get_gap_issues(limit=50)
-        # Two indexed SELECTs, once per hub refresh (never per frame): which
-        # standups ran without ever being checked against their meeting.
-        from yeaboi.standup import transcripts as _transcripts
-
-        data["nudge"] = _transcripts.transcript_nudge(session_id, config=data.get("config"), db_path=_ana_dbp)
-        # The engine resolves "Me" to the user's real tracker identity (e.g. their
-        # Jira displayName) — the report's my_name drives the "My Update" row.
-        if data["report"] is not None and data["report"].my_name:
-            data["my_name"] = data["report"].my_name
-    except Exception:
-        logger.warning("standup: failed to load standup store data", exc_info=True)
-    try:
-        from yeaboi.standup.scheduler import get_schedule_status
-
-        data["schedule"] = get_schedule_status(session_id)
-    except Exception:
-        logger.warning("standup: failed to read schedule status", exc_info=True)
-    return data
+    return collect(db_path=_ana_dbp, message=message)
 
 
 def _standup_generate(session_id: str, on_progress=None) -> str:
@@ -2852,14 +2801,10 @@ def _anonymize_files_export(result, *, title: str, project_name: str) -> str:
 
 
 def _anon_note(anon) -> str:
-    """The slim subtitle shown under a mode's banner while its data is anonymized.
+    """The slim subtitle shown under a mode's banner while its data is anonymized."""
+    from yeaboi.anonymize.apply import masked_note
 
-    Empty string when ``anon`` is None (real data) so the screen builder renders exactly
-    as before; a count-carrying line otherwise.
-    """
-    if anon is None:
-        return ""
-    return f"Anonymized · {len(anon.replacements)} masked — review before sharing"
+    return masked_note(anon)
 
 
 def _run_anonymize_pass(
@@ -5217,19 +5162,14 @@ def _run_schedule_multi_step(
             return "back"
 
 
-_SCHEDULE_TIME_PRESETS = ["09:00", "09:30", "10:00", "10:30", "11:00"]
-_SCHEDULE_LEAD_PRESETS = [5, 10, 15, 30]
+# The shortlists every surface offers — shared so the terminal and the desktop
+# cannot drift into different schedules. Minutes AFTER the standup for the
+# transcript reminder; 0 = no reminder, and the OS job IS the setting.
+_SCHEDULE_TIME_PRESETS = schedule_module.TIME_PRESETS
+_SCHEDULE_LEAD_PRESETS = schedule_module.LEAD_PRESETS
+_SCHEDULE_CHANNEL_DESCS = schedule_module.CHANNEL_DESCRIPTIONS
+_REMINDER_PRESETS = schedule_module.REMINDER_PRESETS
 _SCHEDULE_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-_SCHEDULE_CHANNEL_DESCS = {
-    "terminal": "print in the terminal the run opens",
-    "desktop": "macOS/Linux system notification",
-    "slack": "post to Slack (needs SLACK_WEBHOOK_URL)",
-    "email": "send via SMTP (needs STANDUP_SMTP_* settings)",
-}
-# Minutes AFTER the standup for the transcript reminder; 0 = no reminder. The
-# offset is not a config column: the existence of the OS job IS the setting, so
-# there is nothing to migrate or keep in sync.
-_REMINDER_PRESETS = [0, 30, 60, 120]
 
 
 def _run_standup_schedule_wizard(
@@ -5244,37 +5184,21 @@ def _run_standup_schedule_wizard(
     installed or removed; the returned message surfaces on the hub.
     """
     from yeaboi.standup.delivery import ALL_CHANNELS
-    from yeaboi.standup.scheduler import (
-        JOB_TRANSCRIPT_REMINDER,
-        install_schedule,
-        install_transcript_reminder,
-        parse_time,
-        remove_schedule,
-        transcript_reminder_offset,
-        weekday_list,
-        weekday_spec,
-    )
-    from yeaboi.standup.store import StandupStore
+    from yeaboi.standup.schedule import apply_schedule, current_schedule, nearest_reminder_preset
+    from yeaboi.standup.scheduler import parse_time, weekday_list, weekday_spec
 
-    with StandupStore(_ana_dbp) as store:
-        existing = store.load_config(session_id) or {}
-    time_val = existing.get("time", "10:00")
-    lead_val = int(existing.get("lead_minutes", 10))
-    days = set(weekday_list(existing.get("weekdays", "1-5")))
-    channels = [c for c in existing.get("delivery_channels", ["terminal"]) if c in ALL_CHANNELS] or ["terminal"]
-    enabled = bool(existing.get("enabled"))
     # The installed job is the source of truth for the reminder — nothing in the
-    # database records it, so we ask the OS. Read the OFFSET back too, not just
-    # whether one exists: a user who picked "2 hours after" and later reopens
-    # this wizard to change a delivery channel would otherwise Enter past a step
-    # showing the default and silently reinstall the job at 30 minutes.
-    remind_after = transcript_reminder_offset(session_id, time_val)
-    if remind_after and remind_after not in _REMINDER_PRESETS:
-        # The standup time can move after the reminder was installed, so the
-        # recovered offset need not land on a preset. Snap to the nearest one
-        # rather than falling through to "No reminder", which would tear the job
-        # down for a user who came here to change something else entirely.
-        remind_after = min((p for p in _REMINDER_PRESETS if p), key=lambda p: abs(p - remind_after))
+    # database records it, so ``current_schedule`` asks the OS. The standup time
+    # can move after a reminder was installed, so the recovered offset need not
+    # land on a preset: snapping keeps a user who came here to change a delivery
+    # channel from silently tearing their reminder down.
+    saved = current_schedule(session_id, db_path=_ana_dbp)
+    time_val = saved["time"]
+    lead_val = saved["lead_minutes"]
+    days = set(weekday_list(saved["weekdays"]))
+    channels = saved["delivery_channels"]
+    enabled = saved["enabled"]
+    remind_after = nearest_reminder_preset(saved["remind_after"])
     logger.info("standup schedule wizard: opened (session=%s)", session_id)
 
     def _custom_text(prompt: str, step: str, default: str, parse) -> str | None:
@@ -5451,57 +5375,16 @@ def _run_standup_schedule_wizard(
                 index += 1
         logger.info("standup schedule wizard: moved to step %d (session=%s)", index, session_id)
 
-    weekdays = weekday_spec(days)
-    with StandupStore(_ana_dbp) as store:
-        store.save_config(
-            session_id,
-            enabled=enabled,
-            time=time_val,
-            lead_minutes=lead_val,
-            weekdays=weekdays,
-            delivery_channels=channels,
-            timezone=existing.get("timezone", ""),
-            repo_path=existing.get("repo_path", ""),
-            my_aliases=existing.get("my_aliases", ""),
-            tracker_sources=existing.get("tracker_sources", ["jira"]),
-            team_members=existing.get("team_members", []),
-            roster_configured=existing.get("roster_configured", False),
-            code_sources=existing.get("code_sources", []),
-            github_owners=existing.get("github_owners", []),
-            github_repositories=existing.get("github_repositories", []),
-            github_excluded_repositories=existing.get("github_excluded_repositories", []),
-            azdo_projects=existing.get("azdo_projects", []),
-            azdo_repositories=existing.get("azdo_repositories", []),
-            code_scope_configured=existing.get("code_scope_configured", False),
-            documentation_sources=existing.get("documentation_sources", []),
-            documentation_scope_configured=existing.get("documentation_scope_configured", False),
-            automation_markers=existing.get("automation_markers", ""),
-            automation_handling=existing.get("automation_handling", "exclude"),
-            transcript_dir=existing.get("transcript_dir", ""),
-            transcript_review_enabled=existing.get("transcript_review_enabled", True),
-            habit_detection=existing.get("habit_detection", "on"),
-            habit_rules=existing.get("habit_rules", ""),
-            habit_ai_match=existing.get("habit_ai_match", "on"),
-        )
-    if enabled:
-        msg = install_schedule(session_id, time_val, weekdays, lead_val)
-        # A reminder is only meaningful alongside a scheduled standup; when the
-        # schedule is off, remove_schedule below tears BOTH kinds down, so a
-        # disabled standup can never leave notifications firing.
-        if remind_after:
-            msg += "  " + install_transcript_reminder(session_id, time_val, weekdays, remind_after)
-        else:
-            remove_schedule(session_id, kind=JOB_TRANSCRIPT_REMINDER)
-    else:
-        msg = remove_schedule(session_id)  # every kind
-    logger.info(
-        "standup schedule wizard: saved session=%s enabled=%s remind_after=%s -> %s",
+    return apply_schedule(
         session_id,
-        enabled,
-        remind_after,
-        msg,
+        enabled=enabled,
+        time=time_val,
+        weekdays=weekday_spec(days),
+        lead_minutes=lead_val,
+        delivery_channels=channels,
+        remind_after=remind_after,
+        db_path=_ana_dbp,
     )
-    return msg
 
 
 def _standup_identity_configure(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str:
@@ -7537,87 +7420,34 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 def _collect_performance_data(message: str = "") -> dict:
     """Gather Performance page data: latest session + the Jira/AzDO engineer roster.
 
-    The roster is the real people who did work on the board (assignees) — see
-    performance/roster.py. Session context (sprint length/project) is best-effort;
-    the page still works with no session.
+    A thin shim over ``performance.setup`` — the roster, its tracker/plan
+    fallback and the per-engineer hints are surface-neutral decisions the
+    desktop reads the same way.
     """
-    data: dict = {"message": message, "session_id": "", "session_name": "", "roster": [], "roster_hints": []}
-    try:
-        from yeaboi.sessions import SessionStore, make_display_name
+    from yeaboi.performance.setup import collect_roster
 
-        with SessionStore(_ana_dbp) as store:
-            session_id = store.get_latest_session_id() or ""
-            data["session_id"] = session_id
-            if session_id:
-                meta = store.get_session(session_id) or {}
-                data["session_name"] = make_display_name(meta) if meta else session_id
-    except Exception:
-        logger.warning("performance: failed to resolve latest session", exc_info=True)
-    try:
-        from yeaboi.performance.roster import fetch_roster
-
-        data["roster"] = [r.name for r in fetch_roster()]
-    except Exception:
-        logger.warning("performance: failed to fetch roster", exc_info=True)
-    # Fallback: no live Jira/AzDO roster → use the planning session's own team
-    # members (also board-derived) so Performance is usable without a live tracker.
-    if not data["roster"] and data["session_id"]:
-        data["roster"] = _performance_session_team(data["session_id"])
-        if data["roster"]:
-            logger.info("performance: roster fell back to session team members")
-    data["roster_hints"] = _performance_roster_hints(data["roster"])
-    logger.info("performance: %d engineer(s) in roster", len(data["roster"]))
-    return data
+    data = collect_roster(db_path=_ana_dbp)
+    return {
+        "message": message,
+        "session_id": data["session_id"],
+        "session_name": data["session_name"],
+        "roster": data["roster"],
+        "roster_hints": data["hints"],
+    }
 
 
 def _performance_session_team(session_id: str) -> list[str]:
-    """Return the session's team-member names (fallback roster when no tracker).
+    """The session's team-member names (fallback roster when no tracker)."""
+    from yeaboi.performance.setup import session_team
 
-    Reads ``selected_team_members`` from the saved plan state — the same
-    board-derived roster the standup uses. Best-effort: any error → []. Names are
-    de-duplicated preserving order and sorted for a stable page.
-    """
-    try:
-        from yeaboi.sessions import SessionStore
-
-        with SessionStore(_ana_dbp) as store:
-            state = store.load_state(session_id) or {}
-    except Exception:
-        logger.warning("performance: failed to load session team members", exc_info=True)
-        return []
-    names = [str(n).strip() for n in (state.get("selected_team_members") or ()) if str(n).strip()]
-    return sorted(dict.fromkeys(names), key=str.lower)
+    return session_team(session_id, db_path=_ana_dbp)
 
 
 def _performance_roster_hints(roster: list[str]) -> list[str]:
-    """Build a one-line status hint per engineer (open 1:1 actions + review on file).
+    """One status line per engineer (open 1:1 actions + review on file)."""
+    from yeaboi.performance.setup import roster_hints
 
-    Shown as the description under the selected engineer's big ASCII name. Best-effort
-    — a store error just yields the generic hint so the page always renders.
-    """
-    generic = "1:1 prep · completion · 6-month review"
-    if not roster:
-        return []
-    try:
-        from yeaboi.performance.store import PerformanceStore
-
-        with PerformanceStore(_ana_dbp) as store:
-            open_actions = store.get_all_open_action_items()
-            hints: list[str] = []
-            for name in roster:
-                n = len(open_actions.get(name, ()))
-                has_review = store.get_latest_review(name) is not None
-                if n:
-                    hint = f"{n} open 1:1 action{'s' if n != 1 else ''}"
-                else:
-                    hint = "no open 1:1 actions"
-                if has_review:
-                    hint += " · review on file"
-                hints.append(hint)
-            return hints
-    except Exception:
-        logger.warning("performance: failed to build roster hints", exc_info=True)
-        return [generic for _ in roster]
+    return roster_hints(roster, db_path=_ana_dbp)
 
 
 def _performance_get_transcript(console, live, read_key, frame_time, supports_timeout) -> tuple[str, list[str]] | None:
@@ -8484,12 +8314,7 @@ def _run_analysis_setup_wizard(
         return set(state["features"] or [])
 
     def _filtered_grid() -> dict[str, list[str]]:
-        fs = _feature_set()
-        return {
-            "delivery": grid["delivery"] if "delivery" in fs else [],
-            "code": grid["code"] if fs & {"ai_footprint", "code_health"} else [],
-            "docs": grid["docs"] if "documentation" in fs else [],
-        }
+        return analysis_setup.filtered_grid(grid, state["features"])
 
     def _preflight() -> dict:
         if preflight_box[0] is None:
@@ -8499,50 +8324,28 @@ def _run_analysis_setup_wizard(
         return preflight_box[0]
 
     def _depth_applicable() -> bool:
-        return bool(_feature_set() & {"delivery", "ai_footprint"})
+        return analysis_setup.depth_applies(state["features"])
 
     def _effective_depth() -> str:
-        return state["depth"] if _depth_applicable() else "quick"
+        return analysis_setup.effective_depth(state["depth"], state["features"])
+
+    def _model_offered() -> bool:
+        """Probe Ollama only where a model choice could apply — it is a network call."""
+        return _effective_depth() == "deep" and bool(_preflight().get("offer"))
 
     def _applicable(step: str) -> bool:
-        fs = _feature_set()
-        comps = state["components"] or {}
-        if step in ("features", "sources", "review"):
-            return True
-        if step in ("github_owners", "azdo_projects"):
-            host = "github" if step == "github_owners" else "azdo"
-            return bool(fs & {"ai_footprint", "code_health"}) and host in (comps.get("code") or [])
-        if step == "depth":
-            return _depth_applicable()
-        if step == "model":
-            return _effective_depth() == "deep" and bool(_preflight().get("offer"))
-        if step == "window":
-            return bool(fs & {"ai_footprint", "code_health", "documentation"})
-        if step == "members":
-            return bool(fs & {"delivery", "ai_footprint", "code_health"})
-        return False
+        # The preflight is the only answer the shared rules cannot work out for
+        # themselves, so it is probed here and passed in.
+        return analysis_setup.step_applies(
+            step,
+            features=state["features"],
+            components=state["components"],
+            depth=state["depth"],
+            model_offered=_model_offered(),
+        )
 
     def _config() -> dict:
-        comps = state["components"] or {}
-        members = state["members"] if _applicable("members") else None
-        trackers = comps.get("delivery") or roster_fallback
-        # Each host's scope is gated on its OWN applicability, so de-selecting a
-        # code host at the sources step coerces its stale picks out of the payload
-        # (the same discipline that keeps a stale Deep depth out of a docs-only run).
-        scope: dict[str, list[str]] = {}
-        for _step, _host in (("github_owners", "github"), ("azdo_projects", "azdo")):
-            if _applicable(_step) and state[_step]:
-                scope[_host] = state[_step]
-        return {
-            "features": state["features"],
-            "components": comps,
-            "analysis_scope": scope,
-            "depth": _effective_depth(),
-            "model": state["model"] if _applicable("model") else None,
-            "window_days": state["window_days"] if _applicable("window") else 120,
-            "members": members,
-            "members_map": {tracker: members for tracker in trackers} if members else None,
-        }
+        return analysis_setup.run_config(state, roster_fallback=roster_fallback, model_offered=_model_offered())
 
     def _members_step(direction: int) -> str:
         sources = (state["components"] or {}).get("delivery") or roster_fallback
@@ -8731,7 +8534,7 @@ def _run_team_analysis_results(
     delivery tracker's (profile, examples, sprint_names, team_name) is mirrored into
     ``active_box`` for the caller's downstream ticket-gen step.
     """
-    from yeaboi.ui.mode_select.screens._analysis_sections import visible_card_order
+    from yeaboi.analysis.dashboard import component_presence, visible_card_order
 
     delivery_order = list(delivery.keys()) if delivery else []
     code_signal = code.get("signal") if code else None
@@ -8819,20 +8622,22 @@ def _run_team_analysis_results(
             i = actions.index("Anonymize")
             actions[i : i + 1] = ["Adjust", "Revert"]
 
-        _pa = getattr(profile, "ai_adoption", None)
-        _pd = getattr(profile, "doc_quality", None)
-        _has_code = code_signal is not None or bool(_pa and (_pa.scanned_commits + _pa.scanned_prs) > 0)
-        _has_code_health = bool(
-            (code_examples or {}).get("repository_health")
-            or (examples or {}).get("ai_adoption", {}).get("repository_health")
-            or (code is not None and "code_health" in set(analysis_features or ()))
+        # The same presence rules the screen builder uses, so this loop's
+        # selection index and the rendered card list cannot drift apart.
+        present = component_presence(
+            profile,
+            code_signal=code_signal,
+            doc_signal=doc_signal,
+            code_examples=code_examples,
+            doc_examples=doc_examples,
+            examples=examples,
+            analysis_features=analysis_features,
         )
-        _has_docs = doc_signal is not None or bool(_pd and _pd.pages_scanned > 0)
         order = visible_card_order(
             profile,
-            _has_code,
-            _has_docs,
-            has_code_health=_has_code_health,
+            present["code"],
+            present["docs"],
+            has_code_health=present["code_health"],
             analysis_features=analysis_features,
         )
 
@@ -9780,19 +9585,9 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     # See docs: "Reporting Mode" — TUI page
     """
-    from datetime import date as _date
-    from datetime import timedelta as _timedelta
-
-    from yeaboi.reporting.activity import (
-        PERIOD_LABELS,
-        PERIOD_LAST_MONTH,
-        PERIOD_LAST_SPRINT,
-        PERIOD_LAST_WEEK,
-        PERIOD_QUARTER,
-        PERIOD_WINDOW,
-        available_report_sources,
-    )
-    from yeaboi.reporting.sprints import list_sprints, mark_in_quarter, quarter_bounds
+    from yeaboi.reporting import setup as report_setup
+    from yeaboi.reporting.activity import PERIOD_QUARTER, PERIOD_WINDOW
+    from yeaboi.reporting.sprints import quarter_bounds
     from yeaboi.reporting.style import (
         COLOR_ROLES,
         CONTENT_FITS,
@@ -9814,18 +9609,12 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     session_name = base["session_name"]
 
     q_label, q_start, q_end = quarter_bounds()
-    periods = [
-        (PERIOD_LAST_WEEK, PERIOD_LABELS[PERIOD_LAST_WEEK], "The last 7 days of completed work"),
-        (PERIOD_LAST_SPRINT, PERIOD_LABELS[PERIOD_LAST_SPRINT], "The most recent sprint's completed work"),
-        (PERIOD_LAST_MONTH, PERIOD_LABELS[PERIOD_LAST_MONTH], "The last ~4 weeks across ~2 sprints"),
-        (PERIOD_QUARTER, f"Whole quarter ({q_label})", "Pick the sprints that make up the quarter"),
-        (PERIOD_WINDOW, PERIOD_LABELS[PERIOD_WINDOW], "Pick explicit start and end dates"),
-    ]
+    periods = [(o["key"], o["label"], o["description"]) for o in report_setup.period_options()]
     # Loaded once per page entry — custom palettes come from reporting_themes.json;
     # the source grid probes which trackers / code hosts / doc platforms have creds.
     palettes = all_palettes()
     theme_names = list(palettes)
-    source_grid = available_report_sources()
+    source_grid = report_setup.source_grid()
 
     state = {
         "view": "picker",
@@ -9943,23 +9732,9 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         plural = "s" if n != 1 else ""
         return f"Report generated — {n} item{plural} delivered. Auto-saved (md/html/slides)."
 
-    source_titles = {
-        "jira": "Jira",
-        "azuredevops": "Azure DevOps",
-        "github": "GitHub",
-        "confluence": "Confluence",
-        "notion": "Notion",
-    }
-
     def _sources_summary() -> str:
         """One status line for the picker: what the next Generate will consult."""
-        sel = state["sources"] if state["sources"] is not None else source_grid
-
-        def _fmt(component: str) -> str:
-            chosen = [source_titles.get(s, s) for s in sel.get(component, [])]
-            return " + ".join(chosen) if chosen else "—"
-
-        return f"Sources: {_fmt('delivery')}  ·  Code: {_fmt('code')}  ·  Docs: {_fmt('docs')}"
+        return report_setup.sources_summary(state["sources"], source_grid)
 
     def _confirm_sources(*, force: bool = False) -> dict | None:
         """Confirm which data sources feed the report (analysis-style grid).
@@ -9972,19 +9747,18 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         """
         from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
 
-        grid = {c: list(v) for c, v in source_grid.items() if v}
-        total = sum(len(v) for v in grid.values())
+        grid = report_setup.offerable_grid(source_grid)
         if not grid:
             # Nothing configured — the engine surfaces the "no board" warning.
             if force:
-                state["message"] = "No data sources configured — connect a tracker in Settings."
+                state["message"] = report_setup.NO_SOURCES_MESSAGE
             state["sources"] = {}
             return {}
-        if not force and total <= 1:
+        if not force and not report_setup.sources_step_applies(source_grid):
             logger.info("reporting: single configured source — skipping sources step")
             state["sources"] = grid
             return grid
-        logger.info("reporting: sources select opened (%d source(s))", total)
+        logger.info("reporting: sources select opened (%d source(s))", sum(len(v) for v in grid.values()))
         result = _run_component_select(
             live,
             console,
@@ -9992,26 +9766,18 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             frame_time,
             supports_timeout,
             grid,
-            descriptions={
-                "delivery": "where completed tickets come from",
-                "code": "merged PRs/commits as supporting context",
-                "docs": "doc updates as supporting context",
-            },
+            descriptions=report_setup.COMPONENT_DESCRIPTIONS,
             initial=state["sources"],
             theme=REPORTING_THEME,
             brand="REPORTING SETUP",
             title_builder=lambda w, h: reporting_title(width=w),
             footer_verb="report on",
-            required={"delivery": "Select at least one ticketing source."} if grid.get("delivery") else None,
+            required={"delivery": report_setup.NO_DELIVERY_MESSAGE} if grid.get("delivery") else None,
         )
         if result == "cancel":
             logger.info("reporting: sources selection cancelled")
             return None
-        # A fully-unchecked component comes back absent from the picker result;
-        # store it as an explicit empty list — a missing key means "auto" to
-        # normalize_sources, which would silently re-enable what the user just
-        # deselected.
-        result = {c: result.get(c, []) for c in grid}
+        result = report_setup.normalize_selection(result, source_grid)
         state["sources"] = result
         logger.info("reporting: sources confirmed — %s", result)
         return result
@@ -10111,13 +9877,13 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
         _run_report_generate(_make)
 
-    def _run_quarter(window_start: str, window_end: str, names: tuple, label: str) -> None:
+    def _run_quarter(*, window_start: str, window_end: str, sprint_names: tuple, period_label_override: str) -> None:
         """Generate a quarter report over an explicit sprint-derived window (threaded)."""
         logger.info(
             "reporting: generating quarter report %s → %s over %d sprint(s) (session=%s)",
             window_start,
             window_end,
-            len(names),
+            len(sprint_names),
             session_id,
         )
         from yeaboi.reporting.engine import run_delivery_report
@@ -10129,8 +9895,8 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 db_path=_ana_dbp,
                 window_start=window_start,
                 window_end=window_end,
-                sprint_names=names,
-                period_label_override=label,
+                sprint_names=sprint_names,
+                period_label_override=period_label_override,
                 theme=state["theme"],
                 sources=state["sources"],
                 on_progress=on_progress,
@@ -10172,12 +9938,12 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     def _generate_window() -> None:
         """Prompt for explicit start/end dates, then generate over that window (threaded)."""
-        today = _date.today()
-        start_iso = _ask_date("Custom range — start date", (today - _timedelta(days=28)).isoformat())
+        default_start, default_end = report_setup.default_window()
+        start_iso = _ask_date("Custom range — start date", default_start)
         if start_iso is None:
             state["message"] = ""
             return
-        end_iso = _ask_date("Custom range — end date", today.isoformat(), not_before=start_iso)
+        end_iso = _ask_date("Custom range — end date", default_end, not_before=start_iso)
         if end_iso is None:
             state["message"] = ""
             return
@@ -10205,25 +9971,16 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         When no sprint list is available (no tracker, no plan sprints), skip the
         picker and report straight over the calendar-quarter dates.
         """
-        plan_state = {}
-        try:
-            from yeaboi.sessions import SessionStore
-
-            with SessionStore(_ana_dbp) as store:
-                plan_state = store.load_state(session_id) or {}
-        except Exception:  # noqa: BLE001 — plan state is only the fallback source
-            logger.warning("reporting: could not load plan state for sprint list", exc_info=True)
-        refs = mark_in_quarter(list_sprints(plan_state), q_start, q_end)
+        refs = report_setup.sprint_options(session_id, db_path=_ana_dbp)
         if not refs:
             logger.info("reporting: no sprint list available — reporting over the calendar quarter")
-            today_iso = _date.today().isoformat()
-            _run_quarter(q_start, min(q_end, today_iso), (), q_label)
+            _run_quarter(**report_setup.calendar_quarter_window())
             state["message"] = "No sprint list available — reported over the calendar quarter. " + state["message"]
             return
         logger.info("reporting: sprint multi-select opened (%d sprint(s))", len(refs))
+        inq = report_setup.default_checked(refs)
         state["sprints"] = refs
-        state["sprint_checked"] = {i for i, s in enumerate(refs) if s.in_quarter}
-        inq = [i for i, s in enumerate(refs) if s.in_quarter]
+        state["sprint_checked"] = set(inq)
         state["sprint_cursor"] = inq[0] if inq else 0
         state["view"] = "sprint_select"
         state["sel"], state["scroll"], state["message"] = 0, 0, ""
@@ -10231,22 +9988,15 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     def _generate_from_selection() -> None:
         """Compute the window from the checked sprints and generate the quarter report."""
         refs = state["sprints"]
-        checked = sorted(i for i in state["sprint_checked"] if 0 <= i < len(refs))
-        if not checked:
+        window = report_setup.window_from_sprints(refs, state["sprint_checked"])
+        if not window:
             logger.info("reporting: sprint selection confirmed with no sprints checked")
-            state["message"] = "Select at least one sprint (Space to toggle)."
+            state["message"] = report_setup.NO_SPRINTS_CHECKED_MESSAGE
             return
-        logger.info("reporting: sprint selection confirmed (%d of %d sprint(s))", len(checked), len(refs))
-        sel = [refs[i] for i in checked]
-        starts = [s.start_date for s in sel if s.start_date]
-        ends = [s.end_date for s in sel if s.end_date]
-        today_iso = _date.today().isoformat()
-        window_start = min(starts) if starts else q_start
-        window_end = min(max(ends) if ends else q_end, today_iso)
-        names = tuple(s.name for s in sel)
-        detected = {i for i, s in enumerate(refs) if s.in_quarter}
-        label = q_label if set(checked) == detected else f"{q_label} (custom)"
-        _run_quarter(window_start, window_end, names, label)
+        logger.info(
+            "reporting: sprint selection confirmed (%d of %d sprint(s))", len(window["sprint_names"]), len(refs)
+        )
+        _run_quarter(**window)
 
     def _tilde(p) -> str:
         """Abbreviate $HOME to ~ so export paths survive the banner's ellipsis."""
@@ -10262,17 +10012,11 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         Only asks when expanding actually costs slides; the answer applies to this
         export only (the saved preference stays "ask").
         """
-        style = state["style"]
-        report = state.get("report")
-        if style.content_fit != "ask" or report is None:
-            return style
-        from yeaboi.reporting.layout import count_fit_slides
         from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
 
-        tight_n, expand_n = count_fit_slides(report, style)
-        if expand_n <= tight_n:  # everything fits without extra slides — nothing to ask
-            return dataclasses.replace(style, content_fit="expand")
-        extra = expand_n - tight_n
+        style, extra = report_setup.resolve_fit(state.get("report"), state["style"])
+        if not extra:
+            return style
         raw = _standup_read_line(
             console,
             live,
@@ -10287,9 +10031,9 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         )
         if raw is None:
             return None
-        chosen = "tight" if raw.strip().lower().startswith("n") else "expand"
-        logger.info("reporting: content-fit offer (+%d slide(s)) answered %s", extra, chosen)
-        return dataclasses.replace(state["style"], content_fit=chosen)
+        expand = not raw.strip().lower().startswith("n")
+        logger.info("reporting: content-fit offer (+%d slide(s)) answered %s", extra, "expand" if expand else "tight")
+        return report_setup.apply_fit(state["style"], expand)
 
     def _export_files() -> str:
         report = state.get("report")
@@ -10852,8 +10596,8 @@ def _run_roadmap_page(
 
     # See docs: "Roadmap Intake" — TUI page
     """
-    from yeaboi.roadmap.engine import intake_mode_for, run_roadmap_analysis
-    from yeaboi.roadmap.ingest import RoadmapSource, parse_confluence_locator, parse_notion_locator
+    from yeaboi.roadmap import setup as roadmap_setup
+    from yeaboi.roadmap.engine import run_roadmap_analysis
     from yeaboi.roadmap.store import RoadmapStore
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_roadmap_screen
 
@@ -10861,19 +10605,7 @@ def _run_roadmap_page(
 
     def _sources() -> list[tuple[str, str, str]]:
         """Source options with configured-status hints (still selectable when unset)."""
-        from yeaboi.config import get_confluence_base_url, get_notion_token
-
-        conf_hint = "Read a page by URL, ID, or title"
-        if not get_confluence_base_url():
-            conf_hint = "Not configured — set CONFLUENCE_* (or JIRA_*) in .env"
-        notion_hint = "Read a page by URL or ID"
-        if not get_notion_token():
-            notion_hint = "Not configured — set NOTION_TOKEN in .env"
-        return [
-            ("confluence", "Confluence page", conf_hint),
-            ("notion", "Notion page", notion_hint),
-            ("local", "Local file (.md .txt .rst .pdf .docx .pptx)", "Read a roadmap document from disk"),
-        ]
+        return [(o["key"], o["label"], o["hint"]) for o in roadmap_setup.source_options()]
 
     state = {
         "view": "source",
@@ -11028,12 +10760,7 @@ def _run_roadmap_page(
 
     def _enter_locator() -> None:
         """Ask for the selected source's locator, then analyze."""
-        key = _sources()[state["selected"]][0]
-        prompts = {
-            "confluence": "Confluence page URL, ID, or title",
-            "notion": "Notion page URL or ID",
-            "local": "Roadmap file path (.md .txt .rst .pdf .docx .pptx)",
-        }
+        option = roadmap_setup.source_options()[state["selected"]]
         from yeaboi.ui.shared._components import PLANNING_THEME, planning_title
 
         raw = _standup_read_line(
@@ -11042,7 +10769,7 @@ def _run_roadmap_page(
             read_key,
             frame_time,
             supports_timeout,
-            prompt=prompts[key],
+            prompt=option["prompt"],
             step="Roadmap source",
             theme=PLANNING_THEME,
             title=planning_title(),
@@ -11050,13 +10777,13 @@ def _run_roadmap_page(
         if raw is None or not raw.strip():
             state["message"] = ""
             return  # Esc / empty — stay on the source view
-        raw = raw.strip()
+        key = option["key"]
         logger.info("roadmap source entered: type=%s", key)
+        source, problem = roadmap_setup.resolve_source(key, raw)
+        if source is None:
+            state["message"] = problem
+            return
         if key == "local":
-            path = Path(raw).expanduser()
-            if not path.exists() or not path.is_file():
-                state["message"] = f"File not found: {path}"
-                return
             # Sandbox pre-flight (main thread): consent before the engine reads
             # the file, so a denial is a status line, not an exception mid-run.
             from yeaboi.ui.shared._consent import _preflight_path_consent
@@ -11067,29 +10794,19 @@ def _run_roadmap_page(
                 read_key,
                 frame_time,
                 supports_timeout,
-                path,
+                Path(source.locator),
                 mode="read",
                 context="Roadmap intake — local file",
             ):
-                state["message"] = f"Access to {path} denied — allow it via Settings → Paths."
+                state["message"] = f"Access to {source.locator} denied — allow it via Settings → Paths."
                 return
-            source = RoadmapSource(source_type="local", locator=str(path), label=path.name)
-        elif key == "confluence":
-            source = RoadmapSource(source_type="confluence", locator=parse_confluence_locator(raw), label=raw)
-        else:
-            source = RoadmapSource(source_type="notion", locator=parse_notion_locator(raw), label=raw)
         _analyze(source)
 
     def _plan_selected() -> tuple[str, str] | None:
-        analysis = state["analysis"]
-        projects = tuple(getattr(analysis, "projects", ()) or ())
-        if not projects:
-            state["message"] = "No projects to plan — Re-analyze or Change Source."
-            return None
-        project = projects[max(0, min(state["cursor"], len(projects) - 1))]
-        description = project.description or project.name
-        logger.info("roadmap: Plan This → %r (size=%s)", project.name, project.size)
-        return (intake_mode_for(project), description)
+        picked = roadmap_setup.project_choice(state["analysis"], state["cursor"])
+        if picked is None:
+            state["message"] = roadmap_setup.NO_PROJECTS_MESSAGE
+        return picked
 
     _stay = object()  # sentinel: _source_back handled the key, keep the page running
 
@@ -11306,28 +11023,11 @@ def _run_roadmap_page(
 
 
 def _resolve_retro_session() -> tuple[str, str, str, str]:
-    """Resolve the retro's target session → (session_id, session_name, project_name, sprint_name).
+    """Resolve the retro's target session → (session_id, session_name, project_name, sprint_name)."""
+    from yeaboi.retro.setup import resolve_session
 
-    Like the standup page, the retro targets the most recently modified session.
-    Returns empty strings when there is no session yet.
-    """
-    try:
-        from yeaboi.sessions import SessionStore, make_display_name
-
-        with SessionStore(_ana_dbp) as store:
-            session_id = store.get_latest_session_id()
-            if not session_id:
-                return "", "", "", ""
-            meta = store.get_session(session_id) or {}
-            state = store.load_state(session_id) or {}
-        session_name = make_display_name(meta) if meta else session_id
-        project_name = state.get("project_name", "") or session_name
-        # Sprint name is best-effort: the export/report titles degrade gracefully if blank.
-        sprint_name = str(state.get("sprint_name", "") or "")
-        return session_id, session_name, project_name, sprint_name
-    except Exception:
-        logger.warning("retro: failed to resolve latest session", exc_info=True)
-        return "", "", "", ""
+    target = resolve_session(db_path=_ana_dbp)
+    return target.session_id, target.session_name, target.project_name, target.sprint_name
 
 
 def _run_retro_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -11380,7 +11080,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
             # message alone on the page. Without it the screen would offer to
             # share a board that was never started.
             "snapshot": True,
-            "message": "No project session yet — create one in Planning first, then start a retro.",
+            "message": NO_SESSION_MESSAGE,
             "grids": {},
         }
         _render(data, 0, 2)
@@ -11451,139 +11151,24 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     logger.info("retro: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
-    # Empty on purpose: the status slot renders `_link_status_text() or message or
-    # remote["status"]`, so an empty message lets the tunnel narrate its own
+    # Empty on purpose: the status slot renders `link.expiry_notice() or message
+    # or link.status`, so an empty message lets the tunnel narrate its own
     # progress, and the first thing the host does takes the slot back — except for
     # a time-critical tunnel event (an expiry warning, or the expiry itself), which
-    # always wins over whatever `message` last held (see `_link_status_text`).
+    # always wins over whatever `message` last held (see `SecureLink`).
     message = ""
 
-    # Tunnel state. The server binds loopback, so the Cloudflare tunnel is the
-    # ONLY way a teammate reaches this board — there is no link to show until it
-    # is up, which is why setup starts by itself below rather than on a button.
-    # Setup (binary download + tunnel handshake + DNS gate) is slow, so it runs on
-    # a worker thread; the frame-timed loop shows its progress and fills in the
-    # participant link the moment it lands.
-
-    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False, "expired": False}
-
-    def _start_remote() -> None:
-        def _worker() -> None:
-            try:
-                from yeaboi.sharing.tunnel import ensure_cloudflared, open_tunnel
-
-                remote["status"] = "Setting up the secure link — fetching cloudflared (first use, ~40MB)…"
-                binary = ensure_cloudflared()
-                if binary is None:
-                    logger.warning("retro: secure link failed — could not obtain cloudflared binary")
-                    remote["status"] = "Secure link failed — could not obtain cloudflared (see logs)."
-                    remote["failed"] = True
-                    return
-                remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
-
-                def _on_expired() -> None:
-                    # Runs on the tunnel's timer thread once TUNNEL_TIMEOUT_MINUTES
-                    # elapses. Reuse the existing "Retry Link" affordance rather than
-                    # inventing a new one — un-publish the URL server-side too, so
-                    # /api/invite and the QR stop handing out a dead link.
-                    remote["tunnel"] = None
-                    remote["url"] = ""
-                    server.set_public_url("")
-                    # So the board's own invite panel stops saying "coming".
-                    server.set_share_state("failed")
-                    remote["status"] = (
-                        "Secure link expired after the configured timeout — click Retry Link to reconnect."
-                    )
-                    remote["failed"] = True
-                    remote["expired"] = True
-                    logger.info("retro: secure link expired (session=%s)", session_id)
-
-                # One call decides the tier. In the quick tier this is the same
-                # CloudflareTunnel as before; in the Access tier it is a named
-                # tunnel plus the identity gate the server verifies against, and
-                # a refusal here NEVER falls back to a public quick tunnel — a
-                # host who configured Access and silently got a trycloudflare.com
-                # URL is worse off than one who got no share at all.
-                transport = open_tunnel(server.port, surface="retro", binary=binary, on_expire=_on_expired)
-                if transport.tunnel is None:
-                    logger.warning("retro: secure link unavailable — %s", transport.error)
-                    remote["status"] = f"Secure link unavailable — {transport.error}"
-                    remote["failed"] = True
-                    return
-                # Armed before start(), so verification is on before the door is.
-                server.set_access_gate(transport.gate)
-                tunnel = transport.tunnel
-                # Published BEFORE start(), which blocks for up to the 45 s
-                # handshake budget (URL + edge registration + a possible
-                # --region retry) plus the ~30 s DNS-propagation gate. The
-                # page's finally stops whatever is in this slot — stop() also
-                # cancels an in-flight start(); assigning after start() (as
-                # this did) meant closing a board during setup — now a routine
-                # path, since setup is no longer a deliberate button press —
-                # orphaned a cloudflared child still forwarding to that port.
-                remote["tunnel"] = tunnel
-                public = tunnel.start(timeout=45)
-                if not public:
-                    tunnel.stop()
-                    remote["tunnel"] = None
-                    # The Access tier's failures are host *setup* errors — a
-                    # credentials file that is not there, a tunnel id Cloudflare
-                    # does not know — so name the one that happened rather than
-                    # sending the host to their router.
-                    detail = getattr(tunnel, "last_error", "")
-                    logger.warning("retro: secure link failed — %s", detail or "tunnel did not start within timeout")
-                    server.set_share_state("failed")
-                    remote["status"] = (
-                        f"Secure link failed — {detail}."
-                        if detail
-                        else "Secure link failed — tunnel did not start (see logs)."
-                    )
-                    remote["failed"] = True
-                    return
-                logger.info("retro: secure link ready (port=%s)", server.port)
-                # Token-free public URL: teammates must still enter the join code
-                # (the token is never handed out in a shareable link).
-                remote["url"] = f"{public}/"
-                # Tell the server its own public address, so /api/invite and the QR
-                # hand out the tunnel URL rather than the loopback one the host's
-                # own browser arrived on.
-                server.set_public_url(remote["url"])
-                # Clears a previous attempt's failure, so Retry Link puts the
-                # board's own panel back to "ready" too.
-                server.set_share_state("pending")
-                remote["status"] = "Link ready — send it and the code to your team."
-                _duck_react("link_ready")
-            except Exception as e:  # never let the worker crash anything
-                logger.error("retro: secure link setup failed: %s", e, exc_info=True)
-                server.set_share_state("failed")
-                remote["status"] = f"Secure link failed — {e}"
-                remote["failed"] = True
-            finally:
-                remote["starting"] = False
-
-        from yeaboi.config import tunnels_disabled
-
-        if tunnels_disabled():
-            # Opt-out for dry runs and offline/locked-down networks. The board
-            # still works for the host on loopback; it just has nothing to share.
-            logger.info("retro: tunnel disabled by YEABOI_NO_TUNNEL — board is host-only")
-            server.set_share_state("off")
-            remote["status"] = "Sharing is off (YEABOI_NO_TUNNEL) — this board is yours only."
-            remote["starting"] = False
-            remote["failed"] = False
-            return
-
-        logger.info("retro: starting secure link setup (session=%s)", session_id)
-        remote["starting"] = True
-        remote["failed"] = False
-        remote["expired"] = False
-        remote["status"] = "Setting up the secure link…"
-        duck_working_thread(_worker, name="retro-tunnel-setup").start()
+    # The server binds loopback, so the Cloudflare tunnel is the ONLY way a
+    # teammate reaches this board — there is no link to show until it is up,
+    # which is why setup starts by itself below rather than on a button. Setup is
+    # slow and runs on a worker thread inside SecureLink; the frame-timed loop
+    # reads its status and fills in the participant link the moment it lands.
+    link = SecureLink(server, surface="retro", on_ready=lambda: _duck_react("link_ready"))
 
     # Start it now. The board is open and the join code is already valid; the link
     # is the one piece that takes a few seconds to exist.
     _maybe_offer_share_tier(console, live, read_key, frame_time, supports_timeout)
-    _start_remote()
+    link.start()
 
     # Anonymize state: None = live board; an AnonymizedOutput = mask card text/authors.
     anon = None
@@ -11608,33 +11193,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         # inserted: a worker thread flips `failed` between a frame being drawn and
         # a keypress being handled, so a button that appeared mid-row would slide
         # every later label one place under the user's cursor.
-        if remote["failed"]:
+        if link.failed:
             base.append("Retry Link")
         return base
-
-    def _link_status_text() -> str:
-        """Time-critical tunnel-health text, or "" when there is none.
-
-        A retro can easily run 60-90 minutes, and a quick tunnel gets a fresh
-        random hostname on every launch — once this one auto-expires, Retry
-        Link hands out a *different* URL, so the invite already sent to
-        everyone is permanently dead. Warn the host with time left to wrap
-        up or re-share, rather than the link just vanishing mid-ceremony.
-
-        Returned text must win over `message` in `_data()`, not just
-        `remote["status"]` — `message` is a sticky action-result string (set
-        by Copy Invite etc. and never cleared per frame) that would otherwise
-        swallow this for the rest of the session the moment the host presses
-        the one button they need to press to share the link at all.
-        """
-        if remote["expired"]:
-            return remote["status"]
-        tunnel = remote.get("tunnel")
-        remaining = tunnel.time_until_expiry() if tunnel is not None else None
-        if remaining is not None and remaining <= 300:
-            mins = max(1, -(-int(remaining) // 60))  # ceil to whole minutes, min 1
-            return f"Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
-        return ""
 
     def _data() -> dict:
         grids = board.cards_by_grid()
@@ -11669,14 +11230,13 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
             "display_code": server.display_code,
             "host_url": server.url,
             "public_url": server.share_url,
-            "link_failed": remote["failed"],
-            # `_link_status_text()` wins first: it is only non-"" for a time-critical
-            # tunnel event (the expiry warning, or the expiry itself), and both must
-            # reach the host even mid-frame after a sticky `message`. Otherwise
-            # `message` wins over the ambient `remote["status"]` — `message` is only
-            # ever set by something the host just did, and reading status first (as
-            # this did) silently swallowed every action result and error on the page.
-            "message": _link_status_text() or message or remote["status"],
+            "link_failed": link.failed,
+            # The expiry notice wins first: it is only non-"" for a time-critical
+            # tunnel event, and it must reach the host even mid-frame after a
+            # sticky `message`. Otherwise `message` wins over the ambient link
+            # status — `message` is only ever set by something the host just did,
+            # and reading status first silently swallowed every action result.
+            "message": link.expiry_notice() or message or link.status,
             "grids": grids,
             "carried": carried,
             "actions": _actions(),
@@ -11770,9 +11330,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     message = copy_markdown_status(server.url)
                     scroll = 0
                 elif label == "Retry Link":  # only present after a failed setup
-                    if not remote["starting"]:
+                    if not link.starting:
                         logger.info("retro: Retry Link pressed (session=%s)", session_id)
-                        _start_remote()
+                        link.start()
                     # Hand the status slot back to the tunnel so its progress is
                     # what the host sees, and step off a button that is about to
                     # disappear from the end of the row.
@@ -11894,8 +11454,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                 store.record_run(report)
         except Exception as e:
             logger.warning("retro: flush to store failed: %s", e)
-        if remote.get("tunnel") is not None:
-            remote["tunnel"].stop()
+        link.stop()
         server.stop()
         logger.info("retro: page closed for session=%s", session_id)
 
@@ -12035,6 +11594,7 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
     thread behind the shared progress screen because it makes tracker network
     calls that can take seconds.
     """
+    from yeaboi.poker import setup as poker_setup
     from yeaboi.poker import tickets as poker_tickets
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
 
@@ -12160,84 +11720,63 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
             _render()
 
     # ── Step 1: source (Jira / Azure DevOps / Demo) ───────────────────────
-    sources = poker_tickets.available_sources()
-    options = [(poker_tickets.source_label(s), "") for s in sources]
-    # Demo is always offered last — a no-tracker playground (write-back is a no-op).
-    options.append(("Demo tickets", "no tracker needed — try the flow with sample tickets"))
-    hint = (
-        "Both boards are configured — pick which one this session estimates against."
-        if len(sources) > 1
-        else ("No tracker configured — add Jira or Azure DevOps credentials in Settings." if not sources else "")
+    source_opts = poker_setup.source_options()
+    idx = _pick(
+        poker_setup.STEP_TITLES["source"],
+        poker_setup.source_hint(),
+        [(o["label"], o["sub"]) for o in source_opts],
     )
-    idx = _pick("Where do the tickets come from?", hint, options)
     if idx is None:
         return None
-    source = sources[idx] if idx < len(sources) else poker_tickets.SOURCE_DEMO
+    source = source_opts[idx]["key"]
     logger.info("poker setup: source=%s", source)
 
     sprint = None
-    scope_label = "Demo"
-    if source != poker_tickets.SOURCE_DEMO:
+    scope = ""
+    if poker_setup.step_applies("scope", source=source):
         # ── Step 2: scope (a sprint or the backlog) ───────────────────────
+        scope_opts = poker_setup.scope_options()
+        idx = _pick(poker_setup.STEP_TITLES["scope"], "", [(o["label"], o["sub"]) for o in scope_opts])
+        if idx is None:
+            return None
+        scope = scope_opts[idx]["key"]
+    if poker_setup.step_applies("sprint", source=source, scope=scope):
+        # ── Step 3: sprint list ───────────────────────────────────────────
+        sprints = poker_tickets.list_sprints(source)
+        if not sprints:
+            logger.warning("poker setup: no sprints found for %s", source)
+            _pick(
+                "No sprints found",
+                "Check the board's credentials/logs, or estimate the backlog instead.",
+                [("Back", "")],
+            )
+            return None
         idx = _pick(
-            "Which tickets should the team estimate?",
+            poker_setup.STEP_TITLES["sprint"],
             "",
-            [("A sprint", "pick one from the board's sprint list"), ("The backlog", "open items not in any sprint")],
+            [(o["label"], o["sub"]) for o in poker_setup.sprint_options(sprints)],
+            preselect=poker_setup.default_sprint_index(sprints),
         )
         if idx is None:
             return None
-        if idx == 0:
-            # ── Step 3: sprint list ───────────────────────────────────────
-            sprints = poker_tickets.list_sprints(source)
-            if not sprints:
-                logger.warning("poker setup: no sprints found for %s", source)
-                _pick(
-                    "No sprints found",
-                    "Check the board's credentials/logs, or estimate the backlog instead.",
-                    [("Back", "")],
-                )
-                return None
-            sprint_opts = [
-                (
-                    s.get("name", "?"),
-                    " · ".join(p for p in (s.get("start_date"), s.get("end_date"), s.get("state")) if p),
-                )
-                for s in sprints
-            ]
-            active = next((i for i, s in enumerate(sprints) if s.get("state") == "active"), len(sprints) - 1)
-            idx = _pick("Which sprint?", "", sprint_opts, preselect=active)
-            if idx is None:
-                return None
-            sprint = sprints[idx]
-            scope_label = sprint.get("name", "Sprint")
-        else:
-            scope_label = "Backlog"
+        sprint = sprints[idx]
+    scope_label = poker_setup.scope_label_for(source=source, scope=scope, sprint=sprint)
     logger.info("poker setup: scope=%s", scope_label)
 
     # ── Step 4: ticket types (multi-toggle; demo skips) ───────────────────
     include_types: tuple[str, ...] | None = None
-    if source != poker_tickets.SOURCE_DEMO:
-        if source == poker_tickets.SOURCE_JIRA:
-            sublabels = {"story": "issuetype Story", "bug": "issuetype Bug", "task": "issuetype Task"}
-            type_hint = "Space toggles · Sub-tasks are never included."
-        else:
-            sublabels = {
-                "story": "User Story / Product Backlog Item",
-                "bug": "Bug",
-                "task": "child tasks — usually not estimated",
-            }
-            type_hint = "Space toggles · pick the work-item types to estimate."
-        type_defaults = poker_tickets.default_include_types(source)
+    if poker_setup.step_applies("types", source=source, scope=scope):
+        type_opts = poker_setup.type_options(source)
         checked = _toggle(
-            "Which ticket types should be estimated?",
-            type_hint,
-            [(poker_tickets.TICKET_TYPE_LABELS[t], sublabels[t]) for t in poker_tickets.TICKET_TYPES],
-            {i for i, t in enumerate(poker_tickets.TICKET_TYPES) if t in type_defaults},
+            poker_setup.STEP_TITLES["types"],
+            poker_setup.type_hint(source),
+            [(o["label"], o["sub"]) for o in type_opts],
+            {i for i, o in enumerate(type_opts) if o["checked"]},
         )
         if checked is None:
             return None
-        include_types = tuple(t for i, t in enumerate(poker_tickets.TICKET_TYPES) if i in checked)
-        logger.info("poker setup: include_types=%s", ",".join(include_types))
+        include_types = poker_setup.include_types_for(source, [type_opts[i]["key"] for i in checked])
+        logger.info("poker setup: include_types=%s", ",".join(include_types or ()))
 
     # ── Step 5: fetch tickets (worker thread + progress screen) ───────────
 
@@ -12272,11 +11811,7 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
     tickets = result.get("tickets") or []
     if not tickets:
         logger.warning("poker setup: no tickets fetched (source=%s scope=%s)", source, scope_label)
-        _pick(
-            "No tickets found",
-            f"{poker_tickets.source_label(source)} returned nothing for {scope_label} — check credentials (see logs).",
-            [("Back", "")],
-        )
+        _pick("No tickets found", poker_setup.empty_result_message(source, scope_label), [("Back", "")])
         return None
     logger.info("poker setup: fetched %d ticket(s)", len(tickets))
     return {"source": source, "scope_label": scope_label, "tickets": tickets}
@@ -12372,113 +11907,18 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     logger.info("poker: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
     # Empty on purpose — see the retro loop: the status slot renders
-    # `_link_status_text() or message or remote["status"]`, so the tunnel narrates
+    # `link.expiry_notice() or message or link.status`, so the tunnel narrates
     # until the host acts, except a time-critical tunnel event which always wins.
     message = ""
 
-    # Tunnel state — see the retro loop for the full note. The short version: the
-    # server binds loopback, so this tunnel is the only way a teammate reaches the
-    # board, and it therefore starts by itself rather than on a button.
-
-    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False, "expired": False}
-
-    def _start_remote() -> None:
-        def _worker() -> None:
-            try:
-                from yeaboi.sharing.tunnel import ensure_cloudflared, open_tunnel
-
-                remote["status"] = "Setting up the secure link — fetching cloudflared (first use, ~40MB)…"
-                binary = ensure_cloudflared()
-                if binary is None:
-                    logger.warning("poker: secure link failed — could not obtain cloudflared binary")
-                    remote["status"] = "Secure link failed — could not obtain cloudflared (see logs)."
-                    remote["failed"] = True
-                    return
-                remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
-
-                def _on_expired() -> None:
-                    # See the retro loop's _on_expired for the full note: reuses the
-                    # existing "Retry Link" affordance and un-publishes server-side.
-                    remote["tunnel"] = None
-                    remote["url"] = ""
-                    server.set_public_url("")
-                    remote["status"] = (
-                        "Secure link expired after the configured timeout — click Retry Link to reconnect."
-                    )
-                    remote["failed"] = True
-                    remote["expired"] = True
-                    logger.info("poker: secure link expired (session=%s)", session_id)
-
-                # One call decides the tier. In the quick tier this is the same
-                # CloudflareTunnel as before; in the Access tier it is a named
-                # tunnel plus the identity gate the server verifies against, and
-                # a refusal here NEVER falls back to a public quick tunnel — a
-                # host who configured Access and silently got a trycloudflare.com
-                # URL is worse off than one who got no share at all.
-                transport = open_tunnel(server.port, surface="poker", binary=binary, on_expire=_on_expired)
-                if transport.tunnel is None:
-                    logger.warning("poker: secure link unavailable — %s", transport.error)
-                    remote["status"] = f"Secure link unavailable — {transport.error}"
-                    remote["failed"] = True
-                    return
-                # Armed before start(), so verification is on before the door is.
-                server.set_access_gate(transport.gate)
-                tunnel = transport.tunnel
-                # Published BEFORE start() so the page's finally can stop it —
-                # see the retro loop for the orphaned-cloudflared note.
-                remote["tunnel"] = tunnel
-                public = tunnel.start(timeout=45)
-                if not public:
-                    tunnel.stop()
-                    remote["tunnel"] = None
-                    # The Access tier's failures are host *setup* errors — a
-                    # credentials file that is not there, a tunnel id Cloudflare
-                    # does not know — so it names the one that happened rather
-                    # than sending the host to their router.
-                    detail = getattr(tunnel, "last_error", "")
-                    logger.warning("poker: secure link failed — %s", detail or "tunnel did not start within timeout")
-                    remote["status"] = (
-                        f"Secure link failed — {detail}."
-                        if detail
-                        else "Secure link failed — tunnel did not start (see logs)."
-                    )
-                    remote["failed"] = True
-                    return
-                logger.info("poker: secure link ready (port=%s)", server.port)
-                remote["url"] = f"{public}/"
-                # So /api/invite and the QR hand out the tunnel URL rather than the
-                # loopback address the host's own browser arrived on.
-                server.set_public_url(remote["url"])
-                remote["status"] = "Link ready — send it and the code to your team."
-                _duck_react("link_ready")
-            except Exception as e:
-                logger.error("poker: secure link setup failed: %s", e, exc_info=True)
-                remote["status"] = f"Secure link failed — {e}"
-                remote["failed"] = True
-            finally:
-                remote["starting"] = False
-
-        from yeaboi.config import tunnels_disabled
-
-        if tunnels_disabled():
-            # Opt-out for dry runs and offline/locked-down networks. The board
-            # still works for the host on loopback; it just has nothing to share.
-            logger.info("poker: tunnel disabled by YEABOI_NO_TUNNEL — board is host-only")
-            remote["status"] = "Sharing is off (YEABOI_NO_TUNNEL) — this board is yours only."
-            remote["starting"] = False
-            remote["failed"] = False
-            return
-
-        logger.info("poker: starting secure link setup (session=%s)", session_id)
-        remote["starting"] = True
-        remote["failed"] = False
-        remote["expired"] = False
-        remote["status"] = "Setting up the secure link…"
-        duck_working_thread(_worker, name="poker-tunnel-setup").start()
+    # See the retro loop for the full note. The short version: the server binds
+    # loopback, so this tunnel is the only way a teammate reaches the board, and
+    # it therefore starts by itself rather than on a button.
+    link = SecureLink(server, surface="poker", on_ready=lambda: _duck_react("link_ready"))
 
     # Start it now — the board is open and the join code is already valid.
     _maybe_offer_share_tier(console, live, read_key, frame_time, supports_timeout)
-    _start_remote()
+    link.start()
 
     def _actions() -> list[str]:
         # Same leading pair as the retro board and the Share Online screen.
@@ -12493,24 +11933,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         base.insert(2, f"Duel Mic: {'ON' if server.duel_mic_armed else 'off'}")
         # Appended, not inserted — a worker thread flips `failed` between a frame
         # being drawn and a keypress being handled (see the retro loop).
-        if remote["failed"]:
+        if link.failed:
             base.append("Retry Link")
         return base
-
-    def _link_status_text() -> str:
-        # See the retro loop's _link_status_text for the full note: a quick
-        # tunnel gets a fresh random hostname on every launch, so once this
-        # one auto-expires the invite already sent to the table is
-        # permanently dead. Returns "" when there's nothing urgent — must win
-        # over the sticky `message` in `_data()`, not just `remote["status"]`.
-        if remote["expired"]:
-            return remote["status"]
-        tunnel = remote.get("tunnel")
-        remaining = tunnel.time_until_expiry() if tunnel is not None else None
-        if remaining is not None and remaining <= 300:
-            mins = max(1, -(-int(remaining) // 60))  # ceil to whole minutes, min 1
-            return f"Secure link expires in ~{mins} min — reconnecting will need a fresh invite."
-        return ""
 
     def _data() -> dict:
         return {
@@ -12518,9 +11943,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             "display_code": server.display_code,
             "host_url": server.url,
             "public_url": server.share_url,
-            "link_failed": remote["failed"],
-            # `_link_status_text()` wins first — see the retro loop for why.
-            "message": _link_status_text() or message or remote["status"],
+            "link_failed": link.failed,
+            # The expiry notice wins first — see the retro loop for why.
+            "message": link.expiry_notice() or message or link.status,
             "state": board.state_snapshot(),
             "actions": _actions(),
         }
@@ -12598,9 +12023,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                     message = copy_markdown_status(server.url)
                     scroll = 0
                 elif label == "Retry Link":  # only present after a failed setup
-                    if not remote["starting"]:
+                    if not link.starting:
                         logger.info("poker: Retry Link pressed (session=%s)", session_id)
-                        _start_remote()
+                        link.start()
                     # Hand the status slot back to the tunnel, and step off a
                     # button that is about to leave the end of the row.
                     message = ""
@@ -12650,8 +12075,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                 _duck_react("poker_done")  # lands on the hub the page returns to
         except Exception as e:
             logger.warning("poker: flush to store failed: %s", e)
-        if remote.get("tunnel") is not None:
-            remote["tunnel"].stop()
+        link.stop()
         server.stop()
         logger.info("poker: page closed for session=%s", session_id)
 
@@ -14378,12 +13802,8 @@ def select_mode(
                         import threading
 
                         from yeaboi.analysis import run_team_analysis
-                        from yeaboi.analysis.engine import (
-                            AnalysisCancelledError,
-                            _available_doc_sources,
-                            _available_sources,
-                            _offerable_code_sources,
-                        )
+                        from yeaboi.analysis.engine import AnalysisCancelledError
+                        from yeaboi.analysis.setup import available_grid, available_trackers
 
                         # Unified component grid: each component picks its OWN configured
                         # sub-sources (delivery \u2190 jira/azdevops, code \u2190 github/azdo, docs
@@ -14398,12 +13818,8 @@ def select_mode(
                             read_key,
                             _FRAME_TIME,
                             _supports_timeout,
-                            grid={
-                                "delivery": _available_sources(),
-                                "code": _offerable_code_sources(),
-                                "docs": _available_doc_sources(),
-                            },
-                            roster_fallback=_available_sources(),
+                            grid=available_grid(),
+                            roster_fallback=available_trackers(),
                             project_key="",
                             db_path=_ana_dbp,
                         )
@@ -16097,11 +15513,8 @@ def select_mode(
                     except Exception:
                         pass
 
-                    from yeaboi.analysis.engine import (
-                        AnalysisCancelledError,
-                        _available_doc_sources,
-                        _offerable_code_sources,
-                    )
+                    from yeaboi.analysis.engine import AnalysisCancelledError
+                    from yeaboi.analysis.setup import available_doc_sources, offerable_code_sources
 
                     # The wizard owns the whole setup sequence (Esc steps back one
                     # screen; backing out of the first step returns to this list).
@@ -16115,8 +15528,8 @@ def select_mode(
                         grid={
                             "delivery": _delivery_grid,
                             # Offerable, not merely configured — see the sibling call site.
-                            "code": _offerable_code_sources(),
-                            "docs": _available_doc_sources(),
+                            "code": offerable_code_sources(),
+                            "docs": available_doc_sources(),
                         },
                         roster_fallback=_delivery_grid,
                         project_key=_ta_project_key,

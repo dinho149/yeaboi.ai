@@ -43,6 +43,7 @@ Workflows in `.github/workflows/`:
 | `auto-version.yml` | PR | Claude classifies the diff and commits a `chore: bump version…` to the PR branch (skips docs/chore-only PRs; `semver:*` / `release:skip` labels override) |
 | `publish-beta.yml` | Push to `main` | if the version line changed: test → stamp `X.Y.ZrcN` → build → PyPI **pre-release**. No tag, no Release |
 | `publish.yml` | push to `main` **from a human's PR** (the release batch PR included), or dispatch | test → build → PyPI publish (OIDC) → `v<version>` tag + GitHub Release with the batch manifest, all from the merged tree. An unattended push is classified by `scripts/release_lane.py` and stops in `check` (a backstop — fleet PRs normally ship via the batch, not by merging) |
+| `desktop-release.yml` | `workflow_dispatch(yeaboi_version)` or a `desktop-v*` tag | Builds, signs, notarizes and publishes the Electron app around a **released** wheel: resolve + assert the version is a final that exists on PyPI → four-runner matrix (macos-14 arm64, macos-15-intel x64, windows, ubuntu) stages a pinned python-build-standalone runtime with `yeaboi==X.Y.Z` installed into it → `electron-builder --publish always` into a **draft** GitHub Release → `spctl --assess` on the mac builds. Deliberately never triggered by a push to `main`: the desktop wraps a wheel that already exists, so it lags the Python release and is promoted by hand |
 | `publish-core.yml` | Push to `main` | if `packaging/yeaboi-core/pyproject.toml` version has no `core-v*` tag yet: go-lint/test → cross-compile the five `yeaboi-core` platform wheels → PyPI publish (OIDC, needs its own trusted-publisher entry) → `core-v<version>` tag (else no-op) |
 | `claude-review.yml` | CI workflow succeeds on a PR (`workflow_run`) | Async Claude code + security review comment; only fires when all CI checks passed (no tokens burned on red PRs); advisory only, never blocks merge (skips drafts, bots, and Dependabot PRs). **Rounds are per lane**: two findings-bearing verdicts on an unattended PR, **one** on a local branch. Its marker carries `open=N critical=M` |
 | `dependabot-auto.yml` | CI workflow succeeds on a Dependabot PR (`workflow_run`) | Claude verifies each bump (release notes vs our actual usage), posts a `SAFE-TO-MERGE` / `NEEDS-HUMAN` verdict comment, and enables auto-merge for safe ones. Pip **majors** and minor+ bumps of TUI/agent-critical packages (`rich`, `sqlite-vec`, `langgraph`, `langchain*`, `anthropic`) always get the `needs-human` label instead. Auto-merge waits on the required checks, so nothing red can land |
@@ -66,6 +67,12 @@ gh api repos/:owner/:repo/rulesets/<id> --jq '.rules[] | select(.type=="required
 ```
 
 `pr-feedback` must appear in `required_status_checks_policy.required_status_checks[].context`. It belongs in the same manual-prerequisite bucket as `AUTO_VERSION_PAT` and the Claude GitHub App: set once, invisible when absent, and load-bearing. A PR that is genuinely stuck behind a broken gate is cleared with the `feedback-override` label rather than by removing the requirement.
+
+### Desktop signing secrets
+
+Eight Actions secrets, and each one fails exactly one OS of `desktop-release.yml` while the others go green: `CSC_LINK` + `CSC_KEY_PASSWORD` (the Developer ID cert, base64), `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID` (notarization), and `AZURE_TENANT_ID` + `AZURE_CLIENT_ID` + `AZURE_CLIENT_SECRET` (Windows, via Azure Trusted Signing). A missing mac cert does not fail loudly — electron-builder logs `skipped macOS application code signing` and produces an unsigned app, which installs fine on the machine that built it and is refused by Gatekeeper everywhere else. The `spctl --assess` step is what turns that into a red check.
+
+The desktop version is **not** yeaboi's version line. `desktop-release.yml` takes the version as an input, checks it is a final that exists on PyPI, and stamps it into `desktop/package.json` at build time — so the app and the wheel inside it say the same number, and a rebuild of last month's app bundles last month's yeaboi.
 
 ### When a Claude workflow fails
 

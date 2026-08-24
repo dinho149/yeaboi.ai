@@ -20,6 +20,7 @@ from rich.table import Table as RichTable
 from rich.text import Text
 
 from yeaboi.analysis.ai_usage import _source_label, footprint_small_sample
+from yeaboi.analysis.dashboard import CARD_ORDER, CARD_TITLES, DELIVERY_CARD_ORDER, visible_card_order  # noqa: F401
 from yeaboi.analysis.doc_quality import doc_small_sample
 from yeaboi.tools.team_learning import ANALYSIS_GLOSSARY as _TA_GLOSSARY
 from yeaboi.tools.team_learning import INSIGHT_CATEGORIES, compute_recommendations
@@ -2258,9 +2259,10 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
 
 
 # The overview cards: title, section builders (render order), glossary terms.
-_TA_CARDS: dict[str, dict] = {
+#: The terminal's half of each card: what to draw and which glossary terms it
+#: needs. Titles and visibility are shared — see :mod:`yeaboi.analysis.dashboard`.
+_TA_BUILDERS: dict[str, dict] = {
     "velocity": {
-        "title": "Velocity & Sprints",
         "builders": (
             _ta_sprint_names,
             _ta_recurring,
@@ -2273,12 +2275,10 @@ _TA_CARDS: dict[str, dict] = {
         "glossary": ("churn", "delta", "spill", "variance"),
     },
     "team": {
-        "title": "Team Members",
         "builders": (_ta_team_members,),
         "glossary": ("spill", "cycle"),
     },
     "estimation": {
-        "title": "Estimation & Points",
         "builders": (
             _ta_discipline_calibration,
             _ta_point_meanings,
@@ -2289,89 +2289,42 @@ _TA_CARDS: dict[str, dict] = {
         "glossary": ("cycle", "confidence"),
     },
     "workflow": {
-        "title": "Workflow & DoD",
         "builders": (_ta_task_decomposition, _ta_dod_inferred, _ta_board_workflow, _ta_proposed_dod),
         "glossary": (),
     },
     "writing": {
-        "title": "Writing Style",
         "builders": (_ta_writing_patterns, _ta_naming, _ta_story_structure, _ta_ac_patterns),
         "glossary": (),
     },
     "trends": {
-        "title": "Trends & Repos",
         "builders": (_ta_seasonal_and_bugs, _ta_repositories),
         "glossary": ("variance",),
     },
     "recommendations": {
-        "title": "Recommendations",
         "builders": (_ta_recommendations,),
         "glossary": (),
     },
     "ai-adoption": {
-        "title": "AI Usage",
         "builders": (_ta_ai_adoption,),
         "glossary": (),
     },
     "code-health": {
-        "title": "Code Health",
         "builders": (_ta_code_health,),
         "glossary": (),
     },
     "documentation": {
-        "title": "Documentation",
         "builders": (_ta_doc_quality,),
         "glossary": (),
     },
     "insights": {
-        "title": "Team Insights",
         "builders": (_ta_insights,),
         "glossary": (),
     },
 }
-_TA_CARD_ORDER: tuple[str, ...] = tuple(_TA_CARDS)
-
-
-# Delivery cards (everything except the two global cards + the insights coach).
-_DELIVERY_CARD_ORDER: tuple[str, ...] = tuple(
-    k for k in _TA_CARDS if k not in ("ai-adoption", "code-health", "documentation")
-)
-
-
-def visible_card_order(
-    profile,
-    has_code: bool,
-    has_docs: bool,
-    *,
-    has_code_health: bool = False,
-    analysis_features: list[str] | tuple[str, ...] | None = None,
-) -> tuple[str, ...]:
-    """Which section cards to show, composing per-tracker delivery cards with the
-    global code/docs cards.
-
-    Delivery cards (velocity/contributors/… + insights) appear iff there's a delivery
-    ``profile`` for the active tracker; ``ai-adoption`` iff the global Code scan ran;
-    ``documentation`` iff the global Docs scan ran. The two global cards do NOT depend
-    on the active tracker, so they stay put when the delivery toggle switches. The
-    overview and the results-loop navigation share this so the selection index and the
-    rendered card list can never drift apart.
-    """
-    order: list[str] = []
-    if profile is not None:
-        order.extend(k for k in _DELIVERY_CARD_ORDER if k != "insights")
-    features = set(analysis_features or ())
-    explicit = analysis_features is not None
-    # code-health first: it's deterministic, so it sits with the regular cards,
-    # ABOVE the ✦ AI-POWERED INSIGHTS group the LLM-backed cards render under.
-    if has_code_health and (not explicit or "code_health" in features):
-        order.append("code-health")
-    if has_code and (not explicit or "ai_footprint" in features):
-        order.append("ai-adoption")
-    if has_docs and (not explicit or "documentation" in features):
-        order.append("documentation")
-    if profile is not None:
-        order.append("insights")
-    return tuple(order) or ("ai-adoption",)  # never empty — always render something
+#: Each card as the page needs it: the shared title plus the terminal's builders.
+_TA_CARDS: dict[str, dict] = {key: {"title": CARD_TITLES[key], **spec} for key, spec in _TA_BUILDERS.items()}
+_TA_CARD_ORDER: tuple[str, ...] = CARD_ORDER
+_DELIVERY_CARD_ORDER: tuple[str, ...] = DELIVERY_CARD_ORDER
 
 
 def _ta_card_teaser(ctx: _TaCtx, profile, key: str) -> str:

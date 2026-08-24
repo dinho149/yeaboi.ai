@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # Every key `--github-output` writes. `test_workflow_schema.py` asserts ci.yml's
 # fail-safe fallback writes exactly these, so the two cannot drift.
 GITHUB_OUTPUT_KEYS = frozenset(
-    {"full", "unit_paths", "slow_paths", "go", "parity", "web", "site", "package", "eval", "compat"}
+    {"full", "unit_paths", "slow_paths", "go", "parity", "web", "desktop", "site", "package", "eval", "compat"}
 )
 
 # Loaded by path: scripts/ is not a package, and the module must be importable

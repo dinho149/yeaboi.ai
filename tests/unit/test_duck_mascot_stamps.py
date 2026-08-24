@@ -89,6 +89,6 @@ class TestAgentsWorkingBob:
 
         from yeaboi.ui.mode_select import _agents
 
-        source = inspect.getsource(_agents._run_threaded_engine_page)
+        source = inspect.getsource(_agents._run_agent_page)
         assert "duck_working_thread(" in source
         assert "threading.Thread(" not in source

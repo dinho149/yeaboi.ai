@@ -156,6 +156,66 @@ class TestConsentQueue:
         assert len(pop_pending_denials()) == 1
 
 
+class TestApplyConsent:
+    """What an answer *means* lives here, so every consent surface agrees."""
+
+    def _request(self, tmp_path):
+        from yeaboi.fs_policy import ConsentRequest
+
+        return ConsentRequest(tmp_path / "repo", "read", "read_codebase")
+
+    def test_allow_once_grants_for_this_process_only(self, tmp_path):
+        req = self._request(tmp_path)
+        assert fs_policy.apply_consent("allow_once", req) is True
+        assert is_allowed(req.path / "file.py")
+        clear_session_grants()
+        assert not is_allowed(req.path / "file.py")
+
+    def test_allow_always_writes_the_whitelist(self, tmp_path, monkeypatch):
+        written: list[str] = []
+        monkeypatch.setattr("yeaboi.config.add_allowed_path", written.append)
+        assert fs_policy.apply_consent("allow_always", self._request(tmp_path)) is True
+        assert written == [str(tmp_path / "repo")]
+
+    def test_deny_changes_nothing(self, tmp_path):
+        req = self._request(tmp_path)
+        assert fs_policy.apply_consent("deny", req) is False
+        assert not is_allowed(req.path)
+
+    def test_an_unknown_answer_is_refused(self, tmp_path):
+        with pytest.raises(ValueError, match="unknown consent choice"):
+            fs_policy.apply_consent("maybe", self._request(tmp_path))
+
+    def test_the_tui_popup_applies_answers_through_this(self, tmp_path):
+        from yeaboi.ui.shared._consent import _apply_consent
+
+        req = self._request(tmp_path)
+        assert _apply_consent("allow_once", req) is True
+        assert is_allowed(req.path)
+
+
+class TestRequestConsent:
+    """The pre-flight half: a surface that checks before it acts still asks."""
+
+    def test_an_allowed_path_asks_nothing(self, tmp_path):
+        target = tmp_path / "home" / ".yeaboi" / "exports"
+        set_interactive(True)
+        assert fs_policy.request_consent(target) is True
+        assert pop_pending_denials() == []
+
+    def test_a_path_outside_queues_a_request_without_raising(self, tmp_path):
+        set_interactive(True)
+        assert fs_policy.request_consent(tmp_path / "repo", mode="write", context="ship run") is False
+        pending = pop_pending_denials()
+        assert len(pending) == 1
+        assert pending[0].mode == "write"
+        assert pending[0].context == "ship run"
+
+    def test_headless_still_refuses_but_queues_nothing(self, tmp_path):
+        assert fs_policy.request_consent(tmp_path / "repo") is False
+        assert pop_pending_denials() == []
+
+
 class TestViolationMessage:
     def test_names_every_remedy(self, tmp_path):
         with pytest.raises(SandboxViolationError) as exc_info:

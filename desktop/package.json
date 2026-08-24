@@ -1,0 +1,40 @@
+{
+  "name": "yeaboi-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "yeaboi desktop — Electron shell over the yeaboi app backend",
+  "type": "module",
+  "main": "out/main/index.js",
+  "homepage": "https://yeaboi.ai",
+  "license": "MIT",
+  "author": {
+    "name": "Omar Din",
+    "//": "electron-builder requires an address for the deb maintainer field",
+    "email": "64692956+dinho149@users.noreply.github.com"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "bundle-python": "node scripts/fetch-python.mjs",
+    "pack": "electron-builder --dir --publish never",
+    "dist": "electron-builder --publish never",
+    "gen-manifest": "node scripts/gen-routes-manifest.mjs",
+    "check-manifest": "node scripts/gen-routes-manifest.mjs --check"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "preact": "^10.29.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "electron": "^38.2.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^4.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vitest": "^4.1.10"
+  }
+}

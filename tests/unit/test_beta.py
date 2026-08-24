@@ -30,6 +30,24 @@ class TestConstants:
         assert all(0 <= channel <= 255 for channel in beta.BETA_RGB)
 
 
+class TestGateCopy:
+    """The one-time entry gate's words — rendered by the TUI and the desktop."""
+
+    def test_every_gated_mode_says_what_it_is_and_what_can_go_wrong(self):
+        for key, copy in beta.BETA_GATE_COPY.items():
+            assert set(copy) == {"headline", "body"}, f"{key} has unexpected keys"
+            assert copy["headline"].endswith("in beta."), key
+            assert any(line.strip() for line in copy["body"]), f"{key} has an empty body"
+
+    def test_the_tui_gate_gates_exactly_these_modes(self):
+        from yeaboi.ui.shared._beta_notice import _BETA_MODES
+
+        assert set(_BETA_MODES) == set(beta.BETA_GATE_COPY)
+
+    def test_the_footer_promises_the_notice_is_once_only(self):
+        assert "once" in beta.BETA_GATE_FOOTER
+
+
 class TestModuleStaysImportFree:
     def test_beta_module_has_no_imports(self):
         """The whole design depends on this module being free to import.

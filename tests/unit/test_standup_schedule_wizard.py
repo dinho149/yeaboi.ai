@@ -21,7 +21,10 @@ def _drive(keys, tmp_path, monkeypatch, *, session_id="s1", config=None, read_li
 
     Returns (message, saved_config, install_calls, remove_calls).
     """
-    import yeaboi.standup.scheduler as scheduler
+    # The wizard's steps live in the TUI; what a finished wizard DOES lives in
+    # standup.schedule, which reaches the OS through ceremonies.scheduler — so
+    # that is where the installers are stubbed.
+    import yeaboi.ceremonies.scheduler as scheduler
 
     db = tmp_path / "sessions.db"
     if config:

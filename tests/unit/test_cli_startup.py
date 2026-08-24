@@ -118,3 +118,25 @@ class TestNoRuntimeLeak:
         )
         result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr.strip() or result.stdout.strip()
+
+
+class TestModuleEntryPoint:
+    """`python -m yeaboi` must be the same CLI as the console script.
+
+    The desktop's bundled interpreter starts the backend that way — a console
+    script's shebang is an absolute path written at install time, and the app
+    bundle it lives in gets dragged somewhere else. There is no symptom short
+    of a packaged app whose backend never comes up.
+    """
+
+    @pytest.mark.slow
+    def test_it_runs_and_reports_the_same_version(self):
+        from yeaboi import __version__
+
+        result = subprocess.run([sys.executable, "-m", "yeaboi", "--version"], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr.strip()
+        assert __version__ in (result.stdout + result.stderr)
+
+    def test_it_delegates_rather_than_reimplementing(self):
+        source = (Path(cli.__file__).parent / "__main__.py").read_text(encoding="utf-8")
+        assert "from yeaboi.cli import main" in source

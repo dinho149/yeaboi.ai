@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from yeaboi.agent.state import Ceremony, CeremonyRun
+from yeaboi.ceremonies import setup as ceremonies_setup
 from yeaboi.ceremonies.store import CeremonyStore
 from yeaboi.ui.mode_select import _ceremonies
 
@@ -50,15 +51,15 @@ def env(tmp_path, monkeypatch):
     """A throwaway store, a fixed session, and a scheduler that only records."""
     db = tmp_path / "sessions.db"
     monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
-    monkeypatch.setattr(_ceremonies, "_session", lambda: "s1")
+    monkeypatch.setattr(ceremonies_setup, "current_session", lambda: "s1")
     installed: set[str] = set()
     monkeypatch.setattr(
-        _ceremonies.scheduler, "install_ceremony", lambda sid, name, at, wd: (installed.add(name), "installed")[1]
+        ceremonies_setup.scheduler, "install_ceremony", lambda sid, name, at, wd: (installed.add(name), "installed")[1]
     )
     monkeypatch.setattr(
-        _ceremonies.scheduler, "remove_ceremony", lambda sid, name: (installed.discard(name), "removed")[1]
+        ceremonies_setup.scheduler, "remove_ceremony", lambda sid, name: (installed.discard(name), "removed")[1]
     )
-    monkeypatch.setattr(_ceremonies.scheduler, "installed_ceremonies", lambda sid: sorted(installed))
+    monkeypatch.setattr(ceremonies_setup.scheduler, "installed_ceremonies", lambda sid: sorted(installed))
     return {"db": db, "installed": installed}
 
 
