@@ -8,6 +8,7 @@ op id, its terminators), and the locks that keep two turns off one state.
 from __future__ import annotations
 
 import json
+import pathlib
 import threading
 
 import pytest
@@ -180,3 +181,152 @@ class TestSupervisor:
         app.chats.close("proj-1")
         resumed = app.chats.open("proj-1")
         assert resumed.session.state["messages"]
+
+
+class TestQuestionPlan:
+    def test_a_pre_graph_conversation_has_no_plan_yet(self, app):
+        # The questionnaire only exists after the first invoke, so there is
+        # nothing to list — an empty plan, not a 404.
+        open_chat(app)
+        plan = json.loads(request(app, "GET", "/api/chat/sessions/proj-1/questions").body)
+        assert plan == {"questions": [], "total": 30, "completed": False, "derived": False}
+
+    def test_it_lists_what_the_run_answered_and_still_asks(self, app, monkeypatch):
+        open_chat(app)
+        turn(app)
+        chat = app.chats.open("proj-1")
+        chat.session.state["questionnaire"].answers = {1: "a booking app", 6: "four"}
+        monkeypatch.setattr(
+            "yeaboi.ui.session.chat._question_view.planned_question_sets",
+            lambda qs: ([7], {1, 6}),
+        )
+        plan = json.loads(request(app, "GET", "/api/chat/sessions/proj-1/questions").body)
+        assert [row["number"] for row in plan["questions"]] == [1, 6, 7]
+        assert plan["questions"][0]["answer"] == "a booking app"
+        # 7 is a gap: planned, not yet answered.
+        assert plan["questions"][2]["remaining"] and plan["questions"][2]["answer"] == ""
+        assert plan["questions"][0]["label"] and plan["derived"]
+
+    def test_a_failed_derivation_says_so_rather_than_shrinking_the_plan(self, app, monkeypatch):
+        # Falling back silently would present the answers as the whole plan.
+        open_chat(app)
+        turn(app)
+        app.chats.open("proj-1").session.state["questionnaire"].answers = {1: "a booking app"}
+        monkeypatch.setattr(
+            "yeaboi.ui.session.chat._question_view.planned_question_sets",
+            lambda qs: None,
+        )
+        plan = json.loads(request(app, "GET", "/api/chat/sessions/proj-1/questions").body)
+        assert plan["derived"] is False
+        assert [row["number"] for row in plan["questions"]] == [1]
+
+    def test_an_unknown_conversation_is_a_404(self, app):
+        assert request(app, "GET", "/api/chat/sessions/nope/questions").code == 404
+
+
+class TestSizeSwitch:
+    def test_an_unknown_size_is_refused(self, app):
+        open_chat(app)
+        assert request(app, "POST", "/api/chat/sessions/proj-1/size", {"mode": "huge"}).code == 400
+
+    def test_switching_to_the_size_it_already_is_changes_nothing(self, app):
+        open_chat(app)
+        body = json.loads(request(app, "POST", "/api/chat/sessions/proj-1/size", {"mode": "smart"}).body)
+        assert body == {"changed": False, "mode": "smart"}
+
+    def test_before_the_intake_it_only_records_the_preference(self, app):
+        open_chat(app)
+        body = json.loads(request(app, "POST", "/api/chat/sessions/proj-1/size", {"mode": "small_project"}).body)
+        assert body["changed"] and body["reopened"] is False
+        assert app.chats.open("proj-1").session.state["_intake_mode"] == "small_project"
+
+    def test_a_real_switch_keeps_the_answers(self, app):
+        open_chat(app)
+        turn(app)
+        state = app.chats.open("proj-1").session.state
+        state["questionnaire"].answers = {1: "a booking app"}
+        body = json.loads(request(app, "POST", "/api/chat/sessions/proj-1/size", {"mode": "small_project"}).body)
+        assert body["changed"] and body["reopened"]
+        assert state["questionnaire"].answers == {1: "a booking app"}
+        assert state["_intake_mode"] == "small_project"
+
+    def test_the_switch_is_persisted(self, app):
+        open_chat(app)
+        request(app, "POST", "/api/chat/sessions/proj-1/size", {"mode": "small_project"})
+        assert "proj-1" in app.saved
+
+
+class TestAttachments:
+    def _post(self, app, **payload):
+        return request(app, "POST", "/api/chat/sessions/proj-1/attachments", payload)
+
+    def test_a_pasted_image_is_kept_and_chipped(self, app, tmp_path, monkeypatch):
+        import base64
+
+        monkeypatch.setattr("yeaboi.paths.get_attachments_dir", lambda scope: tmp_path)
+        open_chat(app)
+        body = json.loads(self._post(app, image=base64.b64encode(b"PNGDATA").decode(), index=2).body)
+        assert body["chip"] == "[image #2]"
+        assert pathlib.Path(body["path"]).read_bytes() == b"PNGDATA"
+        assert pathlib.Path(body["path"]).suffix == ".png"
+
+    def test_a_jpeg_keeps_its_own_extension(self, app, tmp_path, monkeypatch):
+        import base64
+
+        monkeypatch.setattr("yeaboi.paths.get_attachments_dir", lambda scope: tmp_path)
+        open_chat(app)
+        body = json.loads(self._post(app, image=base64.b64encode(b"JPG").decode(), mime="image/jpeg", index=1).body)
+        assert pathlib.Path(body["path"]).suffix == ".jpg"
+
+    def test_a_pdf_is_not_an_image(self, app):
+        open_chat(app)
+        assert self._post(app, image="AAAA", mime="application/pdf", index=1).code == 400
+
+    def test_garbage_is_refused_rather_than_written(self, app):
+        open_chat(app)
+        assert self._post(app, image="not base64!!", index=1).code == 400
+        assert self._post(app, image="", index=1).code == 400
+
+    def test_an_oversized_image_is_refused_at_paste_time(self, app):
+        import base64
+
+        from yeaboi.ui.shared._attachments import MAX_IMAGE_BYTES
+
+        open_chat(app)
+        big = base64.b64encode(b"x" * (MAX_IMAGE_BYTES + 1)).decode()
+        resp = self._post(app, image=big, index=1)
+        assert resp.code == 413 and "4.5 MB" in resp.body.decode()
+
+
+class TestImagesFollowTheirChips:
+    """Deleting an ``[image #N]`` chip detaches its image — the terminal's rule."""
+
+    @staticmethod
+    def _sent(graph) -> list[str]:
+        """The images the last invoke carried, whichever slot the stage puts them in."""
+        state = graph.invocations[-1]
+        return list(state.get("chat_images") or state.get("pasted_images") or [])
+
+    def test_only_the_chipped_attachments_travel(self, app, graph):
+        open_chat(app)
+        turn(app)
+        resp = request(
+            app,
+            "POST",
+            "/api/chat/sessions/proj-1/send",
+            {"text": "look at [image #2]", "images": ["/tmp/a.png", "/tmp/b.png"]},
+        )
+        b"".join(resp.stream)
+        assert self._sent(graph) == ["/tmp/b.png"]
+
+    def test_an_attachment_with_no_surviving_chip_is_dropped(self, app, graph):
+        open_chat(app)
+        turn(app)
+        resp = request(
+            app,
+            "POST",
+            "/api/chat/sessions/proj-1/send",
+            {"text": "never mind", "images": ["/tmp/a.png"]},
+        )
+        b"".join(resp.stream)
+        assert self._sent(graph) == []

@@ -80,6 +80,12 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/chat/sessions", routes_chat.create, "planning"),
     AppRoute("GET", "/api/chat/sessions/{project_id}", routes_chat.get, "planning"),
     AppRoute("POST", "/api/chat/sessions/{project_id}/send", routes_chat.send, "planning"),
+    # The three the slash menu needs (M12): the question plan behind
+    # /questions, /form and a bare /edit; the size switch behind /small and
+    # /large; and the attachment store behind a pasted screenshot.
+    AppRoute("GET", "/api/chat/sessions/{project_id}/questions", routes_chat.questions, "planning"),
+    AppRoute("POST", "/api/chat/sessions/{project_id}/size", routes_chat.size, "planning"),
+    AppRoute("POST", "/api/chat/sessions/{project_id}/attachments", routes_chat.attach, "planning"),
     # -- the standup dashboard (capability "standup" — the M6 surface) -------
     AppRoute("GET", "/api/standup/dashboard", routes_standup.dashboard, "standup"),
     AppRoute("POST", "/api/standup/run", routes_standup.run, "standup"),

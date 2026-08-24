@@ -99,6 +99,22 @@ rejoins the conversation it left rather than restarting it.
 | POST | `/api/chat/sessions` | body `{description, intake_mode?: "small_project"\|"smart"}` → 201 with the session view. An absent `intake_mode` is classified from the description. |
 | GET | `/api/chat/sessions/{project_id}` | the session view; 404 when no such conversation is open or stored |
 | POST | `/api/chat/sessions/{project_id}/send` | body `{text, images?: [..]}` → a chunked NDJSON turn; 409 while a turn is already running |
+| GET | `/api/chat/sessions/{project_id}/questions` | `{questions: [{number, label, answer, remaining, skipped}], total, completed, derived}` |
+| POST | `/api/chat/sessions/{project_id}/size` | body `{mode: "small_project"\|"smart"}` → `{changed, mode, reopened?}`; 409 in dry-run |
+| POST | `/api/chat/sessions/{project_id}/attachments` | body `{image: base64, mime: "image/png"\|"image/jpeg", index}` → `{path, chip}`; 413 over 4.5 MB |
+
+`images` on `send` is the **composer's whole attachment list, in order** — not
+the images to send. Which of them travel is decided from the text, by the
+surviving `[image #N]` chips, so deleting a chip detaches its image here
+exactly as it does in the terminal. A client that posts attachments without
+writing their chips into the text sends no images at all.
+
+`questions` lists what this run actually asks — the essential gaps still open
+plus everything already answered, never the whole 30-question bank. `derived`
+is false when the gap derivation failed; the list is then answers only, and a
+client must say so rather than present it as the plan. It backs three
+affordances the terminal keeps apart: `/questions`, `/form`, and a bare
+`/edit`. Re-asking one is an ordinary turn — `send` the literal `edit N`.
 
 The **session view** is
 `{project_id, stage, opening, transcript: [<event>], question: {question_text, choices, multi_select, auto_submit, prior_art, suggestion, progress, phase_label, current_question, preamble_lines}}`.
