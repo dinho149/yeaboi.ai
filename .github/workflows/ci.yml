@@ -129,6 +129,10 @@ jobs:
     name: Unit tests
     needs: scope
     runs-on: ubuntu-latest
+    # The lane takes ~2 minutes. This is not a performance budget, it is a
+    # deadlock backstop: a test that waits on something that never arrives holds
+    # a runner for GitHub's 6-hour default, and four of these hung at once once.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -159,6 +163,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.compat == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20  # deadlock backstop — see `unit`
     strategy:
       # One version failing must not hide the others: which versions break is
       # the entire signal this job exists to produce.

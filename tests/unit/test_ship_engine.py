@@ -159,39 +159,85 @@ def ship_env(tmp_path, monkeypatch):
     return env
 
 
-def _resolver(db_path, resolutions, comments=()):
-    """A thread that answers the gate each time it opens, like a real surface.
+_GATE_SCAN = 20  # runs a test helper looks through for an open gate
 
-    Call ``stop()`` before starting a second resolver on the same database. A
-    resolver holding answers it never used stays alive and answers the *next*
-    phase's gate; a stray "rejected" then sends the engine into a rework whose
-    gate nobody is left to answer, and ``_await_gate`` waits forever by design.
+_LIVE_THREADS: list[threading.Thread] = []
+
+
+@pytest.fixture(autouse=True)
+def _stop_helper_threads():
+    """End every helper thread with the test that started it.
+
+    The helpers below wait on the gate with no wall-clock deadline, so this is
+    the only thing that bounds them — and a thread outliving its test would
+    answer the next one's gate.
     """
-    comments = list(comments) + [""] * len(resolutions)
+    yield
+    while _LIVE_THREADS:
+        _LIVE_THREADS.pop().stop()
+
+
+def _spawn(work):
+    """Run ``work(done)`` on a daemon thread the active test will stop.
+
+    Helpers wait on ``done``, never on a clock. A deadline here is what turns a
+    slow runner into a hung job: a helper that gives up before the gate opens
+    leaves `_await_gate` polling a gate nobody will ever answer, and that wait
+    is unbounded by design because in production a human ends it.
+    """
     done = threading.Event()
-
-    def _work():
-        with ShipStore(db_path) as store:
-            for index, resolution in enumerate(resolutions):
-                deadline = time.monotonic() + 30
-                while time.monotonic() < deadline and not done.is_set():
-                    runs = store.list_runs(limit=1)
-                    if runs and runs[0].status == "awaiting_approval" and not runs[0].gate_resolution:
-                        store.resolve_gate(runs[0].run_id, resolution, comments[index])
-                        break
-                    time.sleep(0.02)
-                if done.is_set():
-                    return
-
-    thread = threading.Thread(target=_work, daemon=True)
+    thread = threading.Thread(target=lambda: work(done), daemon=True)
 
     def _stop() -> None:
         done.set()
         thread.join(timeout=10)
 
     thread.stop = _stop  # type: ignore[attr-defined]
+    _LIVE_THREADS.append(thread)
     thread.start()
     return thread
+
+
+def _open_gate(store, *, pid=None):
+    """The run sitting at an unanswered gate, or None.
+
+    Scans rather than reading the newest row. `created_at` has second
+    resolution, so a batch's members routinely tie and `list_runs` falls back to
+    ordering by the random suffix in the run id — half the time the newest row
+    is the member that already finished, while the one actually gating is
+    second. The engine never has this problem: it polls its own run by id.
+    """
+    for run in store.list_runs(limit=_GATE_SCAN):
+        if run.status != "awaiting_approval" or run.gate_resolution:
+            continue
+        if pid is None or run.owner_pid == pid:
+            return run
+    return None
+
+
+def _resolver(db_path, resolutions, comments=()):
+    """A thread that answers the gate each time it opens, like a real surface.
+
+    Call ``stop()`` before starting a second resolver on the same database. A
+    resolver holding answers it never used stays alive and answers the *next*
+    phase's gate; a stray "rejected" then sends the engine into a rework whose
+    gate nobody is left to answer.
+    """
+    comments = list(comments) + [""] * len(resolutions)
+
+    def _work(done):
+        with ShipStore(db_path) as store:
+            for index, resolution in enumerate(resolutions):
+                while not done.is_set():
+                    gated = _open_gate(store)
+                    if gated is not None:
+                        store.resolve_gate(gated.run_id, resolution, comments[index])
+                        break
+                    time.sleep(0.02)
+                if done.is_set():
+                    return
+
+    return _spawn(_work)
 
 
 class TestDryRun:
@@ -361,18 +407,16 @@ class TestGateLoop:
     def test_cancel_while_awaiting_approval(self, ship_env):
         cancel = threading.Event()
 
-        def _cancel_when_gated():
+        def _cancel_when_gated(done):
             with ShipStore(ship_env.db) as store:
-                deadline = time.monotonic() + 30
-                while time.monotonic() < deadline:
+                while not done.is_set():
                     runs = store.list_runs(limit=1)
                     if runs and runs[0].status == "awaiting_approval":
                         cancel.set()
                         return
                     time.sleep(0.02)
 
-        thread = threading.Thread(target=_cancel_when_gated, daemon=True)
-        thread.start()
+        thread = _spawn(_cancel_when_gated)
         run = engine.run_ship(
             "US-001",
             str(ship_env.repo),
@@ -440,7 +484,10 @@ def _abandon_at_the_gate(ship_env, driver=None):
 
     thread = threading.Thread(target=_work, daemon=True)
     thread.start()
-    deadline = time.monotonic() + 30
+    # Generous, and bounded on purpose: unlike the resolvers this one asserts, so
+    # overrunning is a failed test rather than a hung one. The size is for a
+    # loaded CI runner, where reaching the gate is far slower than it is here.
+    deadline = time.monotonic() + 120
     at_gate = None
     with ShipStore(ship_env.db) as store:
         while time.monotonic() < deadline:
@@ -469,26 +516,19 @@ def _resume_resolver(db_path, resolutions, comments=()):
 
     comments = list(comments) + [""] * len(resolutions)
 
-    def _work():
+    def _work(done):
         with ShipStore(db_path) as store:
             for index, resolution in enumerate(resolutions):
-                deadline = time.monotonic() + 30
-                while time.monotonic() < deadline:
-                    runs = store.list_runs(limit=1)
-                    run = runs[0] if runs else None
-                    if (
-                        run is not None
-                        and run.status == "awaiting_approval"
-                        and not run.gate_resolution
-                        and run.owner_pid == os.getpid()
-                    ):
-                        store.resolve_gate(run.run_id, resolution, comments[index])
+                while not done.is_set():
+                    gated = _open_gate(store, pid=os.getpid())
+                    if gated is not None:
+                        store.resolve_gate(gated.run_id, resolution, comments[index])
                         break
                     time.sleep(0.02)
+                if done.is_set():
+                    return
 
-    thread = threading.Thread(target=_work, daemon=True)
-    thread.start()
-    return thread
+    return _spawn(_work)
 
 
 class TestResume:
