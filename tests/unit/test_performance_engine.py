@@ -405,3 +405,76 @@ class TestWithinDays:
     def test_garbage_is_false_not_an_exception(self):
         assert not engine._within_days("", "2026-07-01", 45)
         assert not engine._within_days("2026-07-01", "yesterday", 45)
+
+
+class TestProgressEvents:
+    """The engines report their phases, so a caller can draw an honest checklist.
+
+    Every event is a lifecycle event of the shared shape (analysis/progress.py) —
+    the same contract agentwatch's checklist keys on, not a bare string.
+    """
+
+    def _run_prep(self, monkeypatch, db_path, *, llm: bool):
+        _patch_activity(monkeypatch)
+        if llm:
+            _patch_llm(monkeypatch, json.dumps({"talking_points": ["one"]}))
+        else:
+            monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        events: list = []
+        engine.run_one_on_one_prep("Ada", db_path=db_path, on_progress=events.append)
+        return events
+
+    def test_every_event_is_a_well_formed_lifecycle_event(self, monkeypatch, db_path):
+        from yeaboi.analysis.progress import is_component_progress
+
+        events = self._run_prep(monkeypatch, db_path, llm=True)
+        assert events
+        assert all(is_component_progress(e) for e in events)
+
+    def test_the_model_phase_opens_and_closes(self, monkeypatch, db_path):
+        events = self._run_prep(monkeypatch, db_path, llm=True)
+        model = [e["status"] for e in events if e["component_id"] == engine.PHASE_MODEL]
+        assert model == ["running", "completed"]
+
+    def test_no_llm_settles_the_model_phase_as_a_fallback(self, monkeypatch, db_path):
+        # "completed" would claim the model wrote this; it did not.
+        events = self._run_prep(monkeypatch, db_path, llm=False)
+        model = [e["status"] for e in events if e["component_id"] == engine.PHASE_MODEL]
+        assert model == ["running", "fallback"]
+
+    def test_the_save_phase_closes_last(self, monkeypatch, db_path):
+        events = self._run_prep(monkeypatch, db_path, llm=True)
+        assert events[-1]["component_id"] == engine.PHASE_SAVE
+        assert events[-1]["status"] == "completed"
+
+    def test_no_on_progress_is_the_default_and_changes_nothing(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch)
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["one"]}))
+        prep = engine.run_one_on_one_prep("Ada", db_path=db_path)
+        assert prep.talking_points == ("one",)
+
+    def test_the_review_reports_the_same_two_phases(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch)
+        _patch_llm(monkeypatch, json.dumps({"strengths": ["ships"]}))
+        events: list = []
+        engine.run_six_month_review("Ada", db_path=db_path, on_progress=events.append)
+        assert [e["component_id"] for e in events if e["status"] == "running"] == [
+            engine.PHASE_MODEL,
+            engine.PHASE_SAVE,
+        ]
+
+    def test_a_completion_that_does_not_deliver_says_so(self, monkeypatch, db_path):
+        _patch_llm(monkeypatch, json.dumps({"email_subject": "s", "email_summary": "b"}))
+        events: list = []
+        engine.complete_one_on_one("Ada", "we talked", db_path=db_path, deliver=False, on_progress=events.append)
+        email = [e for e in events if e["component_id"] == engine.PHASE_EMAIL]
+        # Not an error and not a success — nothing was asked for.
+        assert [e["status"] for e in email] == ["no_data"]
+
+    def test_a_sent_summary_completes_the_email_phase(self, monkeypatch, db_path):
+        _patch_llm(monkeypatch, json.dumps({"email_subject": "s", "email_summary": "b"}))
+        monkeypatch.setattr("yeaboi.performance.delivery.deliver_completion_email", lambda *a, **k: "sent")
+        events: list = []
+        engine.complete_one_on_one("Ada", "we talked", db_path=db_path, deliver=True, on_progress=events.append)
+        email = [e["status"] for e in events if e["component_id"] == engine.PHASE_EMAIL]
+        assert email == ["running", "completed"]

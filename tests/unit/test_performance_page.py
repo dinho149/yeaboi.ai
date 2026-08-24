@@ -8,6 +8,9 @@ scripted ``read_key`` and a fake Live — no terminal, no tracker, no LLM.
 
 from __future__ import annotations
 
+import time
+from types import SimpleNamespace
+
 import pytest
 
 from yeaboi.ui import mode_select
@@ -140,3 +143,118 @@ class TestDetailReturnsToTheEngineer:
         after = [v for v, _idx, _a in views[detail_at[-1] + 1 :]]
         # Back goes to the person you were reading about, not the whole team.
         assert after and after[0] == "actions"
+
+
+class TestTheActionRowOnlyCreates:
+    """Export left the pre-generation row — there is nothing to export yet."""
+
+    def test_the_row_offers_no_export(self, views, roster):
+        _run(_keys("enter", "esc", "esc"))
+        offered = {act for view, _idx, act in views if view == "actions"}
+        assert "Export" not in offered
+
+    def test_right_stops_at_history(self, views, roster):
+        _run(_keys("enter", *(["right"] * 8), "esc", "esc"))
+        focused = [act for view, _idx, act in views if view == "actions"]
+        assert focused[-1] == "History"
+
+
+class TestTheLoadingScreen:
+    """A generate paints the phase checklist, not the actions screen."""
+
+    def test_generating_paints_the_progress_screen_with_its_phases(self, views, roster, monkeypatch):
+        from yeaboi.performance import engine, render
+
+        painted: list[dict] = []
+
+        def _fake_progress_screen(progress, *, phases=(), label="", **_kw):
+            painted.append({"progress": list(progress), "phases": phases, "label": label})
+            return "progress-panel"
+
+        monkeypatch.setattr(_screens_secondary, "_build_standup_progress_screen", _fake_progress_screen)
+        monkeypatch.setattr(render, "format_prep_lines", lambda prep: ["Talking points:"])
+
+        def _slow_prep(*_a, on_progress=None, **_kw):
+            # One event, then hand back — the worker must have painted by now.
+            if on_progress is not None:
+                on_progress(
+                    {"kind": "analysis_component", "component_id": "tickets", "label": "T", "status": "running"}
+                )
+            time.sleep(0.05)
+            return object()
+
+        monkeypatch.setattr(engine, "run_one_on_one_prep", _slow_prep)
+        _run(_keys("enter", "enter", "esc", "esc"))
+
+        assert painted, "the loading screen never rendered"
+        assert painted[-1]["phases"] == _screens_secondary.PERF_PREP_PHASES
+        assert "1:1 Prep" in painted[-1]["label"]
+
+    def test_the_complete_flow_declares_its_own_phases(self, views, roster, monkeypatch):
+        from yeaboi.performance import engine, render
+
+        painted: list = []
+        monkeypatch.setattr(
+            _screens_secondary,
+            "_build_standup_progress_screen",
+            lambda progress, *, phases=(), **_kw: painted.append(phases) or "progress-panel",
+        )
+        monkeypatch.setattr(render, "format_completion_lines", lambda rec: ["Summary:"])
+        monkeypatch.setattr(mode_select, "_performance_get_transcript", lambda *a, **kw: ("We talked about scope.", []))
+
+        def _slow_complete(*_a, **_kw):
+            time.sleep(0.05)
+            return SimpleNamespace(warnings=())
+
+        monkeypatch.setattr(engine, "complete_one_on_one", _slow_complete)
+        _run(_keys("enter", "right", "enter", "esc", "esc"))
+
+        assert painted and painted[-1] == _screens_secondary.PERF_COMPLETE_PHASES
+
+
+class TestOutputActionsUseWhatIsOnScreen:
+    """Export and Share Online act on the artifact shown, not the newest saved one."""
+
+    def test_export_writes_the_artifact_on_screen(self, views, roster, monkeypatch):
+        from yeaboi.performance import engine, render
+
+        shown = SimpleNamespace(engineer="Ada Lovelace", marker="the-fresh-prep")
+        monkeypatch.setattr(engine, "run_one_on_one_prep", lambda *a, **kw: shown)
+        monkeypatch.setattr(render, "format_prep_lines", lambda prep: ["Talking points:"])
+
+        exported: list = []
+
+        def _fake_picker(*_a, files_export=None, **_kw):
+            return files_export()
+
+        monkeypatch.setattr(mode_select, "_export_via_picker", _fake_picker)
+        monkeypatch.setattr(
+            mode_select,
+            "_performance_export",
+            lambda artifact, *, engineer, kind: exported.append((artifact, engineer, kind)) or "written",
+        )
+
+        # Open Ada, run 1:1 Prep, then Enter on the detail view's first button (Export).
+        _run(_keys("enter", "enter", "enter", "esc", "esc"))
+
+        assert exported == [(shown, "Ada Lovelace", "prep")]
+
+    def test_share_online_publishes_the_artifact_on_screen(self, views, roster, monkeypatch):
+        from yeaboi.performance import engine, render
+
+        shown = SimpleNamespace(engineer="Ada Lovelace", marker="the-fresh-prep")
+        monkeypatch.setattr(engine, "run_one_on_one_prep", lambda *a, **kw: shown)
+        monkeypatch.setattr(render, "format_prep_lines", lambda prep: ["Talking points:"])
+
+        shared: list = []
+        monkeypatch.setattr(
+            mode_select, "_run_output_share_flow", lambda *a, document=None, **kw: shared.append(document) or 0
+        )
+        from yeaboi.sharing import documents
+
+        monkeypatch.setattr(documents, "performance_document", lambda art, *, kind, anon=None: (art, kind))
+
+        # Open Ada, run 1:1 Prep, Right onto Share Online, Enter.
+        _run(_keys("enter", "enter", "right", "enter", "esc", "esc"))
+
+        assert shared == [(shown, "prep")]

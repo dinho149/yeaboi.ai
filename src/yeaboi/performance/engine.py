@@ -54,6 +54,33 @@ _PREP_EVIDENCE_DAYS = 60
 # scan never becomes this meeting's evidence.
 _CARRY_PREP_DAYS = 45
 
+# Phase ids the engine owns, on top of the per-source ones evidence.py emits.
+# A caller's checklist keys on these (see the performance page); the labels ride
+# along for consumers that render one event standalone.
+PHASE_MODEL = "model"
+PHASE_SAVE = "save"
+PHASE_PRIOR = "prior"
+PHASE_EMAIL = "email"
+_PHASE_LABELS = {
+    PHASE_MODEL: "Ask the model",
+    PHASE_SAVE: "Save & export",
+    PHASE_PRIOR: "Read the prior prep",
+    PHASE_EMAIL: "Send the summary",
+}
+
+
+def _emit(on_progress, phase: str, status: str, *, detail: str = "") -> None:
+    """Send one engine-phase lifecycle event. None-safe, so pipelines emit freely."""
+    from yeaboi.analysis.progress import send_component_progress
+
+    send_component_progress(
+        on_progress,
+        component_id=phase,
+        label=_PHASE_LABELS.get(phase, phase),
+        status=status,
+        detail=detail,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Shared LLM helpers (parse → fallback)
@@ -195,6 +222,7 @@ def run_one_on_one_prep(
     deep_scan: bool = False,
     db_path=None,
     today: date | None = None,
+    on_progress=None,
 ) -> OneOnOnePrep:
     """Generate 1:1 prep for ``engineer`` from every source that knows them.
 
@@ -205,7 +233,9 @@ def run_one_on_one_prep(
     goals / gaps / improvements. Persists the prep.
 
     ``deep_scan`` permits one capped live scan for the stretch no saved standup
-    covered; it costs API calls, so it is off by default.
+    covered; it costs API calls, so it is off by default. ``on_progress`` takes
+    one lifecycle event per phase (see ``analysis/progress.py``) so a caller can
+    draw a live checklist; it is an injection seam, never a behaviour switch.
     """
     today = today or date.today()
     date_str = today.isoformat()
@@ -222,6 +252,7 @@ def run_one_on_one_prep(
         azdo_project=azdo_project,
         deep_scan=deep_scan,
         db_path=db_path,
+        on_progress=on_progress,
     )
     activity = evidence.activity
 
@@ -239,7 +270,14 @@ def run_one_on_one_prep(
         evidence_md=evidence.summary_md,
         coverage_md=evidence_mod.format_coverage_md(evidence),
     )
+    _emit(on_progress, PHASE_MODEL, "running")
     parsed, warnings = _invoke_llm(prompt, what="1:1 prep")
+    _emit(
+        on_progress,
+        PHASE_MODEL,
+        "completed" if parsed else "fallback",
+        detail="" if parsed else warnings[0] if warnings else "",
+    )
 
     if not parsed:
         prep = _fallback_prep(engineer, date_str, activity, carried, warnings)
@@ -266,6 +304,7 @@ def run_one_on_one_prep(
     # — a run with no LLM is exactly when the lead most needs to know.
     prep = _with_evidence(prep, evidence)
 
+    _emit(on_progress, PHASE_SAVE, "running")
     with PerformanceStore(db_path) as store:
         store.record_prep(prep, session_id=session_id)
 
@@ -274,6 +313,7 @@ def run_one_on_one_prep(
     prep = _audit(prep, provenance_log.record_prep, db_path, prep, activity=activity, used_llm=bool(parsed))
 
     _export(prep, engineer, kind="prep")
+    _emit(on_progress, PHASE_SAVE, "completed")
     logger.info("run_one_on_one_prep complete: engineer=%s points=%d", engineer, len(prep.talking_points))
     return prep
 
@@ -281,6 +321,14 @@ def run_one_on_one_prep(
 # ---------------------------------------------------------------------------
 # 1:1 Completion
 # ---------------------------------------------------------------------------
+
+
+def _email_phase(delivery_state: str) -> tuple[str, str]:
+    """The summary email's delivery_state as a (progress status, detail) pair."""
+    return {
+        "sent": ("completed", "Summary emailed."),
+        "not_configured": ("no_data", "SMTP not configured — nothing was sent."),
+    }.get(delivery_state, ("failed", "The summary email could not be sent."))
 
 
 def _fallback_completion(engineer: str, today: str, transcript: str, warnings: list[str]) -> OneOnOneRecord:
@@ -308,6 +356,7 @@ def complete_one_on_one(
     db_path=None,
     today: date | None = None,
     images: Sequence[str] = (),
+    on_progress=None,
 ) -> OneOnOneRecord:
     """Turn a 1:1 transcript into an email summary + tracked action items.
 
@@ -329,8 +378,15 @@ def complete_one_on_one(
         logger.warning("complete_one_on_one: empty transcript for %s", engineer)
         return _fallback_completion(engineer, date_str, transcript, ["No transcript provided."])
 
+    _emit(on_progress, PHASE_PRIOR, "running")
     with PerformanceStore(db_path) as store:
         prior_prep = store.get_latest_prep(engineer)
+    _emit(
+        on_progress,
+        PHASE_PRIOR,
+        "completed" if prior_prep else "no_data",
+        detail=f"Prep from {prior_prep.date}." if prior_prep else "No earlier prep to carry actions from.",
+    )
 
     from yeaboi.prompts.performance import get_one_on_one_completion_prompt
 
@@ -339,7 +395,14 @@ def complete_one_on_one(
         transcript=transcript,
         prior_prep=asdict(prior_prep) if prior_prep else None,
     )
+    _emit(on_progress, PHASE_MODEL, "running")
     parsed, warnings = _invoke_llm(prompt, what="1:1 completion", images=images)
+    _emit(
+        on_progress,
+        PHASE_MODEL,
+        "completed" if parsed else "fallback",
+        detail="" if parsed else warnings[0] if warnings else "",
+    )
 
     if not parsed:
         record = _fallback_completion(engineer, date_str, transcript, warnings)
@@ -363,6 +426,7 @@ def complete_one_on_one(
     # Deliver the summary email (best-effort). A missing SMTP config is surfaced as
     # a warning on the returned record so the lead knows it wasn't sent.
     if deliver:
+        _emit(on_progress, PHASE_EMAIL, "running")
         try:
             from yeaboi.performance.delivery import deliver_completion_email
 
@@ -376,7 +440,12 @@ def complete_one_on_one(
             logger.error("complete_one_on_one: email delivery raised: %s", e)
             record = _with_warning(record, "Summary email failed to send (see logs).")
             record = replace(record, delivery_state="failed")
+        status, detail = _email_phase(record.delivery_state)
+        _emit(on_progress, PHASE_EMAIL, status, detail=detail)
+    else:
+        _emit(on_progress, PHASE_EMAIL, "no_data", detail="Delivery was not requested.")
 
+    _emit(on_progress, PHASE_SAVE, "running")
     with PerformanceStore(db_path) as store:
         store.record_completion(record, session_id=session_id)
 
@@ -385,6 +454,7 @@ def complete_one_on_one(
     record = _audit(record, provenance_log.record_completion, db_path, record, used_llm=bool(parsed))
 
     _export(record, engineer, kind="completion")
+    _emit(on_progress, PHASE_SAVE, "completed")
     logger.info("complete_one_on_one complete: engineer=%s actions=%d", engineer, len(record.action_items))
     return record
 
@@ -592,6 +662,7 @@ def run_six_month_review(
     deep_scan: bool = False,
     db_path=None,
     today: date | None = None,
+    on_progress=None,
 ) -> SixMonthReview:
     """Synthesize a performance review for ``engineer`` over the last ``period_months``.
 
@@ -627,6 +698,7 @@ def run_six_month_review(
         sprints=max(2, period_months * 2),
         deep_scan=deep_scan,
         db_path=db_path,
+        on_progress=on_progress,
     )
     delivery = evidence.activity
 
@@ -655,7 +727,14 @@ def run_six_month_review(
         evidence_md=evidence.summary_md,
         coverage_md=evidence_mod.format_coverage_md(evidence),
     )
+    _emit(on_progress, PHASE_MODEL, "running")
     parsed, warnings = _invoke_llm(prompt, what="6-month review")
+    _emit(
+        on_progress,
+        PHASE_MODEL,
+        "completed" if parsed else "fallback",
+        detail="" if parsed else warnings[0] if warnings else "",
+    )
 
     if not parsed:
         review = _fallback_review(engineer, period_start, period_end, framework_label, warnings)
@@ -675,6 +754,7 @@ def run_six_month_review(
 
     review = _with_evidence(review, evidence)
 
+    _emit(on_progress, PHASE_SAVE, "running")
     with PerformanceStore(db_path) as store:
         store.record_review(review, session_id=session_id)
 
@@ -691,6 +771,7 @@ def run_six_month_review(
     )
 
     _export(review, engineer, kind="review")
+    _emit(on_progress, PHASE_SAVE, "completed")
     logger.info("run_six_month_review complete: engineer=%s strengths=%d", engineer, len(review.strengths))
     return review
 
