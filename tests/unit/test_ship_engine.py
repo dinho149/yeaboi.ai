@@ -160,21 +160,36 @@ def ship_env(tmp_path, monkeypatch):
 
 
 def _resolver(db_path, resolutions, comments=()):
-    """A thread that answers the gate each time it opens, like a real surface."""
+    """A thread that answers the gate each time it opens, like a real surface.
+
+    Call ``stop()`` before starting a second resolver on the same database. A
+    resolver holding answers it never used stays alive and answers the *next*
+    phase's gate; a stray "rejected" then sends the engine into a rework whose
+    gate nobody is left to answer, and ``_await_gate`` waits forever by design.
+    """
     comments = list(comments) + [""] * len(resolutions)
+    done = threading.Event()
 
     def _work():
         with ShipStore(db_path) as store:
             for index, resolution in enumerate(resolutions):
                 deadline = time.monotonic() + 30
-                while time.monotonic() < deadline:
+                while time.monotonic() < deadline and not done.is_set():
                     runs = store.list_runs(limit=1)
                     if runs and runs[0].status == "awaiting_approval" and not runs[0].gate_resolution:
                         store.resolve_gate(runs[0].run_id, resolution, comments[index])
                         break
                     time.sleep(0.02)
+                if done.is_set():
+                    return
 
     thread = threading.Thread(target=_work, daemon=True)
+
+    def _stop() -> None:
+        done.set()
+        thread.join(timeout=10)
+
+    thread.stop = _stop  # type: ignore[attr-defined]
     thread.start()
     return thread
 
@@ -751,7 +766,7 @@ class TestBatch:
     def test_relaunching_continues_the_batch_instead_of_reshipping(self, batch_env):
         resolver = _resolver(batch_env.db, ["approved", "rejected", "rejected", "rejected"])
         first = engine.run_ship_batch("F1", str(batch_env.repo), db_path=batch_env.db, driver=FakeDriver(["work"] * 5))
-        resolver.join(timeout=60)
+        resolver.stop()  # unused answers would leak into the relaunch below
         assert [m.status for m in first] == ["approved", "rejected"]
 
         driver = FakeDriver(["work"] * 3, tag="second_")
