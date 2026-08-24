@@ -2166,19 +2166,20 @@ def _fmt_mmss(seconds: float) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
-def _window_phase_rows(rows: list, order: list, states: dict, budget: int) -> list:
+def _window_phase_rows(rows: list, order: list, anchor_id: str, budget: int) -> list:
     """Trim a phase checklist to ``budget`` rows, keeping the one that is running.
 
     A plain tail slice drops the head, which on a declared checklist is where
     the active row sits while everything below it is still pending — leaving a
     screen with nothing spinning on it.
+
+    ``anchor_id`` is the component to keep visible, chosen by emission order
+    rather than by position: an undeclared id draws after every declared one, so
+    the row furthest down the screen is not necessarily the newest.
     """
     if budget >= len(rows) or budget <= 0:
         return rows[-budget:] if 0 < budget < len(rows) else rows
-    anchor = 0
-    for i, component_id in enumerate(order):
-        if component_id in states:
-            anchor = i  # the last row that has started: running, or the newest settled
+    anchor = order.index(anchor_id) if anchor_id in order else 0
     # One row of look-ahead past the active one, then filled forward so the
     # budget is never left unused — early on, that is the rest of the checklist.
     # Clamped to ``anchor`` so the look-ahead can never push the active row out.
@@ -2217,12 +2218,19 @@ def _build_activity_progress_rows(
     component_states: dict[str, dict] = {}
     component_order: list[str] = []
     legacy_activity: list[str] = []
+    newest_id = ""  # last event emitted; a running one always wins
+    running_id = ""
     for item in progress:
         if is_component_progress(item):
             component_id = item["component_id"]
             if component_id not in component_states:
                 component_order.append(component_id)
             component_states[component_id] = item
+            newest_id = component_id
+            if item["status"] == "running":
+                running_id = component_id
+            elif running_id == component_id:
+                running_id = ""  # it settled
         elif isinstance(item, str):
             legacy_activity.append(item)
 
@@ -2288,7 +2296,7 @@ def _build_activity_progress_rows(
         read_only = any(bool(component_states.get(item, {}).get("read_only")) for item in component_order)
         if max_rows is not None:
             reserved = 1 + (1 if read_only else 0) + (1 if legacy_activity else 0)  # footer + optional notes
-            rows = _window_phase_rows(rows, component_order, component_states, max_rows - reserved)
+            rows = _window_phase_rows(rows, component_order, running_id or newest_id, max_rows - reserved)
 
         if read_only:
             rows.append(

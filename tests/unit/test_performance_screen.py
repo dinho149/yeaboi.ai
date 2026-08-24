@@ -497,3 +497,23 @@ class TestTheRunningRowSurvivesAShortTerminal:
     def test_the_footer_counts_the_whole_checklist_not_the_window(self):
         out = self._rows(self._started(("tickets", "standup"), "analysis"), 23)
         assert "[2/8]" in out
+
+    def test_an_undeclared_phase_does_not_steal_the_window(self):
+        """The window follows emission order, not row order.
+
+        A deep-scan run emits ``gap_scan`` before the model call, but an
+        undeclared id draws after every declared one — so the row furthest down
+        the screen is the settled scan while the model is what is actually
+        running.
+        """
+        from yeaboi.analysis.progress import append_component_progress
+
+        events: list = []
+        for cid in ("tickets", "standup", "analysis", "retro", "poker", "delivery"):
+            append_component_progress(events, component_id=cid, label=cid, status="completed")
+        append_component_progress(events, component_id="gap_scan", label="Live scan", status="completed")
+        append_component_progress(events, component_id="model", label="model", status="running")
+
+        for height in (16, 18, 20, 23):
+            out = self._rows(events, height)
+            assert "Ask the model" in out, f"the running row is hidden at height {height}"
