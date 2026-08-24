@@ -59,14 +59,72 @@ export function loadChat(projectId: string): Promise<SessionView> {
   return apiGet<SessionView>(`/api/chat/sessions/${encodeURIComponent(projectId)}`);
 }
 
-export function sendTurn(projectId: string, text: string, onLine: (line: ChatLine) => void): Promise<void> {
-  return apiStream(`/api/chat/sessions/${encodeURIComponent(projectId)}/send`, { text }, (line) =>
-    onLine(line as ChatLine),
+/**
+ * One turn. `images` is the composer's whole attachment list, in order.
+ *
+ * Which of them travel is the backend's decision, taken from the `[image #N]`
+ * chips still in the text — so deleting a chip detaches its image, and the
+ * rule has one implementation rather than one per surface.
+ */
+export function sendTurn(
+  projectId: string,
+  text: string,
+  onLine: (line: ChatLine) => void,
+  images: string[] = [],
+): Promise<void> {
+  return apiStream(
+    `/api/chat/sessions/${encodeURIComponent(projectId)}/send`,
+    images.length ? { text, images } : { text },
+    (line) => onLine(line as ChatLine),
   );
 }
 
 export function cancelTurn(opId: string): Promise<unknown> {
   return apiPost(`/api/ops/${encodeURIComponent(opId)}/cancel`);
+}
+
+export interface PlannedQuestion {
+  number: number;
+  label: string;
+  answer: string;
+  /** An essential gap this run still has to ask. */
+  remaining: boolean;
+  skipped: boolean;
+}
+
+export interface QuestionPlan {
+  questions: PlannedQuestion[];
+  total: number;
+  completed: boolean;
+  /** False when the gap derivation failed — the list is then answers only. */
+  derived: boolean;
+}
+
+export function loadQuestions(projectId: string): Promise<QuestionPlan> {
+  return apiGet<QuestionPlan>(`/api/chat/sessions/${encodeURIComponent(projectId)}/questions`);
+}
+
+export function switchSize(
+  projectId: string,
+  mode: 'small_project' | 'smart',
+): Promise<{ changed: boolean; mode: string; reopened?: boolean }> {
+  return apiPost(`/api/chat/sessions/${encodeURIComponent(projectId)}/size`, { mode });
+}
+
+/**
+ * Keep one pasted image and get its chip back.
+ *
+ * `index` is the attachment's 1-based place in the composer's list, which is
+ * what the chip names — the backend decides at send time which chips survived,
+ * so the two have to agree.
+ */
+export function attachImage(
+  projectId: string,
+  image: string,
+  mime: string,
+  index: number,
+): Promise<{ path: string; chip: string }> {
+  return apiPost(`/api/chat/sessions/${encodeURIComponent(projectId)}/attachments`, { image, mime, index });
 }
 
 /** The transcript a session view draws as, ignoring line types a card owns. */

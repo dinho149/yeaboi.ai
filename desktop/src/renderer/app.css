@@ -1523,3 +1523,201 @@ a.button.primary {
     opacity: 0.4;
   }
 }
+
+/* --- The command palette (Cmd+K) and the shortcuts sheet ----------------- */
+
+.palette {
+  width: min(52ch, 100%);
+  padding: var(--s2);
+}
+
+.palette-input {
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  font-size: var(--fs-m);
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+
+.palette-list {
+  max-height: 46vh;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.palette-row {
+  display: flex;
+  gap: var(--s2);
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--s1) var(--s3);
+  color: var(--fg);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--r-m);
+  cursor: pointer;
+}
+
+.palette-row.selected {
+  background: var(--panel-2, rgb(255 255 255 / 8%));
+}
+
+.palette-group {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.shortcut-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--s1) var(--s3);
+  margin: 0;
+}
+
+.shortcut-list > div {
+  display: contents;
+}
+
+.shortcut-list dt {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--duck);
+  white-space: nowrap;
+}
+
+.shortcut-list dd {
+  margin: 0;
+  font-size: var(--fs-s);
+}
+
+.shortcut-heading {
+  margin: var(--s3) 0 var(--s2);
+  font-size: var(--fs-s);
+  color: var(--muted);
+}
+
+/* --- The chat's /-menu, notices and the questions panel ------------------ */
+
+.slash-menu {
+  max-height: 15rem;
+  margin: 0 0 var(--s1);
+  padding: var(--s1);
+  overflow-y: auto;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+
+.slash-row {
+  display: flex;
+  gap: var(--s3);
+  align-items: baseline;
+  width: 100%;
+  padding: 2px var(--s2);
+  color: var(--fg);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--r-s);
+  cursor: pointer;
+}
+
+.slash-row:hover,
+.slash-row.first {
+  background: var(--panel-2, rgb(255 255 255 / 8%));
+}
+
+.slash-name {
+  font-family: var(--font-mono);
+  color: var(--duck);
+}
+
+.slash-help {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.chat-notice {
+  margin: 0 0 var(--s1);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.questions-panel .question-rows {
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.question-row button {
+  display: flex;
+  gap: var(--s3);
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--s1) var(--s2);
+  color: var(--fg);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.question-row.owed .question-label {
+  color: var(--duck);
+}
+
+.question-answer {
+  max-width: 55%;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- The plan page ------------------------------------------------------- */
+
+.plan-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  font-size: var(--fs-s);
+  color: var(--muted);
+}
+
+.plan-stories {
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-stories li {
+  padding: 2px 0;
+  font-size: var(--fs-s);
+}
+
+.plan-outcome {
+  padding: var(--s2) var(--s3);
+  font-size: var(--fs-s);
+  background: var(--panel);
+  border-left: 3px solid var(--duck);
+  border-radius: var(--r-s);
+}
+
+button.sidebar-version {
+  padding: 0;
+  color: var(--muted);
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}

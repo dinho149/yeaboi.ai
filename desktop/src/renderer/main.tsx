@@ -9,13 +9,16 @@ import { Duck } from '@design/primitives/Duck';
 import { Wordmark } from '@design/primitives/Wordmark';
 import { type ComponentType, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { getBackendState, onAmbientEvent, onBackendState, onNavigate, setPetEnabled } from './api';
+import { getBackendState, getVersion, onAmbientEvent, onBackendState, onNavigate, platform, setPetEnabled } from './api';
+import { SHORTCUTS_EVENT, isTyping, openShortcuts } from './palette';
 import { type AmbienceState, betaKeyFor, duckVoice, getAmbience, loadQuips } from './ambience';
 import { BetaGate } from './components/BetaGate';
+import { CommandPalette } from './components/CommandPalette';
 import { ConsentModal } from './components/ConsentModal';
 import { DuckChrome } from './components/DuckChrome';
 import { MusicPlayer } from './components/MusicPlayer';
 import { Screensaver } from './components/Screensaver';
+import { ShortcutsSheet } from './components/ShortcutsSheet';
 import { Agents } from './pages/Agents';
 import { Analysis } from './pages/Analysis';
 import { AnalysisResults } from './pages/AnalysisResults';
@@ -27,6 +30,7 @@ import { Feedback } from './pages/Feedback';
 import { Home } from './pages/Home';
 import { Performance } from './pages/Performance';
 import { PerformanceEngineer } from './pages/PerformanceEngineer';
+import { PlanView } from './pages/PlanView';
 import { Planning } from './pages/Planning';
 import { Poker } from './pages/Poker';
 import { Provenance } from './pages/Provenance';
@@ -57,6 +61,7 @@ const PAGES: Record<string, ComponentType> = {
   '/feedback': Feedback,
   '/humans/planning': Planning,
   '/humans/planning/chat': Chat,
+  '/humans/planning/plan': PlanView,
   '/humans/planning/sessions': Sessions,
   '/humans/planning/roadmap': Roadmap,
   '/humans/analysis': Analysis,
@@ -151,6 +156,7 @@ function Splash({ backend }: { backend: Backend }) {
 
 interface SidebarProps {
   active: string;
+  version: string;
   ambience: AmbienceState | null;
   offline: boolean;
   jamming: boolean;
@@ -159,7 +165,7 @@ interface SidebarProps {
   onPet: (enabled: boolean) => void;
 }
 
-function Sidebar({ active, ambience, offline, jamming, onJamming, onAnswer, onPet }: SidebarProps) {
+function Sidebar({ active, version, ambience, offline, jamming, onJamming, onAnswer, onPet }: SidebarProps) {
   // The three /settings/* routes collapse into one footer entry — the page owns
   // its own tab bar. Everything else is grouped by navGroup above.
   return (
@@ -221,7 +227,9 @@ function Sidebar({ active, ambience, offline, jamming, onJamming, onAnswer, onPe
             </label>
           </>
         )}
-        <div class="sidebar-version">yeaboi desktop</div>
+        <button type="button" class="sidebar-version" onClick={openShortcuts}>
+          {version ? `yeaboi ${version}` : 'yeaboi desktop'} · ?
+        </button>
       </div>
     </nav>
   );
@@ -233,6 +241,9 @@ function App() {
   const [ambience, setAmbienceState] = useState<AmbienceState | null>(null);
   const [jamming, setJamming] = useState(false);
   const [saver, setSaver] = useState(false);
+  const [palette, setPalette] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [version, setVersion] = useState('');
   const [consentSignal, setConsentSignal] = useState(0);
   // Where a sticky notice sends you when the duck is clicked.
   const [answerRoute, setAnswerRoute] = useState('');
@@ -271,15 +282,36 @@ function App() {
   }, [backend.kind]);
 
   useEffect(() => {
-    // Cmd/Ctrl+Y calls the ducks out early — the terminal's shortcut, kept.
     const onKey = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') {
+      const mod = event.metaKey || event.ctrlKey;
+      // Cmd/Ctrl+Y calls the ducks out early — the terminal's shortcut, kept.
+      if (mod && event.key.toLowerCase() === 'y') {
         event.preventDefault();
         setSaver((on) => !on);
+      } else if (mod && event.key.toLowerCase() === 'k') {
+        // The window's `g`: the terminal jumps by mode key because a card is
+        // the only destination it has, and this one has many more.
+        event.preventDefault();
+        setPalette((open) => !open);
+      } else if (event.key === '?' && !isTyping(event.target)) {
+        event.preventDefault();
+        setSheet(true);
+      } else if (event.key === 'Escape') {
+        setPalette(false);
+        setSheet(false);
       }
     };
+    const onSheet = () => setSheet(true);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener(SHORTCUTS_EVENT, onSheet);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener(SHORTCUTS_EVENT, onSheet);
+    };
+  }, []);
+
+  useEffect(() => {
+    getVersion().then((meta) => setVersion(meta.version), () => undefined);
   }, []);
 
   const answer = useCallback(() => {
@@ -301,6 +333,7 @@ function App() {
     <div class="shell">
       <Sidebar
         active={path}
+        version={version}
         ambience={ambience}
         offline={false}
         jamming={jamming}
@@ -319,6 +352,8 @@ function App() {
         />
       )}
       <ConsentModal signal={consentSignal} />
+      {palette && <CommandPalette onClose={() => setPalette(false)} />}
+      {sheet && <ShortcutsSheet platform={platform()} onClose={() => setSheet(false)} />}
       {ambience && (
         <Screensaver
           idleSeconds={ambience.saver.idle_seconds}

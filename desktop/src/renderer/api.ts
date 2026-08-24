@@ -82,3 +82,16 @@ export function onNavigate(callback: (route: string) => void): void {
 export function setPetEnabled(enabled: boolean): Promise<unknown> {
   return bridge().setPetEnabled(enabled);
 }
+
+/** 'darwin' | 'win32' | 'linux' — what the shortcut sheet names its modifier. */
+export function platform(): string {
+  return bridge().platform;
+}
+
+export interface VersionMeta {
+  version: string;
+  schema_version: number;
+  python: string;
+}
+
+export const getVersion = (): Promise<VersionMeta> => apiGet<VersionMeta>('/api/meta/version');

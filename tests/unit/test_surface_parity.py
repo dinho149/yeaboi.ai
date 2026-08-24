@@ -100,7 +100,7 @@ CAPABILITIES: dict[str, dict] = {
             "--architecture-spike",
         },
         "skill": "plan-sprint",
-        "desktop": {"/humans/planning", "/humans/planning/chat"},
+        "desktop": {"/humans/planning", "/humans/planning/chat", "/humans/planning/plan"},
     },
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
@@ -963,7 +963,9 @@ class TestDesktop:
         import json
 
         data = json.loads(DESKTOP_MANIFEST.read_text(encoding="utf-8"))
-        assert data.get("schema_version") == 1, "routes_manifest.json schema_version must be 1"
+        # v2 grew the settings tabs and the chat's command registry, both
+        # checked in test_tui_parity.py — the routes below are unchanged.
+        assert data.get("schema_version") == 2, "routes_manifest.json schema_version must be 2"
         return data["routes"]
 
     def test_manifest_entries_are_well_formed(self):
