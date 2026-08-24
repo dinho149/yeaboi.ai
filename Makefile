@@ -9,7 +9,7 @@ CODE ?= code
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish batch-assemble beta-check beta-sign-maintenance beta-sign-integration beta-promote help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-slots cowork-blocked cowork-teardown go-build go-test go-lint parity cowork-queue cowork-migrate cowork-metrics cowork-lapsed cowork-owner cowork-glyphs
+.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -33,7 +33,7 @@ UNIT_PATHS ?= tests/unit/ $(wildcard tests/test_*.py)
 # A command-line `UNIT_PATHS=` beats `?=`, so CI handing over an empty selection
 # would reach pytest with no paths at all — and pytest then falls through to
 # pyproject's `testpaths = ["tests"]`, quietly collecting the integration,
-# contract, golden and parity suites as well. That is not the "degrades to the
+# contract and golden suites as well. That is not the "degrades to the
 # full unit lane" the callers assume, so resolve the empty case here instead.
 UNIT_LANE = $(if $(strip $(UNIT_PATHS)),$(UNIT_PATHS),tests/unit/ $(wildcard tests/test_*.py))
 SLOW_LANE = $(if $(strip $(SLOW_PATHS)),$(SLOW_PATHS),tests/integration/ tests/contract/)
@@ -122,10 +122,10 @@ security: lint ## Security scan — bandit (ruff S) SAST + dependency CVE audit
 	@echo "✓ Security scan passed"
 
 # ── The ship gate ───────────────────────────────────────────────────────────
-# `make test` proves the Python suite. It does not prove the eight other things
-# CI checks — the format check above, the front-end bundles, the docs site, the
-# Go sidecar, the parity suite unskipped, the golden evaluators and the wheel's
-# contents. Those used to be discovered after the PR was already open.
+# `make test` proves the Python suite. It does not prove the other things
+# CI checks — the format check above, the front-end bundles, the docs site,
+# the golden evaluators and the wheel's contents. Those used to be discovered
+# after the PR was already open.
 #
 # `preflight` runs only the ones this branch's diff actually needs, decided by
 # scripts/test_scope.py — the same selector CI's `scope` job uses, whose third
@@ -190,41 +190,6 @@ bump-minor: ## Bump the minor version in pyproject.toml (X.Y.Z -> X.Y+1.0)
 
 bump-major: ## Bump the major version in pyproject.toml (X.Y.Z -> X+1.0.0)
 	$(UV) run python scripts/bump_version.py major
-
-# --- Release batch sign-off (see cowork/release-signoff.md) ------------------
-#
-# The fleet's PRs never merge one by one: they wait open, gate-green, and ship
-# inside ONE batch PR a human assembles, hand-tests and merges. These are that
-# human's commands. There are two test sessions rather than one: the fleet
-# maintains what exists AND builds one provider integration a week, and those are
-# different things to sit down and exercise.
-#
-# `batch-assemble` builds the `batch/<date>` branch (one squash commit per fleet
-# PR), opens the batch PR, and builds the wheel to test. `beta-check` only
-# reports. Each `beta-sign-*` records that track's sign-off as a marker comment
-# on the batch PR, pinned to the head sha that was tested; the LAST one writes
-# the bare completion marker — which is what stops a half-signed batch being
-# promoted. `beta-promote` verifies and prints the
-# merge command. THE MERGE IS YOURS: `gh pr merge <n> --merge` (never squash),
-# and publish.yml cuts the official X.Y.Z from your merge.
-#
-# Two sign targets rather than `make beta-sign <track>`: Make reads a bare word
-# as a second goal, so that spelling fails with "No rule to make target …".
-
-batch-assemble: ## Assemble the gate-green fleet PRs into a batch branch + PR
-	@$(UV) run python scripts/batch_assemble.py
-
-beta-check: ## What is in the open batch, and what to exercise by hand
-	@$(UV) run python scripts/beta_signoff.py check
-
-beta-sign-maintenance: ## Record the maintenance sign-off (security, bugs, chores, docs)
-	@$(UV) run python scripts/beta_signoff.py sign maintenance
-
-beta-sign-integration: ## Record the integration sign-off (this week's provider campaign)
-	@$(UV) run python scripts/beta_signoff.py sign integration
-
-beta-promote: ## Verify the sign-offs, mark the batch PR ready, print the merge command
-	@$(UV) run python scripts/beta_signoff.py promote
 
 # --- Front end — TS sources in frontend/, built output committed ------------
 #
@@ -396,85 +361,10 @@ wt-rm-all: ## Remove ALL worktrees under .claude/worktrees/ (prompts to confirm)
 pr-feedback: ## Report unanswered review feedback on a PR (PR=123, or the current branch's)
 	@$(UV) run python scripts/pr_feedback.py $(if $(PR),--pr $(PR),)
 
-# --- Cowork — stand the standing workstreams up (see cowork/README.md) --------
-
-# Everything here is derived from cowork/ rather than typed twice: the labels come
-# from workstreams/, the model variables from models.md, the routines from the
-# README table. The half a shell cannot do — the account-scoped routines and the
-# Linear labels — is what /cowork covers (status, deploy, run, pause, teardown).
-
-cowork-setup: ## Create the cowork GitHub labels + model repo variables (idempotent)
-	$(UV) run python scripts/cowork_setup.py
-
-cowork-agenda: ## Show what the cowork fleet runs today, and over the next week
-	@$(UV) run python scripts/cowork_setup.py --agenda --text
-
-cowork-check: ## Verify cowork labels, repo variables, and routine/README agreement
-	@$(UV) run python scripts/cowork_setup.py --check
-
-cowork-slots: ## Show how full each workstream's proposal queue is (WORKSTREAM=name for one)
-	@$(UV) run python scripts/cowork_setup.py --proposal-slots $(WORKSTREAM)
-
-cowork-queue: ## Show what each workstream's sweep should build next (WORKSTREAM=name for one)
-	@$(UV) run python scripts/cowork_setup.py --queued $(WORKSTREAM)
-
-cowork-lapsed: ## Show the lapsed questions and which are due to close (WORKSTREAM=name for one)
-	@$(UV) run python scripts/cowork_setup.py --lapsed $(WORKSTREAM)
-
-# FILE, not PATH: `make cowork-owner PATH=…` would override the shell's PATH for
-# the recipe and nothing would resolve.
-cowork-owner: ## Which workstream's charter claims a path (FILE=src/yeaboi/retro/engine.py)
-	@$(UV) run python scripts/cowork_setup.py --owner $(FILE)
-
-cowork-glyphs: ## Show each workstream's Slack area glyph
-	@$(UV) run python scripts/cowork_setup.py --glyphs
-
-.PHONY: cowork-lens
-cowork-lens: ## Run one hygiene lens over one workstream (LENS=dead-code WS=tui-ux, JSON=1)
-	@$(UV) run python scripts/hygiene_lens.py --lens $(or $(LENS),dead-code) --workstream $(WS) $(if $(JSON),--json,)
-
-.PHONY: cowork-fuzz
-cowork-fuzz: ## Fuzz the live TUI in a pty (SEEDS=6 STEPS=120, or SEED=41 to replay one)
+.PHONY: fuzz
+fuzz: ## Fuzz the live TUI in a pty (SEEDS=6 STEPS=120, or SEED=41 to replay one)
 	@$(UV) run python scripts/tui_fuzz.py $(if $(SEED),--seed $(SEED),--seeds $(or $(SEEDS),6)) --steps $(or $(STEPS),120)
 
-cowork-metrics: ## What the fleet merged, found, fixed and cost (WINDOW=30, JSON=1 for the raw report)
-# The token is borrowed from `gh` when the environment has none. The script itself
-# stays honest about needing one — this is the developer-on-a-laptop case, where
-# `gh auth login` has already happened and exporting GH_TOKEN by hand is the only
-# thing standing between a logged-in machine and a report.
-	@GH_TOKEN=$${GH_TOKEN:-$$(gh auth token 2>/dev/null)} 		$(UV) run python scripts/cowork_metrics.py --window $(or $(WINDOW),30) $(if $(JSON),--json,)
-
-cowork-migrate: ## One-off: reclassify auto-lane proposals as cowork:queued (add YES=1 to apply)
-	@$(UV) run python scripts/cowork_setup.py --migrate-proposals $(if $(YES),--yes,)
-
-cowork-blocked: ## Ask whether a standing fault is already reported (MARKER="cd-deploy: …")
-	@$(UV) run python scripts/cowork_setup.py --blocked-report $(MARKER)
-
-# Deleting a workstream label strips it off every issue carrying it, and nothing
-# puts those back — hence the prompt, and hence the routines staying out of it.
-cowork-teardown: ## Delete the cowork GitHub labels + model repo variables (prompts to confirm)
-	@read -r -p "Delete the cowork labels and unset the model variables? Issues lose their labels. [y/N] " ans; \
-	  if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
-	    $(UV) run python scripts/cowork_setup.py --teardown --labels --variables --yes; \
-	  else echo "[cowork] teardown aborted"; fi
-
-# ── Go core (the yeaboi-core sidecar — see contracts/v1/rpc.md) ──────────────
-# The binary is NEVER committed; bin/ is gitignored. `make test` stays
-# pytest-only: the parity suite skips itself when the binary is absent, and CI
-# builds the binary in its own job before running parity unskipped.
-
-go-build: ## Build the Go sidecar into bin/yeaboi-core (static, CGO-free)
-	cd go && CGO_ENABLED=0 go build -o ../bin/yeaboi-core ./cmd/yeaboi-core
-
-go-test: ## Run the Go unit tests
-	cd go && go test ./...
-
-go-lint: ## Vet + gofmt check for the Go tree
-	cd go && go vet ./...
-	@cd go && files="$$(gofmt -l .)"; if [ -n "$$files" ]; then echo "$$files"; echo "gofmt: files need formatting"; exit 1; fi
-
-parity: go-build ## Build the sidecar and run the Python↔Go parity suite unskipped
-	YEABOI_CORE_BIN=$(CURDIR)/bin/yeaboi-core $(UV) run pytest tests/parity -v
 
 clean: ## Remove build artifacts and caches
 	rm -rf .venv build dist .pytest_cache .ruff_cache *.egg-info src/*.egg-info bin

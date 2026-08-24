@@ -8,7 +8,7 @@ model: inherit
 You apply one mechanical migration inside an isolated git worktree. You receive:
 the worktree path, the exact migration spec, and an explicit file list.
 
-Your model is chosen by the caller — see `cowork/models.md` (this agent runs at the `standard` tier).
+Your model is chosen by the caller.
 
 Rules:
 

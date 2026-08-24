@@ -7,7 +7,7 @@ Arguments (optional): $ARGUMENTS — a PR number; defaults to the current branch
 
 Five things comment on a PR here and, until the `pr-feedback` gate existed, nothing
 ever read any of it back. This is the procedure that reads it back. It is the one
-place that job is written down; `/ship`, `/babysit-prs` and `cowork/sweep-procedure.md`
+place that job is written down; `/ship` and `/babysit-prs`
 all point here rather than restating it.
 
 1. **Look** — `make pr-feedback PR=<n>` (or `uv run python scripts/pr_feedback.py --pr <n> --json`
@@ -65,7 +65,7 @@ all point here rather than restating it.
    post it after the review, not before. If you push again afterwards, the next review
    pass will have read your reply and should stop reporting the finding at all.
 
-   **A machine may not dismiss its own review.** On a cowork PR, a
+   **A machine may not dismiss its own review.** On an unattended PR, a
    `feature/issue-N-…` branch, or a triage or sentinel branch,
    `scripts/pr_feedback.py` discards an `answered=` claim from the PR's own author,
    so arguing a finding down there is inert and the gate stays red. `fixed=` from

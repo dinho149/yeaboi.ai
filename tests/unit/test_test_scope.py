@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # Every key `--github-output` writes. `test_workflow_schema.py` asserts ci.yml's
 # fail-safe fallback writes exactly these, so the two cannot drift.
 GITHUB_OUTPUT_KEYS = frozenset(
-    {"full", "unit_paths", "slow_paths", "go", "parity", "web", "desktop", "site", "package", "eval", "compat"}
+    {"full", "unit_paths", "slow_paths", "web", "desktop", "site", "package", "eval", "compat"}
 )
 
 # Loaded by path: scripts/ is not a package, and the module must be importable
@@ -60,7 +60,7 @@ class TestTotality:
         claimed = scope_mod.area_for(path) is not None or scope_mod._matches(path, scope_mod.GLOBAL)
         assert claimed, (
             f"{path} is claimed by no area and is not global — add it to an Area's `src` in "
-            "scripts/test_scope.py (matching its cowork/workstreams/*.md charter), or to GLOBAL "
+            "scripts/test_scope.py, or to GLOBAL "
             "if a change to it can reach everything"
         )
 
@@ -74,11 +74,6 @@ class TestTotality:
             "Area's `tests` in scripts/test_scope.py, or to ALWAYS if it guards the repo rather "
             "than a module"
         )
-
-    def test_the_areas_are_the_workstreams(self):
-        """One vocabulary for the fleet and for CI, so neither drifts alone."""
-        charters = {p.stem for p in (ROOT / "cowork" / "workstreams").glob("*.md")}
-        assert {area.name for area in scope_mod.AREAS} == charters
 
 
 class TestTheGlobsStillMatch:
@@ -138,50 +133,18 @@ class TestTheAlwaysSetIsAlwaysThere:
         assert "tests/unit/test_web_assets.py" in selected
 
     def test_a_prose_only_change_still_runs_the_guards(self):
-        """`cowork/` and `.claude/` are treated as inert, which is only safe
-        because the tests that read them are in ALWAYS. If they ever leave it,
-        those prefixes have to move to GLOBAL in the same commit."""
-        scope = scope_mod.resolve(["cowork/workstreams/standup.md"])
+        """`.claude/` is treated as inert, which is only safe because the tests
+        that read it are in ALWAYS. If they ever leave it, that prefix has to
+        move to GLOBAL in the same commit."""
+        scope = scope_mod.resolve([".claude/commands/ship.md"])
         selected = set(scope_mod.unit_paths(scope))
         assert not scope.full
-        assert any("test_cowork" in path for path in selected)
+        assert any("test_claude_plugin" in path or "test_ship_gate" in path for path in selected)
 
     def test_it_does_not_drag_in_an_unrelated_area(self):
         selected = set(scope_mod.unit_paths(scope_mod.resolve(["src/yeaboi/standup/engine.py"])))
         assert not any("test_poker" in path for path in selected)
         assert not any("test_reporting" in path for path in selected)
-
-
-class TestTheGoParityTriggers:
-    """CLAUDE.md's dual-maintenance rule, as a selector.
-
-    The Go twins have no import edge to their Python originals, so nothing about
-    a changed Python file implies the parity suite. Miss one of these and the
-    sidecar silently diverges with CI fully green — the exact failure the
-    byte-parity gate exists to stop.
-    """
-
-    @pytest.mark.parametrize(
-        "path",
-        [
-            "src/yeaboi/agentwatch/collector.py",
-            "src/yeaboi/standup/relatedness.py",
-            "src/yeaboi/standup/confidence.py",
-            "src/yeaboi/analysis/code_health.py",
-            "src/yeaboi/analysis/ai_usage.py",
-            "go/internal/standup/relatedness.go",
-            "src/yeaboi/gocore/client.py",
-        ],
-    )
-    def test_a_mirrored_change_runs_go_and_parity(self, path):
-        scope = scope_mod.resolve([path])
-        assert scope.full or {"go", "parity"} <= scope.jobs, f"{path} would skip the parity gate"
-
-    def test_the_parity_fixture_source_counts_as_mirrored(self):
-        """Every literal in test_code_health.py is a parity fixture, so editing
-        it changes what the Go side is checked against."""
-        scope = scope_mod.resolve(["tests/unit/test_code_health.py"])
-        assert scope.full or {"go", "parity"} <= scope.jobs
 
 
 class TestSelectionIsRunnable:

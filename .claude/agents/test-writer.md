@@ -8,7 +8,7 @@ model: inherit
 You write unit tests for this repo. Read `.claude/skills/agent-and-state/SKILL.md`
 (testing conventions section) before writing anything.
 
-Your model is chosen by the caller — see `cowork/models.md` (this agent runs at the `standard` tier).
+Your model is chosen by the caller.
 
 Rules:
 

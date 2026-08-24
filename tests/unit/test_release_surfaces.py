@@ -54,15 +54,6 @@ class TestRowsFire:
         assert "schedule" in labels(["src/yeaboi/standup/scheduler.py"])
         assert "schedule" not in labels(["src/yeaboi/standup/engine.py"])
 
-    def test_a_mirrored_module_asks_for_both_sidecar_paths(self):
-        for path in (
-            "go/internal/analysis/aggregate.go",
-            "src/yeaboi/agentwatch/collector.py",
-            "src/yeaboi/standup/aggregate.py",
-            "src/yeaboi/sessions.py",
-        ):
-            assert "sidecar" in labels([path]), path
-
     def test_an_unrelated_path_adds_nothing(self):
         assert labels(["docs/index.html", "README.md", ".github/dependabot.yml"]) == labels([])
 

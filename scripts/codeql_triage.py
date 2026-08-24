@@ -7,7 +7,7 @@ thing the model must never do here is fail silently.
 
 It used to live as a heredoc inside the workflow, where nothing could test it.
 It moved out when it grew the two rules below, both of which are exactly the kind
-of comparison `cowork/README.md` insists Python owns rather than a prompt:
+of comparison Python should own rather than a prompt:
 
 **A rejection is scoped to a location, not to a rule.** The propose lane used to
 dedupe on `gh issue list --search "<rule id>" --state all`, so closing one issue
@@ -20,7 +20,7 @@ in the diff — and an alert on a decided rule at an *unlisted* path is a findin
 not a duplicate.
 
 **An accept without a dismissal is reported every week.** `codeql-triage.yml` may
-not dismiss an alert (`cowork/house-rules.md`: closing one by declaring it
+not dismiss an alert (closing one by declaring it
 uninteresting is a human's call), so a recorded accept can sit open in the
 Security tab indefinitely — which is how four alerts sat there from 2026-08-12
 looking unexamined when they had been decided the same day. Because the survey

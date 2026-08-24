@@ -4189,9 +4189,6 @@ charts = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-core = [
-    { name = "yeaboi-core" },
-]
 dev = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -4281,17 +4278,11 @@ requires-dist = [
     { name = "segno" },
     { name = "sounddevice", marker = "extra == 'voice'" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'dev'" },
-    { name = "yeaboi-core", marker = "extra == 'core'", directory = "packaging/yeaboi-core" },
 ]
-provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "ollama", "voice", "charts", "mcp", "access", "core", "all-providers", "dev"]
+provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "ollama", "voice", "charts", "mcp", "access", "all-providers", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "syrupy", specifier = ">=5.1.0" }]
-
-[[package]]
-name = "yeaboi-core"
-version = "0.4.0"
-source = { directory = "packaging/yeaboi-core" }
 
 [[package]]
 name = "zstandard"

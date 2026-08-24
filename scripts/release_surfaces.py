@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Which surfaces a batch of commits touched, and what only a human can check.
 
-The beta channel can prove a lot without anyone looking: `make test`, `make lint`,
-`make parity` and `make web-check` all run before an rc reaches PyPI. What it
-cannot prove is the set of things this repository has repeatedly broken *below*
-the test suite — a CSP that only fails for the remote teammate, a launchd plist
-whose shell quoting only fails at fire time, a Go sidecar that silently reverts to
-Python with CI fully green. Those are the items below.
+The beta channel can prove a lot without anyone looking: `make test`, `make lint`
+and `make web-check` all run before an rc reaches PyPI. What it cannot prove is
+the set of things this repository has repeatedly broken *below* the test suite —
+a CSP that only fails for the remote teammate, a launchd plist whose shell
+quoting only fails at fire time. Those are the items below.
 
 So this is not a generic QA checklist. Every row exists because the repository
 already documents that failure as invisible to automation, and every row carries
@@ -14,9 +13,8 @@ the *why* — a checklist item without one gets skipped the second week.
 
 The table is here rather than in ``release_channel.py`` for two reasons. It is
 product knowledge, not release arithmetic, and it changes on a different clock.
-And keeping it separate is what lets both ``release_channel.py`` (which renders
-the checklist into the promotion ask) and ``beta_signoff.py`` (which prints it in
-a terminal) read it without importing each other.
+And keeping it separate is what lets ``release_channel.py`` (which renders the
+checklist into the release notes) read it without a circular import.
 
 Stdlib only, deliberately — its callers run before ``uv sync``.
 
@@ -107,29 +105,6 @@ SURFACES: tuple[tuple[tuple[str, ...], Item], ...] = (
         ),
     ),
     (
-        (
-            "go/**",
-            "src/yeaboi/agentwatch/**",
-            "src/yeaboi/analysis/**",
-            "src/yeaboi/standup/aggregate.py",
-            "src/yeaboi/standup/references.py",
-            "src/yeaboi/standup/relatedness.py",
-            "src/yeaboi/standup/habits.py",
-            "src/yeaboi/standup/automation.py",
-            "src/yeaboi/standup/insights.py",
-            "src/yeaboi/standup/confidence.py",
-            "src/yeaboi/standup/categories.py",
-            "src/yeaboi/sessions.py",
-        ),
-        Item(
-            label="sidecar",
-            what="run the Agents pages once with the Go sidecar installed and once with "
-            "`YEABOI_GO=0`; the numbers must be identical",
-            why="a schema-version drift makes the sidecar refuse every upgraded database and "
-            "silently revert to Python, with CI fully green",
-        ),
-    ),
-    (
         ("src/yeaboi/update_check.py", "src/yeaboi/cli.py"),
         Item(
             label="upgrade",
@@ -208,8 +183,8 @@ _NOT_PROVIDERS = frozenset({"__init__", "risk", "llm_tools", "codebase", "team_l
 _PROVIDER_DIR = "src/yeaboi/tools/"
 
 
-# One row per angle a campaign has to reach, mirroring the reach matrix in
-# `cowork/integrations-map.md`. Unlike SURFACES these are NOT gated on paths to
+# One row per angle an integration has to reach. Unlike SURFACES these are NOT
+# gated on paths to
 # decide whether they appear: for a provider in the batch, every angle is listed
 # and the untouched ones are marked unreached. The patterns say which the batch
 # *did* move.
@@ -358,8 +333,8 @@ def integration_checklist(providers: tuple[str, ...], changed_paths: list[str]) 
     """Every angle, for the providers in this batch, marked reached or not.
 
     Empty when no provider is in the batch — that is the no-integration-work week,
-    and it must produce an empty list rather than a baseline-only one, because
-    `beta_signoff.batch_view` reads emptiness as "this track was never asked for".
+    and it must produce an empty list rather than a baseline-only one: consumers
+    read emptiness as "this track was never asked for".
     """
     if not providers:
         return []

@@ -93,14 +93,6 @@ mcp = ["mcp>=1.9,<2"]
 # and the quick tunnel (the default) is unaffected. [crypto] pulls in
 # `cryptography`, which is what does the RS256 verification.
 access = ["PyJWT[crypto]>=2.8"]
-# The Go sidecar binary as a platform wheel (packaging/yeaboi-core). With it
-# installed, gocore/discovery.py finds the binary and the agentwatch pipelines
-# are served by Go automatically (YEABOI_GO=0 opts out). Versioned on its own
-# semver; the runtime contract_version handshake is the real compatibility
-# gate, this range just tracks the current contract line. In this repo uv
-# resolves it from packaging/yeaboi-core (see [tool.uv.sources]); the published
-# package resolves it from PyPI.
-core = ["yeaboi-core>=0.4.0,<0.5"]
 all-providers = ["langchain-openai", "langchain-google-genai", "langchain-aws", "boto3", "langchain-ollama"]
 dev = [
     "pytest",
@@ -218,12 +210,3 @@ extra-standard-library = ["tomllib"]
 dev = [
     "syrupy>=5.1.0",
 ]
-
-[tool.uv.sources]
-# In-repo resolution for the `core` extra: yeaboi-core is not on PyPI until the
-# first publish-core.yml run, and uv's universal lock resolves every extra — so
-# without this, `uv sync` fails for everyone. Path metadata is static (no Go
-# build at lock time); the Go toolchain is needed only when the extra is
-# actually installed (`uv sync --extra core`). Published metadata is unaffected:
-# pip users of `yeaboi[core]` resolve yeaboi-core from PyPI.
-yeaboi-core = { path = "packaging/yeaboi-core" }

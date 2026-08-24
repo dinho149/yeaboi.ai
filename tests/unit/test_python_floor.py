@@ -48,10 +48,10 @@ class TestPackageMetadata:
 
     @pytest.mark.parametrize(
         "manifest",
-        ["packaging/yeaboi-core/pyproject.toml", "packaging/scrum-agent-shim/pyproject.toml"],
+        ["packaging/scrum-agent-shim/pyproject.toml"],
     )
     def test_the_packaging_manifests_agree(self, manifest):
-        """A sidecar that floors higher than the package makes `uv lock` unsolvable
+        """A shim that floors higher than the package makes `uv lock` unsolvable
         for everyone — the resolver refuses before any test can run."""
         text = (ROOT / manifest).read_text(encoding="utf-8")
         found = re.search(r'^requires-python\s*=\s*"([^"]+)"', text, re.MULTILINE)

@@ -4,12 +4,10 @@
 # `feature-candidate`, which a human converts to `claude-implement` to open a fix
 # PR through CI + review + human merge.
 #
-# It used to apply `claude-implement` itself, capped at 3/run. That directly
-# contradicted `cowork/house-rules.md` — "Only a human does. That label is the
-# approval gate; a routine applying it would be approving its own work" — which
-# six other files restate. The human-only gate is the invariant the whole cowork
-# design rests on, so the cap is now on nominations and the label is never
-# applied here.
+# It used to apply `claude-implement` itself, capped at 3/run. Only a human
+# applies that label: it is the approval gate, and a workflow applying it would
+# be approving its own work. So the cap is now on nominations and the label is
+# never applied here.
 #
 # Auth: runs on the hosted claude-code-action with the App's
 # CLAUDE_CODE_OAUTH_TOKEN — the SAME subscription-backed token as every other
@@ -142,9 +140,8 @@ jobs:
                  an issue.
 
             NEVER apply the `claude-implement` label yourself. It is the human
-            approval gate that `cowork/house-rules.md` reserves for a person, and a
-            workflow applying it is the system approving its own work. Nominate
-            with `feature-candidate` and stop there.
+            approval gate, and a workflow applying it is the system approving
+            its own work. Nominate with `feature-candidate` and stop there.
 
             Be conservative with `feature-candidate` on bugs: only well-specified,
             self-contained ones where the fix is obvious. When unsure between

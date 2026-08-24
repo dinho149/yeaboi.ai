@@ -7,11 +7,9 @@ would notice:
 
 * the auto-fix allowlist is a closed, reviewed list — not "whatever the model
   thought looked mechanical";
-* the human-readable allowlist in `cowork/house-rules.md` points at the
-  machine-readable one, so the two cannot drift into disagreeing;
 * the job merges via `--auto` and never directly, so the main-branch ruleset is
   what actually decides;
-* it runs at `deep`, because `cowork/models.md` forbids security work on `heavy`.
+* it runs at `deep`, never `heavy`.
 
 The last class here is different in kind: it pins the *fix* for the 25
 `actions/unpinned-tag` alerts, so the largest single class of findings this repo
@@ -37,7 +35,6 @@ TRIAGE_WORKFLOW = WORKFLOWS / "codeql-triage.yml"
 CODEQL_WORKFLOW = WORKFLOWS / "codeql.yml"
 POLICY = REPO_ROOT / ".github" / "codeql" / "triage-policy.yml"
 CONFIG = REPO_ROOT / ".github" / "codeql" / "config.yml"
-HOUSE_RULES = REPO_ROOT / "cowork" / "house-rules.md"
 
 # Actions published by GitHub itself. CodeQL's `actions/unpinned-tag` query does
 # not flag these, and pinning them would mean hand-rotating SHAs for `checkout`
@@ -95,46 +92,29 @@ class TestTriagePolicy:
         assert "actions/untrusted-checkout/medium" not in {e["id"] for e in policy["auto"]}
         assert "actions/untrusted-checkout/medium" in {e["id"] for e in policy["propose"]}
 
-    def test_house_rules_points_at_the_policy_file(self):
-        """The two allowlists must not be able to drift.
-
-        `house-rules.md` is the allowlist a human reads and `triage-policy.yml`
-        is the one the workflow reads. They stay honest by the markdown
-        *referencing* the YAML rather than restating its rule ids — so the check
-        is that the reference survives, not that two lists match.
-        """
-        text = HOUSE_RULES.read_text()
-        assert ".github/codeql/triage-policy.yml" in text, (
-            "cowork/house-rules.md must name the policy file, or its auto-lane list "
-            "silently stops covering the rules codeql-triage.yml actually fixes."
-        )
-
 
 class TestTriageWorkflow:
     def test_runs_at_deep_never_heavy(self):
-        """cowork/models.md: "Security never runs on `heavy`"."""
+        """Security never runs on `heavy`."""
         args = _triage()["jobs"]["triage"]["steps"][-1]["with"]["claude_args"]
         assert "vars.YEABOI_MODEL_DEEP" in args
         assert "YEABOI_MODEL_HEAVY" not in args
 
     def test_it_never_merges_and_never_arms_auto_merge(self):
-        """Fleet PRs ship inside a human's release batch, never on their own.
+        """Unattended PRs wait for a human's merge, never their own.
 
-        This job's PR waits gate-green for `make batch-assemble`; any merge
-        invocation surviving here — `--auto` included — would put a machine
-        merge back on a fleet PR, which is the one thing the batch model exists
-        to withhold. The prompt is allowed to *forbid* merging by name; the
-        runnable spelling must be absent.
+        Any merge invocation surviving here — `--auto` included — would put a
+        machine merge on an unattended PR. The prompt is allowed to *forbid*
+        merging by name; the runnable spelling must be absent.
         """
         text = TRIAGE_WORKFLOW.read_text()
         for line in text.splitlines():
             if re.search(r"gh pr merge[^\n]*--(auto|admin)", line):
                 assert re.search(r"\bNEVER\b|\bnever\b|\bnot\b", line), f"merge invocation survives: {line.strip()}"
-        assert "wait" in text and "batch" in text, "the prompt must say the PR waits for the release batch"
+        assert "wait" in text.lower(), "the prompt must say the PR waits for a human merge"
 
     def test_the_pr_is_labelled_semver_none(self):
-        """Without it, auto-version bumps the fix branch and the batch assembly
-        conflicts in pyproject.toml on the second constituent."""
+        """Without it, auto-version bumps the fix branch on an unattended PR."""
         assert "semver:none" in TRIAGE_WORKFLOW.read_text()
 
     def test_reads_alerts_and_can_open_a_pr(self):

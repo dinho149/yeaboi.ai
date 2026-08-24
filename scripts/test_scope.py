@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
 """Decide which tests and which CI jobs a set of changed files actually needs.
 
-Every one of the twelve `ci.yml` jobs ran on every push, and the two test jobs
+Every one of the `ci.yml` jobs ran on every push, and the two test jobs
 were the whole pipeline — 310s of unit tests and 408s of "integration" that was
 the same 11,000 unit tests plus 572 more. A one-line docs edit rebuilt the
-front-end bundles, cross-compiled Go, and ran the suite twice.
+front-end bundles and ran the suite twice.
 
-This maps changed paths onto **areas** — one per cowork workstream, so the fleet
-and CI share a vocabulary — and prints the pytest paths and job flags for that
-change. `ci.yml` runs it once in a cheap job and feeds the rest.
+This maps changed paths onto **areas** and prints the pytest paths and job
+flags for that change. `ci.yml` runs it once in a cheap job and feeds the rest.
 
 Three rules carry the whole design, and the last two are the ones that make it
 safe rather than merely fast:
 
-* **An area is its charter's `**Owns**` line, written out.** `cowork/workstreams/
-  standup.md` already claims `src/yeaboi/standup/` and `tests/unit/test_standup_*.py`
-  together. The registry below is that claim in a form a program can act on — not
-  parsed from the prose, because `_owns_block()` in `cowork_setup.py` does
-  substring matching over English, which is fine for "did anybody claim this" and
-  far too loose to decide what to skip.
+* **An area claims its sources and their tests together.** The registry below
+  is that claim in a form a program can act on.
 * **`ALWAYS` runs whatever changed.** A third of the guard suite scans the repo
   rather than importing a module — surface parity, the workflow schema, the
-  committed web bundles, the Go lockstep constants. Nothing imports them, so no
+  committed web bundles. Nothing imports them, so no
   dependency-derived selection can reach them, and a naive "changed X, run
   test_X" would drop every one.
 * **Anything unrecognised runs everything.** A path this file has never heard of
@@ -54,7 +49,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 @dataclass(frozen=True)
 class Area:
-    """One workstream's source paths and the tests that cover them.
+    """One area's source paths and the tests that cover them.
 
     ``src`` entries are path prefixes (a trailing ``/`` means a directory) and
     ``tests`` entries are globs relative to the repo root. Both are matched
@@ -69,10 +64,9 @@ class Area:
     also: tuple[str, ...] = ()
 
 
-# --- the fifteen workstreams --------------------------------------------------
-# Mirrors `cowork/workstreams/*.md`. `tests/unit/test_test_scope.py` asserts the
-# names match the charter filenames, so a workstream added or renamed there
-# fails here until this list follows.
+# --- the areas ----------------------------------------------------------------
+# `tests/unit/test_test_scope.py` asserts every source and test file is claimed,
+# so an area added or renamed here fails there until the registry follows.
 AREAS: tuple[Area, ...] = (
     Area(
         "standup",
@@ -280,6 +274,7 @@ AREAS: tuple[Area, ...] = (
     Area(
         "tui-ux",
         src=(
+            "scripts/tui_fuzz.py",
             "src/yeaboi/ui/",
             "src/yeaboi/repl/",
             "src/yeaboi/usage_export.py",
@@ -363,6 +358,8 @@ AREAS: tuple[Area, ...] = (
             # Cross-mode shared infrastructure like mcp/ below — it dispatches
             # into every mode's tools without owning any of them.
             "src/yeaboi/app/",
+            # The desktop wire contract `yeaboi app` serves (app_http.md).
+            "contracts/",
             # The Electron shell over that backend. No Python test imports it —
             # the desktop job (below, in JOBS) is what actually checks it — but
             # claiming it here keeps a desktop-only diff from forcing the full
@@ -418,40 +415,6 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_standup_provenance_log.py",
         ),
     ),
-    # The seventeenth workstream: the Go rewrite program. The seam moved here
-    # from platform (cowork/workstreams/go-migration.md). `cowork/migration/`
-    # itself is INERT prose — a checkbox flip rides its wave PR's `go/` change,
-    # and the parity job's own triggers (JOBS below) already fire on `go/`.
-    Area(
-        "go-migration",
-        src=(
-            "src/yeaboi/gocore/",
-            "go/",
-            "contracts/",
-            "scripts/migration_progress.py",
-        ),
-        tests=(
-            "tests/unit/test_gocore_*.py",
-            "tests/unit/test_migration_*.py",
-        ),
-    ),
-    # The fleet workstream, the only one whose subject is the fleet
-    # rather than the product. `cowork/` itself is deliberately absent: it is
-    # `INERT` below, and safe to be so precisely because these tests are in
-    # `ALWAYS` and run whatever changed.
-    Area(
-        "fleet",
-        src=(
-            "scripts/cowork_*.py",
-            "scripts/hygiene_lens.py",
-            "scripts/tui_fuzz.py",
-            ".github/hygiene/",
-        ),
-        tests=(
-            "tests/unit/test_cowork_*.py",
-            "tests/unit/test_hygiene_lens.py",
-        ),
-    ),
 )
 
 # --- always, whatever changed -------------------------------------------------
@@ -469,12 +432,6 @@ ALWAYS: tuple[str, ...] = (
     # desktop manifest, so no changed module implies it either.
     "tests/unit/test_tui_parity.py",
     "tests/unit/test_tips.py",
-    # Guards the migration bar against the file it renders from:
-    # `cowork/migration/program.md` is INERT (prose), so a checkbox flip or a
-    # table reword is exactly the change that would otherwise run no test at
-    # all — and a §3 table that stops parsing renders a bar stuck at the pilot
-    # baseline with nothing failing anywhere.
-    "tests/unit/test_migration_progress.py",
     "tests/unit/tools/test_tools_registry.py",
     "tests/unit/test_conftest_guards.py",
     # The gh guard's own reach test. Separate from `test_conftest_guards.py`, and
@@ -508,11 +465,6 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_claude_plugin.py",
     "tests/unit/test_pr_feedback.py",
     "tests/unit/test_gh_transport.py",
-    "tests/unit/test_cowork_*.py",
-    # The hygiene lenses read the charters, the policy file and the whole tree;
-    # nothing about a changed module implies them, and a lens that has quietly
-    # stopped finding anything looks exactly like a clean repo.
-    "tests/unit/test_hygiene_lens.py",
     "tests/unit/test_wt_script.py",
     "tests/unit/test_wt_issue_script.py",
     # docs/install.sh is served straight off main by GitHub Pages — no build, no
@@ -535,9 +487,7 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_ship_gate.py",
     "tests/unit/test_record_demo.py",
     # version / release lockstep
-    "tests/unit/test_gocore_packaging.py",
     "tests/unit/test_release_*.py",
-    "tests/unit/test_beta_signoff.py",
     "tests/unit/test_bump_version.py",
 )
 
@@ -570,11 +520,10 @@ GLOBAL: tuple[str, ...] = (
 
 # --- paths that cannot change Python behaviour --------------------------------
 # Prose and agent configuration. Safe to treat as inert *because* the tests that
-# read them — `test_cowork_*`, `test_claude_*`, `test_site_seo` — are in ALWAYS
-# and run regardless. Without that they would belong in GLOBAL.
+# read them — `test_claude_*`, `test_site_seo` — are in ALWAYS and run
+# regardless. Without that they would belong in GLOBAL.
 INERT: tuple[str, ...] = (
     ".claude/",
-    "cowork/",
     "README.md",
     "SECURITY.md",
     "CLAUDE.md",
@@ -591,42 +540,13 @@ class Job:
     triggers: tuple[str, ...]
 
 
-# The mirrored-Python families named in CLAUDE.md's dual-maintenance section.
-# A change to any of them must run the byte-parity gate, and none of them has an
-# import edge to `tests/parity/`.
-_MIRRORED = (
-    "src/yeaboi/agentwatch/",
-    "src/yeaboi/standup/aggregate.py",
-    "src/yeaboi/standup/references.py",
-    "src/yeaboi/standup/relatedness.py",
-    "src/yeaboi/standup/habits.py",
-    "src/yeaboi/standup/automation.py",
-    "src/yeaboi/standup/insights.py",
-    "src/yeaboi/standup/confidence.py",
-    "src/yeaboi/standup/categories.py",
-    "src/yeaboi/standup/engine.py",
-    "src/yeaboi/analysis/aggregate.py",
-    "src/yeaboi/analysis/code_health.py",
-    "src/yeaboi/analysis/coverage.py",
-    "src/yeaboi/analysis/practices.py",
-    "src/yeaboi/analysis/ai_usage.py",
-    "src/yeaboi/sessions.py",
-    # Not a twin, but every literal it asserts is a parity fixture — changing it
-    # changes what the Go side is checked against.
-    "tests/unit/test_code_health.py",
-)
-
 JOBS: tuple[Job, ...] = (
-    Job("go", ("go/", "contracts/", "packaging/yeaboi-core/", "src/yeaboi/gocore/", "tests/parity/") + _MIRRORED),
-    Job("parity", ("go/", "contracts/", "packaging/yeaboi-core/", "src/yeaboi/gocore/", "tests/parity/") + _MIRRORED),
     Job("web", ("frontend/", "src/yeaboi/web/", "scripts/gen_web_types.py")),
     # The Electron shell's typecheck + vitest + routes-manifest staleness gate.
     # The design/shared dirs are aliased into the renderer, so a change there
     # can break a desktop typecheck that `web` alone would not catch.
     Job("desktop", ("desktop/", "frontend/src/design/", "frontend/src/shared/", "src/yeaboi/app/routes_manifest.json")),
     Job("site", ("docs/", "scripts/gen_site_seo.py", "scripts/gen_og_card.py")),
-    # `packaging/` covers the `yeaboi-core` wheel's `hatch_build.py` hook; there
-    # is no root-level build hook or MANIFEST.in to name.
     Job("package", ("pyproject.toml", "src/yeaboi/web/static/", "packaging/")),
     Job("eval", ("src/yeaboi/prompts/", "src/yeaboi/agent/", "tests/golden/")),
     # The non-required matrix that runs the unit lane on 3.11–3.14. Gated on any
@@ -732,10 +652,7 @@ def resolve(changed: list[str]) -> Scope:
             claimed = [a for a in AREAS if _matches(path, a.tests)]
             for area in claimed:
                 scope.areas.add(area.name)
-            # `path.startswith("tests/parity/")`, not `path in (...)`: this
-            # compared a file path against a directory string, so the carve-out
-            # never fired and every parity edit ran the whole suite.
-            if not claimed and not path.startswith("tests/parity/") and not _matches(path, ALWAYS):
+            if not claimed and not _matches(path, ALWAYS):
                 scope.reasons.append(f"{path} is claimed by no area — running everything")
                 scope.full = True
             continue

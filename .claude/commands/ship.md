@@ -4,7 +4,7 @@ description: Verify (independent review + full tests), commit, push, and open a 
 
 Ship the current feature branch. Arguments (optional): $ARGUMENTS — may include `auto-merge` to enable auto-merge for low-risk changes (docs/chores/small fixes only).
 
-The contract this branch must satisfy is `cowork/definition-of-done.md` — the same ten items the cowork routines ship against. Read it; the steps below are how it is executed interactively.
+The contract this branch must satisfy: tests for every change, lint clean, security scan clean, surface parity (a capability lands on every surface or records a reasoned exemption), observability (logging per CLAUDE.md), and fresh web bundles when `frontend/` changed. The steps below are how it is executed interactively.
 
 **Two things about the order, because both were bugs.** The branch is **committed and rebased onto
 `origin/main` before anything is verified**: a gate run on a stale base proves something about a tree
@@ -16,17 +16,10 @@ Follow these steps in order. If any step fails, stop, report what failed, and fi
 
 ---
 
-1. **Sanity + two background starts.** Run `git branch --show-current`. If on `main`, stop: create a
-   feature branch first. Then, in the same turn:
+1. **Sanity.** Run `git branch --show-current`. If on `main`, stop: create a
+   feature branch first. Then `git fetch origin` (you need it in step 3 and it costs nothing here).
 
-   - `git fetch origin` (you need it in step 3 and it costs nothing here).
-   - **Linear (DoD item 1)** — spawn `cowork-scribe` **in the background** to find the ticket for this
-     branch on team `Yeaboi`, or create one if none exists — labelled `workstream:<name>` and in state
-     **In Progress** (a found ticket sitting in Backlog/Todo is moved to In Progress: work on it is
-     starting now). Keep the identifier (`YEA-NN`) for the PR body. Nothing needs it until step 7, so
-     it must not block. Never write to Linear inline; the scribe owns every outbound format.
-
-2. **Commit (DoD conventions).** Stage the relevant changes and commit with a lowercase imperative
+2. **Commit.** Stage the relevant changes and commit with a lowercase imperative
    message (e.g. "add streaming output"), ending with the Co-Authored-By trailer from CLAUDE.md's Git
    Conventions.
 
@@ -45,7 +38,7 @@ Follow these steps in order. If any step fails, stop, report what failed, and fi
    If the branch was pushed before, the later push needs `--force-with-lease`.
 
 4. **Independent verification (fresh context, no author bias) — IN THE BACKGROUND.** Spawn the
-   `code-reviewer` subagent (`.claude/agents/code-reviewer.md`) at the `deep` tier (`cowork/models.md`).
+   `code-reviewer` subagent (`.claude/agents/code-reviewer.md`).
    Give it ONLY: (a) the output of **`git diff origin/main...HEAD`**, (b) a one-paragraph description
    of what this branch was supposed to do — NOT this conversation's history. Its checklist (spec fit,
    skill-based conventions, correctness) lives in the agent definition.
@@ -58,7 +51,7 @@ Follow these steps in order. If any step fails, stop, report what failed, and fi
 
    Do not wait for it here. Move straight to step 5 and collect its findings in step 6.
 
-5. **Full test gate (DoD items 2–7) — in the foreground, while step 4 runs.** One command:
+5. **Full test gate — in the foreground, while step 4 runs.** One command:
 
    ```
    make ship-gate
@@ -68,9 +61,9 @@ Follow these steps in order. If any step fails, stop, report what failed, and fi
    → `preflight`, in fail-fast order, as a single `make` invocation so `lint` resolves once for itself
    and for `security`.
 
-   `preflight` is the new half. `make test` proves the Python suite and nothing else; CI checks eight
+   `preflight` is the new half. `make test` proves the Python suite and nothing else; CI checks
    further things, and `scripts/preflight.py` runs the ones this branch's diff needs — front-end
-   bundles, docs site, Go sidecar, parity unskipped, golden evaluators, the wheel's contents,
+   bundles, docs site, golden evaluators, the wheel's contents,
    actionlint — decided by `scripts/test_scope.py`, and printing every job it skipped and why. If it
    adds a capability, confirm its `CAPABILITIES` row and `FeatureTip` exist (`make test` fails without
    them).
@@ -90,11 +83,8 @@ Follow these steps in order. If any step fails, stop, report what failed, and fi
    If that is not `0`, rebase again (step 3's playbook) and re-run `make test-scoped`. Then
    `git push -u origin <branch>` and `gh pr create` against `main` with:
    - Title: same style as the commit message.
-   - Body: a Summary section (what and why), a Test plan section (what was run), the line
-     `Closes YEA-NN` (the magic word is load-bearing: it is what makes the Linear GitHub integration
-     attach the PR and move the ticket to Done on merge — a bare Linear URL does neither), a line for
-     any DoD item that genuinely does not apply, and the standard "🤖 Generated with Claude Code" footer.
-   - Then have `cowork-scribe` attach the PR to the Linear ticket and move it to **In Review**.
+   - Body: a Summary section (what and why), a Test plan section (what was run), and the standard
+     "🤖 Generated with Claude Code" footer.
 
    **The branch is stale again about a minute later, and that is by design.** `auto-version.yml` pushes
    a `chore: bump version … [auto]` commit onto the PR *branch*, touching `pyproject.toml` and
@@ -112,10 +102,9 @@ Follow these steps in order. If any step fails, stop, report what failed, and fi
 
    The middle condition is not ceremony: the `main-branch` ruleset does **not** require a branch to be
    up to date before merging, so `--auto` on a branch that has fallen behind merges a tree CI never
-   built. The `Closes YEA-NN` line from step 7 carries the ticket to Done when the merge lands — no
-   extra Linear step here.
+   built.
 
-9. **Hand off the review loop (DoD item 10)** — say plainly that the PR is **not done yet**, and why:
+9. **Hand off the review loop** — say plainly that the PR is **not done yet**, and why:
    `claude-review.yml` fires on `workflow_run` *after* CI succeeds, which is minutes from now, so at
    this moment its review does not exist. The `code-reviewer` pass in step 4 is not it — that one had
    no CI results, no diff-on-`main` context, and nobody else's eyes.
@@ -136,9 +125,9 @@ Follow these steps in order. If any step fails, stop, report what failed, and fi
    outrun the review here — which is why step 8 is limited to changes that are genuinely low-risk.
 
 10. **Report** — output the PR URL and a one-line status, ending with what is still outstanding: the
-    pending review, and items 8–9. If step 3 or step 7 rebased, say how far behind the branch had
+    pending review. If step 3 or step 7 rebased, say how far behind the branch had
     fallen and what conflicted.
 
 ---
 
-DoD items 8 (Notion) and 9 (Slack) are **not** done here — the `pr-merged-close-loop` cowork routine fires them on merge, so a branch that never merges never announces itself. The Linear → Done transition on merge rides the `Closes YEA-NN` line via the GitHub integration; the routine only verifies and repairs it. Item 10 (review feedback) is not done here either, for the plainer reason that the feedback does not exist yet — `/ship` opens the PR, and answering what comes back is a separate sitting.
+Review feedback is not answered here, for the plain reason that it does not exist yet — `/ship` opens the PR, and answering what comes back is a separate sitting (`/pr-feedback`).

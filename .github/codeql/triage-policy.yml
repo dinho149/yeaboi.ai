@@ -1,6 +1,6 @@
 # Which CodeQL rules `codeql-triage.yml` may fix without a human, and which it
 # must always propose. This file is the machine-readable half of the auto-lane
-# allowlist in cowork/house-rules.md; tests/unit/test_codeql_triage.py fails if
+# allowlist; tests/unit/test_codeql_triage.py fails if
 # the two disagree, because a rule that is auto here and unmentioned there is an
 # approval gate removed in a file nobody reads.
 #

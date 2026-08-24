@@ -1,27 +1,22 @@
-"""Deterministic scoring core of the team analysis — the seam the Go sidecar serves.
+"""Deterministic scoring core of the team analysis.
 
 Two invariants, same as ``standup/aggregate.py``:
 
 1. **The wire shape is the only shape.** ``build_*_inputs`` return plain JSON
-   (the ``json.loads(json.dumps(...))`` round trip is deliberate: it freezes the
-   inputs into exactly what the RPC would carry, so the Python reference and the
-   Go twin score byte-identical documents). ``AiAdoptionSignal`` and
+   (the ``json.loads(json.dumps(...))`` round trip is deliberate: it freezes
+   the inputs into one stable serialized document). ``AiAdoptionSignal`` and
    ``DocQualitySignal`` are the two dataclasses that cross; each travels through
    its ``*_to_wire`` / ``*_from_wire`` pair.
 2. **No side effects behind the seam.** Progress reporting stays with the
    callers (``run_ai_adoption`` / ``run_doc_quality``), and nothing here touches
    the network, the clock, or the database. The one LLM call in this mode
    (footprint insights) is started by the caller *between* the two code methods
-   — which is exactly why there are two: ``analysis.classify_markers`` must
-   return before the change-metadata fetch so the insights thread can overlap
-   it, and ``analysis.score_code`` needs the fetched files, so one method could
-   not serve both without serializing that overlap. The docs path has no LLM
-   anywhere (its insights are deterministic), so ``analysis.score_docs`` is a
-   single method.
+   — ``classify_markers`` returns before the change-metadata fetch so the
+   insights thread can overlap it, and ``score_code`` needs the fetched files.
+   The docs path has no LLM anywhere (its insights are deterministic), so
+   ``score_docs`` is a single function.
 
-The Go twin is ``go/internal/analysis/`` (each file names its Python source);
-byte parity is enforced by ``tests/parity/``. Result key order is contractual —
-these dicts feed ``json.dumps`` downstream.
+Result key order is contractual — these dicts feed ``json.dumps`` downstream.
 """
 
 from __future__ import annotations
@@ -32,12 +27,6 @@ import logging
 from yeaboi.team_profile import AiAdoptionSignal, DocQualitySignal
 
 logger = logging.getLogger(__name__)
-
-# The keys a sidecar result must carry to be trusted (per method); anything less
-# is treated as a failed call rather than scored partially.
-_CLASSIFY_KEYS = ("signal", "samples")
-_SCORE_KEYS = ("member_activity", "practices", "health", "activity_counts")
-_SCORE_DOCS_KEYS = ("assets", "signal", "summary", "findings", "action_plan", "insights")
 
 
 # ---------------------------------------------------------------------------
@@ -64,25 +53,6 @@ def classify_markers(inputs: dict) -> dict:
         "signal": signal_to_wire(aggregate_ai_markers(items)),
         "samples": _collect_samples(items, limit=None),
     }
-
-
-def go_classify(inputs: dict) -> dict | None:
-    """``analysis.classify_markers`` served by the sidecar, or None → Python computes."""
-    client = _client()
-    if client is None:
-        return None
-    from yeaboi.gocore import CoreError
-
-    try:
-        result = client.request("analysis.classify_markers", inputs)
-    except CoreError as exc:
-        logger.warning("gocore: analysis.classify_markers failed (%s) — falling back to Python", exc)
-        return None
-    if not isinstance(result, dict) or not all(key in result for key in _CLASSIFY_KEYS):
-        logger.warning("gocore: analysis.classify_markers result malformed — falling back to Python")
-        return None
-    logger.info("gocore: analysis.classify_markers served by the sidecar")
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -202,25 +172,6 @@ def score_code(inputs: dict) -> dict:
     }
 
 
-def go_score(inputs: dict) -> dict | None:
-    """``analysis.score_code`` served by the sidecar, or None → Python computes."""
-    client = _client()
-    if client is None:
-        return None
-    from yeaboi.gocore import CoreError
-
-    try:
-        result = client.request("analysis.score_code", inputs)
-    except CoreError as exc:
-        logger.warning("gocore: analysis.score_code failed (%s) — falling back to Python", exc)
-        return None
-    if not isinstance(result, dict) or not all(key in result for key in _SCORE_KEYS):
-        logger.warning("gocore: analysis.score_code result malformed — falling back to Python")
-        return None
-    logger.info("gocore: analysis.score_code served by the sidecar")
-    return result
-
-
 # ---------------------------------------------------------------------------
 # analysis.score_docs — page scoring + aggregation + findings + insights
 # ---------------------------------------------------------------------------
@@ -229,9 +180,9 @@ def go_score(inputs: dict) -> dict | None:
 def scoreable_doc_pages(pages: list[dict]) -> list[dict]:
     """The pages that produce an asset: a cached asset, or a body to score.
 
-    Shared by the reference implementation, the dispatch validation, and the
-    caller's post-seam cache write — all three must agree on which pages map
-    to which returned asset, so the filter lives in exactly one place.
+    Shared by ``score_docs`` and the caller's post-seam cache write — both must
+    agree on which pages map to which returned asset, so the filter lives in
+    exactly one place.
     """
     return [page for page in pages if isinstance(page.get("asset"), dict) or str(page.get("text", "")).strip()]
 
@@ -240,9 +191,9 @@ def build_score_docs_inputs(*, pages: list[dict]) -> dict:
     """Freeze the collected doc pages into the score-docs wire document.
 
     Each page carries either a version-matched cached ``asset`` (passed through
-    unscored) or its extracted ``text`` body; bodies cross the wire but never
-    appear in the result — the sidecar returns only derived assets, mirroring
-    the cache's own never-store-bodies rule.
+    unscored) or its extracted ``text`` body; bodies cross the seam but never
+    appear in the result — only derived assets do, mirroring the cache's own
+    never-store-bodies rule.
     """
     return json.loads(json.dumps({"pages": pages}))
 
@@ -297,45 +248,9 @@ def score_docs(inputs: dict) -> dict:
     }
 
 
-def go_score_docs(inputs: dict) -> dict | None:
-    """``analysis.score_docs`` served by the sidecar, or None → Python computes."""
-    client = _client()
-    if client is None:
-        return None
-    from yeaboi.gocore import CoreError
-
-    try:
-        result = client.request("analysis.score_docs", inputs)
-    except CoreError as exc:
-        logger.warning("gocore: analysis.score_docs failed (%s) — falling back to Python", exc)
-        return None
-    if not isinstance(result, dict) or not all(key in result for key in _SCORE_DOCS_KEYS):
-        logger.warning("gocore: analysis.score_docs result malformed — falling back to Python")
-        return None
-    # The caller zips result assets against the scoreable pages to write the
-    # score cache; a count mismatch would mis-key those writes, so it is a
-    # malformed result, not a partial one.
-    if not isinstance(result["assets"], list) or len(result["assets"]) != len(scoreable_doc_pages(inputs["pages"])):
-        logger.warning("gocore: analysis.score_docs asset count mismatch — falling back to Python")
-        return None
-    logger.info("gocore: analysis.score_docs served by the sidecar")
-    return result
-
-
 # ---------------------------------------------------------------------------
 # Shared plumbing
 # ---------------------------------------------------------------------------
-
-
-def _client():
-    """The discovered sidecar client, or None; never raises (analysis must not sink)."""
-    try:
-        from yeaboi import gocore
-
-        return gocore.get_client()
-    except Exception as exc:  # noqa: BLE001 — dispatch must never sink an analysis run
-        logger.warning("gocore: client unavailable (%s: %s) — using the Python path", type(exc).__name__, exc)
-        return None
 
 
 def signal_to_wire(signal: AiAdoptionSignal) -> dict:

@@ -2,8 +2,7 @@ name: Publish pre-release to PyPI
 
 # Every release-worthy merge to main ships a PyPI PRE-RELEASE (X.Y.ZrcN) and
 # nothing else. `pip install yeaboi` cannot see these; `pip install --pre yeaboi`
-# can. The official X.Y.Z is cut by publish.yml, and only when a human promotes
-# the accumulated batch — see cowork/routines/cron/release-promote-ask.md.
+# can. The official X.Y.Z is cut by publish.yml, from a human's merge.
 #
 # THIS FILENAME IS HALF OF A PYPI TRUSTED-PUBLISHER ENTRY. It needs its own
 # publisher on the `yeaboi` project (workflow `publish-beta.yml`, environment

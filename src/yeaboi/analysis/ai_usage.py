@@ -899,22 +899,20 @@ def run_ai_adoption(
                 f"{fanout_collapsed} duplicate fan-out item(s) collapsed "
                 "(same author, message, and day across multiple repositories)"
             )
-        # Marker classification runs behind the Go seam (analysis/aggregate.py;
-        # the sidecar serves analysis.classify_markers, Python is the fallback).
-        # It happens HERE, before the change-metadata fetch, because the insights
-        # thread below consumes signal+samples concurrently with that fetch.
+        # Marker classification (analysis/aggregate.py) happens HERE, before
+        # the change-metadata fetch, because the insights thread below consumes
+        # signal+samples concurrently with that fetch.
         # Evidence is no longer a first-N sample: every AI-marked item is kept so
         # recommendations and JSON/MCP consumers can inspect the complete basis.
         if footprint_enabled:
             from yeaboi.analysis.aggregate import (
                 build_classify_inputs,
                 classify_markers,
-                go_classify,
                 signal_from_wire,
             )
 
             classify_inputs = build_classify_inputs(items=items)
-            classified = go_classify(classify_inputs) or classify_markers(classify_inputs)
+            classified = classify_markers(classify_inputs)
             signal = signal_from_wire(classified["signal"])
             samples = classified["samples"]
             _report_code_progress(
@@ -1155,9 +1153,8 @@ def run_ai_adoption(
 
         # The deterministic tail — code health, the per-member activity tally,
         # and practice hygiene (tests / docs / tickets / descriptions, the lead
-        # signal of the card) — runs behind the Go seam (analysis/aggregate.py;
-        # the sidecar serves analysis.score_code, Python is the fallback).
-        from yeaboi.analysis.aggregate import build_score_inputs, go_score, score_code
+        # signal of the card) — lives in analysis/aggregate.py.
+        from yeaboi.analysis.aggregate import build_score_inputs, score_code
 
         score_inputs = build_score_inputs(
             items=items,
@@ -1167,7 +1164,7 @@ def run_ai_adoption(
             health_enabled=health_enabled,
             changed_file_cache_hits=changed_file_cache_hits,
         )
-        scored = go_score(score_inputs) or score_code(score_inputs)
+        scored = score_code(score_inputs)
         health = scored["health"]
         file_reports = health["file_reports"]
         health_findings = health["findings"]

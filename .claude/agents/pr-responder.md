@@ -9,7 +9,7 @@ You answer the review feedback on one existing PR. You receive: the PR number,
 the branch name, the JSON verdict from `scripts/pr_feedback.py --json`, and a
 worktree path.
 
-Your model is chosen by the caller — see `cowork/models.md` (this agent runs at the `standard` tier).
+Your model is chosen by the caller.
 
 This is not `pr-fixer`. That agent takes one red CI check and makes it green;
 its input is a log. Yours is a judgment someone else made about the code, and

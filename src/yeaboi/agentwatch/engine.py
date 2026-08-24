@@ -125,140 +125,6 @@ def _resolve_db_path(db_path):
     return get_db_path()
 
 
-# ---------------------------------------------------------------------------
-# Go core dispatch (see contracts/v1/rpc.md; YEABOI_GO=0 opts out)
-# ---------------------------------------------------------------------------
-# The sidecar serves each pipeline's deterministic half: transcript scanning,
-# usage aggregation/pricing, the standup session rollup, and the security
-# audit. Discovery is automatic — installing the yeaboi[core] wheel is enough.
-# The LLM prose calls, tracker scans, delivery, history and exports all stay
-# in Python. Every failure downgrades to the Python path with one log line —
-# the Go path is never the only path.
-
-
-def _go_client():
-    """The sidecar client when one is discovered and healthy, else None."""
-    try:
-        from yeaboi import gocore
-
-        return gocore.get_client()
-    except Exception as exc:  # noqa: BLE001 — dispatch must never sink a pipeline
-        logger.warning("gocore: client unavailable (%s: %s) — using the Python path", type(exc).__name__, exc)
-        return None
-
-
-def _go_standup_digest(*, window_start: str, digest_date: str, db_path, on_progress):
-    """Scan + summarise local sessions in the Go core → deterministic AgentStandupDigest.
-
-    Local half only — tracker scanning, prose, delivery and history stay
-    Python. The artifact comes back in the payload shape ``report_from_payload``
-    accepts, with empty repo/prose fields for Python to fill. None → caller
-    computes in Python.
-    """
-    client = _go_client()
-    if client is None:
-        return None
-    from yeaboi.gocore import CoreError
-
-    try:
-        result = client.request(
-            "agentwatch.standup",
-            {
-                "db_path": str(_resolve_db_path(db_path)),
-                "window_start": window_start,
-                "digest_date": digest_date,
-            },
-            on_progress=on_progress,
-        )
-    except CoreError as exc:
-        logger.warning("gocore: agentwatch.standup failed (%s) — falling back to Python", exc)
-        return None
-    from yeaboi.agentwatch.store import report_from_payload
-
-    digest = report_from_payload("standup", result.get("artifact"))
-    if digest is None:
-        logger.warning("gocore: agentwatch.standup artifact did not hydrate — falling back to Python")
-        return None
-    logger.info("gocore: agentwatch.standup served by the sidecar")
-    return digest
-
-
-def _go_security_report(*, scan_date: str, deep: bool, db_path, on_progress):
-    """Scan + audit + rank in the Go core → deterministic AgentSecurityReport.
-
-    The config roots travel as params (the same paths ``_config_roots``
-    resolves, so test overrides reach the sidecar too); the LLM summary and
-    history stay Python. None → caller computes in Python.
-    """
-    client = _go_client()
-    if client is None:
-        return None
-    from yeaboi.agentwatch import security_checks
-    from yeaboi.gocore import CoreError
-
-    claude_dir, claude_json = security_checks._config_roots()
-    try:
-        result = client.request(
-            "agentwatch.security",
-            {
-                "db_path": str(_resolve_db_path(db_path)),
-                "scan_date": scan_date,
-                "reset_cursors": deep,
-                "claude_dir": str(claude_dir),
-                "claude_json": str(claude_json),
-            },
-            on_progress=on_progress,
-        )
-    except CoreError as exc:
-        logger.warning("gocore: agentwatch.security failed (%s) — falling back to Python", exc)
-        return None
-    from yeaboi.agentwatch.store import report_from_payload
-
-    report = report_from_payload("security", result.get("artifact"))
-    if report is None:
-        logger.warning("gocore: agentwatch.security artifact did not hydrate — falling back to Python")
-        return None
-    logger.info("gocore: agentwatch.security served by the sidecar")
-    return report
-
-
-def _go_usage_report(*, window_days, project, source, db_path, today, on_progress):
-    """Scan + aggregate + price in the Go core → deterministic AgentUsageReport.
-
-    The artifact comes back in the exact payload shape ``report_from_payload``
-    already accepts (that is the contract), with empty insights/prose fields
-    for the Python side to fill. None → caller computes in Python.
-    """
-    client = _go_client()
-    if client is None:
-        return None
-    from yeaboi.gocore import CoreError
-
-    try:
-        result = client.request(
-            "agentwatch.usage",
-            {
-                "db_path": str(_resolve_db_path(db_path)),
-                "window_days": int(window_days),
-                "project": project,
-                "source": source,
-                "today": today.isoformat(),
-            },
-            on_progress=on_progress,
-        )
-    except CoreError as exc:
-        logger.warning("gocore: agentwatch.usage failed (%s) — falling back to Python", exc)
-        return None
-    from yeaboi.agentwatch.store import report_from_payload
-
-    report = report_from_payload("usage", result.get("artifact"))
-    if report is None:
-        logger.warning("gocore: agentwatch.usage artifact did not hydrate — falling back to Python")
-        return None
-    logger.info("gocore: agentwatch.usage served by the sidecar")
-    return report
-
-
 def _distinct_session_count(sessions: list[dict]) -> int:
     """Count logical sessions, not rollup rows.
 
@@ -329,10 +195,7 @@ def _deterministic_usage_report(
     """Everything in the usage pipeline up to (not including) the LLM.
 
     Scan, aggregate, price — returns the artifact with empty ``insights``/
-    ``recommendations``/``generated_at`` for the caller to fill. This function
-    is the exact computation the Go core mirrors (contracts/v1/
-    agentwatch.usage.json); tests/parity runs both over the same fixtures, so
-    behavior changes here must bump or update the contract.
+    ``recommendations``/``generated_at`` for the caller to fill.
 
     Two deliberate approximations in the windowing, both erring toward showing
     work rather than hiding it. A session is placed by its ``ended_at``, so one
@@ -502,11 +365,9 @@ def run_agent_usage(
 
     Deterministic gather: refresh the collector's ingest, aggregate the stored
     session rollups over the window, and price every (model, session) pair from
-    the shared pricing table — served by the Go core when a sidecar binary is
-    discovered (yeaboi[core]; YEABOI_GO=0 opts out), by
-    ``_deterministic_usage_report`` otherwise, with identical results
-    (tests/parity). The single LLM call then writes ``insights`` and
-    ``recommendations`` prose over the computed aggregates — never numbers.
+    the shared pricing table (``_deterministic_usage_report``). The single LLM
+    call then writes ``insights`` and ``recommendations`` prose over the
+    computed aggregates — never numbers.
 
     project: substring filter on the session's project directory name.
     source:  exact filter on the telemetry source (currently "claude_code").
@@ -523,7 +384,7 @@ def run_agent_usage(
         dry_run,
     )
 
-    report = _go_usage_report(
+    report = _deterministic_usage_report(
         window_days=window_days,
         project=project,
         source=source,
@@ -531,15 +392,6 @@ def run_agent_usage(
         today=resolved_today,
         on_progress=on_progress,
     )
-    if report is None:
-        report = _deterministic_usage_report(
-            window_days=window_days,
-            project=project,
-            source=source,
-            db_path=db_path,
-            today=resolved_today,
-            on_progress=on_progress,
-        )
 
     warnings = list(report.warnings)
     by_model = report.by_model
@@ -774,15 +626,13 @@ def _deterministic_standup_digest(
 
     Scan, list the window's sessions, summarise and total them — returns the
     digest with empty ``repo_activity``/prose/``generated_at`` for the caller
-    to fill: the tracker leg and the LLM run in Python on BOTH paths. This
-    function is the exact computation the Go core mirrors (contracts/v1/
-    agentwatch.standup.json); tests/parity runs both over the same fixtures.
+    to fill: the tracker leg and the LLM run afterwards.
 
     The no-local-sessions coverage note is deterministic and lives here: a
     cloud/CI environment has no ~/.claude at all, so its digest is
     tracker-only — without the note the reader cannot tell "the agents were
-    idle" from "this machine can't see them", and the cowork routine's
-    scheduled run is exactly that case.
+    idle" from "this machine can't see them", and a scheduled cloud
+    run is exactly that case.
     """
     warnings: list[str] = []
     _emit(on_progress, "scan", "running", label="Scan agent sessions")
@@ -873,10 +723,10 @@ def run_agent_standup(
     ``include_local_sessions=False`` is the mirror of that: skip the local half
     entirely for a tracker-only digest. It exists because session logs are read
     from *this machine's* ``~/.claude``, so a run somewhere else does not see
-    fewer sessions — it sees a different set. The cowork routine runs in the
-    cloud, and on 2026-08-13 it reported "1 session · $0.10", which was its own
-    session: the digest had found itself and said so as though it were the
-    fleet's work. Not scanning is the honest option, and it must skip the scan
+    fewer sessions — it sees a different set. A scheduled cloud run once reported
+    "1 session · $0.10", which was its own session: the digest had found itself
+    and said so as though it were the day's work. Not scanning is the honest
+    option, and it must skip the scan
     rather than discard its result, because scanning is what produced the
     phantom.
 
@@ -907,18 +757,10 @@ def run_agent_standup(
         include_local_sessions,
     )
 
-    # Go core first (single-writer: the sidecar scans and summarises before
-    # Python opens the store); None falls back to the Python local half. Both
-    # produce the identical deterministic digest (tests/parity), and the
-    # tracker leg + LLM below run in Python either way.
     if include_local_sessions:
-        digest = _go_standup_digest(
+        digest = _deterministic_standup_digest(
             window_start=window_start, digest_date=digest_date, db_path=db_path, on_progress=on_progress
         )
-        if digest is None:
-            digest = _deterministic_standup_digest(
-                window_start=window_start, digest_date=digest_date, db_path=db_path, on_progress=on_progress
-            )
     else:
         digest = _tracker_only_digest(window_start=window_start, digest_date=digest_date, on_progress=on_progress)
     warnings = list(digest.warnings)
@@ -1119,9 +961,7 @@ def _deterministic_security_report(
     Scan (deep forgets the cursors first), map the stored findings, audit the
     settings files, inventory the MCP servers, rank and score — returns the
     report with empty ``summary``/``recommendations``/``generated_at`` for the
-    caller to fill. This is the exact computation the Go core mirrors
-    (contracts/v1/agentwatch.security.json); tests/parity runs both over the
-    same fixtures.
+    caller to fill.
     """
     from yeaboi.agentwatch import security_checks
 
@@ -1188,14 +1028,7 @@ def run_agent_security(
     scan_date = resolved_today.isoformat()
     logger.info("agent security: scan %s (deep=%s dry_run=%s)", scan_date, deep, dry_run)
 
-    # Go core first (deep travels as reset_cursors over the wire); None falls
-    # back to the Python pipeline. Both produce the identical deterministic
-    # report (tests/parity); the LLM prose below runs in Python either way.
-    report = _go_security_report(scan_date=scan_date, deep=deep, db_path=db_path, on_progress=on_progress)
-    if report is None:
-        report = _deterministic_security_report(
-            scan_date=scan_date, deep=deep, db_path=db_path, on_progress=on_progress
-        )
+    report = _deterministic_security_report(scan_date=scan_date, deep=deep, db_path=db_path, on_progress=on_progress)
 
     warnings = list(report.warnings)
     ranked = report.findings

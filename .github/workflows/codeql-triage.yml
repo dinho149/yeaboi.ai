@@ -4,14 +4,8 @@
 # admitted nobody owned them ("findings land in the Security tab… and get
 # triaged"). Nothing did the triaging, and the backlog reached 56.
 #
-# The cowork security workstream could not absorb this, for the same reason the
-# flaky-test hunter is a workflow: an alert is state in the GitHub API, and a
-# scout with Read/Grep/Glob cannot see it. Three more reasons it stays here and
-# not in a routine — cowork/house-rules.md allows one coherent change per run and
-# one open PR per workstream (a batch of same-rule fixes is neither), a scout may
-# only edit its charter's paths (alerts land wherever the code is), and
-# claude.yml's implement job is pinned to `heavy`, which cowork/models.md
-# forbids for security work. This job runs at `deep`.
+# An alert is state in the GitHub API, so this is a workflow rather than an
+# agent routine. This job runs at `deep`.
 #
 # Deterministic-FIRST, like the flaky hunter: a bash stage does the whole survey
 # and classification with zero Claude tokens, and Claude runs only when there is
@@ -20,10 +14,9 @@
 # UNLIKE the flaky hunter, this one writes code — a flake fix needs judgment, a
 # SHA pin does not. What keeps that safe is not trust, it is the merge path:
 # this job NEVER merges and never arms auto-merge. Its PR goes through CI,
-# Claude Review and the `pr-feedback` status like every fleet PR, then waits
-# gate-green for the next release batch — a human assembles, hand-tests and
-# merges it (see release-signoff.md in the cowork docs). A wrong fix does not
-# ship; it sits red on its own PR, or unshipped until a human carries it.
+# Claude Review and the `pr-feedback` status, then waits gate-green for a human
+# to review and merge it. A wrong fix does not ship; it sits red on its own PR,
+# or unshipped until a human carries it.
 #
 # Loop-safe: the PR is github-actions[bot]-authored. claude-review.yml skips bot
 # authors *unless* the PR carries the `cowork` label — which this one does, on
@@ -93,9 +86,8 @@ jobs:
           # nobody has ruled on from one that was answered — and, since 2026-08,
           # from one answered about a DIFFERENT file. `--state all` because a
           # closed issue is still a record; what it is no longer is a reason to
-          # stay quiet. `--label cowork` rather than `cowork:proposal`: that pair
-          # is mutually exclusive with `cowork:queued` (cowork/house-rules.md,
-          # **The queue**), and the narrow label would miss a reclassified issue.
+          # stay quiet. `--label cowork` rather than the narrower proposal
+          # label, which would miss a reclassified issue.
           gh issue list --label cowork --state all --limit 500 \
             --json number,title,state > issues-raw.json
 
@@ -106,11 +98,9 @@ jobs:
           uv run python scripts/codeql_triage.py \
             --alerts alerts-raw.json --issues issues-raw.json
 
-          # No auto-merge probe any more, because nothing here arms auto-merge:
-          # fleet PRs — this one included, by its `security/codeql-triage`
-          # branch prefix — wait open and ship inside the next batch a human
-          # assembles, hand-tests and merges (`cowork/release-signoff.md`). The
-          # gate still runs on the PR itself; only the merge moved.
+          # No auto-merge probe, because nothing here arms auto-merge: the PR
+          # waits open until a human reviews and merges it. The gate still runs
+          # on the PR itself.
 
       - name: Fix and propose with Claude
         if: steps.detect.outputs.found == 'true'
@@ -119,8 +109,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # `deep`, and deliberately NOT `heavy`: cowork/models.md — "Security
-          # never runs on heavy", because Fable 5 reroutes cybersecurity queries
+          # `deep`, and deliberately NOT `heavy`: security never runs on
+          # `heavy`, because Fable 5 reroutes cybersecurity queries
           # to less capable models, which is fine for a chat and unacceptable for
           # unattended code changes. The `||` fallback is the prior-behaviour pin.
           claude_args: >-
@@ -143,9 +133,6 @@ jobs:
             rule is the prescribed remedy — follow it rather than inventing one,
             and reuse the helper it names (`redaction.log_safe`,
             `tools/local_git._known_git_host`) instead of writing a second one.
-            Read `cowork/definition-of-done.md` and `cowork/house-rules.md` too;
-            they bind this job.
-
             ## The fix PR (only if `codeql-auto.json`'s "alerts" is non-empty)
 
             1. `git checkout -b security/codeql-triage-$(date -u +%Y%m%d)`.
@@ -170,18 +157,16 @@ jobs:
                before continuing. Re-run the gate afterwards.
             7. Push and open ONE pull request:
                - title: `fix the open CodeQL alerts on <rule>, <rule>` (name the rules)
-               - labels: `cowork`, `workstream:security`, `type:security`, and
-                 `semver:none` — fleet PRs never bump the version; the batch PR
-                 that ships them gets the one bump, and a bump here would
-                 collide with every other constituent at assembly.
+               - labels: `cowork`, `type:security`, and `semver:none` —
+                 unattended PRs never bump the version; the human merge that
+                 ships them decides the bump.
                - body: a table of every alert — number, rule, file:line, and a
                  link — plus a section naming anything you moved to the propose
                  lane. The `cowork` label is required: claude-review.yml skips
                  bot-authored PRs without it, and that review is this job's gate.
             8. Do NOT merge and do NOT arm auto-merge. The PR waits, gate-green,
-               for the next release batch: a human runs `make batch-assemble`,
-               hand-tests the assembled batch, and merges the batch PR
-               (`cowork/release-signoff.md`). NEVER `gh pr merge` in any form.
+               for a human to hand-test and merge it. NEVER `gh pr merge` in any
+               form.
 
             ## The propose lane (for `codeql-propose.json`)
 
