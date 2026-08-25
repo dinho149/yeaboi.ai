@@ -1,7 +1,7 @@
 <div align="center">
 
 
-<img src="docs/banner.jpg" alt="yeaboi.ai" width="800"/>
+<img src="https://yeaboi.ai/banner.jpg" alt="yeaboi.ai" width="800"/>
 
 # 🤙 yeaboi.ai
 
@@ -21,7 +21,7 @@
 ---
 
 <div align="center">
-<img src="docs/demo.gif" alt="yeaboi.ai demo — the landing split asks who you're working with today, then tours the Humans menu (analysis, planning, standup, retro, poker, performance, reporting) and the Agents menu (usage, standup, security)" width="800"/>
+<img src="https://yeaboi.ai/demo.gif" alt="yeaboi.ai demo — the landing split asks who you're working with today, then tours the Humans menu (analysis, planning, standup, retro, poker, performance, reporting) and the Agents menu (usage, standup, security)" width="800"/>
 
 *Two worlds, one command: scrum for your team, and cost, digests & security posture for your agents.*
 </div>
@@ -41,7 +41,7 @@ yeaboi                          # launch the interactive TUI
 **You do not need to install Python first.** The script installs [uv](https://docs.astral.sh/uv/)
 if it is missing, then gives yeaboi its own isolated environment on a Python that uv downloads —
 so whatever is (or isn't) on your machine does not matter. It writes only under your home
-directory and never uses `sudo`. Read it first if you like: [`docs/install.sh`](docs/install.sh).
+directory and never uses `sudo`. Read it first if you like: [`install.sh`](https://yeaboi.ai/install.sh).
 
 macOS and Linux. On Windows, install inside [WSL](https://learn.microsoft.com/windows/wsl/install) —
 the terminal UI needs a POSIX terminal.

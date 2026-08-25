@@ -1,9 +1,12 @@
 """The beta label reaches every surface, including the ones that can't import it.
 
-HTML, Markdown and the plugin SKILL.md carry hand-written copies of the wording
-in ``src/yeaboi.beta``. Nothing else checks them — the docs site has no test and
-no CI job — so this file is what stops the copies drifting from the constant, and
-what catches a half-finished rollout.
+Markdown and the plugin SKILL.md carry hand-written copies of the wording in
+``src/yeaboi.beta``, and nothing else checks them — so this file is what stops
+the copies drifting from the constant, and what catches a half-finished rollout.
+
+The website's copies live in the yeaboi-site repo and are pinned there against
+``contracts/site.json``; ``tests/unit/test_site_contract.py`` is the hop that
+keeps that vocabulary equal to these constants.
 
 Assertions deliberately use the SHORT phrase, never the full sentence: HTML
 re-wraps at whatever width the author's editor chose, so a whole-sentence match
@@ -12,30 +15,17 @@ would fail for a purely cosmetic reformat.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
 
-from yeaboi.beta import BETA_LABEL, BETA_RGB, BETA_TAG, PERFORMANCE_BETA_PHRASE
+from yeaboi.beta import BETA_LABEL, BETA_TAG, PERFORMANCE_BETA_PHRASE
 
 REPO = Path(__file__).resolve().parents[2]
-DOCS = REPO / "docs"
 PERFORMANCE_SKILL = REPO / "claude-plugin" / "yeaboi" / "skills" / "performance" / "SKILL.md"
-
-# Pages that describe Performance to a reader and must carry the caveat.
-BETA_DOC_PAGES = (
-    DOCS / "index.html",
-    DOCS / "docs" / "modes" / "index.html",
-    DOCS / "docs" / "modes" / "performance.html",
-)
 
 
 class TestHandWrittenCopies:
-    @pytest.mark.parametrize("page", BETA_DOC_PAGES, ids=lambda p: p.name)
-    def test_docs_page_carries_the_phrase(self, page):
-        assert PERFORMANCE_BETA_PHRASE in page.read_text(encoding="utf-8")
-
     def test_plugin_skill_carries_the_phrase(self):
         assert PERFORMANCE_BETA_PHRASE in PERFORMANCE_SKILL.read_text(encoding="utf-8")
 
@@ -57,48 +47,6 @@ class TestHandWrittenCopies:
         readme = (REPO / "README.md").read_text(encoding="utf-8")
         modes_line = next(line for line in readme.splitlines() if "modes, one command" in line)
         assert "beta" in modes_line.lower()
-
-
-class TestDocsPill:
-    def test_beta_pill_class_is_defined(self):
-        css = (DOCS / "assets" / "site.css").read_text(encoding="utf-8")
-        assert ".beta-pill{" in css
-
-    def test_pill_colour_matches_the_terminal_chip(self):
-        css = (DOCS / "assets" / "site.css").read_text(encoding="utf-8")
-        pill = css.split(".beta-pill{", 1)[1].split("}", 1)[0]
-        assert f"rgb({BETA_RGB[0]},{BETA_RGB[1]},{BETA_RGB[2]})" in pill
-
-    def test_pill_is_not_the_live_badge(self):
-        # `.badge::before` injects a green "live" dot, which says the opposite of
-        # what a beta marker means. The pill must stay its own class.
-        css = (DOCS / "assets" / "site.css").read_text(encoding="utf-8")
-        pill = css.split(".beta-pill{", 1)[1].split("}", 1)[0]
-        assert "var(--success)" not in pill
-
-    def test_every_page_using_the_pill_links_site_css(self):
-        for page in DOCS.rglob("*.html"):
-            text = page.read_text(encoding="utf-8")
-            if 'class="beta-pill"' in text:
-                assert "/assets/site.css" in text, page
-
-
-class TestCacheBust:
-    def test_all_docs_pages_share_one_cache_bust_version(self):
-        """A new CSS class behind a stale cached stylesheet is an invisible badge.
-
-        That failure mode is silent — the page renders, the pill just doesn't —
-        so a half-finished `?v=` sweep is exactly the kind of mistake that ships.
-        """
-        versions: dict[str, set[str]] = {}
-        for page in DOCS.rglob("*.html"):
-            found = set(re.findall(r"\?v=(\d+)", page.read_text(encoding="utf-8")))
-            if found:
-                versions[page.relative_to(DOCS).as_posix()] = found
-
-        assert versions, "no cache-busted asset links found — did the convention change?"
-        all_versions = set().union(*versions.values())
-        assert len(all_versions) == 1, f"mixed cache-bust versions: {versions}"
 
 
 class TestBetaMarkersAgree:

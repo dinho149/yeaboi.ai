@@ -15,13 +15,20 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-from yeaboi.agent.graph import create_graph
+# scripts/ is not a package, and these modules are also loaded by path in tests,
+# where sys.path[0] is not this directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _site_repo import site_root  # noqa: E402
+
+from yeaboi.agent.graph import create_graph  # noqa: E402
 
 
 def main() -> None:
-    """Build the agent graph and save a PNG visualisation to docs/graph.png."""
+    """Build the agent graph and save a PNG visualisation into the website."""
     graph = create_graph()
 
     # get_graph() returns a DrawableGraph — a lightweight representation of
@@ -31,8 +38,9 @@ def main() -> None:
     # See README: "Agentic Blueprint Reference" — graph visualisation
     png_bytes = graph.get_graph().draw_mermaid_png()
 
-    output_path = Path(__file__).resolve().parent.parent / "docs" / "graph.png"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Drawn from this repo's code, served by the website: written into a
+    # yeaboi-site checkout. See scripts/_site_repo.py.
+    output_path = site_root() / "graph.png"
     output_path.write_bytes(png_bytes)
 
     print(f"Graph PNG saved to {output_path}")

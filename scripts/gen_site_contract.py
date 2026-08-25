@@ -33,13 +33,17 @@ if sys.version_info >= (3, 11):
 else:  # 3.10 — tomllib landed in 3.11; the `dev` extra supplies the backport.
     import tomli as tomllib
 
+# Import-free by design (tests/unit/test_beta.py enforces it), so importing it
+# here costs nothing.
+from yeaboi import beta
+
 ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
 CONTRACT = ROOT / "contracts" / "site.json"
 
 
-def build() -> dict[str, str]:
-    """Derive the contract from pyproject's [project] table."""
+def build() -> dict:
+    """Derive the contract from pyproject's [project] table and yeaboi.beta."""
     meta = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
     name = meta["name"]
     return {
@@ -49,10 +53,21 @@ def build() -> dict[str, str]:
         "homepage": meta["urls"]["Homepage"],
         "repository": meta["urls"]["Repository"],
         "pypi": f"https://pypi.org/project/{name}/",
+        # The site's pages and its .beta-pill carry hand-written copies of these.
+        # They were pinned to yeaboi.beta by a test in this repo; across the
+        # split the site pins them to this instead.
+        "beta": {
+            "label": beta.BETA_LABEL,
+            "tag": beta.BETA_TAG,
+            "rgb": list(beta.BETA_RGB),
+            "performance_phrase": beta.PERFORMANCE_BETA_PHRASE,
+            "agentwatch_phrase": beta.AGENTWATCH_BETA_PHRASE,
+            "ship_phrase": beta.SHIP_BETA_PHRASE,
+        },
     }
 
 
-def render(contract: dict[str, str]) -> str:
+def render(contract: dict) -> str:
     return json.dumps(contract, indent=2, ensure_ascii=False) + "\n"
 
 

@@ -23,8 +23,8 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 `make` invocation so `lint` resolves once for itself and for `security`.
 
 `preflight` is the half `make test` cannot cover: `scripts/preflight.py` runs the optional CI jobs
-this branch's diff needs — front-end bundles, the desktop app, the docs site, golden evaluators, the
-wheel's contents, cross-version compat, actionlint — decided by `scripts/test_scope.py`, printing
+this branch's diff needs — front-end bundles, the desktop app, golden evaluators, the wheel's
+contents, cross-version compat, actionlint — decided by `scripts/test_scope.py`, printing
 every job it skipped and why.
 
 **A new capability needs three registry edits or `make test` fails**, each with a message naming the
@@ -33,6 +33,10 @@ exact edit: a `CAPABILITIES` row in `tests/unit/test_surface_parity.py`, a `Feat
 *REQUIRED: Surface Parity*.
 
 Edited anything under `frontend/`? `make web` and commit `src/yeaboi/web/static/` in the same commit.
+
+Changed `pyproject.toml`'s `requires-python` or a `[project.urls]` entry? `make site-contract` and
+commit `contracts/site.json` — the **yeaboi-site** repo vendors it, and `test_site_contract.py`
+fails until you do.
 
 ## After the push
 

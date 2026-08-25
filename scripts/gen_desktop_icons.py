@@ -4,7 +4,7 @@
 The shell had one image — a 64px duck used as the tray icon — and packaging
 needs a family: a macOS ``.icns``, a Windows ``.ico``, a Linux icon directory, a
 menu-bar template, and a DMG backdrop. All of them are derived here from the
-three 480x509 layers in ``docs/assets/`` (base, wing, glasses) that already
+three 480x509 layers in the website's ``assets/`` (base, wing, glasses) that already
 compose the duck on yeaboi.ai, so the dock icon and the landing page are the
 same bird.
 
@@ -29,8 +29,17 @@ import sys
 from io import BytesIO
 from pathlib import Path
 
+# scripts/ is not a package, and these modules are also loaded by path in tests,
+# where sys.path[0] is not this directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _site_repo import site_assets  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
-ART = ROOT / "docs" / "assets"
+# The master art is a served asset of the website, so it is resolved when it is
+# needed rather than at import — tests/unit/test_desktop_icons.py imports this
+# module to assert the committed icon set, with no sibling checkout in CI.
+# See scripts/_site_repo.py.
 BUILD = ROOT / "desktop" / "build"
 RESOURCES = ROOT / "desktop" / "resources"
 
@@ -82,9 +91,10 @@ def _duck():
     """The three website layers composited and cropped to the bird itself."""
     from PIL import Image
 
-    duck = Image.open(ART / "duck-base.png").convert("RGBA")
+    art = site_assets()
+    duck = Image.open(art / "duck-base.png").convert("RGBA")
     for layer in ("duck-wing.png", "duck-glasses.png"):
-        duck = Image.alpha_composite(duck, Image.open(ART / layer).convert("RGBA"))
+        duck = Image.alpha_composite(duck, Image.open(art / layer).convert("RGBA"))
     return duck.crop(duck.getbbox())
 
 

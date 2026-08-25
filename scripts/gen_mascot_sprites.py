@@ -4,8 +4,14 @@ Dev tool — NOT imported at runtime (keeps Pillow out of the shipped app).
 Run from the repo root:  uv run python scripts/gen_mascot_sprites.py
 """
 
+import sys
 from pathlib import Path
 
+# scripts/ is not a package, and these modules are also loaded by path in tests,
+# where sys.path[0] is not this directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _site_repo import site_assets  # noqa: E402
 from PIL import Image
 
 # Letter -> rgb. MUST stay identical to MASCOT_PALETTE in _mascot.py.
@@ -29,7 +35,8 @@ WIDTH = 34
 # NEAREST downscale cleanly (18px muddies the glasses; see render_mini in
 # _mascot.py). Frozen as DUCK_MINI_{BASE,WING,GLASSES}.
 MINI_WIDTH = 22
-ASSETS = Path("docs/assets")
+# The master art is a served asset of the website; resolved on use, not at
+# import, because tests/unit/test_mascot.py loads this module. See _site_repo.py.
 OUT = Path("src/yeaboi/ui/shared/_mascot_sprites.py")
 
 
@@ -68,7 +75,7 @@ def despeckle(grid, min_size=3):
 
 
 def trace(name, width=WIDTH):
-    im = Image.open(ASSETS / f"{name}.png").convert("RGBA").transpose(Image.FLIP_LEFT_RIGHT)
+    im = Image.open(site_assets() / f"{name}.png").convert("RGBA").transpose(Image.FLIP_LEFT_RIGHT)
     w, h = im.size
     height = round(width * h / w)
     if height % 2:

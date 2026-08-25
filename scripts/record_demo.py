@@ -53,13 +53,28 @@ import tempfile
 import time
 from pathlib import Path
 
+# scripts/ is not a package, and these modules are also loaded by path in tests,
+# where sys.path[0] is not this directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _site_repo import site_root  # noqa: E402
+
 logger = logging.getLogger("record_demo")
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# The demo drives this repo's TUI and is served by the website, so it is written
+# into a yeaboi-site checkout — resolved when a path is actually needed, not at
+# import, so this module stays importable with no sibling checkout.
+#
 # Committed gzipped: the raw cast is ~10MB of 60fps full-screen repaints that
 # compress ~100:1; the .gz suffix switches CastWriter/render/verify to gzip.
-DEFAULT_CAST = REPO_ROOT / "docs" / "demo.cast.gz"
-DEFAULT_GIF = REPO_ROOT / "docs" / "demo.gif"
+def default_cast() -> Path:
+    return site_root() / "demo.cast.gz"
+
+
+def default_gif() -> Path:
+    return site_root() / "demo.gif"
+
 
 COLS, ROWS = 140, 40
 
@@ -505,12 +520,16 @@ def verify(cast_path: Path, gif_path: Path) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Record/render/verify the README demo GIF.")
-    parser.add_argument("--cast", type=Path, default=DEFAULT_CAST)
-    parser.add_argument("--gif", type=Path, default=DEFAULT_GIF)
+    parser.add_argument("--cast", type=Path, default=None, help="default: <yeaboi-site>/demo.cast.gz")
+    parser.add_argument("--gif", type=Path, default=None, help="default: <yeaboi-site>/demo.gif")
     parser.add_argument("--render-only", action="store_true", help="skip recording; re-render from the existing cast")
     parser.add_argument("--check-only", action="store_true", help="verify the existing cast + gif and exit")
     parser.add_argument("--cmd", nargs="+", help=argparse.SUPPRESS)  # test seam: stub child process
     args = parser.parse_args(argv)
+    if args.cast is None:
+        args.cast = default_cast()
+    if args.gif is None:
+        args.gif = default_gif()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 

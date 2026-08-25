@@ -26,9 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # Every key `--github-output` writes. `test_workflow_schema.py` asserts ci.yml's
 # fail-safe fallback writes exactly these, so the two cannot drift.
-GITHUB_OUTPUT_KEYS = frozenset(
-    {"full", "unit_paths", "slow_paths", "web", "desktop", "site", "package", "eval", "compat"}
-)
+GITHUB_OUTPUT_KEYS = frozenset({"full", "unit_paths", "slow_paths", "web", "desktop", "package", "eval", "compat"})
 
 # Loaded by path: scripts/ is not a package, and the module must be importable
 # without installing anything (CI runs it before `uv sync`).
@@ -159,7 +157,7 @@ class TestSelectionIsRunnable:
         [
             ["src/yeaboi/standup/engine.py"],
             ["src/yeaboi/poker/board.py"],
-            ["docs/index.html"],
+            ["contracts/site.json"],
             ["frontend/src/retro/App.tsx"],
             ["src/yeaboi/ui/mode_select/screens/_screens.py"],
         ],

@@ -155,16 +155,16 @@ class TestPreflightCoversEveryJob:
             preflight,
             "decide",
             lambda changed: (
-                {"web": False, "site": True, "package": False, "eval": False},
+                {"web": False, "package": True, "eval": False, "compat": False},
                 "",
             ),
         )
-        monkeypatch.setattr(preflight, "changed_paths", lambda base: ["docs/index.html"])
+        monkeypatch.setattr(preflight, "changed_paths", lambda base: ["pyproject.toml"])
 
         assert preflight.main(["--base", "origin/main", "--list"]) == 0
         out = capsys.readouterr().out
-        assert "running: site" in out
-        for job in ("web", "package", "eval"):
+        assert "running: package" in out
+        for job in ("web", "eval", "compat"):
             assert f"skipped {job} —" in out, f"preflight ran without {job} and never said so"
 
     def test_a_missing_toolchain_is_reported_not_failed(self, monkeypatch, capsys):
