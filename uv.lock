@@ -4168,6 +4168,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "segno" },
+    { name = "yeaboi-web-assets" },
 ]
 
 [package.optional-dependencies]
@@ -4278,11 +4279,21 @@ requires-dist = [
     { name = "segno" },
     { name = "sounddevice", marker = "extra == 'voice'" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'dev'" },
+    { name = "yeaboi-web-assets", specifier = ">=1,<2" },
 ]
 provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "ollama", "voice", "charts", "mcp", "access", "all-providers", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "syrupy", specifier = ">=5.1.0" }]
+
+[[package]]
+name = "yeaboi-web-assets"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/4f/717b1e0a00f05deb597f7c25093f85c2d34045259356a0ec727fb25d7f0f/yeaboi_web_assets-1.0.0.tar.gz", hash = "sha256:bd9ddd5e03fb459b011bf357c08545fd1d2384eec3f9fb1c51b5202c3dd0648f", size = 1376942, upload-time = "2026-08-25T19:47:38.812Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/34/e913216f716c4c31119aa8d4c1f6052c30d4b881dcd43aa7b28e9bfc1b85/yeaboi_web_assets-1.0.0-py3-none-any.whl", hash = "sha256:9566c14e8b1a0a81a344e24b4ba928823a9eaa3ce1b3e78c61c9676df24ca883", size = 793409, upload-time = "2026-08-25T19:47:36.968Z" },
+]
 
 [[package]]
 name = "zstandard"

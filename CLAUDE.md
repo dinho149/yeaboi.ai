@@ -20,7 +20,7 @@ make lint                 # Lint with ruff
 make format               # Format with ruff (writes)
 make format-check         # What CI's required "Format check (ruff)" job runs (asserts)
 make preflight            # Run only the optional CI jobs this branch's diff needs (BASE=origin/main)
-make package-check        # uv build + assert the wheel and sdist carry the committed bundles
+make package-check        # uv build + assert the wheel declares yeaboi-web-assets
 make run                  # Run the CLI (ARGS="--flag" to pass arguments)
 make run-dry              # Run TUI with fake delays, no LLM calls
 make eval                 # Run golden dataset evaluators
@@ -28,10 +28,7 @@ make contract             # Run contract tests (recorded API responses)
 make smoke-test           # Live API smoke tests (requires real credentials)
 make snapshot-update      # Update syrupy snapshot baselines after formatter changes
 make budget-report        # Show prompt token counts for trend monitoring
-make web                  # Build the front-end bundles (commit src/yeaboi/web/static after)
-make web-types            # Regenerate contracts/web/enums.json and the TypeScript it renders to
-make web-check            # What CI runs: enums --check + typecheck + rebuild + fail if the bundles are stale
-make web-dev              # Vite dev server on :5399 with HMR, proxying /api to a dev board
+make web-types            # Regenerate the contracts yeaboi-frontend vendors (enums + ui)
 make dev-board            # Seeded retro board on :5173 for front-end development
 make dev-poker            # Seeded planning-poker board on :5273
 make dev-deck             # Seeded reporting slide deck on :5373
@@ -95,16 +92,18 @@ Never edit anything under `.tooling/`: it is a pinned checkout, `tooling-check` 
 
 When driving multiple features at once, work as an **orchestrator**: one main session, one background agent per feature, each in its own worktree (`make wt-headless`). The orchestrator kicks off agents, tracks them, reviews **final diffs** (not intermediate steps), and runs `/ship` per feature when green. Use `make test-fast` in the inner loop; the full `make test` runs at ship time.
 
-## Front End (`frontend/` → `src/yeaboi/web/static/`)
+## Front End (`yeaboi-frontend` → the `yeaboi-web-assets` wheel)
 
-Every browser-facing page — the retro and poker live boards, the share gate, the reporting slide deck, and the ten static HTML exports — is built from TypeScript in `frontend/` with Vite, and the **built output is committed** to `src/yeaboi/web/static/`. That is what lets `pip install yeaboi` work with no Node and keeps `make test` pytest-only: the Python suite reads the committed bundles and never builds anything.
+Every browser-facing page — the retro and poker live boards, the share gate, the reporting slide deck, the ship board and the ten static HTML exports — is built from TypeScript in **[yeaboi-frontend](https://github.com/yeaboi-ai/yeaboi-frontend)** with Vite. Nothing about a bundle is edited in this repo any more.
 
-- **Edited anything under `frontend/`? Run `make web` and commit `src/yeaboi/web/static/` in the same commit.** CI's `web` job rebuilds and fails if they disagree. Never hand-resolve a merge conflict in the minified output (and never configure a `union` merge driver — it produces silently corrupt JS): `git checkout --theirs -- src/yeaboi/web/static && make web && git add src/yeaboi/web/static`.
-- Bundles must stay **self-contained**: no CDN, no external `<link>`, no `eval`/`new Function`, no dynamic `import()`, classic IIFE not ESM — exports open over `file://` (where a `type="module"` script does not execute at all) and tunnel pages run under a strict CSP. `tests/unit/test_web_assets.py` enforces this statically, because CSP breakage is invisible on localhost and on a LAN and shows up only for the remote teammate.
-- Python reaches the bundles only through `web/assets.py`, which **resolves** where they live rather than fixing it — `$YEABOI_WEB_STATIC`, then an installed `yeaboi_web_assets`, then the in-tree `static/`. A served document's headers and CSPs come only from `web/security.py`; the masthead, frame title and accents come only from `web/brand.py`. No request handler writes its own headers, and no Python generates markup — every surface is React, and a payload carries text and numbers, never markup and never presentation (one documented exception, in the skill).
-- **Two artefacts cross the Python→TypeScript line, and both live in `contracts/web/`**: `enums.json` (the server-validated tuples) and `fixtures/` (the wire snapshots). Python writes them; `frontend/` reads them through the `@contracts` alias and renders `types/enums.ts` with its own `gen-enums.mjs`. **Changed a board tuple? Run `make web-types` and commit both halves.**
+The bundles arrive as **`yeaboi-web-assets`**, an ordinary hard dependency in `pyproject.toml`. That is what still lets `pip install yeaboi` work with no Node and keeps `make test` pytest-only.
 
-Everything else — the CSPs and what makes an export inert, the export capability flags, the enums codegen rule, the payload rules, and the two Python/TS wire guards — is in the **`web-frontend`** skill. Read it before touching `frontend/`, `src/yeaboi/web/`, `contracts/web/`, or any exporter.
+- **Python reaches them only through `web/assets.py`**, which *resolves* where they live: `$YEABOI_WEB_STATIC` (a sibling checkout's build, for developing the front end against a running board), then the installed `yeaboi_web_assets`. Both failures raise; there is no third fallback to be silently wrong with. A served document's headers and CSPs come only from `web/security.py`; the masthead, frame title and accents only from `web/brand.py`. No request handler writes its own headers, and no Python generates markup — every surface is React, and a payload carries text and numbers, never markup and never presentation (one documented exception, in the skill).
+- **The favicon is the one browser asset that stays here.** It is not Vite output: `gen_duck_sprites.py` renders it from the website's duck art, so moving it would make regenerating it a three-repo errand.
+- **Three artefacts cross the Python→TypeScript line, and all live in `contracts/web/`**, which the front end vendors by sha: `enums.json` (the server-validated tuples), `ui.json` (the accents and timings its own tests assert against), and `fixtures/` (the wire snapshots). **Changed a board tuple, an accent or a timing? Run `make web-types` and commit `contracts/web/`** — that repo picks it up with `make contracts-sync`.
+- **Guards that read TypeScript moved with it.** The CSP/eval/`var(--x)`/breakpoint checks and the duck-sprite geometry now run in that repo's vitest suite; `tests/unit/test_web_contracts.py` is what stays, and it is deliberately its own file — the module those checks used to live in skipped itself whole when `frontend/` was absent.
+
+Everything else — the CSPs and what makes an export inert, the export capability flags, the payload rules, and the two Python/TS wire guards — is in the **`web-frontend`** skill. Read it before touching `src/yeaboi/web/`, `contracts/web/`, or any exporter.
 
 ## Desktop app (`desktop/` — Electron over `yeaboi app`)
 
@@ -247,7 +246,7 @@ Deep reference lives in `.claude/skills/` and loads on demand in interactive ses
 | `tui-standards` | `ui/`, any `_build_*_screen`, themes, shared components |
 | `agent-and-state` | `agent/`, `prompts/`, `tools/`, state fields, `sessions.py`, tests |
 | `mode-blueprints` | `standup/`, `retro/`, `performance/`, `reporting/`, `roadmap/`, or adding a new mode |
-| `web-frontend` | `frontend/`, `src/yeaboi/web/`, any exporter, a share or live-board surface |
+| `web-frontend` | `src/yeaboi/web/`, `contracts/web/`, any exporter, a share or live-board surface |
 | `logging` | logging calls, log files, `logging_setup.py` |
 | `ci-and-release` | `.github/workflows`, versioning, releasing, Dependabot, deployment |
 | `project-map` | full module map, CLI flags/subcommands, env vars, app flow, the MCP server + plugin |

@@ -33,7 +33,7 @@ from pathlib import Path
 # where sys.path[0] is not this directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _site_repo import site_assets  # noqa: E402
+from _sibling_repos import site_assets  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 # The master art is a served asset of the website, so it is resolved when it is

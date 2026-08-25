@@ -32,7 +32,7 @@ exact edit: a `CAPABILITIES` row in `tests/unit/test_surface_parity.py`, a `Feat
 `src/yeaboi/ui/shared/_tips.py`, and — if it records runs — a saved-sessions hub. See CLAUDE.md,
 *REQUIRED: Surface Parity*.
 
-Edited anything under `frontend/`? `make web` and commit `src/yeaboi/web/static/` in the same commit.
+Changed a board tuple, an accent or a timing the browser is checked against? `make web-types` and commit `contracts/web/` — **yeaboi-frontend** vendors that directory and its CI runs the other half of the check.
 
 Changed `pyproject.toml`'s `requires-python` or a `[project.urls]` entry? `make site-contract` and
 commit `contracts/site.json` — the **yeaboi-site** repo vendors it, and `test_site_contract.py`
@@ -53,7 +53,7 @@ rebase, so "take the upstream side" is unambiguous and "take theirs" is a coin f
 
 | Conflicting path | Resolution |
 |---|---|
-| `src/yeaboi/web/static/**` | Never hand-resolve, never a `union` merge driver — it produces silently corrupt JS. `git checkout --theirs -- src/yeaboi/web/static && make web && git add src/yeaboi/web/static`. Which side the flag picks does not matter; `make web` overwrites it either way, and the flag is only there to get git out of the conflicted state |
+| `contracts/web/**` | Generated. Take either side, then `make web-types` (for `enums.json`/`ui.json`) or re-run `tests/unit/test_web_wire_shapes.py` (for `fixtures/`) and commit what it writes |
 | `contracts/web/fixtures/**` | Take the upstream (`origin/main`) side, then `uv run pytest tests/unit/test_web_wire_shapes.py` regenerates them; commit what it wrote |
 | `tests/unit/__snapshots__/*.ambr` | Take the upstream side, then `make snapshot-update` |
 | `desktop/src/renderer/routes.json` and `src/yeaboi/app/routes_manifest.json` | Merge both route sets, then `npm run gen-manifest` in `desktop/`; the manifest is generated from the JSON, never edited |

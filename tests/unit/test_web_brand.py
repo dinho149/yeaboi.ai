@@ -72,16 +72,24 @@ class TestAccentMode:
         for hostile in ('" onload="alert(1)', "<script>", "retro'", "../.."):
             assert accent_mode(hostile) == ""
 
-    def test_every_accent_mode_is_declared_in_the_stylesheet(self):
-        """Two-way: an accent named here with no CSS renders the base accent."""
+    def test_every_mode_resolves_to_an_accent_the_contract_carries(self):
+        """Half of a two-way check; the other half is in yeaboi-frontend.
+
+        A mode whose accent has no `[data-mode="…"]` block in tokens.css simply
+        renders the base accent — a page that looks fine and is wearing the
+        wrong colour. That stylesheet is in the front-end repo now, so the
+        accents travel to it in `contracts/web/ui.json` and its own tests make
+        the assertion. This end asserts the contract actually carries them.
+        """
+        import json
         from pathlib import Path
 
-        tokens = Path(__file__).resolve().parents[2] / "frontend" / "src" / "design" / "tokens.css"
-        css = tokens.read_text(encoding="utf-8")
+        contract = Path(__file__).resolve().parents[2] / "contracts" / "web" / "ui.json"
+        carried = set(json.loads(contract.read_text(encoding="utf-8"))["accent_modes"])
         for mode in set(MODE_LABELS) | set(MODE_WORDMARKS):
             accent = accent_mode(mode)
             assert accent, f"{mode} resolves to no accent"
-            assert f'[data-mode="{accent}"]' in css, f"no accent block for {accent}"
+            assert accent in carried, f"{accent} is not in contracts/web/ui.json — run: make web-types"
 
 
 class TestGateBranding:

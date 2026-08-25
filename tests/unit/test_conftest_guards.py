@@ -90,16 +90,17 @@ class TestTheBundleOverrideIsDropped:
 
     `web/assets.py` resolves the bundle directory once, at import, so this is
     the one piece of environment isolation a fixture cannot do — by the time
-    any fixture runs, the choice is made. Anyone who exports it to serve a Vite
-    `dist/` would otherwise have the whole suite assert against bundles that
-    are not the committed ones, passing or failing for a reason nothing in the
-    output names.
+    any fixture runs, the choice is made. Anyone who exports it to serve a
+    sibling yeaboi-frontend build would otherwise have the whole suite assert
+    against bundles that are not the released ones, passing or failing for a
+    reason nothing in the output names.
     """
 
-    def test_the_suite_reads_the_committed_bundles(self):
+    def test_the_suite_reads_the_installed_bundles(self):
+        """What every user gets, which is the only thing worth asserting against."""
         from yeaboi.web.assets import STATIC_SOURCE
 
-        assert STATIC_SOURCE == "tree"
+        assert STATIC_SOURCE == "package"
 
     def test_conftest_drops_it_at_import_rather_than_in_a_fixture(self):
         """A static check, because the one above passes for free on a machine

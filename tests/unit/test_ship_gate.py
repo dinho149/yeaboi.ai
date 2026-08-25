@@ -155,7 +155,7 @@ class TestPreflightCoversEveryJob:
             preflight,
             "decide",
             lambda changed: (
-                {"web": False, "package": True, "eval": False, "compat": False},
+                {"desktop": False, "package": True, "eval": False, "compat": False},
                 "",
             ),
         )
@@ -164,7 +164,7 @@ class TestPreflightCoversEveryJob:
         assert preflight.main(["--base", "origin/main", "--list"]) == 0
         out = capsys.readouterr().out
         assert "running: package" in out
-        for job in ("web", "eval", "compat"):
+        for job in ("desktop", "eval", "compat"):
             assert f"skipped {job} —" in out, f"preflight ran without {job} and never said so"
 
     def test_a_missing_toolchain_is_reported_not_failed(self, monkeypatch, capsys):
@@ -175,14 +175,14 @@ class TestPreflightCoversEveryJob:
         """
         preflight = _preflight()
         monkeypatch.setattr(
-            preflight, "decide", lambda changed: (dict.fromkeys(preflight.JOB_TARGETS, False) | {"web": True}, "")
+            preflight, "decide", lambda changed: (dict.fromkeys(preflight.JOB_TARGETS, False) | {"desktop": True}, "")
         )
         monkeypatch.setattr(preflight, "changed_paths", lambda base: ["frontend/src/retro/App.tsx"])
         monkeypatch.setattr(preflight.shutil, "which", lambda name: None)
 
         assert preflight.main(["--base", "origin/main", "--list"]) == 0
         out = capsys.readouterr().out
-        assert "skipped web — npm is not on PATH" in out
+        assert "skipped desktop — npm is not on PATH" in out
 
     def test_job_selection_sees_uncommitted_work(self):
         """`--base` in test_scope.py is committed-only; the ship gate runs before the commit.
@@ -259,9 +259,9 @@ class TestTheSharedTooling:
 
     def test_the_notes_carry_the_conflict_playbook(self):
         playbook = self.NOTES.read_text()
-        for path in ("src/yeaboi/web/static", "uv.lock", "CURRENT_SCHEMA_VERSION", "changelog_data.json"):
+        for path in ("contracts/web", "uv.lock", "CURRENT_SCHEMA_VERSION", "changelog_data.json"):
             assert path in playbook, f"the rebase playbook says nothing about {path}"
-        assert "make web" in playbook, "a conflicted bundle is rebuilt, never chosen"
+        assert "make web-types" in playbook, "a conflicted contract is regenerated, never chosen"
 
     def test_the_notes_carry_what_ship_asks_for(self):
         """/ship reads these out of the repo rather than hardcoding one repo's facts."""
@@ -273,6 +273,9 @@ class TestTheSharedTooling:
         )
         assert "make ship-gate" in notes
 
-    def test_the_playbook_does_not_name_a_deleted_tree(self):
-        """The Go sidecar's store used to be a fourth place to renumber the schema."""
-        assert "go/internal" not in self.NOTES.read_text()
+    @pytest.mark.parametrize("gone", ["go/internal", "src/yeaboi/web/static", "frontend/"])
+    def test_the_playbook_does_not_name_a_deleted_tree(self, gone):
+        """Each of these was once a place a rebase could conflict, and is now in
+        another repo or nowhere. A playbook naming one sends the next person to
+        resolve a file that does not exist."""
+        assert gone not in self.NOTES.read_text()

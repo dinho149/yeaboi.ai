@@ -31,6 +31,12 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
+    # The built front-end bundles every board, share and export is drawn with.
+    # A hard dependency, not an extra: without it `yeaboi retro`, every exporter
+    # and every shared page render nothing. Major-pinned because the entry names
+    # (`retro.js`, `export.css`, …) are the contract between the two repos, and
+    # `web/assets.py` reads them by name.
+    "yeaboi-web-assets>=1,<2",
     "langchain",
     "langgraph",
     # LLM provider integrations — langchain-anthropic is the default.
@@ -144,19 +150,9 @@ yeaboi-mcp = "yeaboi.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/yeaboi"]
-# Belt-and-braces. Hatchling loads .gitignore as build excludes
-# (hatchling/builders/config.py), and that file contains the *unanchored* globs
-# `dist/` and `build/` — so a build output directory with either name anywhere in
-# the tree would be silently dropped from the wheel. It builds fine and then
-# ImportErrors on the user's machine. `static/` avoids the collision; this entry
-# makes the inclusion explicit so a future rename cannot reintroduce the trap.
-artifacts = ["src/yeaboi/web/static/*.js", "src/yeaboi/web/static/*.css"]
 
 [tool.hatch.build.targets.sdist]
-# The TypeScript sources ship in the sdist (so the build is reproducible from
-# it) but never in the wheel — see the `exclude` on the wheel target above.
-artifacts = ["src/yeaboi/web/static/*.js", "src/yeaboi/web/static/*.css"]
-exclude = ["frontend/node_modules", ".claude", "cowork"]
+exclude = [".claude", ".tooling"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
