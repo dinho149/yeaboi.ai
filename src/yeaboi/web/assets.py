@@ -1,8 +1,9 @@
 """The one seam between the Vite build and every page Python serves or writes.
 
-Bundles are built from ``frontend/`` (``make web``) and **committed** to
-``static/`` so ``pip install yeaboi`` never needs Node. Nothing here builds
-anything; it reads the committed output and inlines it.
+Bundles are built from ``frontend/`` (``make web``) and **committed** so
+``pip install yeaboi`` never needs Node. Nothing here builds anything; it reads
+the built output and inlines it. Where that output lives is resolved by
+:func:`_static_dir` — see its docstring.
 
 Everything a page needs arrives as one self-contained document:
 
@@ -21,8 +22,10 @@ from __future__ import annotations
 
 import base64
 import html
+import importlib.resources
 import json
 import logging
+import os
 import re
 from collections.abc import Mapping
 from functools import lru_cache
@@ -30,12 +33,69 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Committed build output. Not a user path, so it does NOT come from paths.py —
-# this is package data that ships inside the wheel.
-STATIC_DIR = Path(__file__).parent / "static"
+#: Points at a Vite ``dist/`` so a front-end change is served without a release.
+STATIC_ENV = "YEABOI_WEB_STATIC"
 
-# The tab icon, 32x32, written by scripts/gen_duck_sprites.py. It sits beside
-# this module rather than in static/, which holds Vite output only.
+#: The distribution that carries the bundles once ``frontend/`` is its own repo.
+ASSETS_PACKAGE = "yeaboi_web_assets"
+
+
+def _packaged_static() -> Path | None:
+    """The bundles from an installed ``yeaboi_web_assets``, or ``None``."""
+    try:
+        root = importlib.resources.files(ASSETS_PACKAGE)
+    except (ImportError, TypeError):
+        return None
+
+    static = root / "static"
+    # A wheel installed the normal way unpacks to the filesystem. Anything else
+    # (zipimport, a namespace package) is not a Path and has nothing readable.
+    if not isinstance(static, Path):
+        logger.warning("%s is installed but its assets are not on the filesystem: %r", ASSETS_PACKAGE, static)
+        return None
+    return static if static.is_dir() else None
+
+
+def _static_dir() -> tuple[Path, str]:
+    """Resolve where the built bundles live, and say which of three it was.
+
+    First source wins:
+
+    1. ``env`` — ``$YEABOI_WEB_STATIC``, a sibling checkout's ``dist/``, so a
+       front-end change reaches a running board without publishing anything.
+    2. ``package`` — an installed ``yeaboi_web_assets``, how the bundles reach
+       a ``pip install yeaboi`` once ``frontend/`` is its own repo.
+    3. ``tree`` — ``static/`` beside this module, built by ``make web``.
+
+    A set-but-wrong override raises rather than falling through: silently
+    serving different bundles from the ones you just built is the kind of
+    "works locally for the wrong reason" that only shows up on someone else's
+    machine.
+
+    Not a user path, so it does NOT come from paths.py — this is build output.
+    """
+    override = os.environ.get(STATIC_ENV)
+    if override:
+        path = Path(override).expanduser()
+        if not path.is_dir():
+            raise NotADirectoryError(f"{STATIC_ENV}={override!r} is not a directory")
+        logger.info("web bundles: %s (from $%s)", path, STATIC_ENV)
+        return path, "env"
+
+    if packaged := _packaged_static():
+        logger.debug("web bundles: %s (from %s)", packaged, ASSETS_PACKAGE)
+        return packaged, "package"
+
+    return Path(__file__).parent / "static", "tree"
+
+
+#: Resolved once, at import. ``read_asset`` caches anyway, so re-resolving per
+#: call would buy nothing — and a dev server picks up a rebuild by restarting.
+STATIC_DIR, STATIC_SOURCE = _static_dir()
+
+# The tab icon, 32x32, written by scripts/gen_duck_sprites.py from the website's
+# duck art. Package data of *this* distribution rather than a bundle: it is not
+# Vite output, and moving it would make regenerating it a three-repo errand.
 FAVICON_PATH = Path(__file__).parent / "favicon.png"
 
 # Bundles are named by their Vite entry (see frontend/entries.mjs). The pattern
@@ -43,6 +103,15 @@ FAVICON_PATH = Path(__file__).parent / "favicon.png"
 # name, so anything path-like ("../../.env", an absolute path, a symlink hop)
 # must be impossible to express before it reaches the filesystem.
 _ASSET_NAME = re.compile(r"^[a-z][a-z0-9_-]*\.(js|css)$")
+
+
+def _rebuild_hint() -> str:
+    """What to do about a missing bundle, phrased for wherever they came from."""
+    if STATIC_SOURCE == "env":
+        return f"${STATIC_ENV} points here — has the Vite build written that entry yet?"
+    if STATIC_SOURCE == "package":
+        return f"The bundles ship in {ASSETS_PACKAGE}; reinstall it."
+    return "The front-end bundles are committed — if yours are absent, rebuild them with:\n    make web"
 
 
 @lru_cache(maxsize=16)
@@ -66,11 +135,7 @@ def read_asset(filename: str) -> str:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         logger.error("web asset missing: %s", path)
-        raise FileNotFoundError(
-            f"missing built asset {filename!r} at {path}.\n"
-            "The front-end bundles are committed — if yours are absent, rebuild them with:\n"
-            "    make web"
-        ) from None
+        raise FileNotFoundError(f"missing built asset {filename!r} at {path}.\n{_rebuild_hint()}") from None
     logger.debug("web asset loaded: %s (%d bytes)", filename, len(text))
     return text
 

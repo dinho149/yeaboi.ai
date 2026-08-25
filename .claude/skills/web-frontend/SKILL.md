@@ -39,7 +39,16 @@ loads, exempted by blanking a *single* occurrence so a second one still fails.
 ## The Python boundary
 
 Python reaches the bundles only through `src/yeaboi/web/assets.py` (`read_asset`, `json_island`,
-`render_page`). Never read from `static/` directly. Two sibling leaf modules own the other halves
+`render_page`). Never read from `static/` directly — **not even by path**, because where the bundles
+live is resolved rather than fixed. `_static_dir()` tries `$YEABOI_WEB_STATIC` (a sibling checkout's
+Vite `dist/`, for developing the front end against a running board), then an installed
+`yeaboi_web_assets` (how they will reach a `pip install` once `frontend/` is its own repo), then
+`static/` beside the module. Resolution happens once at import, so a rebuild needs a restart; a
+set-but-wrong `$YEABOI_WEB_STATIC` raises rather than quietly serving the in-tree copy. The favicon
+does **not** follow that path: it is not Vite output, it is generated from the website's duck art by
+this repo's `gen_duck_sprites.py`, and it stays package data of `yeaboi`.
+
+Two sibling leaf modules own the other halves
 of that boundary, and a surface that re-implements either is the drift this layout exists to stop:
 **`web/brand.py`** is the only place that builds a masthead payload (`build_chrome`), spells the
 terminal-frame title (`frame_title`), maps a mode to its accent (`accent_mode` — including
