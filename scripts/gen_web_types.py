@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""Generate the TypeScript mirror of the boards' server-validated enums.
+"""Write the boards' server-validated enums to ``contracts/web/enums.json``.
 
 Both boards validate incoming values against tuples in ``retro/board.py`` and
 ``poker/board.py`` — a card grid, a reaction emoji, an avatar, a theme name, a
 deck value. Those same sets have to exist in the browser to render a picker, and
-today they get there by string-substituting ``__AVATARS__`` into a JS template.
+a hand-written union is exactly the thing that silently rots when someone adds
+an emoji. Generating it means a literal union can never disagree with the tuple
+the server checks against.
 
-Once the boards are React, they arrive in the boot payload — but the *types*
-still have to be written down somewhere, and a hand-written union is exactly the
-thing that silently rots when someone adds an emoji. Generating it means a
-literal union can never disagree with the tuple the server checks against.
+This half emits **data only**: names, values, and the sentence each one is
+documented with. Turning that into TypeScript is the front end's job
+(``frontend/scripts/gen-enums.mjs``), which is what lets ``frontend/`` be a repo
+with no Python in it — it vendors this file and renders ``types/enums.ts`` from
+its own copy. Type names, JSDoc layout and ``as const`` are TypeScript spelling,
+so none of them appear here.
 
-Deliberately generates **only the enums**. State shapes are not generated: they
+Deliberately covers **only the enums**. State shapes are not generated: they
 change more often, they carry semantics a codegen cannot express, and a wrong
-generated interface is worse than an honest hand-written one. The drift guard
-for state shapes is the JSON fixture + ``satisfies`` check described in the plan.
+generated interface is worse than an honest hand-written one. Their drift guard
+is the fixture + ``satisfies`` pair in ``tests/unit/test_web_wire_shapes.py``.
 
 Usage::
 
     uv run python scripts/gen_web_types.py          # write the file
     uv run python scripts/gen_web_types.py --check  # fail if it is stale (CI)
+
+``make web-types`` runs this and the TypeScript half together.
 """
 
 from __future__ import annotations
@@ -54,61 +60,63 @@ from yeaboi.ui.shared._ascii_font import BLOCK_GLYPHS, render_ascii_text
 
 logger = logging.getLogger(__name__)
 
-OUTPUT = Path(__file__).resolve().parent.parent / "frontend" / "src" / "types" / "enums.ts"
+OUTPUT = Path(__file__).resolve().parent.parent / "contracts" / "web" / "enums.json"
 
-HEADER = """/*
- * GENERATED FILE — do not edit.
- *
- * Regenerate with `uv run python scripts/gen_web_types.py` after changing any of
- * the server-validated tuples in retro/board.py or poker/board.py. CI runs the
- * same script with --check and fails if this file is stale.
- *
- * Only the enums are generated. State shapes are hand-written in ./board.ts,
- * because they carry semantics a codegen cannot express — and a confidently
- * wrong generated interface is worse than an honest hand-written one.
- *
- * These are the sets the *server* validates against (a value from a participant
- * is rejected unless it is in one of them), so a literal union that disagreed
- * with one would let the client offer something the board will always refuse.
- */
-"""
+#: Bumped when a *block kind* is added or its keys change — i.e. when the
+#: TypeScript renderer on the other side needs a new branch to read this file.
+#: Not a version of the values; those change constantly and are diffed, not
+#: negotiated.
+SCHEMA = 1
 
 
-def _tuple_const(name: str, values: Sequence[str], doc: str) -> str:
-    """Emit `export const NAME = [...] as const` plus its element-type alias."""
-    items = ", ".join(json.dumps(v, ensure_ascii=False) for v in values)
-    type_name = "".join(part.capitalize() for part in name.lower().split("_"))
-    return (
-        f"/** {doc} */\nexport const {name} = [{items}] as const;\nexport type {type_name} = (typeof {name})[number];\n"
-    )
+def _tuple_const(name: str, values: Sequence[str], doc: str) -> dict:
+    """A set the server validates against, and the union drawn from it."""
+    return {"kind": "tuple", "name": name, "doc": [doc], "values": list(values)}
 
 
-def _label_map(name: str, key_type: str, labels: Mapping[str, str], doc: str) -> str:
-    """Emit a `Record<KeyType, string>` of human-facing labels."""
-    body = "".join(f"  {json.dumps(k)}: {json.dumps(v, ensure_ascii=False)},\n" for k, v in labels.items())
-    return f"/** {doc} */\nexport const {name}: Record<{key_type}, string> = {{\n{body}}};\n"
+def _pairs(mapping: Mapping[str, object]) -> list[list[object]]:
+    """A mapping as ordered ``[key, value]`` pairs rather than a JSON object.
+
+    JavaScript reorders integer-like keys of an object to the front, so
+    ``BLOCK_GLYPHS`` would come back with its digits ahead of its letters. An
+    array of pairs is the same data with the order actually preserved.
+    """
+    return [[key, value] for key, value in mapping.items()]
 
 
-def _block_glyphs() -> str:
-    """Emit the two-line block font as a TS lookup table.
+def _label_map(name: str, keys: str, labels: Mapping[str, str], doc: str) -> dict:
+    """Human-facing labels, keyed by the elements of the ``keys`` tuple."""
+    return {"kind": "labels", "name": name, "doc": [doc], "keys": keys, "labels": _pairs(labels)}
+
+
+def _table(name: str, value: str, entries: Mapping[str, object], doc: str) -> dict:
+    """A lookup table. ``value`` is the TypeScript type of one entry.
+
+    The one place a TypeScript spelling does appear in this file, because it is
+    the only thing about these tables a reader of the data cannot infer: whether
+    a two-element array is a fixed pair or a list, and whether null is allowed,
+    are decisions rather than observations.
+    """
+    return {"kind": "table", "name": name, "doc": doc.split("\n"), "value": value, "entries": _pairs(entries)}
+
+
+def _block_glyphs() -> dict:
+    """The two-line block font, as a lookup table.
 
     Generated rather than hand-copied for the same reason as the enums: this is
     the product's display typeface, it is drawn character-by-character on both
     sides, and a hand-maintained copy would let a letter the terminal renders
     quietly render as a blank gap on the web.
     """
-    rows = "".join(
-        f"  {json.dumps(ch)}: {json.dumps(lines, ensure_ascii=False)},\n" for ch, lines in BLOCK_GLYPHS.items()
-    )
-    return (
-        "/**\n"
-        " * The two-line block font, one entry per character: `[top, bottom]`.\n"
-        " *\n"
-        " * Mirrors `ui/shared/_ascii_font.py`, which is what the TUI sets every mode\n"
-        " * title in. Rendered by `<Wordmark>`; characters absent here become gaps,\n"
-        " * exactly as `render_ascii_text()` does.\n"
-        " */\n"
-        f"export const BLOCK_GLYPHS: Record<string, readonly [string, string]> = {{\n{rows}}};\n"
+    return _table(
+        "BLOCK_GLYPHS",
+        "readonly [string, string]",
+        BLOCK_GLYPHS,
+        "The two-line block font, one entry per character: `[top, bottom]`.\n"
+        "\n"
+        "Mirrors `ui/shared/_ascii_font.py`, which is what the TUI sets every mode\n"
+        "title in. Rendered by `<Wordmark>`; characters absent here become gaps,\n"
+        "exactly as `render_ascii_text()` does.",
     )
 
 
@@ -118,8 +126,8 @@ def _block_glyphs() -> str:
 _WORDMARK_SAMPLES = ("retro", "poker", "yeaboi", "sprint 42", "n/a")
 
 
-def _wordmark_samples() -> str:
-    """Emit Python's own `render_ascii_text` output for a few words.
+def _wordmark_samples() -> dict:
+    """Python's own `render_ascii_text` output for a few words.
 
     The glyph table above is generated, so it cannot drift — but the *renderer*
     is a dozen lines duplicated in `render_ascii_text()` and `renderWordmark()`,
@@ -130,22 +138,19 @@ def _wordmark_samples() -> str:
     There is one artifact, it is generated, and `--check` keeps it fresh; a
     renderer that diverges fails `Wordmark.test.tsx`, not a code review.
     """
-    rows = "".join(
-        f"  {json.dumps(w)}: {json.dumps(render_ascii_text(w), ensure_ascii=False)},\n" for w in _WORDMARK_SAMPLES
-    )
-    return (
-        "/**\n"
-        " * `render_ascii_text()` output, straight from Python.\n"
-        " *\n"
-        " * Asserted by `Wordmark.test.tsx` so the TS renderer cannot drift from the\n"
-        " * terminal's. Not for runtime use.\n"
-        " */\n"
-        f"export const WORDMARK_SAMPLES: Record<string, readonly [string, string]> = {{\n{rows}}};\n"
+    return _table(
+        "WORDMARK_SAMPLES",
+        "readonly [string, string]",
+        {w: render_ascii_text(w) for w in _WORDMARK_SAMPLES},
+        "`render_ascii_text()` output, straight from Python.\n"
+        "\n"
+        "Asserted by `Wordmark.test.tsx` so the TS renderer cannot drift from the\n"
+        "terminal's. Not for runtime use.",
     )
 
 
-def _shadow_glyphs() -> str:
-    """Emit the six-row ANSI Shadow font as a TS lookup table.
+def _shadow_glyphs() -> dict:
+    """The six-row ANSI Shadow font, as a lookup table.
 
     Same reasoning as ``_block_glyphs``, with more at stake: this face is the one
     a teammate meets on the join gate, and it exists in Python only because
@@ -153,19 +158,16 @@ def _shadow_glyphs() -> str:
     generated wordmarks. Copying it by hand into TypeScript would put a second,
     unproven copy on the surface that matters most.
     """
-    rows = "".join(
-        f"  {json.dumps(ch)}: {json.dumps(lines, ensure_ascii=False)},\n" for ch, lines in SHADOW_GLYPHS.items()
-    )
-    return (
-        "/**\n"
-        " * The six-row ANSI Shadow font, one entry per character.\n"
-        " *\n"
-        " * Mirrors `ui/shared/_ansi_font.py`. Covers A-Z and space only; a word\n"
-        " * containing anything else has no setting in this face and the caller\n"
-        " * falls back to BLOCK_GLYPHS, which is why the renderer returns null\n"
-        " * rather than substituting a gap.\n"
-        " */\n"
-        f"export const SHADOW_GLYPHS: Record<string, readonly string[]> = {{\n{rows}}};\n"
+    return _table(
+        "SHADOW_GLYPHS",
+        "readonly string[]",
+        SHADOW_GLYPHS,
+        "The six-row ANSI Shadow font, one entry per character.\n"
+        "\n"
+        "Mirrors `ui/shared/_ansi_font.py`. Covers A-Z and space only; a word\n"
+        "containing anything else has no setting in this face and the caller\n"
+        "falls back to BLOCK_GLYPHS, which is why the renderer returns null\n"
+        "rather than substituting a gap.",
     )
 
 
@@ -176,8 +178,8 @@ def _shadow_glyphs() -> str:
 _SHADOW_SAMPLES = ("yeaboi", "retro", "analysis", "team retro", "sprint 42")
 
 
-def _shadow_samples() -> str:
-    """Emit Python's own ``render_shadow_text`` output for a few words.
+def _shadow_samples() -> dict:
+    """Python's own ``render_shadow_text`` output for a few words.
 
     The kerning rule is the reason this exists. The glyph table is generated so it
     cannot drift, but ``_fit()`` is reimplemented in TypeScript, and a fitting bug
@@ -185,26 +187,22 @@ def _shadow_samples() -> str:
     handful whose letters nest. Pinning Python's output means that shows up in
     ``Wordmark.test.tsx`` rather than in a screenshot months later.
     """
-    rows = "".join(
-        f"  {json.dumps(w)}: {json.dumps(render_shadow_text(w), ensure_ascii=False)},\n" for w in _SHADOW_SAMPLES
-    )
-    return (
-        "/**\n"
-        " * `render_shadow_text()` output, straight from Python. `null` means the\n"
-        " * face cannot set that word. Not for runtime use.\n"
-        " */\n"
-        f"export const SHADOW_SAMPLES: Record<string, readonly string[] | null> = {{\n{rows}}};\n"
+    return _table(
+        "SHADOW_SAMPLES",
+        "readonly string[] | null",
+        {w: render_shadow_text(w) for w in _SHADOW_SAMPLES},
+        "`render_shadow_text()` output, straight from Python. `null` means the\n"
+        "face cannot set that word. Not for runtime use.",
     )
 
 
-def render() -> str:
-    """Build the full contents of enums.ts."""
-    blocks = [
-        HEADER,
+def blocks() -> list[dict]:
+    """Every declaration the browser gets, in emission order."""
+    return [
         _tuple_const("RETRO_GRIDS", RETRO_GRIDS, "The four retro columns, in display order."),
-        _label_map("RETRO_GRID_LABELS", "RetroGrids", RETRO_GRID_LABELS, "Human-facing column headings."),
+        _label_map("RETRO_GRID_LABELS", "RETRO_GRIDS", RETRO_GRID_LABELS, "Human-facing column headings."),
         _tuple_const("CARRIED_STATUSES", CARRIED_STATUSES, "Statuses a carried-over action item can be set to."),
-        _label_map("CARRIED_STATUS_LABELS", "CarriedStatuses", CARRIED_STATUS_LABELS, "Carried-item status labels."),
+        _label_map("CARRIED_STATUS_LABELS", "CARRIED_STATUSES", CARRIED_STATUS_LABELS, "Carried-item status labels."),
         _tuple_const("RETRO_THEMES", RETRO_THEMES, "Palettes the host may broadcast. Mirrors palette.css."),
         _tuple_const("REACTION_EMOJIS", REACTION_EMOJIS, "The only emoji a card reaction may use."),
         _tuple_const("AVATARS", AVATARS, "Avatars a participant may choose."),
@@ -227,7 +225,7 @@ def render() -> str:
         _tuple_const("ACTIVITY_SOURCES", ALL_SOURCES, "Every activity source a standup can collect from."),
         _label_map(
             "ACTIVITY_SOURCE_LABELS",
-            "ActivitySources",
+            "ACTIVITY_SOURCES",
             {source: source_label(source) for source in ALL_SOURCES},
             "How a source is named to a user. Generated so the report, the progress "
             'steps and the exports agree — "azdo_repos".title() reads as "Azdo Repos", '
@@ -248,7 +246,7 @@ def render() -> str:
         ),
         _label_map(
             "EVIDENCE_SOURCE_LABELS",
-            "EvidenceSources",
+            "EVIDENCE_SOURCES",
             EVIDENCE_SOURCE_LABELS,
             "How a source is named to a reader. Generated so the Markdown, the TUI and "
             "the export cannot call one source three different things.",
@@ -263,7 +261,18 @@ def render() -> str:
         _shadow_glyphs(),
         _shadow_samples(),
     ]
-    return "\n".join(blocks)
+
+
+def render() -> str:
+    """Build the full contents of ``contracts/web/enums.json``."""
+    document = {
+        "$schema_version": SCHEMA,
+        "$generated_by": "scripts/gen_web_types.py",
+        "blocks": blocks(),
+    }
+    # Indented and trailing-newline'd so a diff of it is readable: this file is
+    # reviewed like source even though nobody writes it.
+    return json.dumps(document, ensure_ascii=False, indent=2) + "\n"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -277,11 +286,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.check:
         if current == generated:
             logger.info("gen_web_types: %s is up to date", OUTPUT.name)
-            print(f"✓ {OUTPUT.relative_to(Path.cwd())} is up to date")
+            print(f"✓ {OUTPUT.name} is up to date")
             return 0
         logger.warning("gen_web_types: %s is stale", OUTPUT.name)
         print(
-            f"✗ {OUTPUT.name} is stale — a board enum changed.\n  Run: uv run python scripts/gen_web_types.py",
+            f"✗ {OUTPUT.name} is stale — a board enum changed.\n  Run: make web-types",
             file=sys.stderr,
         )
         return 1

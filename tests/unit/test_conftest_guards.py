@@ -83,3 +83,38 @@ class TestTheEnvironmentIsRestored:
 
     def test_and_tips_are_back_on_for_everyone_else(self):
         assert os.environ.get("TIPS_ENABLED") != "false"
+
+
+class TestTheBundleOverrideIsDropped:
+    """`$YEABOI_WEB_STATIC` must not reach the suite from a developer's shell.
+
+    `web/assets.py` resolves the bundle directory once, at import, so this is
+    the one piece of environment isolation a fixture cannot do — by the time
+    any fixture runs, the choice is made. Anyone who exports it to serve a Vite
+    `dist/` would otherwise have the whole suite assert against bundles that
+    are not the committed ones, passing or failing for a reason nothing in the
+    output names.
+    """
+
+    def test_the_suite_reads_the_committed_bundles(self):
+        from yeaboi.web.assets import STATIC_SOURCE
+
+        assert STATIC_SOURCE == "tree"
+
+    def test_conftest_drops_it_at_import_rather_than_in_a_fixture(self):
+        """A static check, because the one above passes for free on a machine
+        that never set the variable — which is every CI runner."""
+        import ast
+        from pathlib import Path
+
+        conftest = Path(__file__).resolve().parents[1] / "conftest.py"
+        module = ast.parse(conftest.read_text(encoding="utf-8"))
+        popped = [
+            node.value.args[0].value
+            for node in module.body  # module scope only: inside a fixture is too late
+            if isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and ast.unparse(node.value.func).endswith("environ.pop")
+            and isinstance(node.value.args[0], ast.Constant)
+        ]
+        assert "YEABOI_WEB_STATIC" in popped

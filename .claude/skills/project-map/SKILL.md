@@ -240,6 +240,7 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `STANDUP_GITHUB_REPO` — optional *legacy pin*: one GitHub repo (owner/repo) for Daily Standup code activity. No longer required — `GITHUB_TOKEN` alone yields coverage, and the organisations to scan are picked in the Standup code-scope step (each covers every active repo inside it). Setting it keeps the standup narrow to that one repository.
 - `SLACK_WEBHOOK_URL` — optional, Slack incoming-webhook URL for Daily Standup delivery
 - `STANDUP_SMTP_HOST` / `STANDUP_SMTP_PORT` / `STANDUP_SMTP_USER` / `STANDUP_SMTP_PASSWORD` / `STANDUP_SMTP_SENDER` / `STANDUP_EMAIL_RECIPIENTS` — optional, SMTP email delivery for Daily Standup
+- `YEABOI_WEB_STATIC` — optional, a directory of built front-end bundles that overrides the ones Python would otherwise serve (`web/assets.py`, `_static_dir`). For developing `frontend/` against a running board: point it at a Vite `dist/`. Read once at import, so a rebuild needs a restart, and a path that is not a directory raises rather than silently falling back. Unset, the bundles come from an installed `yeaboi_web_assets` if there is one, else from `src/yeaboi/web/static/`.
 - `RETRO_PORT` — optional, base loopback port for the Retro collaboration server, which the tunnel forwards to (default 5173; walks upward if busy)
 - `POKER_PORT` — same for the Poker board (default 5273; clear of retro's 5173..5193 walk range)
 - `SHIP_PORT` — same for the Ship board (default 5473), the live view over a supervised ship run

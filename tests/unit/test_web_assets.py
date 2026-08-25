@@ -19,11 +19,116 @@ import re
 import pytest
 
 from tests._pages import CREDIT_URL
-from yeaboi.web.assets import FAVICON_PATH, STATIC_DIR, json_island, read_asset, render_page
+from yeaboi.web.assets import (
+    ASSETS_PACKAGE,
+    FAVICON_PATH,
+    STATIC_DIR,
+    STATIC_ENV,
+    json_island,
+    read_asset,
+    render_page,
+)
 
 # Every Vite entry that exists today. Grows one row per phase of the React
 # migration; the parametrized guards below then cover the new bundle for free.
 BUNDLES = ("deck", "export", "gate", "poker", "retro", "ship")
+
+
+@pytest.fixture
+def installed_assets(tmp_path, monkeypatch):
+    """A real, importable ``yeaboi_web_assets`` for the duration of one test.
+
+    A genuine package on ``sys.path`` rather than a stubbed ``importlib``,
+    because the arm being tested is dormant until ``frontend/`` becomes its own
+    repo — and a mock of the resolution would only prove the mock resolves.
+    """
+    import importlib
+    import sys
+
+    site = tmp_path / "site-packages"
+    static = site / ASSETS_PACKAGE / "static"
+    static.mkdir(parents=True)
+    (site / ASSETS_PACKAGE / "__init__.py").write_text("", encoding="utf-8")
+    (static / "export.css").write_text("/* shipped by the package */", encoding="utf-8")
+
+    monkeypatch.syspath_prepend(site)
+    importlib.invalidate_caches()
+    try:
+        yield static
+    finally:
+        sys.modules.pop(ASSETS_PACKAGE, None)
+        importlib.invalidate_caches()
+
+
+@pytest.fixture(autouse=True)
+def _no_inherited_override(monkeypatch):
+    """A developer running `make web-dev` must not change what the suite tests."""
+    monkeypatch.delenv(STATIC_ENV, raising=False)
+
+
+class TestStaticDirResolution:
+    """Where the bundles come from — the seam the frontend split turns on.
+
+    Three sources, and the two that do not exist yet are the ones worth
+    testing: the in-tree copy is what every other test in this file already
+    exercises, while ``$YEABOI_WEB_STATIC`` and an installed
+    ``yeaboi_web_assets`` are code paths nothing else reaches.
+    """
+
+    def test_in_tree_is_the_fallback(self):
+        from yeaboi.web.assets import _static_dir
+
+        path, source = _static_dir()
+        assert source == "tree"
+        assert path.name == "static" and path.parent.name == "web"
+
+    def test_the_env_override_wins(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(STATIC_ENV, str(tmp_path))
+        from yeaboi.web.assets import _static_dir
+
+        assert _static_dir() == (tmp_path, "env")
+
+    def test_a_wrong_override_raises_instead_of_falling_through(self, tmp_path, monkeypatch):
+        """Serving different bundles from the ones you built, silently, is worse.
+
+        A typo here would otherwise resolve to the in-tree copy and look like
+        the front end simply is not rebuilding.
+        """
+        monkeypatch.setenv(STATIC_ENV, str(tmp_path / "typo"))
+        from yeaboi.web.assets import _static_dir
+
+        with pytest.raises(NotADirectoryError, match=STATIC_ENV):
+            _static_dir()
+
+    def test_an_installed_package_beats_the_in_tree_copy(self, installed_assets):
+        from yeaboi.web.assets import _static_dir
+
+        assert _static_dir() == (installed_assets, "package")
+
+    def test_the_override_beats_an_installed_package(self, installed_assets, tmp_path, monkeypatch):
+        """The dev loop has to win, or `make web-dev` stops working the day
+        `yeaboi-web-assets` becomes a dependency."""
+        monkeypatch.setenv(STATIC_ENV, str(tmp_path))
+        from yeaboi.web.assets import _static_dir
+
+        assert _static_dir() == (tmp_path, "env")
+
+    def test_a_package_without_a_static_dir_falls_through(self, installed_assets):
+        """An installed-but-empty package must not shadow working bundles."""
+        import shutil
+
+        from yeaboi.web.assets import _static_dir
+
+        shutil.rmtree(installed_assets)
+        assert _static_dir()[1] == "tree"
+
+    def test_the_missing_bundle_hint_matches_where_they_come_from(self, monkeypatch):
+        """ "Run make web" is a lie once the bundles ship in another package."""
+        import yeaboi.web.assets as assets_mod
+
+        monkeypatch.setattr(assets_mod, "STATIC_SOURCE", "package")
+        hint = assets_mod._rebuild_hint()
+        assert ASSETS_PACKAGE in hint and "make web" not in hint
 
 
 class TestReadAsset:
@@ -293,8 +398,11 @@ class TestExportedFilesAreInert:
         re-derivation of them.
         """
         import json
+        from pathlib import Path
 
-        fixtures = STATIC_DIR.parents[3] / "frontend/src/test/fixtures"
+        # Off this file, not off STATIC_DIR: the bundles may be resolved from an
+        # installed package or an override, and the fixtures are neither.
+        fixtures = Path(__file__).resolve().parents[2] / "contracts" / "web" / "fixtures"
         pages = sorted(fixtures.glob("export.*.json"))
         assert pages, "no export fixtures found — this test is checking nothing"
         for page in pages:

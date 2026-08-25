@@ -8,7 +8,7 @@
  *
  * The drift guard is a fixture, not codegen. `tests/unit/test_web_wire_shapes.py`
  * drives a real board through a real round and writes the resulting snapshots to
- * `src/test/fixtures/`; `src/test/fixtures/wire.ts` imports them and asserts each
+ * `contracts/web/fixtures/`; `src/test/fixtures/wire.ts` imports them and asserts each
  * `satisfies` its interface here, so `npm run typecheck` fails when the server
  * stops sending a field this file promises.
  *

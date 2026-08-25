@@ -39,7 +39,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-contract pr-feedback
+.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web web-dev web-check web-test web-types web-install dev-board dev-poker dev-deck dev-editable site-contract pr-feedback
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -241,9 +241,15 @@ web-test: ## Front-end unit tests (vitest + jsdom + axe + the theme contrast mat
 	@test -d frontend/node_modules || $(MAKE) web-install
 	cd frontend && npm test
 
+web-types: ## Regenerate contracts/web/enums.json and the TypeScript it renders to
+	uv run python scripts/gen_web_types.py
+	cd frontend && node scripts/gen-enums.mjs
+
 web-check: ## What CI runs: typecheck, test, rebuild, fail if the committed bundles are stale
 	@test -d frontend/node_modules || $(MAKE) web-install
-	cd frontend && npm run typecheck && npm test && npm run build
+	@# --check before the build: a stale enums.ts would otherwise be compiled
+	@# into the bundles and reported as a bundle staleness failure instead.
+	cd frontend && npm run gen-enums:check && npm run typecheck && npm test && npm run build
 	@# --porcelain rather than `git diff --exit-code`: diff is blind to untracked
 	@# files, so a brand-new entry that nobody committed would slip through.
 	@test -z "$$(git status --porcelain -- src/yeaboi/web/static)" \

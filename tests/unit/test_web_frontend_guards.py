@@ -231,22 +231,43 @@ class TestCustomPropertiesResolve:
 
 
 class TestGeneratedEnums:
-    def test_enums_ts_is_current(self):
-        """`frontend/src/types/enums.ts` must match the board tuples it mirrors.
+    """The Python half of the enums codegen, which is the half with teeth.
 
-        Regenerate with ``uv run python scripts/gen_web_types.py``. Stale here
-        means a literal union in the browser disagrees with the set the server
-        validates against, so the client can offer a value the board refuses.
-        """
+    The chain has two links and only this one runs in the Python suite:
+    ``contracts/web/enums.json`` is written from the board tuples, and
+    ``frontend/scripts/gen-enums.mjs`` renders ``types/enums.ts`` from it. This
+    test (in ``ALWAYS``, so no change can dodge it) catches a tuple that moved
+    without the contract following; a contract that moved without the
+    TypeScript following puts ``contracts/web/`` in the diff, which is what
+    triggers CI's ``web`` job and its ``--check``.
+
+    Deliberately no Python re-implementation of the TypeScript renderer to
+    close the gap in one place: a second implementation of the thing this split
+    exists to have one of is the drift, not the fix.
+    """
+
+    def test_the_enums_contract_is_current(self):
+        """Stale here means a literal union in the browser disagrees with the
+        set the server validates against, so the client can offer a value the
+        board will always refuse."""
         import sys
 
         sys.path.insert(0, str(FRONTEND.parents[1] / "scripts"))
         from gen_web_types import OUTPUT, render  # noqa: PLC0415 - path is set up above
 
-        assert OUTPUT.is_file(), "run: uv run python scripts/gen_web_types.py"
-        assert OUTPUT.read_text(encoding="utf-8") == render(), (
-            "enums.ts is stale — run: uv run python scripts/gen_web_types.py"
-        )
+        assert OUTPUT.is_file(), "run: make web-types"
+        assert OUTPUT.read_text(encoding="utf-8") == render(), "enums.json is stale — run: make web-types"
+
+    def test_the_typescript_renderer_reads_that_contract(self):
+        """Both halves must name the same file, or each is checking its own.
+
+        Nothing else notices: the Python check would pass on a fresh contract
+        while the renderer drew from a stale copy somewhere else, and the whole
+        chain would be green with the browser holding last month's enums.
+        """
+        renderer = (FRONTEND.parent / "scripts" / "gen-enums.mjs").read_text(encoding="utf-8")
+        assert "contracts/web/enums.json" in renderer
+        assert "../src/types/enums.ts" in renderer
 
 
 class TestBreakpoints:

@@ -18,6 +18,13 @@ from pathlib import Path
 
 import pytest
 
+# At module scope, and deliberately not a fixture: `web/assets.py` resolves the
+# bundle directory once, at import, so by the time any fixture runs the choice
+# has been made. A developer who exports this to serve a Vite `dist/` would
+# otherwise have the whole suite assert against bundles that are not the
+# committed ones — passing or failing for a reason nothing in the output names.
+os.environ.pop("YEABOI_WEB_STATIC", None)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _sandbox_allows_test_dirs(tmp_path_factory):

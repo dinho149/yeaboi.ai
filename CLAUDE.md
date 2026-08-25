@@ -29,7 +29,8 @@ make smoke-test           # Live API smoke tests (requires real credentials)
 make snapshot-update      # Update syrupy snapshot baselines after formatter changes
 make budget-report        # Show prompt token counts for trend monitoring
 make web                  # Build the front-end bundles (commit src/yeaboi/web/static after)
-make web-check            # What CI runs: typecheck + rebuild + fail if the committed bundles are stale
+make web-types            # Regenerate contracts/web/enums.json and the TypeScript it renders to
+make web-check            # What CI runs: enums --check + typecheck + rebuild + fail if the bundles are stale
 make web-dev              # Vite dev server on :5399 with HMR, proxying /api to a dev board
 make dev-board            # Seeded retro board on :5173 for front-end development
 make dev-poker            # Seeded planning-poker board on :5273
@@ -100,9 +101,10 @@ Every browser-facing page — the retro and poker live boards, the share gate, t
 
 - **Edited anything under `frontend/`? Run `make web` and commit `src/yeaboi/web/static/` in the same commit.** CI's `web` job rebuilds and fails if they disagree. Never hand-resolve a merge conflict in the minified output (and never configure a `union` merge driver — it produces silently corrupt JS): `git checkout --theirs -- src/yeaboi/web/static && make web && git add src/yeaboi/web/static`.
 - Bundles must stay **self-contained**: no CDN, no external `<link>`, no `eval`/`new Function`, no dynamic `import()`, classic IIFE not ESM — exports open over `file://` (where a `type="module"` script does not execute at all) and tunnel pages run under a strict CSP. `tests/unit/test_web_assets.py` enforces this statically, because CSP breakage is invisible on localhost and on a LAN and shows up only for the remote teammate.
-- Python reaches the bundles only through `web/assets.py`; a served document's headers and CSPs come only from `web/security.py`; the masthead, frame title and accents come only from `web/brand.py`. No request handler writes its own headers, and no Python generates markup — every surface is React, and a payload carries text and numbers, never markup and never presentation (one documented exception, in the skill).
+- Python reaches the bundles only through `web/assets.py`, which **resolves** where they live rather than fixing it — `$YEABOI_WEB_STATIC`, then an installed `yeaboi_web_assets`, then the in-tree `static/`. A served document's headers and CSPs come only from `web/security.py`; the masthead, frame title and accents come only from `web/brand.py`. No request handler writes its own headers, and no Python generates markup — every surface is React, and a payload carries text and numbers, never markup and never presentation (one documented exception, in the skill).
+- **Two artefacts cross the Python→TypeScript line, and both live in `contracts/web/`**: `enums.json` (the server-validated tuples) and `fixtures/` (the wire snapshots). Python writes them; `frontend/` reads them through the `@contracts` alias and renders `types/enums.ts` with its own `gen-enums.mjs`. **Changed a board tuple? Run `make web-types` and commit both halves.**
 
-Everything else — the CSPs and what makes an export inert, the export capability flags, the `enums.ts` codegen rule, the payload rules, and the two Python/TS wire guards — is in the **`web-frontend`** skill. Read it before touching `frontend/`, `src/yeaboi/web/`, or any exporter.
+Everything else — the CSPs and what makes an export inert, the export capability flags, the enums codegen rule, the payload rules, and the two Python/TS wire guards — is in the **`web-frontend`** skill. Read it before touching `frontend/`, `src/yeaboi/web/`, `contracts/web/`, or any exporter.
 
 ## Desktop app (`desktop/` — Electron over `yeaboi app`)
 

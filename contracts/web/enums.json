@@ -1,0 +1,1051 @@
+{
+  "$schema_version": 1,
+  "$generated_by": "scripts/gen_web_types.py",
+  "blocks": [
+    {
+      "kind": "tuple",
+      "name": "RETRO_GRIDS",
+      "doc": [
+        "The four retro columns, in display order."
+      ],
+      "values": [
+        "went_well",
+        "didnt_go_well",
+        "action_items",
+        "demos"
+      ]
+    },
+    {
+      "kind": "labels",
+      "name": "RETRO_GRID_LABELS",
+      "doc": [
+        "Human-facing column headings."
+      ],
+      "keys": "RETRO_GRIDS",
+      "labels": [
+        [
+          "went_well",
+          "What went well"
+        ],
+        [
+          "didnt_go_well",
+          "What didn't go well"
+        ],
+        [
+          "action_items",
+          "Action items"
+        ],
+        [
+          "demos",
+          "Demos"
+        ]
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "CARRIED_STATUSES",
+      "doc": [
+        "Statuses a carried-over action item can be set to."
+      ],
+      "values": [
+        "pending",
+        "done",
+        "in_progress",
+        "carried_over",
+        "not_relevant"
+      ]
+    },
+    {
+      "kind": "labels",
+      "name": "CARRIED_STATUS_LABELS",
+      "doc": [
+        "Carried-item status labels."
+      ],
+      "keys": "CARRIED_STATUSES",
+      "labels": [
+        [
+          "pending",
+          "Pending"
+        ],
+        [
+          "done",
+          "Done"
+        ],
+        [
+          "in_progress",
+          "In Progress"
+        ],
+        [
+          "carried_over",
+          "Carried Over"
+        ],
+        [
+          "not_relevant",
+          "Not Relevant"
+        ]
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "RETRO_THEMES",
+      "doc": [
+        "Palettes the host may broadcast. Mirrors palette.css."
+      ],
+      "values": [
+        "midnight",
+        "light",
+        "solarized",
+        "synthwave",
+        "forest"
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "REACTION_EMOJIS",
+      "doc": [
+        "The only emoji a card reaction may use."
+      ],
+      "values": [
+        "👍",
+        "👎",
+        "❤️",
+        "🎉",
+        "😂",
+        "🔥",
+        "😢",
+        "🚀",
+        "👀",
+        "💯",
+        "🙌",
+        "🤔",
+        "🐛",
+        "✅",
+        "⚠️",
+        "🧠"
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "AVATARS",
+      "doc": [
+        "Avatars a participant may choose."
+      ],
+      "values": [
+        "🤠",
+        "👻",
+        "🐙",
+        "🦄",
+        "🐸",
+        "🦊",
+        "🐼",
+        "🐧",
+        "🦖",
+        "🐝",
+        "🌮",
+        "🍕",
+        "👽",
+        "🤖",
+        "🎃",
+        "🦩",
+        "🐳",
+        "🦉",
+        "🌵",
+        "🍄",
+        "⚡",
+        "🌈",
+        "🪐",
+        "🦆"
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "POKER_DECK",
+      "doc": [
+        "Planning-poker card values, in deck order."
+      ],
+      "values": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "5",
+        "8",
+        "13",
+        "21",
+        "?",
+        "☕"
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "POKER_PHASES",
+      "doc": [
+        "Where a ticket's round is: voting → revealed, optionally via a duel."
+      ],
+      "values": [
+        "voting",
+        "revealed",
+        "duel"
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "DUEL_STATUSES",
+      "doc": [
+        "The open floor's lifecycle. The browser renders a different panel for each."
+      ],
+      "values": [
+        "live",
+        "transcribing",
+        "done",
+        "failed"
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "EDIT_OPS",
+      "doc": [
+        "What one correction does to a shared artifact. Server-validated, so it is generated rather than shipped in a boot payload — a payload would win at runtime and let a stale bundle offer an op the server rejects."
+      ],
+      "values": [
+        "set",
+        "append",
+        "remove",
+        "note",
+        "field",
+        "revert"
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "ACTIVITY_SOURCES",
+      "doc": [
+        "Every activity source a standup can collect from."
+      ],
+      "values": [
+        "jira",
+        "azure_devops",
+        "azdo_repos",
+        "github",
+        "local_git",
+        "confluence",
+        "notion"
+      ]
+    },
+    {
+      "kind": "labels",
+      "name": "ACTIVITY_SOURCE_LABELS",
+      "doc": [
+        "How a source is named to a user. Generated so the report, the progress steps and the exports agree — \"azdo_repos\".title() reads as \"Azdo Repos\", which looks like a different source from the one the steps just named."
+      ],
+      "keys": "ACTIVITY_SOURCES",
+      "labels": [
+        [
+          "jira",
+          "Jira"
+        ],
+        [
+          "azure_devops",
+          "Azure DevOps tickets"
+        ],
+        [
+          "azdo_repos",
+          "Azure DevOps code"
+        ],
+        [
+          "github",
+          "GitHub"
+        ],
+        [
+          "local_git",
+          "Local Git"
+        ],
+        [
+          "confluence",
+          "Confluence"
+        ],
+        [
+          "notion",
+          "Notion"
+        ]
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "COVERAGE_STATES",
+      "doc": [
+        "What one evidence source contributed. Generated because two modes draw the same dot from the same word — standup's category coverage and performance's per-source coverage — and a hand-written copy in one of them would drift with nothing to notice."
+      ],
+      "values": [
+        "covered",
+        "partial",
+        "failed",
+        "not_configured"
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "EVIDENCE_SOURCES",
+      "doc": [
+        "Every source a performance artifact can be grounded in."
+      ],
+      "values": [
+        "tickets",
+        "code",
+        "documentation",
+        "standup",
+        "analysis",
+        "retro",
+        "poker",
+        "delivery"
+      ]
+    },
+    {
+      "kind": "labels",
+      "name": "EVIDENCE_SOURCE_LABELS",
+      "doc": [
+        "How a source is named to a reader. Generated so the Markdown, the TUI and the export cannot call one source three different things."
+      ],
+      "keys": "EVIDENCE_SOURCES",
+      "labels": [
+        [
+          "tickets",
+          "Tickets"
+        ],
+        [
+          "code",
+          "Code"
+        ],
+        [
+          "documentation",
+          "Documentation"
+        ],
+        [
+          "standup",
+          "Standup"
+        ],
+        [
+          "analysis",
+          "Team analysis"
+        ],
+        [
+          "retro",
+          "Retro"
+        ],
+        [
+          "poker",
+          "Estimation"
+        ],
+        [
+          "delivery",
+          "Delivery"
+        ]
+      ]
+    },
+    {
+      "kind": "tuple",
+      "name": "STAT_UNITS",
+      "doc": [
+        "What a measured number IS — a bare count, a percentage, points, or days. Never how to draw it."
+      ],
+      "values": [
+        "",
+        "%",
+        "pts",
+        "d"
+      ]
+    },
+    {
+      "kind": "table",
+      "name": "BLOCK_GLYPHS",
+      "doc": [
+        "The two-line block font, one entry per character: `[top, bottom]`.",
+        "",
+        "Mirrors `ui/shared/_ascii_font.py`, which is what the TUI sets every mode",
+        "title in. Rendered by `<Wordmark>`; characters absent here become gaps,",
+        "exactly as `render_ascii_text()` does."
+      ],
+      "value": "readonly [string, string]",
+      "entries": [
+        [
+          "A",
+          [
+            "▄▀█",
+            "█▀█"
+          ]
+        ],
+        [
+          "B",
+          [
+            "█▀▄",
+            "█▄█"
+          ]
+        ],
+        [
+          "C",
+          [
+            "█▀▀",
+            "█▄▄"
+          ]
+        ],
+        [
+          "D",
+          [
+            "█▀▄",
+            "█▄▀"
+          ]
+        ],
+        [
+          "E",
+          [
+            "█▀▀",
+            "██▄"
+          ]
+        ],
+        [
+          "F",
+          [
+            "█▀▀",
+            "█▀░"
+          ]
+        ],
+        [
+          "G",
+          [
+            "█▀▀",
+            "█▄█"
+          ]
+        ],
+        [
+          "H",
+          [
+            "█░█",
+            "█▀█"
+          ]
+        ],
+        [
+          "I",
+          [
+            "█",
+            "█"
+          ]
+        ],
+        [
+          "J",
+          [
+            "░░█",
+            "█▄█"
+          ]
+        ],
+        [
+          "K",
+          [
+            "█▄▀",
+            "█░█"
+          ]
+        ],
+        [
+          "L",
+          [
+            "█░░",
+            "█▄▄"
+          ]
+        ],
+        [
+          "M",
+          [
+            "█▀▄▀█",
+            "█░▀░█"
+          ]
+        ],
+        [
+          "N",
+          [
+            "█▄░█",
+            "█░▀█"
+          ]
+        ],
+        [
+          "O",
+          [
+            "█▀█",
+            "█▄█"
+          ]
+        ],
+        [
+          "P",
+          [
+            "█▀█",
+            "█▀▀"
+          ]
+        ],
+        [
+          "Q",
+          [
+            "█▀█",
+            "█▄▀"
+          ]
+        ],
+        [
+          "R",
+          [
+            "█▀█",
+            "█▀▄"
+          ]
+        ],
+        [
+          "S",
+          [
+            "█▀",
+            "▄█"
+          ]
+        ],
+        [
+          "T",
+          [
+            "▀█▀",
+            "░█░"
+          ]
+        ],
+        [
+          "U",
+          [
+            "█░█",
+            "█▄█"
+          ]
+        ],
+        [
+          "V",
+          [
+            "█░█",
+            "▀▄▀"
+          ]
+        ],
+        [
+          "W",
+          [
+            "█░█░█",
+            "▀▄▀▄▀"
+          ]
+        ],
+        [
+          "X",
+          [
+            "▀▄▀",
+            "█░█"
+          ]
+        ],
+        [
+          "Y",
+          [
+            "█▄█",
+            "░█░"
+          ]
+        ],
+        [
+          "Z",
+          [
+            "▀█",
+            "█▄"
+          ]
+        ],
+        [
+          " ",
+          [
+            "░",
+            "░"
+          ]
+        ],
+        [
+          "0",
+          [
+            "█▀█",
+            "█▄█"
+          ]
+        ],
+        [
+          "1",
+          [
+            "▄█",
+            "░█"
+          ]
+        ],
+        [
+          "2",
+          [
+            "▀▀█",
+            "█▄▄"
+          ]
+        ],
+        [
+          "3",
+          [
+            "▀▀█",
+            "▄▄█"
+          ]
+        ],
+        [
+          "4",
+          [
+            "█░█",
+            "░▀█"
+          ]
+        ],
+        [
+          "5",
+          [
+            "█▀▀",
+            "▄▄█"
+          ]
+        ],
+        [
+          "6",
+          [
+            "█▀▀",
+            "█▄█"
+          ]
+        ],
+        [
+          "7",
+          [
+            "▀▀█",
+            "░░█"
+          ]
+        ],
+        [
+          "8",
+          [
+            "█▀█",
+            "█▄█"
+          ]
+        ],
+        [
+          "9",
+          [
+            "█▀█",
+            "▀▀█"
+          ]
+        ]
+      ]
+    },
+    {
+      "kind": "table",
+      "name": "WORDMARK_SAMPLES",
+      "doc": [
+        "`render_ascii_text()` output, straight from Python.",
+        "",
+        "Asserted by `Wordmark.test.tsx` so the TS renderer cannot drift from the",
+        "terminal's. Not for runtime use."
+      ],
+      "value": "readonly [string, string]",
+      "entries": [
+        [
+          "retro",
+          [
+            "█▀█ █▀▀ ▀█▀ █▀█ █▀█",
+            "█▀▄ ██▄ ░█░ █▀▄ █▄█"
+          ]
+        ],
+        [
+          "poker",
+          [
+            "█▀█ █▀█ █▄▀ █▀▀ █▀█",
+            "█▀▀ █▄█ █░█ ██▄ █▀▄"
+          ]
+        ],
+        [
+          "yeaboi",
+          [
+            "█▄█ █▀▀ ▄▀█ █▀▄ █▀█ █",
+            "░█░ ██▄ █▀█ █▄█ █▄█ █"
+          ]
+        ],
+        [
+          "sprint 42",
+          [
+            "█▀ █▀█ █▀█ █ █▄░█ ▀█▀ ░ █░█ ▀▀█",
+            "▄█ █▀▀ █▀▄ █ █░▀█ ░█░ ░ ░▀█ █▄▄"
+          ]
+        ],
+        [
+          "n/a",
+          [
+            "█▄░█    ▄▀█",
+            "█░▀█    █▀█"
+          ]
+        ]
+      ]
+    },
+    {
+      "kind": "table",
+      "name": "SHADOW_GLYPHS",
+      "doc": [
+        "The six-row ANSI Shadow font, one entry per character.",
+        "",
+        "Mirrors `ui/shared/_ansi_font.py`. Covers A-Z and space only; a word",
+        "containing anything else has no setting in this face and the caller",
+        "falls back to BLOCK_GLYPHS, which is why the renderer returns null",
+        "rather than substituting a gap."
+      ],
+      "value": "readonly string[]",
+      "entries": [
+        [
+          "A",
+          [
+            " █████╗ ",
+            "██╔══██╗",
+            "███████║",
+            "██╔══██║",
+            "██║  ██║",
+            "╚═╝  ╚═╝"
+          ]
+        ],
+        [
+          "B",
+          [
+            "██████╗ ",
+            "██╔══██╗",
+            "██████╔╝",
+            "██╔══██╗",
+            "██████╔╝",
+            "╚═════╝ "
+          ]
+        ],
+        [
+          "C",
+          [
+            " ██████╗",
+            "██╔════╝",
+            "██║     ",
+            "██║     ",
+            "╚██████╗",
+            " ╚═════╝"
+          ]
+        ],
+        [
+          "D",
+          [
+            "██████╗ ",
+            "██╔══██╗",
+            "██║  ██║",
+            "██║  ██║",
+            "██████╔╝",
+            "╚═════╝ "
+          ]
+        ],
+        [
+          "E",
+          [
+            "███████╗",
+            "██╔════╝",
+            "█████╗  ",
+            "██╔══╝  ",
+            "███████╗",
+            "╚══════╝"
+          ]
+        ],
+        [
+          "F",
+          [
+            "███████╗",
+            "██╔════╝",
+            "█████╗  ",
+            "██╔══╝  ",
+            "██║     ",
+            "╚═╝     "
+          ]
+        ],
+        [
+          "G",
+          [
+            " ██████╗ ",
+            "██╔════╝ ",
+            "██║  ███╗",
+            "██║   ██║",
+            "╚██████╔╝",
+            " ╚═════╝ "
+          ]
+        ],
+        [
+          "H",
+          [
+            "██╗  ██╗",
+            "██║  ██║",
+            "███████║",
+            "██╔══██║",
+            "██║  ██║",
+            "╚═╝  ╚═╝"
+          ]
+        ],
+        [
+          "I",
+          [
+            "██╗",
+            "██║",
+            "██║",
+            "██║",
+            "██║",
+            "╚═╝"
+          ]
+        ],
+        [
+          "J",
+          [
+            "     ██╗",
+            "     ██║",
+            "     ██║",
+            "██   ██║",
+            "╚█████╔╝",
+            " ╚════╝ "
+          ]
+        ],
+        [
+          "K",
+          [
+            "██╗  ██╗",
+            "██║ ██╔╝",
+            "█████╔╝ ",
+            "██╔═██╗ ",
+            "██║  ██╗",
+            "╚═╝  ╚═╝"
+          ]
+        ],
+        [
+          "L",
+          [
+            "██╗     ",
+            "██║     ",
+            "██║     ",
+            "██║     ",
+            "███████╗",
+            "╚══════╝"
+          ]
+        ],
+        [
+          "M",
+          [
+            "███╗   ███╗",
+            "████╗ ████║",
+            "██╔████╔██║",
+            "██║╚██╔╝██║",
+            "██║ ╚═╝ ██║",
+            "╚═╝     ╚═╝"
+          ]
+        ],
+        [
+          "N",
+          [
+            "███╗   ██╗",
+            "████╗  ██║",
+            "██╔██╗ ██║",
+            "██║╚██╗██║",
+            "██║ ╚████║",
+            "╚═╝  ╚═══╝"
+          ]
+        ],
+        [
+          "O",
+          [
+            " ██████╗ ",
+            "██╔═══██╗",
+            "██║   ██║",
+            "██║   ██║",
+            "╚██████╔╝",
+            " ╚═════╝ "
+          ]
+        ],
+        [
+          "P",
+          [
+            "██████╗ ",
+            "██╔══██╗",
+            "██████╔╝",
+            "██╔═══╝ ",
+            "██║     ",
+            "╚═╝     "
+          ]
+        ],
+        [
+          "Q",
+          [
+            " ██████╗ ",
+            "██╔═══██╗",
+            "██║   ██║",
+            "██║▄▄ ██║",
+            "╚██████╔╝",
+            " ╚══▀▀═╝ "
+          ]
+        ],
+        [
+          "R",
+          [
+            "██████╗ ",
+            "██╔══██╗",
+            "██████╔╝",
+            "██╔══██╗",
+            "██║  ██║",
+            "╚═╝  ╚═╝"
+          ]
+        ],
+        [
+          "S",
+          [
+            "███████╗",
+            "██╔════╝",
+            "███████╗",
+            "╚════██║",
+            "███████║",
+            "╚══════╝"
+          ]
+        ],
+        [
+          "T",
+          [
+            "████████╗",
+            "╚══██╔══╝",
+            "   ██║   ",
+            "   ██║   ",
+            "   ██║   ",
+            "   ╚═╝   "
+          ]
+        ],
+        [
+          "U",
+          [
+            "██╗   ██╗",
+            "██║   ██║",
+            "██║   ██║",
+            "██║   ██║",
+            "╚██████╔╝",
+            " ╚═════╝ "
+          ]
+        ],
+        [
+          "V",
+          [
+            "██╗   ██╗",
+            "██║   ██║",
+            "██║   ██║",
+            "╚██╗ ██╔╝",
+            " ╚████╔╝ ",
+            "  ╚═══╝  "
+          ]
+        ],
+        [
+          "W",
+          [
+            "██╗    ██╗",
+            "██║    ██║",
+            "██║ █╗ ██║",
+            "██║███╗██║",
+            "╚███╔███╔╝",
+            " ╚══╝╚══╝ "
+          ]
+        ],
+        [
+          "X",
+          [
+            "██╗  ██╗",
+            "╚██╗██╔╝",
+            " ╚███╔╝ ",
+            " ██╔██╗ ",
+            "██╔╝ ██╗",
+            "╚═╝  ╚═╝"
+          ]
+        ],
+        [
+          "Y",
+          [
+            "██╗   ██╗",
+            "╚██╗ ██╔╝",
+            " ╚████╔╝ ",
+            "  ╚██╔╝  ",
+            "   ██║   ",
+            "   ╚═╝   "
+          ]
+        ],
+        [
+          "Z",
+          [
+            "███████╗",
+            "╚══███╔╝",
+            "  ███╔╝ ",
+            " ███╔╝  ",
+            "███████╗",
+            "╚══════╝"
+          ]
+        ],
+        [
+          " ",
+          [
+            "    ",
+            "    ",
+            "    ",
+            "    ",
+            "    ",
+            "    "
+          ]
+        ]
+      ]
+    },
+    {
+      "kind": "table",
+      "name": "SHADOW_SAMPLES",
+      "doc": [
+        "`render_shadow_text()` output, straight from Python. `null` means the",
+        "face cannot set that word. Not for runtime use."
+      ],
+      "value": "readonly string[] | null",
+      "entries": [
+        [
+          "yeaboi",
+          [
+            "██╗   ██╗███████╗ █████╗ ██████╗  ██████╗ ██╗",
+            "╚██╗ ██╔╝██╔════╝██╔══██╗██╔══██╗██╔═══██╗██║",
+            " ╚████╔╝ █████╗  ███████║██████╔╝██║   ██║██║",
+            "  ╚██╔╝  ██╔══╝  ██╔══██║██╔══██╗██║   ██║██║",
+            "   ██║   ███████╗██║  ██║██████╔╝╚██████╔╝██║",
+            "   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝"
+          ]
+        ],
+        [
+          "retro",
+          [
+            "██████╗ ███████╗████████╗██████╗  ██████╗ ",
+            "██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔═══██╗",
+            "██████╔╝█████╗     ██║   ██████╔╝██║   ██║",
+            "██╔══██╗██╔══╝     ██║   ██╔══██╗██║   ██║",
+            "██║  ██║███████╗   ██║   ██║  ██║╚██████╔╝",
+            "╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝ "
+          ]
+        ],
+        [
+          "analysis",
+          [
+            " █████╗ ███╗   ██╗ █████╗ ██╗  ██╗   ██╗███████╗██╗███████╗",
+            "██╔══██╗████╗  ██║██╔══██╗██║  ╚██╗ ██╔╝██╔════╝██║██╔════╝",
+            "███████║██╔██╗ ██║███████║██║   ╚████╔╝ ███████╗██║███████╗",
+            "██╔══██║██║╚██╗██║██╔══██║██║    ╚██╔╝  ╚════██║██║╚════██║",
+            "██║  ██║██║ ╚████║██║  ██║███████╗██║   ███████║██║███████║",
+            "╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝   ╚══════╝╚═╝╚══════╝"
+          ]
+        ],
+        [
+          "team retro",
+          [
+            "████████╗███████╗ █████╗ ███╗   ███╗    ██████╗ ███████╗████████╗██████╗  ██████╗ ",
+            "╚══██╔══╝██╔════╝██╔══██╗████╗ ████║    ██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔═══██╗",
+            "   ██║   █████╗  ███████║██╔████╔██║    ██████╔╝█████╗     ██║   ██████╔╝██║   ██║",
+            "   ██║   ██╔══╝  ██╔══██║██║╚██╔╝██║    ██╔══██╗██╔══╝     ██║   ██╔══██╗██║   ██║",
+            "   ██║   ███████╗██║  ██║██║ ╚═╝ ██║    ██║  ██║███████╗   ██║   ██║  ██║╚██████╔╝",
+            "   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝    ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝ "
+          ]
+        ],
+        [
+          "sprint 42",
+          null
+        ]
+      ]
+    }
+  ]
+}
