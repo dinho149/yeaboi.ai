@@ -526,6 +526,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check-only", action="store_true", help="verify the existing cast + gif and exit")
     parser.add_argument("--cmd", nargs="+", help=argparse.SUPPRESS)  # test seam: stub child process
     args = parser.parse_args(argv)
+
+    # Before the paths: refusing on the wrong OS must not depend on having a
+    # yeaboi-site checkout, or the message names the wrong problem.
+    if not args.check_only and not args.render_only and sys.platform == "win32":
+        sys.exit("record_demo.py needs a POSIX pty; record on macOS or Linux")
+
     if args.cast is None:
         args.cast = default_cast()
     if args.gif is None:
@@ -535,8 +541,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.check_only:
         if not args.render_only:
-            if sys.platform == "win32":
-                sys.exit("record_demo.py needs a POSIX pty; record on macOS or Linux")
             record(args.cast, cmd=args.cmd)
         render(args.cast, args.gif)
 

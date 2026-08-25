@@ -337,6 +337,10 @@ class TestMain:
         monkeypatch.setattr(record_demo, "record", lambda *a, **kw: self.calls.append("record"))
         monkeypatch.setattr(record_demo, "render", lambda *a, **kw: self.calls.append("render"))
         monkeypatch.setattr(record_demo, "verify", lambda *a, **kw: self.calls.append("verify") or [])
+        # These stage tests are about ordering, not paths. The real defaults
+        # resolve a yeaboi-site checkout, which CI does not have.
+        monkeypatch.setattr(record_demo, "default_cast", lambda: Path("demo.cast.gz"))
+        monkeypatch.setattr(record_demo, "default_gif", lambda: Path("demo.gif"))
 
     def test_full_run_records_renders_verifies(self):
         assert record_demo.main([]) == 0
