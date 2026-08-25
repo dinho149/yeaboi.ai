@@ -34,9 +34,10 @@ make web-dev              # Vite dev server on :5399 with HMR, proxying /api to 
 make dev-board            # Seeded retro board on :5173 for front-end development
 make dev-poker            # Seeded planning-poker board on :5273
 make dev-deck             # Seeded reporting slide deck on :5373
-make graph                # Generate agent graph visualisation PNG
-make demo                 # Re-record docs/demo.cast.gz + docs/demo.gif (scripted, no interaction; needs agg)
+make graph                # Generate the agent graph PNG into the yeaboi-site checkout
+make demo                 # Re-record the terminal demo into yeaboi-site (scripted, no interaction; needs agg)
 make demo-render          # Re-render the GIF from the committed cast (theme/size tweaks, no re-record)
+make site-contract        # Regenerate contracts/site.json — the facts the website vendors
 make build                # Build sdist + wheel into dist/
 make publish              # Publish to PyPI
 make record               # Re-record VCR cassettes against real APIs
@@ -54,7 +55,7 @@ does not recognise runs everything**. The five required status checks never carr
 changes what they run, never whether they report. See `tests/unit/test_test_scope.py`, which fails the
 build when a source file is claimed by no area or a test file is selected by nothing.
 
-Terminal GIFs for the README: `make demo` re-records `docs/demo.cast.gz` + `docs/demo.gif` from a scripted pty session (deterministic, no interaction; needs `agg`); `make demo-render` re-renders the GIF from the committed cast for theme/size tweaks.
+Terminal GIFs: `make demo` re-records `demo.cast.gz` + `demo.gif` from a scripted pty session (deterministic, no interaction; needs `agg`); `make demo-render` re-renders the GIF from the committed cast for theme/size tweaks. Both write into a **yeaboi-site checkout** — see *The website* below.
 
 ## Parallel Development (worktrees)
 
@@ -109,7 +110,16 @@ The sixth surface: an Electron shell whose renderer is a normal Vite/Preact ESM 
 
 - **`make desktop-check`** is what CI runs: typecheck + vitest + the routes-manifest staleness gate. `desktop/src/renderer/routes.json` is the parity source; `npm run gen-manifest` in `desktop/` regenerates the committed `src/yeaboi/app/routes_manifest.json` that the Python suite reads.
 - **What ships is a released wheel, not this tree.** `make desktop-bundle VERSION=X.Y.Z` installs `yeaboi[mcp,charts]==X.Y.Z` from PyPI into a pinned python-build-standalone runtime at `desktop/resources/py`; electron-builder ships that as `Resources/py` and `sidecar.ts` spawns `Resources/py/bin/python3 -m yeaboi app`. `make desktop-pack` is the unsigned local smoke; `desktop-release.yml` does the signed three-OS build against a version that must already be on PyPI.
-- **Brand assets are committed, not built.** `make desktop-icons` re-renders `desktop/build/` + the tray icons from the website's duck art (needs the `charts` extra); `tests/unit/test_desktop_icons.py` asserts the set without Pillow.
+- **Brand assets are committed, not built.** `make desktop-icons` re-renders `desktop/build/` + the tray icons from the website's duck art (needs the `charts` extra and a **yeaboi-site** checkout, below); `tests/unit/test_desktop_icons.py` asserts the set without Pillow.
+
+## The website (`yeaboi-site`)
+
+yeaboi.ai lives in **[yeaboi-site](https://github.com/yeaboi-ai/yeaboi-site)** — flat HTML with no build step, served off its `main` by GitHub Pages, so merging there is publishing. Nothing about a page, the docs, or `install.sh` is edited in this repo any more.
+
+Two things still cross the boundary, in opposite directions:
+
+- **This repo publishes `contracts/site.json`** — the facts the site states about the package: the Python floor in its structured data, the repo URL in its JSON-LD, the PyPI install target. It is generated from `pyproject.toml` by `make site-contract` and `tests/unit/test_site_contract.py` fails when it is stale. The site vendors it by sha; **change a URL or the floor here and the site is a `make contracts-sync` behind until somebody bumps it.**
+- **The site holds artefacts this repo generates, and the master brand art this repo reads.** `make graph`, `make demo`/`demo-render`, `make desktop-icons` and the two sprite generators all resolve a yeaboi-site checkout via `scripts/_site_repo.py`: `$YEABOI_SITE`, else a sibling of the main checkout. None of them runs on a PR — every output is committed and guarded — so the two-checkout requirement is paid by whoever changes the product or the brand, never by CI.
 
 ## Code Style
 
@@ -139,7 +149,7 @@ but do not sweep files you are not otherwise touching.
 
 This is the developer's first AI agent. These are NOT optional — follow them on every implementation task.
 
-1. **ALWAYS add `# See docs: <section name>` comments** when introducing a LangGraph or LangChain concept for the first time in a file. Cross-reference the relevant page at https://yeaboi.ai/docs/ (or the local `docs/docs/` source) so the developer can look up the theory.
+1. **ALWAYS add `# See docs: <section name>` comments** when introducing a LangGraph or LangChain concept for the first time in a file. Cross-reference the relevant page at https://yeaboi.ai/docs/ (the source lives in the **yeaboi-site** repo) so the developer can look up the theory.
 2. **ALWAYS explain LangGraph/LangChain concepts in code comments** on first use — what a reducer does, why `add_messages` exists, what `StateGraph` expects, what `bind_tools` does, etc. Do NOT assume familiarity with these frameworks. This is the one carve-out from the comment rule above: a sentence naming the concept plus the `# See docs:` pointer, not a tutorial in the source.
 3. **ALWAYS explain architectural decisions** in your response — when choosing between approaches, state the trade-offs and why this approach was chosen.
 

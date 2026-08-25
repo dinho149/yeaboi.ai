@@ -39,7 +39,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-contract site-seo site-check site-og site-serve pr-feedback
+.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-contract pr-feedback
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -203,13 +203,16 @@ snapshot-update: ## Update syrupy snapshot baselines after intentional formatter
 budget-report: ## Show live prompt token counts for trend monitoring (runs token budget tests with -s)
 	$(UV) run pytest tests/unit/test_token_budgets.py -v -s
 
-graph: ## Generate agent graph visualisation PNG
+# graph, demo and demo-render read this repo and write into a yeaboi-site
+# checkout, which is where the website serves them from. Set YEABOI_SITE or keep
+# the two repos side by side; scripts/_site_repo.py explains the resolution.
+graph: ## Generate the agent graph PNG into the yeaboi-site checkout
 	$(UV) run python scripts/generate_graph_png.py
 
-demo: ## Re-record docs/demo.cast.gz + docs/demo.gif deterministically (requires agg: brew install agg)
+demo: ## Re-record the terminal demo into the yeaboi-site checkout (requires agg: brew install agg)
 	$(UV) run python scripts/record_demo.py
 
-demo-render: ## Re-render docs/demo.gif from the committed cast (theme/size tweaks, no re-record)
+demo-render: ## Re-render the demo GIF from the committed cast (theme/size tweaks, no re-record)
 	$(UV) run python scripts/record_demo.py --render-only
 
 bump-patch: ## Bump the patch version in pyproject.toml (X.Y.Z -> X.Y.Z+1)
@@ -285,6 +288,8 @@ desktop-build: ## Build the desktop main/preload/renderer bundles into desktop/o
 # — pass VERSION=X.Y.Z to bundle anything else.
 VERSION ?= $(shell grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
 
+# Reads the master duck art from the yeaboi-site checkout; the output is
+# committed here. See scripts/_site_repo.py.
 desktop-icons: ## Re-render the committed icon set from the website duck art (needs the charts extra)
 	uv run --extra charts python scripts/gen_desktop_icons.py
 
@@ -302,35 +307,12 @@ desktop-dist: ## Signed installers into desktop/dist — needs the signing env v
 	$(MAKE) desktop-build
 	cd desktop && npx electron-builder --publish never
 
-# --- Docs site (docs/ → yeaboi.ai via GitHub Pages) --------------------------
-#
-# NOT the same thing as the web-* targets above: those build the app's React
-# bundles into src/yeaboi/web/static. These manage the marketing/docs website in
-# docs/, which is hand-written flat HTML with no build step, published straight
-# off main by GitHub Pages. The SEO head block, the crawlable footer, the ?v=
-# cache-bust, sitemap.xml and robots.txt are generated into it — 18 pages x a
-# dozen meta tags is exactly what rots by hand. The staleness check lives in
-# tests/unit/test_site_seo.py (so it runs in make test-fast and every CI lane);
-# site-check is the same assertion for humans.
-
-# contracts/site.json is what the website repo vendors instead of reading this
-# repo's pyproject.toml: the Python floor, the repo URL, the install target.
-# tests/unit/test_site_contract.py asserts it is fresh on every lane.
+# contracts/site.json is what the yeaboi-site repo vendors instead of reading
+# this repo's pyproject.toml: the Python floor it advertises, the repo URL in its
+# JSON-LD, the install target. tests/unit/test_site_contract.py asserts it is
+# fresh on every lane. The website itself lives in yeaboi-site.
 site-contract: ## Regenerate contracts/site.json from pyproject (the facts the website vendors)
 	$(UV) run python scripts/gen_site_contract.py
-
-site-seo: ## Regenerate the SEO block, crawlable footer, ?v=, sitemap.xml and robots.txt in docs/
-	$(UV) run python scripts/gen_site_seo.py
-
-site-check: ## Fail if any generated part of docs/ is stale (also asserted by make test-fast)
-	$(UV) run python scripts/gen_site_seo.py --check
-
-site-og: ## Re-render the 1200x630 Open Graph card (needs the charts extra for Pillow)
-	$(UV) run --extra charts python scripts/gen_og_card.py
-
-site-serve: ## Serve docs/ on :8899 exactly as GitHub Pages would, to preview before merging
-	@echo "→ http://localhost:8899  (Ctrl-C to stop)"
-	$(UV) run python scripts/serve_docs.py
 
 dev-board: ## Seeded retro board on :5173 for front-end development (prints the URL)
 	$(UV) run python scripts/dev_board.py

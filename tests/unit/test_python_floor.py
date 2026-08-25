@@ -9,7 +9,7 @@ reads a search result.
 
 from __future__ import annotations
 
-import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -64,39 +64,22 @@ class TestPackageMetadata:
 
 
 class TestUserFacingSurfaces:
-    def test_the_installer_pins_the_same_specifier(self):
-        text = (ROOT / "docs" / "install.sh").read_text(encoding="utf-8")
-        found = re.search(r'YEABOI_PYTHON="\$\{YEABOI_PYTHON:-(.+?)\}"', text)
-        assert found, "install.sh no longer sets YEABOI_PYTHON"
-        assert found.group(1) == REQUIRES_PYTHON
+    """The website's surfaces — install.sh, the docs pages, the Open Graph card —
+    live in the yeaboi-site repo and are asserted there against the floor this
+    repo publishes in contracts/site.json."""
 
-    @pytest.mark.parametrize(
-        "page",
-        ["README.md", "CLAUDE.md", "docs/docs/getting-started.html", "docs/docs/development.html"],
-    )
+    def test_the_contract_publishes_the_same_specifier(self):
+        """The one hop the website's own guards depend on."""
+        contract = json.loads((ROOT / "contracts" / "site.json").read_text(encoding="utf-8"))
+        assert contract["requires_python"] == REQUIRES_PYTHON, "run `make site-contract` and commit the result"
+
+    @pytest.mark.parametrize("page", ["README.md", "CLAUDE.md"])
     def test_no_page_names_a_version_below_the_floor(self, page):
         """A doc that still says 3.11+ turns away people the change just admitted."""
         text = (ROOT / page).read_text(encoding="utf-8")
         stale = {f"3.{minor}+" for minor in range(FLOOR_TUPLE[1] + 1, int(CEILING.split(".")[1]) + 1)}
         found = sorted(marker for marker in stale if f"Python {marker}" in text)
         assert not found, f"{page} advertises {found}; the floor is {FLOOR}"
-
-    def test_the_og_card_generator_reads_the_real_floor(self):
-        """The static check below proves the literal is gone; this proves the thing
-        that replaced it returns the right answer. Pillow is imported lazily inside
-        the drawing helpers, so the module loads without the `charts` extra."""
-        spec = importlib.util.spec_from_file_location("gen_og_card", ROOT / "scripts" / "gen_og_card.py")
-        assert spec and spec.loader
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        assert module._floor() == FLOOR
-
-    def test_the_og_card_derives_the_floor_rather_than_naming_it(self):
-        """The rendered PNG is not checked by anything, so the generator must not
-        carry a literal that can rot between hand-runs of `make site-og`."""
-        text = (ROOT / "scripts" / "gen_og_card.py").read_text(encoding="utf-8")
-        assert "_floor()" in text
-        assert "Python 3.1" not in text, "derive the version, do not spell it out"
 
 
 class TestCi:

@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from yeaboi import beta
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # 3.10 — tomllib landed in 3.11; the `dev` extra supplies the backport.
@@ -37,7 +39,7 @@ gen = _load_generator()
 
 
 @pytest.fixture(scope="module")
-def contract() -> dict[str, str]:
+def contract() -> dict:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
@@ -48,7 +50,7 @@ class TestFreshness:
             "contracts/site.json is stale — run `make site-contract` and commit the result"
         )
 
-    def test_every_field_is_derived_from_pyproject(self, contract: dict[str, str]) -> None:
+    def test_every_field_is_derived_from_pyproject(self, contract: dict) -> None:
         meta = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
         assert contract["package"] == meta["name"]
         assert contract["requires_python"] == meta["requires-python"]
@@ -56,9 +58,22 @@ class TestFreshness:
         assert contract["homepage"] == meta["urls"]["Homepage"]
         assert contract["repository"] == meta["urls"]["Repository"]
 
+    def test_the_beta_vocabulary_matches_yeaboi_beta(self, contract: dict) -> None:
+        """The site's pages and its `.beta-pill` carry hand-written copies.
+
+        `tests/unit/test_beta_surfaces.py` used to pin them to `yeaboi.beta`
+        directly; the pages moved out, so this hop is what keeps them honest.
+        """
+        assert contract["beta"]["label"] == beta.BETA_LABEL
+        assert contract["beta"]["tag"] == beta.BETA_TAG
+        assert tuple(contract["beta"]["rgb"]) == beta.BETA_RGB
+        assert contract["beta"]["performance_phrase"] == beta.PERFORMANCE_BETA_PHRASE
+        assert contract["beta"]["agentwatch_phrase"] == beta.AGENTWATCH_BETA_PHRASE
+        assert contract["beta"]["ship_phrase"] == beta.SHIP_BETA_PHRASE
+
 
 class TestShape:
-    def test_it_carries_no_version(self, contract: dict[str, str]) -> None:
+    def test_it_carries_no_version(self, contract: dict) -> None:
         """A version here would churn the contract on every merged PR.
 
         ``auto-version.yml`` bumps ``pyproject.toml`` on every PR branch, so a
@@ -68,16 +83,16 @@ class TestShape:
         """
         assert "version" not in contract
 
-    def test_the_floor_is_a_usable_specifier(self, contract: dict[str, str]) -> None:
+    def test_the_floor_is_a_usable_specifier(self, contract: dict) -> None:
         """The site parses this to render "Python X.Y+" — it must stay parseable."""
         floor = contract["requires_python"]
         assert floor.startswith(">="), f"the site's floor parser expects a >= specifier, got {floor!r}"
         major, _, minor = floor.lstrip(">=").split(",")[0].strip().partition(".")
         assert major.isdigit() and minor.isdigit(), f"cannot read a X.Y floor out of {floor!r}"
 
-    def test_the_pypi_url_matches_the_package_name(self, contract: dict[str, str]) -> None:
+    def test_the_pypi_url_matches_the_package_name(self, contract: dict) -> None:
         assert contract["pypi"].rstrip("/").rsplit("/", 1)[-1] == contract["package"]
 
-    def test_urls_are_absolute_https(self, contract: dict[str, str]) -> None:
+    def test_urls_are_absolute_https(self, contract: dict) -> None:
         for key in ("homepage", "repository", "pypi"):
             assert contract[key].startswith("https://"), f"{key} is not an absolute https URL"

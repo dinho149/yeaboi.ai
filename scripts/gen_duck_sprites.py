@@ -5,15 +5,16 @@ Two outputs, same reason: everything yeaboi serves or writes is one
 self-contained file, so any image on it is embedded as a ``data:`` URI rather
 than fetched. Bytes here are bytes in every board page and every exported report.
 
-**The mascot sprite.** The source art (``docs/assets/duck-{base,wing,glasses}.png``)
-is 480x509 and 199 KB across the three layers — about 265 KB once base64'd. That
-is fine for the docs site, which fetches it over HTTP and caches it, and
+**The mascot sprite.** The source art (``assets/duck-{base,wing,glasses}.png``
+in the yeaboi-site checkout) is 480x509 and 199 KB across the three layers —
+about 265 KB once base64'd. That is fine for the website, which fetches it over
+HTTP and caches it, and
 completely wrong for us. This writes a 128px-wide rendition, which is 2x the
 64px the duck is drawn at. All three layers get identical dimensions and
 identical resampling, because they are composited on top of each other — a
 half-pixel difference in scale puts the sunglasses on the duck's forehead.
 
-**The favicon.** ``docs/assets/duck-favicon.png`` is 64x64 and 7 KB, which is
+**The favicon.** ``assets/duck-favicon.png`` is 64x64 and 7 KB, which is
 ~9.4 KB of base64 in every document we emit for an icon a browser draws at 16px.
 The 32px rendition is the 2x asset and costs about a sixth of that.
 
@@ -36,17 +37,25 @@ import sys
 from io import BytesIO
 from pathlib import Path
 
+# scripts/ is not a package, and these modules are also loaded by path in tests,
+# where sys.path[0] is not this directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _site_repo import site_assets  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE_DIR = ROOT / "docs" / "assets"
+# The master art is a served asset of the website; resolved on use rather than
+# at import, so this module stays importable with no sibling checkout.
+# See scripts/_site_repo.py.
 OUTPUT_DIR = ROOT / "frontend" / "src" / "assets" / "duck"
 
 # The favicon is read by Python, not bundled by Vite, so it lands in the package
 # rather than under frontend/. Not in web/static/ — that directory is the Vite
 # output and `test_static_dir_holds_only_bundles` rejects anything that is not a
 # .js or .css bundle.
-FAVICON_SOURCE = SOURCE_DIR / "duck-favicon.png"
+FAVICON_NAME = "duck-favicon.png"
 FAVICON_OUTPUT = ROOT / "src" / "yeaboi" / "web" / "favicon.png"
 
 # 2x the 16px a browser draws a tab icon at. Retina tabs and the bookmark bar
@@ -97,18 +106,19 @@ def build() -> dict[Path, bytes]:
     """Render every layer and the favicon. Returns {output path: PNG bytes}."""
     out: dict[Path, bytes] = {}
     for layer in LAYERS:
-        source = SOURCE_DIR / f"duck-{layer}.png"
+        source = site_assets() / f"duck-{layer}.png"
         if not source.exists():
             raise FileNotFoundError(f"missing duck layer: {source}")
         out[OUTPUT_DIR / f"{layer}.png"] = _resize(source, TARGET_WIDTH)
-    if not FAVICON_SOURCE.exists():
-        raise FileNotFoundError(f"missing favicon source: {FAVICON_SOURCE}")
+    favicon_source = site_assets() / FAVICON_NAME
+    if not favicon_source.exists():
+        raise FileNotFoundError(f"missing favicon source: {favicon_source}")
     # Same pipeline as the layers, deliberately. The 64px source has ~1,800
     # distinct colours — it is shaded art, not a pixel grid — so the LANCZOS
     # and quantise reasoning in `_resize` applies unchanged. Nearest-neighbour
     # would jag the outline at the exact size where the outline is the whole
     # picture.
-    out[FAVICON_OUTPUT] = _resize(FAVICON_SOURCE, FAVICON_WIDTH)
+    out[FAVICON_OUTPUT] = _resize(favicon_source, FAVICON_WIDTH)
     return out
 
 

@@ -4,5 +4,17 @@
   "description": "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports, plus cost and security posture for your AI coding agents.",
   "homepage": "https://yeaboi.ai",
   "repository": "https://github.com/dinho149/yeaboi.ai",
-  "pypi": "https://pypi.org/project/yeaboi/"
+  "pypi": "https://pypi.org/project/yeaboi/",
+  "beta": {
+    "label": "BETA",
+    "tag": "(beta)",
+    "rgb": [
+      224,
+      138,
+      72
+    ],
+    "performance_phrase": "not yet verified against real delivery data",
+    "agentwatch_phrase": "estimates from local session logs",
+    "ship_phrase": "drives a real coding agent against your repository"
+  }
 }

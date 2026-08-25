@@ -37,7 +37,6 @@ jobs:
       slow_paths: ${{ steps.scope.outputs.slow_paths }}
       web: ${{ steps.scope.outputs.web }}
       desktop: ${{ steps.scope.outputs.desktop }}
-      site: ${{ steps.scope.outputs.site }}
       package: ${{ steps.scope.outputs.package }}
       eval: ${{ steps.scope.outputs.eval }}
       compat: ${{ steps.scope.outputs.compat }}
@@ -96,7 +95,6 @@ jobs:
               echo "slow_paths=tests/integration/ tests/contract/"
               echo "web=true"
               echo "desktop=true"
-              echo "site=true"
               echo "package=true"
               echo "eval=true"
               echo "compat=true"
@@ -310,24 +308,6 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
       - run: make desktop-install
       - run: make desktop-check
-
-  # ── Docs site ────────────────────────────────────────────────────────────
-  # docs/ is published as yeaboi.ai by GitHub Pages straight off main. There is
-  # no deploy step that could fail, so a stale SEO block, a wrong canonical or a
-  # dropped sitemap entry ships silently. tests/unit/test_site_seo.py asserts
-  # the same thing in the unit lane; this job exists so the failure gets its own
-  # named red check pointing at the one command that fixes it.
-  site:
-    name: Docs site (SEO block, sitemap, robots)
-    runs-on: ubuntu-latest
-    needs: scope
-    if: needs.scope.outputs.site == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - run: uv python install 3.11
-      - run: uv sync --extra dev
-      - run: make site-check
 
   # Assert the committed bundles actually make it into the built wheel.
   # .gitignore contains unanchored `dist/` and `build/` globs and hatchling

@@ -2,8 +2,8 @@
 """Run the optional CI jobs this branch's diff needs, before the PR exists.
 
 `make test` proves the Python suite and nothing else. CI checks several further
-things — the ruff format check, gitleaks, actionlint, the front-end bundles, the
-docs site, the golden evaluators and the wheel's contents — and every one of
+things — the ruff format check, gitleaks, actionlint, the front-end bundles,
+the golden evaluators and the wheel's contents — and every one of
 them used to be discovered *after* the PR was open, minutes later, on a branch
 already pushed.
 
@@ -45,7 +45,6 @@ SCOPE = ROOT / "scripts" / "test_scope.py"
 JOB_TARGETS: dict[str, tuple[str, ...]] = {
     "web": ("web-check",),
     "desktop": ("desktop-check",),
-    "site": ("site-check",),
     "package": ("package-check",),
     "eval": ("eval",),
     "compat": ("test-compat",),

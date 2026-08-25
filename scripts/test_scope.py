@@ -353,10 +353,7 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/html_exporter.py",
             "src/yeaboi/charts.py",
             "src/yeaboi/names.py",
-            "docs/",
             "scripts/gen_web_types.py",
-            "scripts/gen_site_seo.py",
-            "scripts/gen_og_card.py",
             "scripts/dev_*",
         ),
         tests=(
@@ -473,7 +470,6 @@ ALWAYS: tuple[str, ...] = (
     # committed artefacts the Python suite reads but never builds
     "tests/unit/test_web_assets.py",
     "tests/unit/test_web_frontend_guards.py",
-    "tests/unit/test_site_seo.py",
     # contracts/site.json is derived from pyproject.toml and consumed by another
     # repo. The path that invalidates it — pyproject.toml — is GLOBAL, but a
     # hand-edit of the JSON itself is claimed by one small area, so the freshness
@@ -489,11 +485,10 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_claude_plugin.py",
     "tests/unit/test_pr_feedback.py",
     "tests/unit/test_gh_transport.py",
-    # docs/install.sh is served straight off main by GitHub Pages — no build, no
-    # deploy job — so nothing else in the pipeline notices it breaking. It also
-    # guards the install commands the README and landing page advertise, and
-    # README.md is INERT: without this entry a README-only change runs nothing.
-    "tests/unit/test_install_script.py",
+    # The install commands README.md advertises — and README.md is INERT, so
+    # without this entry a README-only change runs nothing. The installer itself
+    # lives in yeaboi-site and is tested there.
+    "tests/unit/test_readme_install.py",
     # AST-scans every .py in the repo for the two 3.11-only constructs the 3.10
     # floor bans. Any file can reintroduce them, so no path implies this test.
     "tests/unit/test_compat.py",
@@ -544,7 +539,7 @@ GLOBAL: tuple[str, ...] = (
 
 # --- paths that cannot change Python behaviour --------------------------------
 # Prose and agent configuration. Safe to treat as inert *because* the tests that
-# read them — `test_claude_*`, `test_site_seo` — are in ALWAYS and run
+# read them — `test_claude_*`, `test_readme_install` — are in ALWAYS and run
 # regardless. Without that they would belong in GLOBAL.
 INERT: tuple[str, ...] = (
     ".claude/",
@@ -570,7 +565,6 @@ JOBS: tuple[Job, ...] = (
     # The design/shared dirs are aliased into the renderer, so a change there
     # can break a desktop typecheck that `web` alone would not catch.
     Job("desktop", ("desktop/", "frontend/src/design/", "frontend/src/shared/", "src/yeaboi/app/routes_manifest.json")),
-    Job("site", ("docs/", "scripts/gen_site_seo.py", "scripts/gen_og_card.py")),
     Job("package", ("pyproject.toml", "src/yeaboi/web/static/", "packaging/")),
     Job("eval", ("src/yeaboi/prompts/", "src/yeaboi/agent/", "tests/golden/")),
     # The non-required matrix that runs the unit lane on 3.11–3.14. Gated on any
