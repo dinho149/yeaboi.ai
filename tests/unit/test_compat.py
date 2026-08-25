@@ -147,6 +147,29 @@ class TestFloorGuard:
             f"enum.{name} behaves differently below 3.11. Import it from `yeaboi._compat`:\n  " + "\n  ".join(offenders)
         )
 
+    def test_no_module_imports_tomllib_unguarded(self):
+        """`import tomllib` at module scope is an ImportError on 3.10.
+
+        Not in `yeaboi._compat` because the shim is an import, not a class: the
+        convention here is the two-line `sys.version_info` fork with `tomli` as
+        the fallback, which the `dev` extra supplies. This guard exists because
+        the unit lane runs on the floor only in CI, so a bare import passes
+        every local run and fails after the push.
+        """
+        offenders = []
+        for path in _python_files():
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                # Guarded imports live inside an `if`; only module-scope ones bite.
+                if not isinstance(node, ast.Module):
+                    continue
+                for stmt in node.body:
+                    if isinstance(stmt, ast.Import) and any(a.name == "tomllib" for a in stmt.names):
+                        offenders.append(f"{path.relative_to(ROOT)}:{stmt.lineno}")
+        assert not offenders, (
+            "tomllib is 3.11+. Fork on sys.version_info and fall back to `tomli as tomllib`:\n  "
+            + "\n  ".join(offenders)
+        )
+
     def test_the_shim_module_exports_exactly_what_the_guard_bans(self):
         """A construct added to __all__ without a guard arm is a silent hole; a
         guard arm for a name the shim does not export is a dead assertion."""
