@@ -60,6 +60,8 @@ Terminal GIFs for the README: `make demo` re-records `docs/demo.cast.gz` + `docs
 
 Each feature gets its own git worktree under `<main checkout>/.claude/worktrees/<name>` with its own branch, `.env`, uv venv, and pre-commit hooks. Never develop two features in one checkout. A new worktree is cut from latest `origin/main`; an existing local branch is left untouched, and a branch that exists only on `origin` is checked out tracking the remote — rebase it with `/sync-main`.
 
+The venv and pre-commit half is this repo's `scripts/provision.sh`, which the shared worktree script runs inside the new tree; the rest lives in **[yeaboi-tooling](https://github.com/yeaboi-ai/yeaboi-tooling)** (see *Shared tooling* below).
+
 ```bash
 make wt-new NAME=my-feature       # create worktree off latest origin/main + open VS Code with claude auto-running
 make wt-headless NAME=my-feature  # same, WITHOUT VS Code (for background-agent work)
@@ -68,12 +70,23 @@ make wt-list                      # list worktrees (branch, clean/dirty, path)
 make wt-rm NAME=my-feature        # remove worktree dir + branch
 ```
 
-Slash commands (in `.claude/commands/`): `/wt` (worktree ops from inside a session), `/sync-main` (rebase on latest main + re-verify), `/ship` (independent review → full tests → commit → push → PR), `/babysit-prs` (survey open PRs, spawn fix agents for red CI), `/migrate` (fan out a mechanical migration across many files via parallel worktree agents).
+Slash commands: `/wt` (worktree ops from inside a session), `/sync-main` (rebase on latest main + re-verify), `/ship` (independent review → full tests → commit → push → PR), `/migrate` (fan out a mechanical migration across many files via parallel worktree agents) come from the shared plugin; `/pr-feedback` and `/babysit-prs` are still local, in `.claude/commands/`.
+
+### Shared tooling (`yeaboi-tooling`)
+
+The development workflow is managed in one place for all five yeaboi repos, and arrives here in two halves:
+
+- **The `yeaboi-devkit` Claude Code plugin** — `/ship`, `/sync-main`, `/wt`, `/migrate`, the `code-reviewer` / `test-writer` / `migrator` agents, and both hooks. Installed by `extraKnownMarketplaces` + `enabledPlugins` in `.claude/settings.json`; nothing to run.
+- **A pinned clone** — `mk/common.mk` and the worktree scripts, cloned to a gitignored `.tooling/` at the sha in `.tooling-rev`. The block at the top of the `Makefile` syncs it at parse time, and only when the pin and the checkout disagree, so a fresh worktree provisions itself on its first `make` and the steady state costs no network. Bump with `make tooling-bump`.
+
+**The plugin reaches this repo only through Make targets** — `lint`, `test`, `test-fast`, `test-scoped`, `ship-gate` — which is what lets one `/ship` also drive the front-end, desktop and site repos. The procedure is shared; **this repo's facts live in `.claude/repo-notes.md`**, which `/ship` and `/sync-main` read: which pre-commit hook to skip, what the gate covers, that `auto-version.yml` rewrites the branch after the push, and the rebase conflict playbook. Keep that file current — `tests/unit/test_ship_gate.py` and CI's `make tooling-check` are what notice when it or a target goes missing.
+
+Never edit anything under `.tooling/`: it is a pinned checkout, `tooling-check` fails on a dirty one, and a fix made there is invisible to every other repo. Change it upstream and bump the pin.
 
 ### Verification loop
 
-- **Every turn (automatic)**: a Stop hook runs `make lint` + `make test-scoped` whenever a turn ends with dirty `.py` files, and a PostToolUse hook ruff-formats every edited `.py` file. Hook scripts live in `scripts/claude-hooks/`; wiring is in `.claude/settings.json`.
-- **At ship time (`/ship`)**: the branch is committed and **rebased onto `origin/main` first** — a gate run on a stale base proves something about a tree that will never exist — and then an independent fresh-context agent reviews `git diff origin/main...HEAD` (spec-fit + conventions) **concurrently** with `make ship-gate` (`lint` → `format-check` → `test` → `security` → `preflight`). `.claude/commands/ship.md` has the procedure; `tests/unit/test_ship_gate.py` guards its shape.
+- **Every turn (automatic)**: a Stop hook runs `make lint` + `make test-scoped` whenever a turn ends with dirty source files, and a PostToolUse hook ruff-formats every edited `.py` file. Both ship with the plugin — there is nothing wired in `.claude/settings.json` any more.
+- **At ship time (`/ship`)**: the branch is committed and **rebased onto `origin/main` first** — a gate run on a stale base proves something about a tree that will never exist — and then an independent fresh-context agent reviews `git diff origin/main...HEAD` (spec-fit + conventions) **concurrently** with `make ship-gate` (`lint` → `format-check` → `test` → `security` → `preflight`).
 - **In CI**: `claude-review.yml` posts an async code + security review once the full CI suite has passed on a PR (non-blocking; `ci.yml` remains the merge gate).
 
 ### Orchestration conventions

@@ -1,4 +1,15 @@
 {
+  "extraKnownMarketplaces": {
+    "yeaboi-tooling": {
+      "source": {
+        "source": "github",
+        "repo": "yeaboi-ai/yeaboi-tooling"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "yeaboi-devkit@yeaboi-tooling": true
+  },
   "permissions": {
     "allow": [
       "Bash(make test)",
@@ -35,31 +46,9 @@
       "Bash(gh run view:*)",
       "Bash(gh run list:*)",
       "Bash(gh label list:*)",
-      "Bash(gh variable list:*)"
-    ]
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/claude-hooks/format-file.sh"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/claude-hooks/verify-stop.sh",
-            "timeout": 120
-          }
-        ]
-      }
+      "Bash(gh variable list:*)",
+      "Bash(make tooling-check)",
+      "Bash(make tooling-sync)"
     ]
   }
 }

@@ -1,18 +1,48 @@
-UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
+# --- shared tooling (yeaboi-tooling, pinned by .tooling-rev) ------------------
+#
+# Copied verbatim from the tooling repo's bootstrap/Makefile.head. It clones the
+# tooling repo to `.tooling/` at the pinned sha and includes the shared targets
+# (wt-*, tooling-*, contracts-*). The clone happens at parse time and only when
+# the pin and the checkout disagree, so the steady state is two file reads and
+# no network — and a fresh `git worktree add`, which never populates a
+# submodule, provisions itself on the first `make`.
+#
+# Bump the pin with `make tooling-bump` and commit `.tooling-rev`.
 
-# Editor CLI used by `make wt-open` to open each worktree in a new window.
-# Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
-CODE ?= code
+TOOLING      := .tooling
+TOOLING_REV  := $(shell cat .tooling-rev 2>/dev/null | tr -d '[:space:]')
+TOOLING_HAVE := $(shell cat $(TOOLING)/.git/tooling-rev 2>/dev/null | tr -d '[:space:]')
+
+ifeq ($(TOOLING_REV),)
+$(error missing .tooling-rev — this repo pins the shared tooling by commit sha)
+endif
+ifneq ($(TOOLING_REV),$(TOOLING_HAVE))
+TOOLING_SYNC := $(shell bash scripts/tooling-sync.sh >&2 && echo ok)
+ifneq ($(TOOLING_SYNC),ok)
+$(error shared tooling could not be synced — see the [tooling] lines above)
+endif
+endif
+
+# The include brings targets with it, and the first target in a makefile is the
+# default goal. Name the goal explicitly so `make` with no arguments still
+# prints help rather than cutting a worktree.
+.DEFAULT_GOAL := help
+
+include $(TOOLING)/mk/common.mk
+
+# --- end shared tooling ------------------------------------------------------
+
+UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 
 # `test` and `ship-gate` order their prerequisites deliberately (cheap checks
 # first, unit before integration). `make -j` would run them concurrently, and
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback
+.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install uv (if missing) and project dependencies
 	@command -v uv >/dev/null 2>&1 || (echo "Installing uv..." && curl -LsSf https://astral.sh/uv/install.sh | sh)
@@ -313,45 +343,6 @@ build: ## Build sdist + wheel into dist/
 
 publish: ## Publish to PyPI (use GitHub Actions for production releases)
 	$(UV) publish
-
-# --- Worktrees — parallel Claude sessions, one per task (NAME= required) ------
-
-# Guard NAME= for every wt-* target without duplicating the message.
-define need-name
-	@test -n "$(NAME)" || { echo "usage: make $@ NAME=<slug>  (e.g. NAME=standup-fix)"; exit 1; }
-endef
-
-wt-new: ## Create worktree .claude/worktrees/NAME off latest origin/main (branch + .env + venv) + open in VS Code with claude auto-running
-	$(need-name)
-	CODE="$(CODE)" bash scripts/wt.sh "$(NAME)" open
-
-wt-open: ## Open worktree in a NEW VS Code window with claude auto-running (creates it off latest origin/main first if needed)
-	$(need-name)
-	CODE="$(CODE)" bash scripts/wt.sh "$(NAME)" open
-
-wt-headless: ## Create worktree off latest origin/main WITHOUT VS Code auto-launch (driven by background agents instead)
-	$(need-name)
-	bash scripts/wt.sh "$(NAME)" headless
-
-wt-issue: ## Create worktree from the branch of GitHub issue N (linked branch / closing PR); HEADLESS=1 to skip VS Code
-	@test -n "$(ISSUE)" || { echo "usage: make wt-issue ISSUE=<number> [HEADLESS=1]"; exit 1; }
-	CODE="$(CODE)" bash scripts/wt-issue.sh "$(ISSUE)" $(if $(filter-out 0,$(HEADLESS)),headless,open)
-
-wt-list: ## List worktrees (branch, clean/dirty, path)
-	@bash scripts/wt-list.sh
-
-wt-rm: ## Remove worktree dir + branch
-	$(need-name)
-	bash scripts/wt.sh "$(NAME)" rm
-
-wt-rm-all: ## Remove ALL worktrees under .claude/worktrees/ (prompts to confirm)
-	@read -r -p "Remove ALL .claude/worktrees/* worktrees and their branches? [y/N] " ans; \
-	  if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
-	    for w in $$(git worktree list --porcelain | awk '/^worktree /{print $$2}' | grep "/.claude/worktrees/" || true); do \
-	      name="$${w#*/.claude/worktrees/}"; echo "[wt-rm-all] removing $$name"; bash scripts/wt.sh "$$name" rm || true; \
-	    done; \
-	    git worktree prune; echo "[wt-rm-all] done."; \
-	  else echo "[wt-rm-all] aborted"; fi
 
 # --- PR feedback — the merge gate on unanswered review comments ---------------
 

@@ -136,7 +136,7 @@ class TestTheAlwaysSetIsAlwaysThere:
         """`.claude/` is treated as inert, which is only safe because the tests
         that read it are in ALWAYS. If they ever leave it, that prefix has to
         move to GLOBAL in the same commit."""
-        scope = scope_mod.resolve([".claude/commands/ship.md"])
+        scope = scope_mod.resolve([".claude/repo-notes.md"])
         selected = set(scope_mod.unit_paths(scope))
         assert not scope.full
         assert any("test_claude_plugin" in path or "test_ship_gate" in path for path in selected)

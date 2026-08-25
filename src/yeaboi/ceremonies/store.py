@@ -2,8 +2,7 @@
 
 Shares ``sessions.db`` the way the ship/roadmap/agentwatch stores do: an
 additive ``CREATE TABLE IF NOT EXISTS`` schema executed on open — self-healing,
-no ``CURRENT_SCHEMA_VERSION`` bump, which also leaves the Go sidecar's schema
-ceiling untouched.
+no ``CURRENT_SCHEMA_VERSION`` bump.
 
 Two tables, and the second one is the point:
 

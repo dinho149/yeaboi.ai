@@ -219,6 +219,12 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - run: make lint
+      # The shared-tooling contract: the `.tooling` pin is honoured, the copied
+      # bootstrap has not drifted, and this repo still defines every target the
+      # devkit plugin's commands and hooks call on it. A renamed target is
+      # otherwise silent — the Stop hook skips what a repo does not define, so
+      # verification would just quietly stop happening.
+      - run: make tooling-check
 
   # Nothing in CI read the workflow files themselves until this job existed, and
   # the cost of that was four days of a dead merge gate: `pr-feedback.yml`

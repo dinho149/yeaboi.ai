@@ -39,6 +39,11 @@ ENV/
 # Git worktrees (make wt-new / wt-open)
 .claude/worktrees/
 
+# The shared tooling, cloned on demand at the sha in .tooling-rev. Gitignored
+# and not a submodule because `git worktree add` does not populate submodules,
+# and this workflow lives in worktrees.
+.tooling/
+
 # IDE
 .vscode/
 .idea/
