@@ -79,6 +79,15 @@ AREAS: tuple[Area, ...] = (
         src=(".tooling-rev", "scripts/tooling-sync.sh", "scripts/provision.sh"),
     ),
     Area(
+        # The seam to yeaboi-site: the facts the website advertises about this
+        # package, derived from pyproject and vendored over there by sha. No
+        # `tests` — tests/unit/test_site_contract.py is in ALWAYS, because the
+        # fact that goes stale most easily (`requires-python`) lives in
+        # pyproject.toml, which no site path implies.
+        "site-contract",
+        src=("contracts/site.json", "scripts/gen_site_contract.py"),
+    ),
+    Area(
         "standup",
         src=("src/yeaboi/standup/", "src/yeaboi/mcp/tools_standup.py"),
         tests=("tests/unit/test_mcp_server.py", "tests/unit/test_standup_*.py", "tests/unit/prompts/test_standup_*.py"),
@@ -465,6 +474,11 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_web_assets.py",
     "tests/unit/test_web_frontend_guards.py",
     "tests/unit/test_site_seo.py",
+    # contracts/site.json is derived from pyproject.toml and consumed by another
+    # repo. The path that invalidates it — pyproject.toml — is GLOBAL, but a
+    # hand-edit of the JSON itself is claimed by one small area, so the freshness
+    # assertion belongs here rather than behind either trigger.
+    "tests/unit/test_site_contract.py",
     # repo + CI metadata
     "tests/unit/test_workflow_schema.py",
     "tests/unit/test_workflow_concurrency.py",

@@ -39,7 +39,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback
+.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-contract site-seo site-check site-og site-serve pr-feedback
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -312,6 +312,12 @@ desktop-dist: ## Signed installers into desktop/dist — needs the signing env v
 # dozen meta tags is exactly what rots by hand. The staleness check lives in
 # tests/unit/test_site_seo.py (so it runs in make test-fast and every CI lane);
 # site-check is the same assertion for humans.
+
+# contracts/site.json is what the website repo vendors instead of reading this
+# repo's pyproject.toml: the Python floor, the repo URL, the install target.
+# tests/unit/test_site_contract.py asserts it is fresh on every lane.
+site-contract: ## Regenerate contracts/site.json from pyproject (the facts the website vendors)
+	$(UV) run python scripts/gen_site_contract.py
 
 site-seo: ## Regenerate the SEO block, crawlable footer, ?v=, sitemap.xml and robots.txt in docs/
 	$(UV) run python scripts/gen_site_seo.py

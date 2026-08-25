@@ -1,0 +1,8 @@
+{
+  "package": "yeaboi",
+  "requires_python": ">=3.10",
+  "description": "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports, plus cost and security posture for your AI coding agents.",
+  "homepage": "https://yeaboi.ai",
+  "repository": "https://github.com/dinho149/yeaboi.ai",
+  "pypi": "https://pypi.org/project/yeaboi/"
+}
