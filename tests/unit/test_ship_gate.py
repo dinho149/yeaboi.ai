@@ -1,8 +1,13 @@
-"""Guards for the ship gate: the Makefile targets, the preflight map, the commands.
+"""Guards for the ship gate: the Makefile targets, the preflight map, the repo's notes.
 
 Everything here is a repo-reading guard rather than a module test, which is why it
 is registered in ``scripts/test_scope.py``'s ``ALWAYS`` — nothing about a changed
 source file implies it.
+
+``/ship`` and ``/sync-main`` themselves are no longer in this repo — they moved to
+the ``yeaboi-devkit`` plugin, and their shape is guarded there. What stayed is the
+half that is about *this* repo: the targets the shared procedure calls, and the
+facts it reads out of ``.claude/repo-notes.md``.
 
 Three of these encode a bug that actually shipped:
 
@@ -226,26 +231,48 @@ class TestNoCommandTrustsLocalMain:
         )
 
 
-class TestShipRunsTheGate:
-    SHIP = ROOT / ".claude" / "commands" / "ship.md"
+class TestTheSharedTooling:
+    """The plugin's commands speak to this repo only through Make and repo-notes."""
 
-    def test_ship_names_the_gate(self):
-        assert "make ship-gate" in self.SHIP.read_text()
+    NOTES = ROOT / ".claude" / "repo-notes.md"
 
-    def test_ship_fetches_and_rebases_before_verifying(self):
-        text = self.SHIP.read_text()
-        assert "git fetch origin" in text, "/ship must fetch — it verified stale trees for months without one"
-        assert "git rebase origin/main" in text
-        # The gate has to come after the rebase, or it proves something about a
-        # tree that will not exist after merge.
-        assert text.index("git rebase origin/main") < text.index("make ship-gate")
+    def test_the_pin_is_a_sha(self):
+        rev = (ROOT / ".tooling-rev").read_text().strip()
+        assert re.fullmatch(r"[0-9a-f]{40}", rev), (
+            f".tooling-rev must hold one full commit sha of yeaboi-tooling, got {rev!r}"
+        )
 
-    def test_the_review_is_backgrounded(self):
-        text = self.SHIP.read_text()
-        assert "BACKGROUND" in text or "in the background" in text.lower()
+    def test_the_bootstrap_runs_before_the_include(self):
+        text = MAKEFILE.read_text()
+        assert "scripts/tooling-sync.sh" in text
+        assert text.index("scripts/tooling-sync.sh") < text.index("include $(TOOLING)/mk/common.mk"), (
+            "the include would fail on a fresh worktree, where .tooling/ does not exist yet"
+        )
 
-    def test_sync_main_carries_the_conflict_playbook(self):
-        playbook = (ROOT / ".claude" / "commands" / "sync-main.md").read_text()
+    def test_the_makefile_still_defines_every_shared_target(self):
+        """`make tooling-check` asserts this at runtime; this catches it without a clone."""
+        text = MAKEFILE.read_text()
+        for target in ("lint", "test", "test-fast", "test-scoped", "ship-gate"):
+            assert re.search(rf"^{re.escape(target)}:", text, re.MULTILINE), (
+                f"the devkit plugin's commands and hooks call `make {target}` on every repo"
+            )
+
+    def test_the_notes_carry_the_conflict_playbook(self):
+        playbook = self.NOTES.read_text()
         for path in ("src/yeaboi/web/static", "uv.lock", "CURRENT_SCHEMA_VERSION", "changelog_data.json"):
             assert path in playbook, f"the rebase playbook says nothing about {path}"
         assert "make web" in playbook, "a conflicted bundle is rebuilt, never chosen"
+
+    def test_the_notes_carry_what_ship_asks_for(self):
+        """/ship reads these out of the repo rather than hardcoding one repo's facts."""
+        notes = self.NOTES.read_text()
+        assert "SKIP=unit-tests" in notes, "the commit step needs to know which test hook to skip"
+        assert "auto-version" in notes, (
+            "the push step needs to know CI rewrites this branch — a force-push over that commit "
+            "is how the version bump gets lost"
+        )
+        assert "make ship-gate" in notes
+
+    def test_the_playbook_does_not_name_a_deleted_tree(self):
+        """The Go sidecar's store used to be a fourth place to renumber the schema."""
+        assert "go/internal" not in self.NOTES.read_text()

@@ -69,6 +69,16 @@ class Area:
 # so an area added or renamed here fails there until the registry follows.
 AREAS: tuple[Area, ...] = (
     Area(
+        # The seam to yeaboi-tooling: the pinned sha, the copied bootstrap, and
+        # what a fresh worktree of this repo installs. No `tests` of its own —
+        # the shared halves are tested in the tooling repo, and what this repo
+        # has to hold up (the Make targets, .claude/repo-notes.md, the pin being
+        # a sha) is `tests/unit/test_ship_gate.py`, which is in ALWAYS. CI's
+        # `make tooling-check` covers the rest at runtime.
+        "tooling",
+        src=(".tooling-rev", "scripts/tooling-sync.sh", "scripts/provision.sh"),
+    ),
+    Area(
         "standup",
         src=("src/yeaboi/standup/", "src/yeaboi/mcp/tools_standup.py"),
         tests=("tests/unit/test_mcp_server.py", "tests/unit/test_standup_*.py", "tests/unit/prompts/test_standup_*.py"),
@@ -189,8 +199,8 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_ollama_control.py",
             "tests/unit/test_duck_*.py",
             "tests/unit/test_session_handoff.py",
-            # test_ship_gate.py (the /ship command guard) also matches this
-            # glob; it lives in ALWAYS, and a double claim is harmless.
+            # test_ship_gate.py (the Makefile / repo-notes guard) also matches
+            # this glob; it lives in ALWAYS, and a double claim is harmless.
             "tests/unit/test_ship_*.py",
         ),
     ),
@@ -465,8 +475,6 @@ ALWAYS: tuple[str, ...] = (
     "tests/unit/test_claude_plugin.py",
     "tests/unit/test_pr_feedback.py",
     "tests/unit/test_gh_transport.py",
-    "tests/unit/test_wt_script.py",
-    "tests/unit/test_wt_issue_script.py",
     # docs/install.sh is served straight off main by GitHub Pages — no build, no
     # deploy job — so nothing else in the pipeline notices it breaking. It also
     # guards the install commands the README and landing page advertise, and
@@ -481,9 +489,11 @@ ALWAYS: tuple[str, ...] = (
     # Ten surfaces name the supported Python floor and nothing else connects
     # them — including an OG PNG that is rendered by hand.
     "tests/unit/test_python_floor.py",
-    # The ship gate reads the Makefile, the slash commands and this file. Nothing
-    # about a changed module implies it, and its whole subject is the machinery
-    # that decides what a scoped run covers — so it has to run on every one.
+    # The ship gate reads the Makefile, .claude/repo-notes.md and this file.
+    # Nothing about a changed module implies it, and its whole subject is the
+    # machinery that decides what a scoped run covers — so it has to run on
+    # every one. (The /ship and /sync-main commands themselves moved to the
+    # yeaboi-devkit plugin; their shape is guarded in the tooling repo.)
     "tests/unit/test_ship_gate.py",
     "tests/unit/test_record_demo.py",
     # version / release lockstep
