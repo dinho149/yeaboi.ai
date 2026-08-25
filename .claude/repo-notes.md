@@ -54,7 +54,7 @@ rebase, so "take the upstream side" is unambiguous and "take theirs" is a coin f
 | Conflicting path | Resolution |
 |---|---|
 | `src/yeaboi/web/static/**` | Never hand-resolve, never a `union` merge driver — it produces silently corrupt JS. `git checkout --theirs -- src/yeaboi/web/static && make web && git add src/yeaboi/web/static`. Which side the flag picks does not matter; `make web` overwrites it either way, and the flag is only there to get git out of the conflicted state |
-| `frontend/src/test/fixtures/**` | Take the upstream (`origin/main`) side, then `uv run pytest tests/unit/test_web_wire_shapes.py` regenerates them; commit what it wrote |
+| `contracts/web/fixtures/**` | Take the upstream (`origin/main`) side, then `uv run pytest tests/unit/test_web_wire_shapes.py` regenerates them; commit what it wrote |
 | `tests/unit/__snapshots__/*.ambr` | Take the upstream side, then `make snapshot-update` |
 | `desktop/src/renderer/routes.json` and `src/yeaboi/app/routes_manifest.json` | Merge both route sets, then `npm run gen-manifest` in `desktop/`; the manifest is generated from the JSON, never edited |
 | `pyproject.toml` version line, `src/yeaboi/changelog_data.json` | Keep **`origin/main`'s** and drop your bump entirely. `auto-version.yml` re-bumps on the PR branch, and the changelog is prepend-only — which makes every pair of release-worthy PRs collide here by construction |

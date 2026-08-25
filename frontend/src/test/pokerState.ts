@@ -4,7 +4,7 @@
  * Seeded from the **real wire fixtures**, not from hand-written literals. That
  * matters more here than the convenience: the join-code bug shipped because two
  * tests each invented their own contract and agreed with each other while
- * agreeing with no server. `src/test/fixtures/` is written by a Python test
+ * agreeing with no server. `contracts/web/fixtures/` is written by a Python test
  * driving a real `PokerBoard`, so a test built on it cannot describe a board
  * that does not exist.
  *

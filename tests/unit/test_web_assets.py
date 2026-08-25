@@ -398,8 +398,11 @@ class TestExportedFilesAreInert:
         re-derivation of them.
         """
         import json
+        from pathlib import Path
 
-        fixtures = STATIC_DIR.parents[3] / "frontend/src/test/fixtures"
+        # Off this file, not off STATIC_DIR: the bundles may be resolved from an
+        # installed package or an override, and the fixtures are neither.
+        fixtures = Path(__file__).resolve().parents[2] / "contracts" / "web" / "fixtures"
         pages = sorted(fixtures.glob("export.*.json"))
         assert pages, "no export fixtures found — this test is checking nothing"
         for page in pages:

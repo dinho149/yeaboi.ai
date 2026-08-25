@@ -1,17 +1,15 @@
 /*
  * GENERATED FILE — do not edit.
  *
- * Regenerate with `uv run python scripts/gen_web_types.py` after changing any of
- * the server-validated tuples in retro/board.py or poker/board.py. CI runs the
- * same script with --check and fails if this file is stale.
+ * Rendered from contracts/web/enums.json, which Python writes from the tuples
+ * the server validates against. A literal union that disagreed with one would
+ * let the client offer a value the board will always refuse.
+ *
+ * Regenerate both halves with `make web-types`; CI runs both with --check.
  *
  * Only the enums are generated. State shapes are hand-written in ./board.ts,
  * because they carry semantics a codegen cannot express — and a confidently
  * wrong generated interface is worse than an honest hand-written one.
- *
- * These are the sets the *server* validates against (a value from a participant
- * is rejected unless it is in one of them), so a literal union that disagreed
- * with one would let the client offer something the board will always refuse.
  */
 
 /** The four retro columns, in display order. */

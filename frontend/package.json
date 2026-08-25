@@ -9,6 +9,8 @@
   },
   "scripts": {
     "build": "node build-all.mjs",
+    "gen-enums": "node scripts/gen-enums.mjs",
+    "gen-enums:check": "node scripts/gen-enums.mjs --check",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
