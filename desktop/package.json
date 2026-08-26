@@ -25,6 +25,7 @@
     "check-manifest": "node scripts/gen-routes-manifest.mjs --check"
   },
   "dependencies": {
+    "@yeaboi-ai/design": "^1.0.0",
     "electron-updater": "^6.8.9",
     "preact": "^10.29.1"
   },

@@ -92,7 +92,7 @@ src/yeaboi/
     engine.py           — run_delivery_report() pipeline (gather → one LLM "design" call → parse → fallback)
     render.py           — DeliveryReport → Rich + plaintext (TUI detail view)
     export.py           — DeliveryReport → Markdown + HTML + slide deck (paths.get_reporting_export_dir)
-    presentation.py     — deck_payload() + build_presentation_html(): the slide deck's content; renderer is frontend/src/deck
+    presentation.py     — deck_payload() + build_presentation_html(): the slide deck's content; renderer is yeaboi-frontend's src/deck
     store.py            — ReportingStore (reporting_history table, schema v9)
   roadmap/              — Roadmap Intake mode (proactive Planning: quarterly roadmap → ranked candidate projects)
     engine.py           — run_roadmap_analysis(): fetch source → LLM analysis → ranked projects (parse → fallback → format)
@@ -240,7 +240,8 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `STANDUP_GITHUB_REPO` — optional *legacy pin*: one GitHub repo (owner/repo) for Daily Standup code activity. No longer required — `GITHUB_TOKEN` alone yields coverage, and the organisations to scan are picked in the Standup code-scope step (each covers every active repo inside it). Setting it keeps the standup narrow to that one repository.
 - `SLACK_WEBHOOK_URL` — optional, Slack incoming-webhook URL for Daily Standup delivery
 - `STANDUP_SMTP_HOST` / `STANDUP_SMTP_PORT` / `STANDUP_SMTP_USER` / `STANDUP_SMTP_PASSWORD` / `STANDUP_SMTP_SENDER` / `STANDUP_EMAIL_RECIPIENTS` — optional, SMTP email delivery for Daily Standup
-- `YEABOI_WEB_STATIC` — optional, a directory of built front-end bundles that overrides the ones Python would otherwise serve (`web/assets.py`, `_static_dir`). For developing `frontend/` against a running board: point it at a Vite `dist/`. Read once at import, so a rebuild needs a restart, and a path that is not a directory raises rather than silently falling back. Unset, the bundles come from an installed `yeaboi_web_assets` if there is one, else from `src/yeaboi/web/static/`.
+- `YEABOI_WEB_STATIC` — optional, a directory of built front-end bundles that overrides the ones Python would otherwise serve (`web/assets.py`, `_static_dir`). For developing **yeaboi-frontend** against a running board: point it at that checkout's `yeaboi_web_assets/static`. Read once at import, so a rebuild needs a restart, and a path that is not a directory raises rather than silently falling back. Unset, the bundles come from the installed `yeaboi-web-assets` wheel — a hard dependency, so a missing one raises rather than degrading.
+- `YEABOI_FRONTEND` — optional, a yeaboi-frontend checkout for the generators that write into it (`gen_duck_sprites.py`); defaults to a sibling of the main checkout. See `scripts/_sibling_repos.py`.
 - `RETRO_PORT` — optional, base loopback port for the Retro collaboration server, which the tunnel forwards to (default 5173; walks upward if busy)
 - `POKER_PORT` — same for the Poker board (default 5273; clear of retro's 5173..5193 walk range)
 - `SHIP_PORT` — same for the Ship board (default 5473), the live view over a supervised ship run

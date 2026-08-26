@@ -13,8 +13,8 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
 
-    // Preact via preact/compat — mirrors frontend/tsconfig.json so modules
-    // from @design/@shared resolve identically in both packages.
+    // Preact via preact/compat — @yeaboi-ai/design is written against it, so
+    // this is what makes its primitives resolve the same here as on the boards.
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "paths": {
@@ -24,8 +24,7 @@
       "react-dom": ["./node_modules/preact/compat/"],
       "preact": ["./node_modules/preact"],
       "preact/*": ["./node_modules/preact/*"],
-      "@design/*": ["../frontend/src/design/*"],
-      "@shared/*": ["../frontend/src/shared/*"]
+      "@design/*": ["./node_modules/@yeaboi-ai/design/design/*"]
     },
 
     "isolatedModules": true,

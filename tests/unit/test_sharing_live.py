@@ -469,15 +469,20 @@ class TestRefusedHoldThrottle:
 
         assert REFUSED_HOLD_SLEEP >= 1.0
 
-    def test_the_client_threshold_sits_above_the_server_sleep(self):
-        """Otherwise the client half of the throttle is dead code: the server
-        already delays a refusal past the point the client tests for."""
-        import re
+    def test_the_server_sleep_reaches_the_client_contract(self):
+        """Half of a two-way check; the other half is in yeaboi-frontend.
+
+        `MIN_PARKED_MS` there must sit above this sleep, or the client half of
+        the throttle is dead code the server has already outrun. That hook is
+        in the front-end repo now, so the number travels to it in
+        `contracts/web/ui.json` and its own test compares the two. This end
+        asserts the contract still carries the value it is compared against.
+        """
+        import json
         from pathlib import Path
 
         from yeaboi.sharing.live import REFUSED_HOLD_SLEEP
 
-        src = Path("frontend/src/hooks/useBoardStream.ts").read_text()
-        match = re.search(r"const MIN_PARKED_MS = (\d+);", src)
-        assert match, "MIN_PARKED_MS not found"
-        assert int(match.group(1)) > REFUSED_HOLD_SLEEP * 1000
+        contract = Path(__file__).resolve().parents[2] / "contracts" / "web" / "ui.json"
+        carried = json.loads(contract.read_text(encoding="utf-8"))["timing"]["refused_hold_sleep_ms"]
+        assert carried == int(REFUSED_HOLD_SLEEP * 1000), "run: make web-types"

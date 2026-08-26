@@ -1,0 +1,16 @@
+{
+  "$schema_version": 1,
+  "$generated_by": "scripts/gen_web_ui_contract.py",
+  "accent_modes": [
+    "analysis",
+    "performance",
+    "planning",
+    "poker",
+    "reporting",
+    "retro",
+    "standup"
+  ],
+  "timing": {
+    "refused_hold_sleep_ms": 1500
+  }
+}

@@ -39,7 +39,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # two pytest processes in one worktree invent failures.
 .NOTPARALLEL:
 
-.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web web-dev web-check web-test web-types web-install dev-board dev-poker dev-deck dev-editable site-contract pr-feedback
+.PHONY: install dev test test-fast test-compat test-slow test-scoped test-v test-all lint format format-check security package-check preflight ship-gate run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help web-types dev-board dev-poker dev-deck dev-editable site-contract pr-feedback
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -161,9 +161,9 @@ security: lint ## Security scan — bandit (ruff S) SAST + dependency CVE audit
 # scripts/test_scope.py — the same selector CI's `scope` job uses, whose third
 # rule is that anything it cannot classify runs everything.
 
-package-check: ## What CI's "Wheel contains the bundles" job runs (uv build + assert)
+package-check: ## What CI's "Wheel declares its dependencies" job runs (uv build + assert)
 	$(UV) build
-	python3 scripts/check_wheel_bundles.py
+	python3 scripts/check_wheel_deps.py
 
 preflight: ## Run only the optional CI jobs this branch's diff needs (BASE=origin/main)
 	python3 scripts/preflight.py --base $(BASE)
@@ -224,50 +224,22 @@ bump-minor: ## Bump the minor version in pyproject.toml (X.Y.Z -> X.Y+1.0)
 bump-major: ## Bump the major version in pyproject.toml (X.Y.Z -> X+1.0.0)
 	$(UV) run python scripts/bump_version.py major
 
-# --- Front end — TS sources in frontend/, built output committed ------------
+# --- Front end — its own repo (yeaboi-frontend) -----------------------------
 #
-# `make test` never runs any of these: the Python suite reads the committed
-# bundles, so contributors (and CI's Python jobs) need no Node at all.
+# There is no front-end build here any more. The bundles are built and published
+# from yeaboi-frontend as the yeaboi-web-assets wheel, which is an ordinary
+# dependency; what stays is the generation of the contracts that repo vendors.
 
-web-install: ## Install front-end dependencies (npm ci from the committed lockfile)
-	cd frontend && npm ci
-
-web: ## Build the front-end bundles into src/yeaboi/web/static (commit the result)
-	@test -d frontend/node_modules || $(MAKE) web-install
-	cd frontend && npm run build
-	@echo "✓ bundles built — remember to commit src/yeaboi/web/static"
-
-web-test: ## Front-end unit tests (vitest + jsdom + axe + the theme contrast matrix)
-	@test -d frontend/node_modules || $(MAKE) web-install
-	cd frontend && npm test
-
-web-types: ## Regenerate contracts/web/enums.json and the TypeScript it renders to
+web-types: ## Regenerate the contracts the front end vendors (enums + ui)
 	uv run python scripts/gen_web_types.py
-	cd frontend && node scripts/gen-enums.mjs
-
-web-check: ## What CI runs: typecheck, test, rebuild, fail if the committed bundles are stale
-	@test -d frontend/node_modules || $(MAKE) web-install
-	@# --check before the build: a stale enums.ts would otherwise be compiled
-	@# into the bundles and reported as a bundle staleness failure instead.
-	cd frontend && npm run gen-enums:check && npm run typecheck && npm test && npm run build
-	@# --porcelain rather than `git diff --exit-code`: diff is blind to untracked
-	@# files, so a brand-new entry that nobody committed would slip through.
-	@test -z "$$(git status --porcelain -- src/yeaboi/web/static)" \
-	  || { echo ""; git status --short -- src/yeaboi/web/static; \
-	       echo "✗ committed bundles are stale — run 'make web' and commit src/yeaboi/web/static"; exit 1; }
-	@echo "✓ committed bundles match the sources"
-
-web-dev: ## Vite dev server on :5399 with HMR, proxying /api to a running dev board
-	@echo "  frontend/dev/{retro,poker,deck,gate,export}.html on http://localhost:5399/"
-	@echo "  boards need ?token=<token> from 'make dev-board' or 'make dev-poker';"
-	@echo "  for poker, set YEABOI_DEV_API=http://127.0.0.1:5273 so /api proxies there."
-	cd frontend && npm run dev
+	uv run python scripts/gen_web_ui_contract.py
+	@echo "✓ commit contracts/web/ — yeaboi-frontend picks it up with 'make contracts-sync'"
 
 # --- Desktop app (desktop/ — Electron shell over `yeaboi app`) ---------------
 #
-# The renderer shares frontend/src/design via Vite aliases but is a separate
-# npm package with its own lockfile; `make test` stays pytest-only. The routes
-# manifest seam (desktop/src/renderer/routes.json → src/yeaboi/app/
+# The renderer draws on the published @yeaboi-ai/design via a Vite alias but is
+# a separate npm package with its own lockfile; `make test` stays pytest-only.
+# The routes manifest seam (desktop/src/renderer/routes.json → src/yeaboi/app/
 # routes_manifest.json) is the desktop half of the surface-parity registry.
 
 desktop-install: ## Install desktop dependencies (npm ci from the committed lockfile)

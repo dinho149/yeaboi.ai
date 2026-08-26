@@ -11,7 +11,7 @@ from pathlib import Path
 # where sys.path[0] is not this directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _site_repo import site_assets  # noqa: E402
+from _sibling_repos import site_assets  # noqa: E402
 from PIL import Image
 
 # Letter -> rgb. MUST stay identical to MASCOT_PALETTE in _mascot.py.

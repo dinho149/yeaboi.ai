@@ -1,8 +1,8 @@
 """The one seam between the Vite build and every page Python serves or writes.
 
-Bundles are built from ``frontend/`` (``make web``) and **committed** so
-``pip install yeaboi`` never needs Node. Nothing here builds anything; it reads
-the built output and inlines it. Where that output lives is resolved by
+Bundles are built in **yeaboi-frontend** and arrive as the ``yeaboi-web-assets``
+wheel, so ``pip install yeaboi`` never needs Node. Nothing here builds anything;
+it reads that output and inlines it. Where it lives is resolved by
 :func:`_static_dir` — see its docstring.
 
 Everything a page needs arrives as one self-contained document:
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 #: Points at a Vite ``dist/`` so a front-end change is served without a release.
 STATIC_ENV = "YEABOI_WEB_STATIC"
 
-#: The distribution that carries the bundles once ``frontend/`` is its own repo.
+#: The distribution that carries the bundles. A hard dependency of this package.
 ASSETS_PACKAGE = "yeaboi_web_assets"
 
 
@@ -57,20 +57,20 @@ def _packaged_static() -> Path | None:
 
 
 def _static_dir() -> tuple[Path, str]:
-    """Resolve where the built bundles live, and say which of three it was.
+    """Resolve where the built bundles live, and say which of two it was.
 
     First source wins:
 
-    1. ``env`` — ``$YEABOI_WEB_STATIC``, a sibling checkout's ``dist/``, so a
-       front-end change reaches a running board without publishing anything.
-    2. ``package`` — an installed ``yeaboi_web_assets``, how the bundles reach
-       a ``pip install yeaboi`` once ``frontend/`` is its own repo.
-    3. ``tree`` — ``static/`` beside this module, built by ``make web``.
+    1. ``env`` — ``$YEABOI_WEB_STATIC``, a sibling ``yeaboi-frontend``
+       checkout's build, so a front-end change reaches a running board without
+       publishing anything.
+    2. ``package`` — the installed ``yeaboi_web_assets``, which is how the
+       bundles reach every ordinary install.
 
-    A set-but-wrong override raises rather than falling through: silently
-    serving different bundles from the ones you just built is the kind of
-    "works locally for the wrong reason" that only shows up on someone else's
-    machine.
+    Both failures raise rather than falling back to something plausible. A
+    set-but-wrong override that quietly served the packaged bundles would look
+    like the front end simply not rebuilding; a missing package is a broken
+    install, and there is nothing left to fall back *to*.
 
     Not a user path, so it does NOT come from paths.py — this is build output.
     """
@@ -86,7 +86,11 @@ def _static_dir() -> tuple[Path, str]:
         logger.debug("web bundles: %s (from %s)", packaged, ASSETS_PACKAGE)
         return packaged, "package"
 
-    return Path(__file__).parent / "static", "tree"
+    raise ModuleNotFoundError(
+        f"{ASSETS_PACKAGE} is not installed, so there are no front-end bundles to serve.\n"
+        "It is a hard dependency of yeaboi — reinstall with:\n"
+        "    pip install --upgrade yeaboi"
+    )
 
 
 #: Resolved once, at import. ``read_asset`` caches anyway, so re-resolving per
@@ -109,9 +113,7 @@ def _rebuild_hint() -> str:
     """What to do about a missing bundle, phrased for wherever they came from."""
     if STATIC_SOURCE == "env":
         return f"${STATIC_ENV} points here — has the Vite build written that entry yet?"
-    if STATIC_SOURCE == "package":
-        return f"The bundles ship in {ASSETS_PACKAGE}; reinstall it."
-    return "The front-end bundles are committed — if yours are absent, rebuild them with:\n    make web"
+    return f"The bundles ship in {ASSETS_PACKAGE}; reinstall it."
 
 
 @lru_cache(maxsize=16)

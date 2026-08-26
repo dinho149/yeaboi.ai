@@ -41,7 +41,7 @@ from pathlib import Path
 # where sys.path[0] is not this directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _site_repo import site_assets  # noqa: E402
+from _sibling_repos import frontend_src, site_assets  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # The master art is a served asset of the website; resolved on use rather than
 # at import, so this module stays importable with no sibling checkout.
 # See scripts/_site_repo.py.
-OUTPUT_DIR = ROOT / "frontend" / "src" / "assets" / "duck"
+# The three composited layers are consumed by the front end, so they land in a
+# yeaboi-frontend checkout. Resolved lazily, inside render(), so importing this
+# module — which the tests do — never demands a second checkout.
 
 # The favicon is read by Python, not bundled by Vite, so it lands in the package
 # rather than under frontend/. Not in web/static/ — that directory is the Vite
@@ -109,7 +111,7 @@ def build() -> dict[Path, bytes]:
         source = site_assets() / f"duck-{layer}.png"
         if not source.exists():
             raise FileNotFoundError(f"missing duck layer: {source}")
-        out[OUTPUT_DIR / f"{layer}.png"] = _resize(source, TARGET_WIDTH)
+        out[frontend_src() / "assets" / "duck" / f"{layer}.png"] = _resize(source, TARGET_WIDTH)
     favicon_source = site_assets() / FAVICON_NAME
     if not favicon_source.exists():
         raise FileNotFoundError(f"missing favicon source: {favicon_source}")

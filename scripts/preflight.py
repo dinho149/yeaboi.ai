@@ -43,7 +43,6 @@ SCOPE = ROOT / "scripts" / "test_scope.py"
 # would otherwise just never run locally, and a selector's failure mode is
 # silence.
 JOB_TARGETS: dict[str, tuple[str, ...]] = {
-    "web": ("web-check",),
     "desktop": ("desktop-check",),
     "package": ("package-check",),
     "eval": ("eval",),
@@ -53,7 +52,6 @@ JOB_TARGETS: dict[str, tuple[str, ...]] = {
 # The binary each job needs before it can run at all. A job whose toolchain is
 # absent is reported and skipped, not failed — see the module docstring.
 JOB_TOOLCHAIN: dict[str, str] = {
-    "web": "npm",
     "desktop": "npm",
 }
 
