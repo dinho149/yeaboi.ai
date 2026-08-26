@@ -2,7 +2,7 @@
 //
 // routes.json is the single source: this module types it for the router, and
 // scripts/gen-routes-manifest.mjs code-generates it into
-// src/yeaboi/app/routes_manifest.json (committed), which
+// contracts/v1/routes_manifest.json (committed), which
 // tests/unit/test_surface_parity.py::TestDesktop checks two-way against the
 // CAPABILITIES desktop column. Add a page here → regenerate the manifest →
 // register the capability, or the build fails on one side or the other.

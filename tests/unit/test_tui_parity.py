@@ -29,7 +29,7 @@ import pytest
 from tests.unit.test_surface_parity import CAPABILITIES, Exempt
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-MANIFEST = REPO_ROOT / "src" / "yeaboi" / "app" / "routes_manifest.json"
+MANIFEST = REPO_ROOT / "contracts" / "v1" / "routes_manifest.json"
 
 _HOW_TO = (
     "Fix: give the desktop the construct (desktop/src/renderer/, then "

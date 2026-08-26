@@ -10,7 +10,7 @@ import registry from '../src/renderer/routes.json';
 import { APP_ROUTES, DEFAULT_ROUTE, routeFor } from '../src/renderer/routes';
 import { SETTINGS_TABS } from '../src/renderer/settings-tabs';
 
-const MANIFEST = resolve(import.meta.dirname, '../../src/yeaboi/app/routes_manifest.json');
+const MANIFEST = resolve(import.meta.dirname, '../../contracts/v1/routes_manifest.json');
 
 describe('routes manifest', () => {
   it('committed manifest equals the routes.json registry', () => {

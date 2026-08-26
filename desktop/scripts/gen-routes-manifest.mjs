@@ -1,4 +1,4 @@
-// Code-generate src/yeaboi/app/routes_manifest.json from the renderer's
+// Code-generate contracts/v1/routes_manifest.json from the renderer's
 // routes.json — the same build-and-commit seam as frontend/ → web/static/.
 // `--check` fails when the committed manifest is stale (CI runs it via
 // `make desktop-check`; the Python suite reads the committed file and never
@@ -10,7 +10,7 @@ import { exit } from 'node:process';
 
 const here = import.meta.dirname;
 const source = resolve(here, '../src/renderer/routes.json');
-const target = resolve(here, '../../src/yeaboi/app/routes_manifest.json');
+const target = resolve(here, '../../contracts/v1/routes_manifest.json');
 
 const registry = JSON.parse(readFileSync(source, 'utf-8'));
 const rendered = `${JSON.stringify(registry, null, 2)}\n`;

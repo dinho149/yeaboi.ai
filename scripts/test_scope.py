@@ -378,7 +378,8 @@ AREAS: tuple[Area, ...] = (
             # Cross-mode shared infrastructure like mcp/ below — it dispatches
             # into every mode's tools without owning any of them.
             "src/yeaboi/app/",
-            # The desktop wire contract `yeaboi app` serves (app_http.md).
+            # The contracts other repos vendor: the wire `yeaboi app` serves
+            # (app_http.md) and the desktop route manifest the parity suite reads.
             "contracts/",
             # The Electron shell over that backend. No Python test imports it —
             # the desktop job (below, in JOBS) is what actually checks it — but
@@ -570,7 +571,7 @@ JOBS: tuple[Job, ...] = (
     # The Electron shell's typecheck + vitest + routes-manifest staleness gate.
     # The design/shared dirs are aliased into the renderer, so a change there
     # can break a desktop typecheck that `web` alone would not catch.
-    Job("desktop", ("desktop/", "src/yeaboi/app/routes_manifest.json")),
+    Job("desktop", ("desktop/", "contracts/v1/routes_manifest.json")),
     Job("package", ("pyproject.toml", "packaging/")),
     Job("eval", ("src/yeaboi/prompts/", "src/yeaboi/agent/", "tests/golden/")),
     # The non-required matrix that runs the unit lane on 3.11–3.14. Gated on any
