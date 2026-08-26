@@ -197,6 +197,11 @@
       "title": "Setup"
     },
     {
+      "path": "action:check-for-updates",
+      "capability": null,
+      "title": "Check for updates"
+    },
+    {
       "path": "dialog:export",
       "capability": "output-sharing",
       "title": "Export"

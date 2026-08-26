@@ -35,7 +35,6 @@ jobs:
       full: ${{ steps.scope.outputs.full }}
       unit_paths: ${{ steps.scope.outputs.unit_paths }}
       slow_paths: ${{ steps.scope.outputs.slow_paths }}
-      desktop: ${{ steps.scope.outputs.desktop }}
       package: ${{ steps.scope.outputs.package }}
       eval: ${{ steps.scope.outputs.eval }}
       compat: ${{ steps.scope.outputs.compat }}
@@ -92,7 +91,6 @@ jobs:
               echo "full=true"
               echo "unit_paths=tests/unit/ tests/*.py"
               echo "slow_paths=tests/integration/ tests/contract/"
-              echo "desktop=true"
               echo "package=true"
               echo "eval=true"
               echo "compat=true"
@@ -258,30 +256,6 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync --extra dev
       - run: make format-check
-
-  # ── Desktop shell ────────────────────────────────────────────────────────
-  # Typecheck + vitest + the routes-manifest staleness gate for the Electron
-  # workspace. The renderer draws its chrome from the published
-  # @yeaboi-ai/design, so a design-system change reaches this job through an
-  # npm version bump rather than through the tree. The Electron binary download
-  # is skipped — nothing here launches Electron. The signed 3-OS pack smoke
-  # belongs to desktop-release.yml, not to PR CI.
-  desktop:
-    name: Desktop shell (typecheck, tests, manifest)
-    runs-on: ubuntu-latest
-    needs: scope
-    if: needs.scope.outputs.desktop == 'true'
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: desktop/.nvmrc
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-      - run: make desktop-install
-      - run: make desktop-check
 
   # Assert the built wheel still declares yeaboi-web-assets. The source tree
   # satisfies that dependency from the venv, so a packaging change that dropped

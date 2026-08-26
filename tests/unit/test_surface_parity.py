@@ -61,7 +61,7 @@ class Exempt(NamedTuple):
 #   cli:       set[str]                — argparse flags / subcommands
 #   skill:     str                     — claude-plugin/yeaboi/skills/<name>/
 #   desktop:   set[str]                — desktop renderer routes/actions, checked
-#                                        against src/yeaboi/app/routes_manifest.json
+#                                        against contracts/v1/routes_manifest.json
 #                                        (committed by the desktop renderer build).
 #                                        "desktop: scheduled milestone" Exempts are
 #                                        the rollout ledger — each milestone burns
@@ -951,15 +951,16 @@ class TestPluginSkills:
 # ---------------------------------------------------------------------------
 # 6. Desktop — renderer routes/actions vs the committed manifest.
 #
-# The desktop renderer's route registry (desktop/src/renderer/routes.ts +
-# actions.ts) is code-generated into src/yeaboi/app/routes_manifest.json and
-# committed, the same seam as frontend/ → web/static/ — so this Python suite
-# never needs Node. A desktop-side test asserts manifest == registries; here we
-# assert manifest == CAPABILITIES, two-way. Entries prefixed "action:" /
-# "dialog:" are non-route affordances (result-screen buttons, dialogs).
+# The desktop renderer's route registry lives in yeaboi-desktop and is
+# code-generated there into contracts/v1/routes_manifest.json, which is
+# committed HERE and vendored back — so this Python suite never needs Node, and
+# that repo's `make check-manifest` is red whenever the two disagree. That is
+# the manifest == registries half; here we assert manifest == CAPABILITIES,
+# two-way. Entries prefixed "action:" / "dialog:" are non-route affordances
+# (result-screen buttons, dialogs).
 # ---------------------------------------------------------------------------
 
-DESKTOP_MANIFEST = SRC / "app" / "routes_manifest.json"
+DESKTOP_MANIFEST = REPO_ROOT / "contracts" / "v1" / "routes_manifest.json"
 
 
 class TestDesktop:

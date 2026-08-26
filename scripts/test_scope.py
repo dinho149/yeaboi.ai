@@ -378,16 +378,9 @@ AREAS: tuple[Area, ...] = (
             # Cross-mode shared infrastructure like mcp/ below — it dispatches
             # into every mode's tools without owning any of them.
             "src/yeaboi/app/",
-            # The desktop wire contract `yeaboi app` serves (app_http.md).
+            # The contracts other repos vendor: the wire `yeaboi app` serves
+            # (app_http.md) and the desktop route manifest the parity suite reads.
             "contracts/",
-            # The Electron shell over that backend. No Python test imports it —
-            # the desktop job (below, in JOBS) is what actually checks it — but
-            # claiming it here keeps a desktop-only diff from forcing the full
-            # Python suite as "unrecognised path".
-            "desktop/",
-            # Its brand assets: rendered here, committed there, and asserted by
-            # tests/unit/test_desktop_icons.py without Pillow.
-            "scripts/gen_desktop_icons.py",
             # The headless settings service the desktop settings pages write
             # through — allowlisted config writes, masked reads.
             "src/yeaboi/settings/",
@@ -417,7 +410,6 @@ AREAS: tuple[Area, ...] = (
         tests=(
             "tests/unit/test_cli_*.py",
             "tests/unit/test_app_*.py",
-            "tests/unit/test_desktop_*.py",
             "tests/unit/test_settings_*.py",
             "tests/unit/test_feedback.py",
             "tests/unit/test_setup_wizard.py",
@@ -567,10 +559,6 @@ class Job:
 
 
 JOBS: tuple[Job, ...] = (
-    # The Electron shell's typecheck + vitest + routes-manifest staleness gate.
-    # The design/shared dirs are aliased into the renderer, so a change there
-    # can break a desktop typecheck that `web` alone would not catch.
-    Job("desktop", ("desktop/", "src/yeaboi/app/routes_manifest.json")),
     Job("package", ("pyproject.toml", "packaging/")),
     Job("eval", ("src/yeaboi/prompts/", "src/yeaboi/agent/", "tests/golden/")),
     # The non-required matrix that runs the unit lane on 3.11–3.14. Gated on any

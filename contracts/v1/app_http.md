@@ -1,7 +1,7 @@
 # Desktop backend HTTP contract (v1)
 
 The wire between the Electron shell and `yeaboi app`. Pinned by
-`tests/unit/test_app_wire.py`; the desktop main process (`desktop/src/main/`)
+`tests/unit/test_app_wire.py`; the desktop main process (yeaboi-desktop's `src/main/`)
 is the only intended client. Changing a key or a route shape here is a
 contract change — update both sides and this file in the same PR.
 
