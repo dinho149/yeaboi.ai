@@ -137,7 +137,6 @@ Homepage = "https://yeaboi.ai"
 Documentation = "https://yeaboi.ai/docs/index.html"
 Repository = "https://github.com/yeaboi-ai/yeaboi.ai"
 Issues = "https://github.com/yeaboi-ai/yeaboi.ai/issues"
-Changelog = "https://github.com/yeaboi-ai/yeaboi.ai/blob/main/CHANGELOG.md"
 
 [project.scripts]
 yeaboi = "yeaboi.cli:main"

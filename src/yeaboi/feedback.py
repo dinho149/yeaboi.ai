@@ -42,7 +42,7 @@ from yeaboi.ui.shared._attachments import CHIP_RE
 logger = logging.getLogger(__name__)
 
 # The public repo feedback issues are filed against.
-FEEDBACK_REPO = "omardin14/yeaboi.ai"
+FEEDBACK_REPO = "yeaboi-ai/yeaboi.ai"
 
 FEEDBACK_TYPES: tuple[str, ...] = ("Bug", "Feature", "Improvement", "Other")
 
