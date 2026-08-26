@@ -205,7 +205,7 @@ budget-report: ## Show live prompt token counts for trend monitoring (runs token
 
 # graph, demo and demo-render read this repo and write into a yeaboi-site
 # checkout, which is where the website serves them from. Set YEABOI_SITE or keep
-# the two repos side by side; scripts/_site_repo.py explains the resolution.
+# the two repos side by side; scripts/_sibling_repos.py explains the resolution.
 graph: ## Generate the agent graph PNG into the yeaboi-site checkout
 	$(UV) run python scripts/generate_graph_png.py
 

@@ -35,7 +35,7 @@ coding agents working alongside it. Without leaving your coding agent.
 ## Install
 
 ```bash
-claude plugin marketplace add omardin14/yeaboi.ai
+claude plugin marketplace add yeaboi-ai/yeaboi.ai
 /plugin install yeaboi@yeaboi
 ```
 

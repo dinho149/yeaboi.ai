@@ -5,7 +5,7 @@
 If you discover a security vulnerability in yeaboi, please report it privately so
 it can be fixed before public disclosure.
 
-- **Preferred:** open a [GitHub private security advisory](https://github.com/omardin14/yeaboi.ai/security/advisories/new)
+- **Preferred:** open a [GitHub private security advisory](https://github.com/yeaboi-ai/yeaboi.ai/security/advisories/new)
   (Security → Advisories → *Report a vulnerability*).
 - **Alternatively:** email **onoureldin@gmail.com** with the details.
 

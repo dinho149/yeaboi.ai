@@ -14,7 +14,6 @@
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-00CED1?style=for-the-badge)](https://langchain-ai.github.io/langgraph/)
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/yeaboi-ai/yeaboi.ai/ci.yml?style=for-the-badge&label=Tests&logo=github)](https://github.com/yeaboi-ai/yeaboi.ai/actions)
-[![PyPI](https://img.shields.io/pypi/v/yeaboi?style=for-the-badge&logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/yeaboi/)
 
 </div>
 

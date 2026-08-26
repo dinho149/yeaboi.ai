@@ -146,7 +146,7 @@ class TestResultView:
             _build_feedback_screen(
                 "result",
                 status="Issue #42 created!",
-                result_url="https://github.com/omardin14/yeaboi.ai/issues/42",
+                result_url="https://github.com/yeaboi-ai/yeaboi.ai/issues/42",
                 width=100,
                 height=40,
             )

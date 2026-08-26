@@ -41,7 +41,7 @@ class FakeIssue:
         self.state = state
         self.body = body
         self.title = title
-        self.html_url = f"https://github.com/omardin14/yeaboi.ai/issues/{number}"
+        self.html_url = f"https://github.com/yeaboi-ai/yeaboi.ai/issues/{number}"
         self.comments: list[str] = []
 
     def create_comment(self, body):
