@@ -239,8 +239,9 @@ web-types: ## Regenerate the contracts the front end vendors (enums + ui)
 #
 # The renderer draws on the published @yeaboi-ai/design via a Vite alias but is
 # a separate npm package with its own lockfile; `make test` stays pytest-only.
-# The routes manifest seam (desktop/src/renderer/routes.json → src/yeaboi/app/
-# routes_manifest.json) is the desktop half of the surface-parity registry.
+# The routes manifest seam (desktop/src/renderer/routes.json →
+# contracts/v1/routes_manifest.json) is the desktop half of the surface-parity
+# registry.
 
 desktop-install: ## Install desktop dependencies (npm ci from the committed lockfile)
 	cd desktop && npm ci
