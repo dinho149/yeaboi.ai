@@ -74,3 +74,45 @@ the check on any branch.
 `/pr-feedback` and `/babysit-prs`, and the `pr-fixer` / `pr-responder` agents, live in this repo's
 `.claude/` rather than in the shared plugin: they drive `scripts/pr_feedback.py`, and the
 `pull_request_target` workflow that runs it is not portable yet.
+
+## Clips
+
+This repo has two surfaces worth filming, and they use different backends.
+
+**The TUI** — `kind: "tty"`, 140×40, the same shape `scripts/record_demo.py` drives:
+
+```python
+"cmd": [sys.executable, "-m", "yeaboi.cli", "--dry-run"],
+"env": {"YEABOI_UPDATE_CHECK": "0", "YEABOI_NO_TUNNEL": "1", "YEABOI_TELEMETRY": "off",
+        "LOG_LEVEL": "ERROR", "ANTHROPIC_API_KEY": "test-key-dry-run-only"},
+"env_unset": ["YEABOI_HOME"],
+```
+
+`--dry-run` is a CLI flag, not an env var — there is no `YEABOI_DRY_RUN`. Seed a temp `HOME` with a
+`~/.yeaboi/.env` so the setup wizard never opens mid-take, and keep `YEABOI_UPDATE_CHECK=0` so the
+version row cannot repaint under the recorder.
+
+Two rules the existing recorder learned the hard way, both of which apply to clips:
+
+- **Drive on `await` markers, never `pause`.** Markers make a take quick on a fast machine and
+  correct on a slow one; `pause` only holds a screen that is already up.
+- **Never put a `key` step immediately after Escape.** `read_key` treats a lone `\x1b` as Escape
+  only if no second byte arrives within ~100ms (`src/yeaboi/ui/shared/_input.py`), so a key sent
+  straight after is swallowed into an escape sequence and the take silently goes elsewhere.
+  `tests/unit/test_record_demo.py` pins this for the canonical demo; nothing pins it for a clip.
+
+**The web boards** — `kind: "page"`, served from this repo's seeded dev servers:
+
+| Target | Port | Notes |
+|---|---|---|
+| `make dev-board` | 5173 | retro; static until touched, so takes repeat |
+| `make dev-poker` | 5273 | **live** — re-announces the crew every 2s |
+| `make dev-deck` | 5373 | reporting slide deck |
+| `make dev-editable` | 5473 | correctable standup doc |
+
+All are in-memory and write nothing to `~/.yeaboi`, so a clip is safe against a real install. The
+tokens are fixed (`dev-token`, `dev-admin`) precisely so a recording cannot invalidate the tab it is
+filming. Prefer retro unless the clip is about poker — poker's heartbeat moves state mid-take.
+
+`make demo` still drives `scripts/record_demo.py`, which is TUI-tuned and predates the shared
+recorder. Clips use the shared one; the two coexist deliberately.
