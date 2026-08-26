@@ -129,15 +129,15 @@ dev = [
 ]
 
 [project.urls]
-# Canonical owner, not the old omardin14 path — that still works via GitHub's
-# 301, but a redirect splits link equity and PyPI's sidebar links are real
-# backlinks from a high-authority domain. tests/unit/test_site_seo.py asserts
-# Repository here matches the codeRepository in the site's JSON-LD.
+# The org, not a personal path — the old ones still work via GitHub's 301, but a
+# redirect splits link equity and PyPI's sidebar links are real backlinks from a
+# high-authority domain. Repository travels to the site in contracts/site.json,
+# where it becomes the JSON-LD codeRepository.
 Homepage = "https://yeaboi.ai"
 Documentation = "https://yeaboi.ai/docs/index.html"
-Repository = "https://github.com/dinho149/yeaboi.ai"
-Issues = "https://github.com/dinho149/yeaboi.ai/issues"
-Changelog = "https://github.com/dinho149/yeaboi.ai/blob/main/CHANGELOG.md"
+Repository = "https://github.com/yeaboi-ai/yeaboi.ai"
+Issues = "https://github.com/yeaboi-ai/yeaboi.ai/issues"
+Changelog = "https://github.com/yeaboi-ai/yeaboi.ai/blob/main/CHANGELOG.md"
 
 [project.scripts]
 yeaboi = "yeaboi.cli:main"

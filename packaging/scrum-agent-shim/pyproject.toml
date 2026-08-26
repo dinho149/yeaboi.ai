@@ -32,7 +32,7 @@ dependencies = ["yeaboi>=2.8.0"]
 
 [project.urls]
 Homepage = "https://yeaboi.ai"
-Repository = "https://github.com/dinho149/yeaboi.ai"
+Repository = "https://github.com/yeaboi-ai/yeaboi.ai"
 
 # Metadata-only wheel: there is no code to ship, only the dependency on `yeaboi`.
 [tool.hatch.build.targets.wheel]

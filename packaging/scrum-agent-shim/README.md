@@ -19,4 +19,4 @@ yeaboi
 ```
 
 - Homepage: https://yeaboi.ai
-- Source: https://github.com/dinho149/yeaboi.ai
+- Source: https://github.com/yeaboi-ai/yeaboi.ai
