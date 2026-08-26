@@ -13,7 +13,7 @@
 [![Powered by Claude](https://img.shields.io/badge/Powered%20by-Claude-ff6600?style=for-the-badge&logo=anthropic&logoColor=white)](https://anthropic.com)
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-00CED1?style=for-the-badge)](https://langchain-ai.github.io/langgraph/)
 
-[![Tests](https://img.shields.io/github/actions/workflow/status/dinho149/yeaboi.ai/ci.yml?style=for-the-badge&label=Tests&logo=github)](https://github.com/dinho149/yeaboi.ai/actions)
+[![Tests](https://img.shields.io/github/actions/workflow/status/yeaboi-ai/yeaboi.ai/ci.yml?style=for-the-badge&label=Tests&logo=github)](https://github.com/yeaboi-ai/yeaboi.ai/actions)
 [![PyPI](https://img.shields.io/pypi/v/yeaboi?style=for-the-badge&logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/yeaboi/)
 
 </div>
@@ -102,7 +102,7 @@ pipx install --python 3.12 --fetch-missing-python "yeaboi[voice]"   # equivalent
 ### From source
 
 ```bash
-git clone https://github.com/dinho149/yeaboi.ai.git
+git clone https://github.com/yeaboi-ai/yeaboi.ai.git
 cd yeaboi.ai
 make install        # installs uv, creates venv, installs dependencies
 make env            # creates .env from .env.example — add your API key
