@@ -43,17 +43,16 @@ SCOPE = ROOT / "scripts" / "test_scope.py"
 # would otherwise just never run locally, and a selector's failure mode is
 # silence.
 JOB_TARGETS: dict[str, tuple[str, ...]] = {
-    "desktop": ("desktop-check",),
     "package": ("package-check",),
     "eval": ("eval",),
     "compat": ("test-compat",),
 }
 
 # The binary each job needs before it can run at all. A job whose toolchain is
-# absent is reported and skipped, not failed — see the module docstring.
-JOB_TOOLCHAIN: dict[str, str] = {
-    "desktop": "npm",
-}
+# absent is reported and skipped, not failed — see the module docstring. Empty
+# since the desktop shell moved to yeaboi-desktop: every remaining job is
+# Python, and this lane has a Python by definition.
+JOB_TOOLCHAIN: dict[str, str] = {}
 
 # actionlint is not one of test_scope.py's jobs — CI runs it unconditionally and
 # it has no Makefile target — so it is keyed off the diff directly.

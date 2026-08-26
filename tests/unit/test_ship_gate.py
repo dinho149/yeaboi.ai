@@ -154,35 +154,39 @@ class TestPreflightCoversEveryJob:
         monkeypatch.setattr(
             preflight,
             "decide",
-            lambda changed: (
-                {"desktop": False, "package": True, "eval": False, "compat": False},
-                "",
-            ),
+            lambda changed: ({"package": True, "eval": False, "compat": False}, ""),
         )
         monkeypatch.setattr(preflight, "changed_paths", lambda base: ["pyproject.toml"])
 
         assert preflight.main(["--base", "origin/main", "--list"]) == 0
         out = capsys.readouterr().out
         assert "running: package" in out
-        for job in ("desktop", "eval", "compat"):
+        for job in ("eval", "compat"):
             assert f"skipped {job} —" in out, f"preflight ran without {job} and never said so"
 
     def test_a_missing_toolchain_is_reported_not_failed(self, monkeypatch, capsys):
-        """An unattended sandbox has no Node, and a front-end fix needs `web`.
+        """An unattended sandbox has no Node; a job needing one is skipped, not failed.
 
         Failing the unattended lane on an environment fact rather than on the diff
         is an outage, not a gate. CI has the toolchains.
+
+        JOB_TOOLCHAIN is empty now that the Electron shell lives in
+        yeaboi-desktop — every remaining job is Python. The mechanism still has
+        to work, so this pins it against a fake entry rather than deleting the
+        test along with its last real user.
         """
         preflight = _preflight()
+        monkeypatch.setitem(preflight.JOB_TARGETS, "fake", ("fake-target",))
+        monkeypatch.setitem(preflight.JOB_TOOLCHAIN, "fake", "npm")
         monkeypatch.setattr(
-            preflight, "decide", lambda changed: (dict.fromkeys(preflight.JOB_TARGETS, False) | {"desktop": True}, "")
+            preflight, "decide", lambda changed: (dict.fromkeys(preflight.JOB_TARGETS, False) | {"fake": True}, "")
         )
-        monkeypatch.setattr(preflight, "changed_paths", lambda base: ["frontend/src/retro/App.tsx"])
+        monkeypatch.setattr(preflight, "changed_paths", lambda base: ["anything.py"])
         monkeypatch.setattr(preflight.shutil, "which", lambda name: None)
 
         assert preflight.main(["--base", "origin/main", "--list"]) == 0
         out = capsys.readouterr().out
-        assert "skipped desktop — npm is not on PATH" in out
+        assert "skipped fake — npm is not on PATH" in out
 
     def test_job_selection_sees_uncommitted_work(self):
         """`--base` in test_scope.py is committed-only; the ship gate runs before the commit.
@@ -273,7 +277,7 @@ class TestTheSharedTooling:
         )
         assert "make ship-gate" in notes
 
-    @pytest.mark.parametrize("gone", ["go/internal", "src/yeaboi/web/static", "frontend/"])
+    @pytest.mark.parametrize("gone", ["go/internal", "src/yeaboi/web/static", "frontend/", "desktop/"])
     def test_the_playbook_does_not_name_a_deleted_tree(self, gone):
         """Each of these was once a place a rebase could conflict, and is now in
         another repo or nowhere. A playbook naming one sends the next person to

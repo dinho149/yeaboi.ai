@@ -105,13 +105,16 @@ The bundles arrive as **`yeaboi-web-assets`**, an ordinary hard dependency in `p
 
 Everything else — the CSPs and what makes an export inert, the export capability flags, the payload rules, and the two Python/TS wire guards — is in the **`web-frontend`** skill. Read it before touching `src/yeaboi/web/`, `contracts/web/`, or any exporter.
 
-## Desktop app (`desktop/` — Electron over `yeaboi app`)
+## Desktop app (`yeaboi-desktop`)
 
-The sixth surface: an Electron shell whose renderer is a normal Vite/Preact ESM app (not a seventh IIFE bundle — that constraint is about `file://` and tunnel CSPs, neither of which applies here) over `yeaboi app`, the loopback HTTP backend in `src/yeaboi/app/`. The wire between them is pinned in `contracts/v1/app_http.md`.
+The sixth surface is an Electron shell over **`yeaboi app`**, the loopback HTTP backend in `src/yeaboi/app/` — and that backend is the whole of it that lives here. The shell itself is in **[yeaboi-desktop](https://github.com/yeaboi-ai/yeaboi-desktop)**, which installs a *released* wheel from PyPI rather than building this tree; nothing about the app, its icons or its installers is edited or built in this repo any more.
 
-- **`make desktop-check`** is what CI runs: typecheck + vitest + the routes-manifest staleness gate. `desktop/src/renderer/routes.json` is the parity source; `npm run gen-manifest` in `desktop/` regenerates the committed `contracts/v1/routes_manifest.json` that the Python suite reads.
-- **What ships is a released wheel, not this tree.** `make desktop-bundle VERSION=X.Y.Z` installs `yeaboi[mcp,charts]==X.Y.Z` from PyPI into a pinned python-build-standalone runtime at `desktop/resources/py`; electron-builder ships that as `Resources/py` and `sidecar.ts` spawns `Resources/py/bin/python3 -m yeaboi app`. `make desktop-pack` is the unsigned local smoke; `desktop-release.yml` does the signed three-OS build against a version that must already be on PyPI.
-- **Brand assets are committed, not built.** `make desktop-icons` re-renders `desktop/build/` + the tray icons from the website's duck art (needs the `charts` extra and a **yeaboi-site** checkout, below); `tests/unit/test_desktop_icons.py` asserts the set without Pillow.
+Two artefacts cross the boundary, both in `contracts/v1/`, and that repo vendors the directory by sha:
+
+- **`app_http.md`** — the wire. Source of truth here, pinned by `tests/unit/test_app_wire.py`. Change a key or a route shape and it is a contract change: update this file and that repo's `make contracts-sync` in the same breath.
+- **`routes_manifest.json`** — the desktop's route surface, and the desktop half of the parity registry. It is **generated there** (from its `src/renderer/routes.json`) and **committed here**, because `test_surface_parity.py` and `test_tui_parity.py` read it to decide whether a capability reached the desktop. That repo's `make check-manifest` fails whenever its registries and this snapshot disagree, so a route added on one side alone is red on the other.
+
+A desktop route change is therefore two PRs: theirs, then a small one here carrying the regenerated manifest. `scripts/gen_desktop_icons.py` moved with the app — it read the website's duck art and wrote nothing this repo kept.
 
 ## The website (`yeaboi-site`)
 
@@ -120,7 +123,7 @@ yeaboi.ai lives in **[yeaboi-site](https://github.com/yeaboi-ai/yeaboi-site)** �
 Two things still cross the boundary, in opposite directions:
 
 - **This repo publishes `contracts/site.json`** — the facts the site states about the package: the Python floor in its structured data, the repo URL in its JSON-LD, the PyPI install target. It is generated from `pyproject.toml` by `make site-contract` and `tests/unit/test_site_contract.py` fails when it is stale. The site vendors it by sha; **change a URL or the floor here and the site is a `make contracts-sync` behind until somebody bumps it.**
-- **The site holds artefacts this repo generates, and the master brand art this repo reads.** `make graph`, `make demo`/`demo-render`, `make desktop-icons` and the two sprite generators all resolve a yeaboi-site checkout via `scripts/_site_repo.py`: `$YEABOI_SITE`, else a sibling of the main checkout. None of them runs on a PR — every output is committed and guarded — so the two-checkout requirement is paid by whoever changes the product or the brand, never by CI.
+- **The site holds artefacts this repo generates, and the master brand art this repo reads.** `make graph`, `make demo`/`demo-render` and the two sprite generators all resolve a yeaboi-site checkout via `scripts/_sibling_repos.py`: `$YEABOI_SITE`, else a sibling of the main checkout. None of them runs on a PR — every output is committed and guarded — so the two-checkout requirement is paid by whoever changes the product or the brand, never by CI.
 
 ## Code Style
 

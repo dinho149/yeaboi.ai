@@ -32,8 +32,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MANIFEST = REPO_ROOT / "contracts" / "v1" / "routes_manifest.json"
 
 _HOW_TO = (
-    "Fix: give the desktop the construct (desktop/src/renderer/, then "
-    "`npm run gen-manifest` in desktop/), or record it in TERMINAL_ONLY here with the reason."
+    "Fix: give the desktop the construct (yeaboi-desktop's src/renderer/, then `make gen-manifest` "
+    "there and land the regenerated manifest here), or record it in TERMINAL_ONLY with the reason."
 )
 
 
@@ -70,13 +70,21 @@ class TestTerminalOnly:
         for construct, reason in TERMINAL_ONLY.items():
             assert len(reason) > 30, f"{construct}: an absence needs a reason, not a label — got {reason!r}"
 
-    def test_the_upgrade_reason_names_something_that_exists(self):
+    def test_the_upgrade_reason_names_something_that_exists(self, manifest):
         """Every entry above says the desktop does the job another way. That is
-        a claim, and this one is checkable: the update path has to be there."""
-        desktop = REPO_ROOT / "desktop" / "src"
-        assert (desktop / "main" / "updater.ts").exists()
-        assert (desktop / "renderer" / "components" / "AboutPanel.tsx").exists()
-        assert "electron-updater" in (REPO_ROOT / "desktop" / "package.json").read_text(encoding="utf-8")
+        a claim, and this one is checkable.
+
+        It used to read yeaboi-desktop's own files. Across two repos the fact
+        travels instead: the desktop's route registry declares the affordance,
+        the manifest carries it here, and a test over there asserts the entry is
+        backed by electron-updater rather than merely listed. Neither half can
+        lapse without the other going red.
+        """
+        offered = {entry["path"] for entry in manifest["routes"]}
+        assert "action:check-for-updates" in offered, (
+            "TERMINAL_ONLY says the desktop updates itself instead of offering Ctrl-U, "
+            "but its manifest declares no update affordance"
+        )
 
     def test_no_absence_is_secretly_present(self, manifest):
         # A construct listed here that the desktop actually ships is a stale

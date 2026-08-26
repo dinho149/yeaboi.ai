@@ -6,9 +6,9 @@ surface that serves it:
 
 * ``generate_graph_png.py`` and ``record_demo.py`` import yeaboi or drive its
   TUI, and write ``graph.png`` / ``demo.gif`` into the website.
-* ``gen_duck_sprites.py``, ``gen_mascot_sprites.py`` and ``gen_desktop_icons.py``
-  read the master duck art, which is a *served* asset of the website, and write
-  renditions into this package, **yeaboi-frontend** and the desktop shell.
+* ``gen_duck_sprites.py`` and ``gen_mascot_sprites.py`` read the master duck art,
+  which is a *served* asset of the website, and write renditions into this
+  package and **yeaboi-frontend**.
 
 None of them runs on a PR — their outputs are committed and guarded — so needing
 a second checkout is a cost paid by whoever changes the product or the brand,
