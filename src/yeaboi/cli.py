@@ -847,6 +847,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     poker_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    # ── ask (Niko, the global assistant) ──────────────────────────────────
+    ask_p = subparsers.add_parser(
+        "ask",
+        help="Ask Niko a question about yeaboi or your own data (read-only)",
+    )
+    # nargs="*" rather than "+" so `--list` needs no dummy question; the handler
+    # rejects a genuinely empty ask.
+    ask_p.add_argument("question", nargs="*", help='What to ask, e.g. yeaboi ask "what did my agents cost?"')
+    ask_p.add_argument(
+        "--conversation",
+        default="",
+        metavar="ID",
+        help="Continue this conversation (see --list); default starts a new one",
+    )
+    ask_p.add_argument("--continue", dest="continue_latest", action="store_true", help="Continue the newest thread")
+    ask_p.add_argument(
+        "--route",
+        default="",
+        metavar="PATH",
+        help="Where you are, e.g. /agents/usage — colours the answer",
+    )
+    # Spelled out rather than "--list": a bare --list is a strict prefix of the
+    # top-level --list-sessions and --list-audio-devices, which argparse's
+    # pre-scan rejects as ambiguous on Python <3.14 (the same trap retro's
+    # --export-latest exists for).
+    ask_p.add_argument(
+        "--list-conversations",
+        dest="list_only",
+        action="store_true",
+        help="List past conversations and exit",
+    )
+    ask_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
     ceremonies_p = subparsers.add_parser(
         "ceremonies",
         help="Run a mode on a cadence — declare it once, the OS fires it",
@@ -1803,6 +1836,94 @@ def _cmd_app(args: argparse.Namespace, console) -> int:
     return run_app(port=args.port)
 
 
+def _cmd_ask(args: argparse.Namespace, console) -> int:
+    """`yeaboi ask` — one Niko turn, in the terminal.
+
+    The answer streams as it is written, the same events the desktop panel
+    renders; tool calls print as one dim line each so the reader can see which
+    numbers the answer stands on.
+    """
+    import json
+
+    from yeaboi.logging_setup import mode_log
+    from yeaboi.niko import engine
+    from yeaboi.niko.store import NikoStore
+
+    to_json = args.format == "json"
+
+    with mode_log("niko"):
+        if args.list_only:
+            with NikoStore() as store:
+                rows = [
+                    {
+                        "id": c.id,
+                        "title": c.title,
+                        "messages": c.message_count,
+                        "updated_at": c.updated_at,
+                    }
+                    for c in store.conversations(limit=20)
+                ]
+            if to_json:
+                print(json.dumps({"conversations": rows}, indent=2))
+            elif not rows:
+                console.print("[dim]No Niko conversations yet — ask something.[/dim]")
+            else:
+                for row in rows:
+                    console.print(f"[dim]{row['updated_at']}[/dim]  {row['id'][:8]}  {row['title'] or '(untitled)'}")
+            return 0
+
+        if not " ".join(args.question).strip():
+            print('Error: ask Niko something, e.g. yeaboi ask "what should I look at?"', file=sys.stderr)
+            return 2
+
+        conversation_id = args.conversation
+        if args.continue_latest and not conversation_id:
+            with NikoStore() as store:
+                newest = store.conversations(limit=1)
+            conversation_id = newest[0].id if newest else ""
+
+        # Whether the last thing printed was a streamed token, so a tool line
+        # starts on its own row instead of running on from mid-sentence.
+        mid_line = [False]
+
+        def on_event(event) -> None:
+            # JSON mode keeps stdout machine-clean: the streamed answer would
+            # corrupt the single object a caller is parsing.
+            if to_json:
+                return
+            if isinstance(event, engine.Token):
+                console.print(event.text, end="", highlight=False, markup=False)
+                mid_line[0] = True
+                return
+            if mid_line[0]:
+                console.print()
+                mid_line[0] = False
+            if isinstance(event, engine.ToolStarted):
+                console.print(f"[dim]· reading {event.name}…[/dim]")
+            elif isinstance(event, engine.Navigate):
+                console.print(f"[dim]· that lives at {event.route}[/dim]")
+
+        answer = engine.ask(
+            " ".join(args.question),
+            conversation_id=conversation_id,
+            route=args.route,
+            surface="terminal",
+            on_event=on_event,
+        )
+
+    if to_json:
+        from yeaboi.mcp.runtime import to_jsonable
+
+        print(json.dumps(to_jsonable(answer), indent=2))
+        return 0
+
+    console.print()
+    for warning in answer.warnings:
+        console.print(f"[yellow]! {warning}[/yellow]")
+    console.print(f"[dim]conversation {answer.conversation_id[:8]} — continue with `yeaboi ask --continue`[/dim]")
+    return 0
+
+
 def _run_subcommand(args: argparse.Namespace) -> int:
     """Dispatch `yeaboi <command>` headless runners. Returns a process exit code.
 
@@ -1828,6 +1949,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "ceremonies": _cmd_ceremonies,
         "slack": _cmd_slack,
         "app": _cmd_app,
+        "ask": _cmd_ask,
     }
     try:
         return handlers[args.command](args, console)

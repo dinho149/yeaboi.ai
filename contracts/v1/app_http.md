@@ -140,6 +140,64 @@ A **turn** streams these line types, in order: `op` first, then any number of
 | `cancelled` | `{type}` — the turn was cancelled; state is unchanged |
 | `error` | `{type, message}` — a classified, one-line provider/integration failure |
 
+## Niko routes
+
+Niko, the global assistant. Chrome rather than a page: the panel opens over
+whatever route is showing, which is why its parity row claims the
+`action:ask-niko` pseudo-path rather than a route of its own.
+
+**Read-only end to end.** Niko's tool surface holds no write tool, so nothing
+under `/api/niko/` changes anything — a turn reads stores and may *suggest* a
+route. That is the guardrail; there is no confirmation step because there is
+nothing to confirm.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/niko/conversations` | → 201 with the conversation view (no body needed) |
+| GET | `/api/niko/conversations` | `{conversations: [{id, title, messages, created_at, updated_at}]}`, newest-used first, capped at 30 |
+| GET | `/api/niko/conversations/{conversation_id}` | the conversation view; 404 when unknown |
+| POST | `/api/niko/conversations/{conversation_id}/send` | body `{question, route?, user_name?}` → a chunked NDJSON turn; 400 on an empty question, 404 when unknown, 409 while a turn is already running |
+| POST | `/api/niko/conversations/{conversation_id}/delete` | archives it → `{archived: true, id}`; 404 when unknown |
+| GET | `/api/niko/suggestions` | `?route=` → `{route, suggestions: [{label, prompt, icon}]}` — the chips the empty panel offers |
+
+`delete` is a POST because this router serves GET and POST only, and it
+*archives* rather than purges: a conversation is a record of what the user was
+told. The terminal's saved-conversations hub does the permanent delete.
+
+`route` on `send` is where the user is (`/agents/usage`, `/humans/retro`) and
+colours the answer toward that screen. Omit it rather than guessing — Niko says
+it does not know which screen rather than inventing one. `user_name` is what to
+call them; the shell reads it from its own identity file.
+
+The **conversation view** is
+`{id, title, created_at, updated_at, messages: [{id, role, content, route, created_at, tool_calls: [{tool_name, ok, error}]}]}`.
+Tool calls are stored and replayed on purpose: a conversation replayed without
+them shows an answer with no visible reason for it.
+
+A **turn** streams these line types, in order: `op` first, then any number of
+`token`/`assistant`/`tool_call`/`tool_result`/`navigate`, terminated by `done`,
+`cancelled` or `error`. Consumers must ignore unknown types.
+
+| Line | Shape |
+|---|---|
+| `op` | `{type: "op", op_id}` — cancel through `POST /api/ops/{op_id}/cancel` |
+| `token` | `{type: "token", text}` — one slice of the answer as it is generated |
+| `assistant` | `{type: "assistant", text}` — the finished answer, always sent |
+| `tool_call` | `{type: "tool_call", tool_name, tool_input}` |
+| `tool_result` | `{type: "tool_result", tool_name, ok, error}` |
+| `navigate` | `{type: "navigate", route}` — a suggestion; the window may push it |
+| `done` | `{type: "done", conversation_id, route, warnings: [..]}` |
+| `cancelled` | `{type: "cancelled"}` |
+| `error` | `{type: "error", message}` — classified human text, never a raw SDK string |
+
+`assistant` always arrives even when `token`s streamed, and carries the same
+text: a provider that cannot stream sends only `assistant`, so a client that
+renders tokens must replace them with it rather than appending.
+
+A `done` with an `AI answers unavailable` warning means no model was reachable
+and the answer is a local signpost built from the card and route registries —
+not an answer from the user's data. Say so rather than presenting it as one.
+
 ## Dashboard routes (M6)
 
 The two run-and-read modes. Their read-only pieces are MCP tools already

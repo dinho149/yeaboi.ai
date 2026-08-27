@@ -810,13 +810,20 @@ def test_entrance_uses_the_robo_mini(monkeypatch):
 
 
 def test_get_renderable_adopts_and_resets_the_stamp():
-    live = _music_bar.MusicLive(console=Console(width=120, height=40, file=StringIO()))
-    stamped = Panel(Text("body"), height=40)
+    # The console must clear the welcome screen's minimum: below it
+    # get_renderable returns the "size up" duck before it reaches the stamp.
+    # Pinned to the constant, which moved once already when Niko became the
+    # eleventh Humans card.
+    from yeaboi.ui.mode_select.screens._screens import _MIN_HEIGHT
+
+    height = _MIN_HEIGHT
+    live = _music_bar.MusicLive(console=Console(width=120, height=height, file=StringIO()))
+    stamped = Panel(Text("body"), height=height)
     stamped._duck_mascot = "robo"
     live.update(stamped)
     live.get_renderable()
     assert _music_bar.current_chrome_mascot() == "robo"
-    live.update(Panel(Text("body"), height=40))
+    live.update(Panel(Text("body"), height=height))
     live.get_renderable()
     assert _music_bar.current_chrome_mascot() == "duck"
 

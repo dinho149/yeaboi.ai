@@ -119,11 +119,14 @@ class TestModeScreenWithVersionRow:
         assert len(lines) == 24
 
     def test_version_row_visible_in_mode_screen(self, _patch_status, monkeypatch):
-        # Tall enough that the mode grid doesn't crop the bottom rows.
+        # The screen's own minimum, so the mode grid doesn't crop the bottom rows.
+        # Pinned to the constant rather than a literal: eleven Humans cards moved
+        # it once already, and the test should move with it.
         monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: False)
         _patch_status()
-        panel = _screens._build_mode_screen(0, width=80, height=40, shimmer_tick=0.0)
-        console = Console(file=io.StringIO(), width=80, height=45, legacy_windows=False)
+        height = _screens._MIN_HEIGHT
+        panel = _screens._build_mode_screen(0, width=80, height=height, shimmer_tick=0.0)
+        console = Console(file=io.StringIO(), width=80, height=height + 5, legacy_windows=False)
         console.print(panel)
         out = console.file.getvalue()
         assert "v2.12.0" in out

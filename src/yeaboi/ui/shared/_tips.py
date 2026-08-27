@@ -124,6 +124,12 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_new=True,
     ),
     FeatureTip(
+        "niko",
+        "\U0001f986 Tip: ask Niko anything — what yeaboi does, what your data says, where to go next",
+        mode_key="niko",
+        is_new=True,
+    ),
+    FeatureTip(
         "usage",
         "\U0001f4b0 Tip: Usage shows API token spend, session history and cost estimates",
         mode_key="usage",

@@ -104,6 +104,9 @@ AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,24
 AGENT_SECURITY_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
 AGENT_ADVISOR_THEME = Theme(accent="rgb(240,180,70)", accent_bright="rgb(255,210,110)")
 SHIP_THEME = Theme(accent="rgb(235,140,60)", accent_bright="rgb(255,175,95)")
+# Niko, the global assistant. Duck gold — the same hue the desktop window uses
+# for its own --primary, because the duck is the brand on both surfaces.
+NIKO_THEME = Theme(accent="rgb(229,166,48)", accent_bright="rgb(255,205,95)", card_bg="rgb(34,27,12)")
 
 # Button color scheme: (accent_border, accent_label, grey_border, grey_label)
 _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
@@ -430,6 +433,11 @@ def agent_advisor_title(shimmer_tick: float | None = None, *, width: int | None 
 def ship_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Ship ASCII title (cargo-orange accent). Optionally shimmering."""
     return build_ascii_title("Ship", "rgb(235,140,60)", shimmer_tick=shimmer_tick, width=width)
+
+
+def niko_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Niko ASCII title (duck gold). Optionally shimmering."""
+    return build_ascii_title("Niko", "rgb(229,166,48)", shimmer_tick=shimmer_tick, width=width)
 
 
 def tips_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:

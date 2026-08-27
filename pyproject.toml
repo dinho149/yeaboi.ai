@@ -150,6 +150,13 @@ yeaboi-mcp = "yeaboi.mcp.server:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/yeaboi"]
 
+# The desktop route surface, so Niko's `navigate` tool can refuse a route the
+# window does not serve. Only `src/yeaboi` ships, and reading contracts/ from a
+# wheel would find nothing — the resolver in niko/tools.py prefers this copy and
+# falls back to contracts/ in a source checkout.
+[tool.hatch.build.targets.wheel.force-include]
+"contracts/v1/routes_manifest.json" = "yeaboi/data/routes_manifest.json"
+
 [tool.hatch.build.targets.sdist]
 exclude = [".claude", ".tooling"]
 

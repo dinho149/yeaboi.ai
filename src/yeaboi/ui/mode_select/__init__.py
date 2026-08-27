@@ -12400,6 +12400,120 @@ def _landing_first_frame(category: str, *, width: int, height: int):
 _BATCH_PREFIX = "batch:"
 
 
+def _run_niko_hub(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Niko saved-conversations hub → landing for the Niko card.
+
+    Opening one replays it read-only through the same screen builder the live
+    page uses. "+ New question" opens a fresh conversation; asking inside an
+    opened one would silently continue a thread the user came to read.
+    """
+    from yeaboi.niko.store import NikoStore
+    from yeaboi.persistence import _relative_time
+    from yeaboi.ui.mode_select._niko import _turns_from, run_niko_page
+    from yeaboi.ui.mode_select.screens._project_cards import RunSummary
+    from yeaboi.ui.mode_select.screens._screens_niko import _build_niko_screen
+    from yeaboi.ui.session.chat._composer import ChatComposer
+    from yeaboi.ui.shared._components import NIKO_THEME, niko_title
+
+    # The read-only snapshot draws no input box, but the builder still asks the
+    # composer for its rows — one empty instance serves every snapshot.
+    read_only_composer = ChatComposer()
+
+    def _messages(conversation_id: str):
+        with NikoStore(_ana_dbp) as store:
+            return store.messages(conversation_id)
+
+    def load_runs():
+        with NikoStore(_ana_dbp) as store:
+            rows = store.conversations(limit=100)
+        return [
+            RunSummary(
+                "niko",
+                row.id,
+                row.title or "Untitled conversation",
+                f"{row.message_count} message{'s' if row.message_count != 1 else ''}",
+                _relative_time(row.updated_at),
+            )
+            for row in rows
+        ]
+
+    def make_detail(run):
+        turns = _turns_from(_messages(run.run_id))
+        if not turns:
+            return None
+
+        def render(*, scroll, action_sel, actions, scroll_meta, width, height, message, shimmer_tick):
+            return _build_niko_screen(
+                {
+                    "composer": read_only_composer,
+                    "turns": turns,
+                    "chips": [],
+                    "busy": False,
+                    "read_only": True,
+                    "actions": actions,
+                    "message": message,
+                },
+                scroll_offset=scroll,
+                action_sel=action_sel,
+                width=width,
+                height=height,
+                shimmer_tick=shimmer_tick,
+            )
+
+        return render
+
+    def _markdown(run) -> tuple[str, str]:
+        turns = _turns_from(_messages(run.run_id))
+        lines = [f"# {run.title}", ""]
+        for turn in turns:
+            lines.append(f"**{'You' if turn['role'] == 'user' else 'Niko'}**")
+            for tool in turn.get("tools") or []:
+                lines.append(f"- read `{tool['name']}`" + ("" if tool["ok"] else " (nothing to read)"))
+            lines += ["", turn.get("text", ""), ""]
+        return run.title, "\n".join(lines)
+
+    def files_export(run):
+        from yeaboi.paths import get_niko_export_dir
+
+        title, markdown = _markdown(run)
+        path = get_niko_export_dir() / f"niko-{run.run_id[:8]}.md"
+        path.write_text(markdown, encoding="utf-8")
+        logger.info("niko hub: exported %s to %s", run.run_id, path)
+        return f"Exported {title} to {path}"
+
+    def get_document(run):
+        return _markdown(run)
+
+    def delete_run(run):
+        with NikoStore(_ana_dbp) as store:
+            store.purge(run.run_id)
+
+    def run_new():
+        run_niko_page(console, live, read_key, frame_time, supports_timeout)
+
+    _run_mode_hub(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        mode="niko",
+        title_fn=niko_title,
+        subtitle="Saved conversations",
+        empty_title="No conversations yet",
+        empty_subtitle="Press Enter to ask Niko your first question",
+        new_label="+ New question",
+        load_runs=load_runs,
+        make_detail=make_detail,
+        files_export=files_export,
+        get_document=get_document,
+        delete_run=delete_run,
+        run_new=run_new,
+        share_theme=NIKO_THEME,
+        new_message="Conversation saved.",
+    )
+
+
 def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Ship saved-runs hub → landing for the Ship card.
 
@@ -12800,6 +12914,7 @@ SAVED_SESSION_HUBS = {
     "poker": _run_poker_hub,
     "reporting": _run_reporting_hub,
     "ship": _run_ship_hub,
+    "niko": _run_niko_hub,
 }
 
 
@@ -14274,6 +14389,15 @@ def select_mode(
                     # unrecorded.
                     if show_beta_notice(live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="ship"):
                         SAVED_SESSION_HUBS["ship"](console, live, read_key, _FRAME_TIME, _supports_timeout)
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
+
+            # ── Route: Niko → saved conversations with the assistant ─────
+            if chosen["key"] == "niko":
+                logger.info("Niko mode selected")
+                with mode_log("niko"):
+                    SAVED_SESSION_HUBS["niko"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue

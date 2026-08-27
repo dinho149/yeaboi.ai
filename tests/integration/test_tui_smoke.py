@@ -73,9 +73,14 @@ def _spawn_tui_in_pty(tmp_path: Path) -> tuple[subprocess.Popen, int]:
     env.pop("YEABOI_HOME", None)
 
     master_fd, slave_fd = os.openpty()
-    # A generous fixed size so no card/title is truncated by narrow-terminal
-    # fallbacks (splash picks its wordmark based on width).
-    fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 140, 0, 0))
+    # A generous size so no card/title is truncated by narrow-terminal fallbacks
+    # (splash picks its wordmark based on width), with real headroom over the
+    # welcome screen's own minimum — sitting exactly on it means the next card
+    # anyone adds turns this smoke test into the "size up" duck. Read from the
+    # constant rather than a literal so it follows the screen.
+    from yeaboi.ui.mode_select.screens._screens import _MIN_HEIGHT
+
+    fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("HHHH", _MIN_HEIGHT + 4, 140, 0, 0))
 
     proc = subprocess.Popen(
         [sys.executable, "-m", "yeaboi.cli", "--dry-run"],

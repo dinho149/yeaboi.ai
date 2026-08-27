@@ -387,6 +387,20 @@ CAPABILITIES: dict[str, dict] = {
         "skill": "agents-security",
         "desktop": {"/agents/security"},
     },
+    "niko": {
+        # The global assistant. Read-only by construction: its tool surface
+        # (yeaboi/niko/tools.py) holds no write tool, which is why the same
+        # engine is safe to expose as an MCP tool — see that module on why it
+        # must never call back through the dispatcher.
+        "engines": {("yeaboi.niko.engine", "ask")},
+        "mcp_tools": {"niko_ask"},
+        "tui_mode": "niko",
+        "cli": {"ask"},
+        "skill": "niko",
+        # Chrome rather than a page: Niko is a panel over every route, so it
+        # claims an action pseudo-path the way anonymize and share do.
+        "desktop": {"action:ask-niko"},
+    },
     "provenance": {
         "engines": {
             ("yeaboi.provenance.engine", "run_provenance_audit"),
@@ -462,6 +476,7 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "agents_security_scan": ("yeaboi.agentwatch.engine", "run_agent_security"),
     "provenance_audit": ("yeaboi.provenance.engine", "run_provenance_audit"),
     "provenance_trace": ("yeaboi.provenance.engine", "trace_entity"),
+    "niko_ask": ("yeaboi.niko.engine", "ask"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
@@ -475,6 +490,12 @@ HIDDEN_ALWAYS = {"db_path", "today", "on_progress", "on_run_id", "on_agent_line"
 # Per-tool engine params deliberately not exposed on the MCP tool. Every entry
 # needs a reason; a stale entry (param gone from the engine) fails the tests.
 HIDDEN_PARAMS: dict[str, dict[str, str]] = {
+    "niko_ask": {
+        "on_event": "caller-side stream callback — same shape as on_progress, meaningless on a wire",
+        "cancel": "a threading.Event only a surface that owns the process can set",
+        "user_name": "who is asking; the window knows it from the identity file, an MCP host does not",
+        "surface": "the adapter fixes it to 'terminal' — it only changes how navigate is described",
+    },
     "plan_generate": {
         "questionnaire": "adapter — built from description/answers/project_context",
         "session_id": "plan_generate always mints a fresh session; the id is returned in data",

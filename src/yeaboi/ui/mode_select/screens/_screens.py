@@ -102,6 +102,13 @@ _MODE_CARDS: list[dict[str, Any]] = [
         "color": "rgb(235,140,60)",
     },
     {
+        "key": "niko",
+        "title": "Niko",
+        "description": "Ask the duck anything: what yeaboi does, what your data says, and where to go next.",
+        "available": True,
+        "color": "rgb(229,166,48)",
+    },
+    {
         "key": "usage",
         "title": "Usage",
         "description": "View API token usage, session history, and cost estimates.",
@@ -229,7 +236,10 @@ _PAD = PAD  # alias for backward compatibility within this module
 # dimension the loop shows the "too small" duck instead (see
 # :func:`_build_too_small_screen`). Tunable.
 _MIN_WIDTH = 84
-_MIN_HEIGHT = 40
+# 41 rather than 40 since Niko became the eleventh Humans card: each card costs
+# two rows plus a spacer, and at 40 the bottom-left version row was the thing
+# that fell off. Below this the "size up" duck shows instead of a clipped menu.
+_MIN_HEIGHT = 41
 
 # The bottom-right duck companion + its speech-bubble tip need extra room: the
 # bubble reserves a right-hand lane, so the longest mode title must still fit to

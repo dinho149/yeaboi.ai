@@ -106,6 +106,7 @@ RETRO_EXPORTS_DIR = EXPORTS_DIR / "retro"
 POKER_EXPORTS_DIR = EXPORTS_DIR / "poker"
 SHIP_EXPORTS_DIR = EXPORTS_DIR / "ship"
 PERFORMANCE_EXPORTS_DIR = EXPORTS_DIR / "performance"
+NIKO_EXPORTS_DIR = EXPORTS_DIR / "niko"
 REPORTING_EXPORTS_DIR = EXPORTS_DIR / "reporting"
 ROADMAP_EXPORTS_DIR = EXPORTS_DIR / "roadmap"
 ANONYMIZE_EXPORTS_DIR = EXPORTS_DIR / "anonymize"  # privacy-masked, shareable copies of any mode's output
@@ -147,6 +148,7 @@ AGENTWATCH_LOGS_DIR = LOGS_DIR / "agentwatch"
 SHIP_LOGS_DIR = LOGS_DIR / "ship"
 CEREMONIES_LOGS_DIR = LOGS_DIR / "ceremonies"
 SLACK_LOGS_DIR = LOGS_DIR / "slack"
+NIKO_LOGS_DIR = LOGS_DIR / "niko"
 
 # Legacy log paths
 LEGACY_TUI_LOG = ROOT_DIR / "scrum-agent.log"
@@ -316,6 +318,16 @@ def get_ship_export_dir(project_key: str) -> Path:
     d = SHIP_EXPORTS_DIR / _safe_key(project_key, "repo")
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def get_niko_export_dir() -> Path:
+    """Return the Niko export directory, creating it if needed.
+
+    Not keyed by project: a Niko conversation reads across every mode and often
+    across every project, so filing it under one of them would be a guess.
+    """
+    NIKO_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    return NIKO_EXPORTS_DIR
 
 
 def get_performance_export_dir(engineer_key: str) -> Path:
@@ -508,6 +520,17 @@ def get_ship_log_dir() -> Path:
     """Return the Ship (supervised coding-agent) logs directory, creating it if needed."""
     SHIP_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     return SHIP_LOGS_DIR
+
+
+def get_niko_log_dir() -> Path:
+    """Return Niko's logs directory, creating it if needed.
+
+    Its own directory rather than the mode's: Niko reads across every mode, so a
+    turn's trace lands beside runs it did not start no matter which one you
+    filed it under.
+    """
+    NIKO_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return NIKO_LOGS_DIR
 
 
 def get_ship_dir() -> Path:

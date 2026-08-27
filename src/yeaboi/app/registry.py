@@ -27,6 +27,7 @@ from yeaboi.app import (
     routes_consent,
     routes_feedback,
     routes_meta,
+    routes_niko,
     routes_performance,
     routes_reporting,
     routes_roadmap,
@@ -86,6 +87,16 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/chat/sessions/{project_id}/questions", routes_chat.questions, "planning"),
     AppRoute("POST", "/api/chat/sessions/{project_id}/size", routes_chat.size, "planning"),
     AppRoute("POST", "/api/chat/sessions/{project_id}/attachments", routes_chat.attach, "planning"),
+    # -- Niko, the global assistant (capability "niko") ----------------------
+    # Chrome rather than a page: the panel opens over whatever route is showing,
+    # which is why its desktop parity row claims `action:ask-niko` instead of a
+    # path. Read-only end to end — there is no route here that changes anything.
+    AppRoute("POST", "/api/niko/conversations", routes_niko.create, "niko"),
+    AppRoute("GET", "/api/niko/conversations", routes_niko.conversations, "niko"),
+    AppRoute("GET", "/api/niko/conversations/{conversation_id}", routes_niko.get, "niko"),
+    AppRoute("POST", "/api/niko/conversations/{conversation_id}/send", routes_niko.send, "niko"),
+    AppRoute("POST", "/api/niko/conversations/{conversation_id}/delete", routes_niko.delete, "niko"),
+    AppRoute("GET", "/api/niko/suggestions", routes_niko.suggestions, "niko"),
     # -- the standup dashboard (capability "standup" — the M6 surface) -------
     AppRoute("GET", "/api/standup/dashboard", routes_standup.dashboard, "standup"),
     AppRoute("POST", "/api/standup/run", routes_standup.run, "standup"),

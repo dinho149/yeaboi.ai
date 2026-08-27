@@ -18,8 +18,8 @@ from yeaboi.ui.mode_select import (
     _compute_viewport,
 )
 from yeaboi.ui.mode_select.screens._screens import (
-    _COMPANION_MIN_HEIGHT,
     _COMPANION_MIN_WIDTH,
+    _MIN_HEIGHT,
     _MODE_CARDS,
     _build_mode_screen,
     duck_hit,
@@ -386,16 +386,19 @@ class TestModeScreenCompanion:
         assert line is not None, f"no control row rendered at {width}x{height} — the fixture is below a minimum"
         return line
 
+    # Height comes from _MIN_HEIGHT, not _COMPANION_MIN_HEIGHT: this pair is about
+    # the WIDTH threshold, and the height only has to be one the screen renders
+    # fully at — which is the screen's own minimum, and moves when it does.
     def test_companion_present_when_wide(self):
         # Companion layout: the tip controls sit ON the speech-bubble border, so the
         # "prev/next" line carries the bubble's rounded corners.
-        line = self._control_line(_COMPANION_MIN_WIDTH, _COMPANION_MIN_HEIGHT)
+        line = self._control_line(_COMPANION_MIN_WIDTH, _MIN_HEIGHT)
         assert "╰" in line and "╯" in line
 
     def test_companion_absent_when_narrow(self):
         # One column under the threshold: the controls are a plain centred bottom
         # row with no bubble border.
-        line = self._control_line(_COMPANION_MIN_WIDTH - 1, _COMPANION_MIN_HEIGHT)
+        line = self._control_line(_COMPANION_MIN_WIDTH - 1, _MIN_HEIGHT)
         assert "╰" not in line and "╯" not in line
 
     def test_mode_screen_exact_height_with_companion(self):
