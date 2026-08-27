@@ -495,7 +495,7 @@ other tool-served capability.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/ambience` | duck, music, saver and pet preferences, plus the station catalogue |
+| GET | `/api/ambience` | duck, music, saver and pet preferences, plus the station and screensaver catalogues |
 | POST | `/api/ambience` | persist any subset of them |
 | GET | `/api/beta` | the one-time entry gates and which have been acknowledged |
 | POST | `/api/beta/{mode_key}/ack` | record that a gate was accepted |
@@ -517,6 +517,15 @@ terminal hands a station URL to `ffplay`; the desktop hands the same URL to an
 and never round-trips. A bad channel index is refused rather than clamped, and
 `true` is not accepted as an index — `bool` is an `int` in Python, and silently
 selecting station 1 is worse than a 400.
+
+`saver` is the same shape for the same reason: `idle_seconds`, the `styles`
+catalogue (key → display name) and the chosen `style`, set with `saver_style`.
+Only the surface drawing the screensaver knows how — the desktop renders every
+style on a canvas from its own theme tokens, and the terminal understands just
+`off`, drawing its ducks for anything else. So a style the reader cannot render
+is not an error: `off` is the one value both surfaces must honour. `style` is
+clamped to the default on the way out and refused on the way in, matching the
+channel index.
 
 `polish` never submits and never fails: `polished` is null when no LLM is
 configured or the call failed, `status` says why, and the draft the person wrote

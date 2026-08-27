@@ -118,6 +118,40 @@ def test_ctrl_y_preview_is_ignored_during_processing(monkeypatch):
         assert controller.should_show() is False
 
 
+class TestSaverOff:
+    """The one style value the terminal understands from the shared catalogue."""
+
+    def test_idling_never_takes_the_screen_over(self, monkeypatch):
+        monkeypatch.setenv("SAVER_STYLE", "off")
+        controller, clock = _controller(seconds=5)
+        controller.begin_input_wait()
+        clock.advance(1000)
+        assert controller.should_show() is False
+
+    def test_ctrl_y_does_nothing(self, monkeypatch):
+        monkeypatch.setenv("SAVER_STYLE", "off")
+        controller, _clock = _controller()
+        assert controller.show_now() is False
+        assert controller.should_show() is False
+
+    def test_every_other_style_still_draws_the_ducks(self, monkeypatch):
+        # The terminal has no canvas; a desktop-only style is not a reason to
+        # leave a terminal user without the saver they already had.
+        monkeypatch.setenv("SAVER_STYLE", "aurora")
+        controller, _clock = _controller()
+        assert controller.show_now() is True
+        assert controller.should_show() is True
+
+    def test_turning_it_back_on_needs_no_restart(self, monkeypatch):
+        monkeypatch.setenv("SAVER_STYLE", "off")
+        controller, clock = _controller(seconds=5)
+        controller.begin_input_wait()
+        clock.advance(1000)
+        assert controller.should_show() is False
+        monkeypatch.setenv("SAVER_STYLE", "duck-yard")
+        assert controller.should_show() is True
+
+
 def test_live_swaps_saver_without_losing_underlying_renderable(monkeypatch):
     controller, clock = _controller(seconds=1)
     monkeypatch.setattr(_screensaver, "idle_controller", controller)

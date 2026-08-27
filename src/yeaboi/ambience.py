@@ -42,6 +42,22 @@ DUCK_QUIPS: dict[str, str] = {
 #: How long a surface waits on a person before the screensaver takes over.
 IDLE_SECONDS = 5 * 60
 
+# The screensaver catalogue: key → the name a picker shows. Like the music
+# stations, this is served as a catalogue *and* a preference, because only the
+# surface drawing it knows how — the desktop renders all of these on a canvas,
+# the terminal draws its ducks for any of them and honours "off".
+SAVER_STYLES: dict[str, str] = {
+    "duck-yard": "Duck Yard",
+    "constellation": "Constellation",
+    "ricochet": "Ricochet",
+    "aurora": "Aurora",
+    "shuffle": "Shuffle",
+    "off": "Off",
+}
+
+#: What an unset or unrecognised SAVER_STYLE behaves as.
+DEFAULT_SAVER_STYLE = "duck-yard"
+
 
 def music_channels() -> list[dict[str, str]]:
     """The station list, as data.
@@ -60,6 +76,7 @@ def state() -> dict:
 
     channels = music_channels()
     channel = config.get_music_channel()
+    style = config.get_saver_style()
     return {
         "duck": {"enabled": config.is_duck_enabled(), "quips": dict(DUCK_QUIPS)},
         "music": {
@@ -67,7 +84,11 @@ def state() -> dict:
             "channel": channel if 0 <= channel < len(channels) else 0,
             "enabled": config.is_music_enabled(),
         },
-        "saver": {"idle_seconds": IDLE_SECONDS},
+        "saver": {
+            "idle_seconds": IDLE_SECONDS,
+            "style": style if style in SAVER_STYLES else DEFAULT_SAVER_STYLE,
+            "styles": dict(SAVER_STYLES),
+        },
         "pet": {"enabled": config.is_pet_enabled()},
     }
 
@@ -80,7 +101,7 @@ def apply(changes: dict) -> dict:
     """
     from yeaboi import config
 
-    known = {"duck_enabled", "music_enabled", "music_channel", "pet_enabled"}
+    known = {"duck_enabled", "music_enabled", "music_channel", "pet_enabled", "saver_style"}
     unknown = sorted(set(changes) - known)
     if unknown:
         raise ValueError(f"unknown ambience setting(s): {', '.join(unknown)} — one of {', '.join(sorted(known))}")
@@ -93,6 +114,8 @@ def apply(changes: dict) -> dict:
         config.set_music_channel(_channel(changes["music_channel"]))
     if "pet_enabled" in changes:
         config.set_pet_enabled(_flag(changes["pet_enabled"], "pet_enabled"))
+    if "saver_style" in changes:
+        config.set_saver_style(_saver_style(changes["saver_style"]))
     logger.info("ambience updated: %s", ", ".join(sorted(changes)))
     return state()
 
@@ -101,6 +124,15 @@ def _flag(value: object, field: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"{field} must be true or false, got {value!r}")
     return value
+
+
+def _saver_style(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"saver_style must be a string, got {value!r}")
+    style = value.strip().lower()
+    if style not in SAVER_STYLES:
+        raise ValueError(f"unknown saver_style {value!r} — one of {', '.join(sorted(SAVER_STYLES))}")
+    return style
 
 
 def _channel(value: object) -> int:

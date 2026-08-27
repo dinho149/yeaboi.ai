@@ -243,6 +243,25 @@ def set_pet_enabled(enabled: bool) -> None:
     logger.info("Desktop pet %s (persisted to %s)", "enabled" if enabled else "disabled", config_file)
 
 
+def get_saver_style() -> str:
+    """Return the persisted idle-screensaver style key (defaults to "duck-yard").
+
+    Unvalidated on the way out, like :func:`get_music_channel`: the catalogue
+    lives in :mod:`yeaboi.ambience`, which clamps an unrecognised key to the
+    default. The one value every surface understands without the catalogue is
+    "off".
+    """
+    return os.getenv("SAVER_STYLE", "duck-yard").strip().lower() or "duck-yard"
+
+
+def set_saver_style(style: str) -> None:
+    """Persist the idle-screensaver style to ~/.scrum-agent/.env and apply it now."""
+    value = style.strip().lower()
+    config_file = set_config_value("SAVER_STYLE", value)
+    os.environ["SAVER_STYLE"] = value
+    logger.info("Screensaver style set to %s (persisted to %s)", value, config_file)
+
+
 def is_music_enabled() -> bool:
     """Return True if background music was left enabled (default off).
 

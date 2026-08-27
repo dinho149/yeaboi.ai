@@ -58,6 +58,27 @@ class TestSseWire:
         assert {"type", "seq", "ts", "op_id", "tool", "progress", "total", "message"} == set(payload)
 
 
+class TestAmbienceWire:
+    """The desktop hand-maintains a TypeScript mirror of this payload."""
+
+    def test_saver_keys_are_pinned(self, monkeypatch):
+        from pathlib import Path as _Path
+
+        from yeaboi import ambience, config
+
+        monkeypatch.setattr(config, "set_config_value", lambda _k, _v: _Path("/tmp/.env"))
+        monkeypatch.delenv("SAVER_STYLE", raising=False)
+        assert set(ambience.state()["saver"]) == {"idle_seconds", "style", "styles"}
+
+    def test_off_is_always_offerable(self):
+        # Both surfaces honour it; a catalogue without it takes away the only
+        # way to turn the screensaver off.
+        from yeaboi import ambience
+
+        assert "off" in ambience.SAVER_STYLES
+        assert ambience.DEFAULT_SAVER_STYLE in ambience.SAVER_STYLES
+
+
 class TestContractDoc:
     def test_every_route_is_documented(self):
         from yeaboi.app.registry import ROUTES

@@ -13,7 +13,7 @@ from yeaboi import ambience, config
 def env(monkeypatch):
     """Preferences that write to os.environ only — no ~/.env is touched."""
     monkeypatch.setattr(config, "set_config_value", lambda _k, _v: Path("/tmp/.env"))
-    for key in ("DUCK_ENABLED", "MUSIC_ENABLED", "MUSIC_CHANNEL", "PET_ENABLED"):
+    for key in ("DUCK_ENABLED", "MUSIC_ENABLED", "MUSIC_CHANNEL", "PET_ENABLED", "SAVER_STYLE"):
         monkeypatch.delenv(key, raising=False)
     return monkeypatch
 
@@ -41,6 +41,7 @@ class TestState:
         assert state["music"]["channel"] == 0
         assert state["pet"]["enabled"] is False
         assert state["saver"]["idle_seconds"] == ambience.IDLE_SECONDS
+        assert state["saver"]["style"] == ambience.DEFAULT_SAVER_STYLE
 
     def test_channels_carry_a_name_and_a_stream(self, env):
         channels = ambience.state()["music"]["channels"]
@@ -54,9 +55,19 @@ class TestState:
         env.setenv("MUSIC_CHANNEL", "99")
         assert ambience.state()["music"]["channel"] == 0
 
+    def test_an_unrecognised_persisted_style_reads_as_the_default(self, env):
+        # A style written by a newer desktop must not blank the terminal's saver.
+        env.setenv("SAVER_STYLE", "lava-lamp")
+        assert ambience.state()["saver"]["style"] == ambience.DEFAULT_SAVER_STYLE
+
+    def test_the_style_catalogue_travels_with_the_state(self, env):
+        assert ambience.state()["saver"]["styles"] == ambience.SAVER_STYLES
+
     def test_the_state_is_a_copy_a_caller_cannot_corrupt(self, env):
         ambience.state()["duck"]["quips"]["standup_done"] = "nope"
         assert ambience.DUCK_QUIPS["standup_done"] != "nope"
+        ambience.state()["saver"]["styles"]["off"] = "nope"
+        assert ambience.SAVER_STYLES["off"] != "nope"
 
 
 class TestApply:
@@ -85,3 +96,15 @@ class TestApply:
         # bool is an int in Python; True must not select station 1.
         with pytest.raises(ValueError, match="must be an integer"):
             ambience.apply({"music_channel": True})
+
+    def test_writes_the_saver_style(self, env):
+        assert ambience.apply({"saver_style": "aurora"})["saver"]["style"] == "aurora"
+
+    def test_an_unknown_style_is_refused_rather_than_defaulted(self, env):
+        # Silently storing "duck-yard" would tell the caller its pick had landed.
+        with pytest.raises(ValueError, match="unknown saver_style"):
+            ambience.apply({"saver_style": "lava-lamp"})
+
+    def test_a_style_must_be_a_string(self, env):
+        with pytest.raises(ValueError, match="must be a string"):
+            ambience.apply({"saver_style": 3})

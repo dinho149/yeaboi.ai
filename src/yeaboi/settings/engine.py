@@ -73,6 +73,7 @@ def _provider_tables() -> tuple[tuple[str, ...], dict[str, str], dict[str, str]]
 
 def _build_fields() -> tuple[SettingField, ...]:
     providers, _envs, _names = _provider_tables()
+    from yeaboi.ambience import DEFAULT_SAVER_STYLE, SAVER_STYLES
     from yeaboi.config import VALID_LOG_LEVELS
 
     on_off = {"true": "on", "false": "off"}
@@ -155,6 +156,14 @@ def _build_fields() -> tuple[SettingField, ...]:
         ),
         SettingField(
             "DUCK_ENABLED", "Duck", "advanced", choices=("true", "false"), choice_labels=on_off, default="true"
+        ),
+        SettingField(
+            "SAVER_STYLE",
+            "Screensaver",
+            "advanced",
+            choices=tuple(SAVER_STYLES),
+            choice_labels=dict(SAVER_STYLES),
+            default=DEFAULT_SAVER_STYLE,
         ),
         SettingField(
             "LANGSMITH_TRACING",
