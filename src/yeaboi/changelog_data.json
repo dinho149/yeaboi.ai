@@ -2,6 +2,49 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.32.0",
+      "date": "2026-08-27",
+      "summary": "Meet Niko, an assistant that knows the whole of yeaboi. Ask it what a mode does, what your own plans, standups, retros or agent spend actually say, or simply what to look at today — and it will answer, then take you to the screen that does the thing. It only ever reads: Niko cannot start a run, change a setting or delete anything, and it will say so and point you at the right page instead. It is on every surface: a Niko card in the terminal with its own saved conversations, `yeaboi ask \"...\"` for a one-liner, a niko_ask tool for MCP hosts, a plugin skill, and a bar in the desktop app. Conversations are saved locally, so reopening one shows what it read as well as what it said. One thing to know if you run a small terminal: the welcome screen now needs 41 rows rather than 40, because Niko is an eleventh card on it.",
+      "highlights": [
+        {
+          "text": "Niko answers questions that span modes, and takes you to the screen that does the thing",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Read-only by design — Niko looks things up and points the way, and never changes anything",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Ask from anywhere: a Niko mode in the terminal, `yeaboi ask`, the MCP niko_ask tool, or the desktop bar",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Conversations are saved with what Niko read, so a reopened answer still shows its evidence",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Niko reads your agent spend, security posture and daily digests alongside the rest",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "The welcome screen now asks for 41 terminal rows instead of 40",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.31.0",
       "date": "2026-08-25",
       "summary": "Nothing changes about how yeaboi looks or behaves in your browser — this is a packaging change. The boards, share pages, slide deck and exported reports are now built in their own repository and installed alongside yeaboi as a separate package, rather than being carried inside this one. Upgrading picks it up automatically; a fresh install pulls both. If you have pinned yeaboi with a tool that does not resolve dependencies, make sure yeaboi-web-assets comes with it, or every board and export will render a blank page.",
