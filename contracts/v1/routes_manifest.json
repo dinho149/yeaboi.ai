@@ -220,6 +220,81 @@
       "path": "action:edit-artifact",
       "capability": "artifact-editing",
       "title": "Correct a shared artifact"
+    },
+    {
+      "path": "/projects",
+      "capability": null,
+      "title": "Projects"
+    },
+    {
+      "path": "/projects/:id",
+      "capability": null,
+      "title": "Project"
+    },
+    {
+      "path": "/projects/:id/board-settings",
+      "capability": null,
+      "title": "Board settings"
+    },
+    {
+      "path": "/projects/:id/blueprint",
+      "capability": null,
+      "title": "Blueprint"
+    },
+    {
+      "path": "/projects/:id/sessions/new",
+      "capability": null,
+      "title": "New session"
+    },
+    {
+      "path": "/projects/:id/sessions/:sessionId",
+      "capability": null,
+      "title": "Session"
+    },
+    {
+      "path": "/projects/:id/sessions/:sessionId/completed",
+      "capability": null,
+      "title": "Session recap"
+    },
+    {
+      "path": "/board",
+      "capability": null,
+      "title": "Board"
+    },
+    {
+      "path": "/tickets/:id",
+      "capability": null,
+      "title": "Ticket"
+    },
+    {
+      "path": "/settings",
+      "capability": null,
+      "title": "Settings"
+    },
+    {
+      "path": "/settings/themes",
+      "capability": null,
+      "title": "Themes"
+    },
+    {
+      "path": "/settings/themes/edit",
+      "capability": null,
+      "title": "Theme editor"
+    },
+    {
+      "path": "/recordings/:id",
+      "capability": null,
+      "title": "Recording"
+    },
+    {
+      "path": "/recording/:token",
+      "capability": null,
+      "title": "Shared recording"
+    },
+    {
+      "path": "/clip/:token",
+      "capability": null,
+      "title": "Shared clip"
     }
   ],
   "settings_tabs": [
