@@ -205,6 +205,43 @@ def test_set_duck_enabled_round_trips(monkeypatch, tmp_path):
     assert is_duck_enabled() is True
 
 
+def test_saver_style_defaults_to_the_duck_yard(monkeypatch):
+    from yeaboi.config import get_saver_style
+
+    monkeypatch.delenv("SAVER_STYLE", raising=False)
+    assert get_saver_style() == "duck-yard"
+
+
+def test_saver_style_is_normalised_but_not_validated(monkeypatch):
+    # The catalogue lives in ambience, which clamps; this only reads the value.
+    from yeaboi.config import get_saver_style
+
+    monkeypatch.setenv("SAVER_STYLE", "  Aurora  ")
+    assert get_saver_style() == "aurora"
+    monkeypatch.setenv("SAVER_STYLE", "lava-lamp")
+    assert get_saver_style() == "lava-lamp"
+
+
+def test_a_blank_saver_style_reads_as_the_default(monkeypatch):
+    from yeaboi.config import get_saver_style
+
+    monkeypatch.setenv("SAVER_STYLE", "   ")
+    assert get_saver_style() == "duck-yard"
+
+
+def test_set_saver_style_round_trips(monkeypatch, tmp_path):
+    from yeaboi.config import get_saver_style, set_saver_style
+
+    config_file = tmp_path / ".env"
+    monkeypatch.setattr("yeaboi.config.get_config_file", lambda: config_file)
+    monkeypatch.delenv("SAVER_STYLE", raising=False)
+
+    set_saver_style("Off")
+    assert os.environ["SAVER_STYLE"] == "off"
+    assert "SAVER_STYLE" in config_file.read_text()
+    assert get_saver_style() == "off"
+
+
 def test_set_tips_enabled_round_trips(monkeypatch, tmp_path):
     # Point config at a temp file so we don't touch the real ~/.yeaboi/.env.
     config_file = tmp_path / ".env"

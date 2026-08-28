@@ -39,6 +39,22 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
+def _saver_off() -> bool:
+    """Whether the person has turned the screensaver off.
+
+    Read per call rather than cached, so toggling it in Settings takes effect
+    without a restart. Deliberately silent: this sits on the once-per-frame
+    render path, where logging is banned.
+
+    The terminal understands only "off" from the style catalogue — it draws its
+    ducks for every other value and leaves the rest to the surfaces that can
+    render them.
+    """
+    from yeaboi import config
+
+    return config.get_saver_style() == "off"
+
+
 class IdleController:
     """Thread-safe idle state shared by terminal input and Rich's refresh thread."""
 
@@ -86,7 +102,7 @@ class IdleController:
         """Return whether the saver should replace the current renderable."""
         now = self._clock()
         with self._lock:
-            if self._suppression_depth or not self._waiting_for_input:
+            if _saver_off() or self._suppression_depth or not self._waiting_for_input:
                 self._active = False
                 return False
             if not self._active and now - self._last_activity >= self.idle_seconds:
@@ -105,7 +121,7 @@ class IdleController:
         """
         now = self._clock()
         with self._lock:
-            if self._suppression_depth:
+            if _saver_off() or self._suppression_depth:
                 return False
             self._waiting_for_input = True
             self._active = True

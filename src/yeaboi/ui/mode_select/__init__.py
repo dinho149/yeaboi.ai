@@ -1495,6 +1495,7 @@ def _collect_settings_data() -> dict:
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
+        "SAVER_STYLE",
         # Slack — a provider now rather than a delivery detail. The webhook
         # posts; the bot token is what lets a reaction or a reply be read back.
         "SLACK_WEBHOOK_URL",

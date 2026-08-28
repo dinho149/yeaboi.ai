@@ -18,6 +18,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from yeaboi.ambience import DEFAULT_SAVER_STYLE, SAVER_STYLES
 from yeaboi.beta import BETA_LABEL, BETA_RGB
 from yeaboi.config import VALID_LOG_LEVELS
 from yeaboi.timeparse import parse_datetime
@@ -6215,6 +6216,10 @@ SETTINGS_ACTION_ENVS: frozenset[str] = frozenset({ANTHROPIC_OAUTH_ENV})
 SETTINGS_CHOICES: dict[str, tuple[str, ...]] = {
     "TIPS_ENABLED": ("true", "false"),
     "DUCK_ENABLED": ("true", "false"),
+    # The whole catalogue, not just on/off: the value is shared with the desktop,
+    # so cycling this row must not flatten a style the app is drawing into a bare
+    # "on". The terminal renders its ducks for everything except "off".
+    "SAVER_STYLE": tuple(SAVER_STYLES),
     "LANGSMITH_TRACING": ("true", "false"),
     "LOG_LEVEL": VALID_LOG_LEVELS,
     "LLM_PROVIDER": LLM_PROVIDERS,
@@ -6226,6 +6231,7 @@ SETTINGS_CHOICES: dict[str, tuple[str, ...]] = {
 SETTINGS_CHOICE_LABELS: dict[str, dict[str, str]] = {
     "TIPS_ENABLED": {"true": "on", "false": "off"},
     "DUCK_ENABLED": {"true": "on", "false": "off"},
+    "SAVER_STYLE": dict(SAVER_STYLES),
     "LANGSMITH_TRACING": {"true": "enabled", "false": "disabled"},
     "ANTHROPIC_AUTH_MODE": {"api_key": "api key", "subscription": "subscription"},
 }
@@ -6236,6 +6242,7 @@ SETTINGS_CHOICE_LABELS: dict[str, dict[str, str]] = {
 SETTINGS_CHOICE_DEFAULTS: dict[str, str] = {
     "TIPS_ENABLED": "true",
     "DUCK_ENABLED": "true",
+    "SAVER_STYLE": DEFAULT_SAVER_STYLE,
     "LANGSMITH_TRACING": "false",
     "LOG_LEVEL": "WARNING",
     # Matches agent/llm.py's own default when LLM_PROVIDER is unset.
@@ -6917,6 +6924,7 @@ def _build_settings_screen(
         _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"), env="SESSION_PRUNE_DAYS")
         _choice_row("Tips", "TIPS_ENABLED")
         _choice_row("Duck", "DUCK_ENABLED")
+        _choice_row("Screensaver", "SAVER_STYLE")
         _choice_row("LangSmith", "LANGSMITH_TRACING")
         _row("Config File", config_data.get("_config_path", ""))  # read-only path
 
