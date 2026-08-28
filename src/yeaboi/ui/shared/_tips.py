@@ -125,8 +125,10 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     FeatureTip(
         "niko",
-        "\U0001f986 Tip: ask Niko anything — what yeaboi does, what your data says, where to go next",
-        mode_key="niko",
+        "\U0001f986 Tip: click the duck — or press n — to ask Niko anything about yeaboi or your data",
+        # No mode_key: Niko is a keycap and the mascot, not a card, so there is
+        # no `g open` target. On the companion layout this tip renders inside the
+        # duck's own speech bubble, which makes him the one telling you to click.
         is_new=True,
     ),
     FeatureTip(

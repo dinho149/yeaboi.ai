@@ -238,3 +238,66 @@ class TestRestartedConfirmation:
         out = _render(_screens._build_version_row(60), width=60)
         assert "✓ updated" not in out
         assert "c changelog" in out
+
+
+class TestRowFitsItsColumn:
+    """Chips are dropped whole, never cropped mid-word.
+
+    Rich crops this row rather than wrapping it, so a chip that overruns the
+    column simply disappears — and a chip that half-fits renders as a bare key
+    with no label. The companion duck's lane is the budget the old width-only
+    gate did not know about: ``s schedule`` used to vanish at 108 and render as
+    ``s`` at 118.
+    """
+
+    @staticmethod
+    def _chips(width: int, *, show_companion: bool) -> str:
+        return _screens._build_version_row(width, show_companion=show_companion).plain
+
+    def test_no_chip_is_half_drawn_in_the_companion_layout(self, _patch_status):
+        _patch_status()
+        for width in range(_screens._COMPANION_MIN_WIDTH, 200):
+            row = self._chips(width, show_companion=True)
+            budget = _screens._version_row_budget(width, show_companion=True)
+            assert len(row) <= budget, f"row overruns its column at width {width}"
+            chips = (("c", "changelog"), ("f", "feedback"), ("a", "all tips"), ("s", "schedule"), ("n", "niko"))
+            for key, label in chips:
+                if f" {key} " in f" {row} ":
+                    assert f"{key} {label}" in row, f"chip {key!r} lost its label at width {width}"
+
+    def test_schedule_survives_the_lane_it_used_to_lose_to(self, _patch_status):
+        _patch_status()
+        # 108 and 118 are where the width-only gate cropped it; either it fits
+        # whole or it is dropped whole.
+        for width in (108, 118):
+            row = self._chips(width, show_companion=True)
+            assert "s schedule" in row or "schedule" not in row
+
+    def test_niko_is_the_first_chip_dropped(self, _patch_status):
+        _patch_status()
+        # It is last in the row, so no width shows Niko while hiding schedule.
+        for width in range(72, 200):
+            for companion in (False, True):
+                row = self._chips(width, show_companion=companion)
+                if "n niko" in row:
+                    assert "s schedule" in row, f"niko outlived schedule at width {width}"
+
+    def test_the_lane_costs_the_row_its_width(self, _patch_status):
+        _patch_status()
+        assert _screens._version_row_budget(140, show_companion=True) == (
+            _screens._version_row_budget(140, show_companion=False) - _screens._COMPANION_COLS
+        )
+
+
+class TestNikoKeycap:
+    """Niko is a keycap, not a mode card — the duck is its other door."""
+
+    def test_offered_when_the_row_has_room(self, _patch_status):
+        _patch_status()
+        assert "n niko" in _screens._build_version_row(140, show_companion=True).plain
+
+    def test_dropped_at_the_minimum_width(self, _patch_status):
+        _patch_status()
+        row = _screens._build_version_row(_screens._MIN_WIDTH, show_companion=False).plain
+        assert "n niko" not in row
+        assert "s schedule" in row  # the older keycap keeps its slot

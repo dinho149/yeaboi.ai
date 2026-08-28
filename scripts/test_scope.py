@@ -411,6 +411,11 @@ AREAS: tuple[Area, ...] = (
             # must run the niko tests, not only the planning ones.
             "src/yeaboi/niko/",
             "src/yeaboi/prompts/niko.py",
+            # Its TUI halves too: `ui/` as a whole belongs to the UI area, whose
+            # tests do not include test_niko_*.py, so a page-only change would
+            # otherwise never run them.
+            "src/yeaboi/ui/mode_select/_niko.py",
+            "src/yeaboi/ui/mode_select/screens/_screens_niko.py",
             "claude-plugin/",
             "packaging/",
         ),

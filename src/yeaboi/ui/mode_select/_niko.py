@@ -92,11 +92,19 @@ def run_niko_page(
     *,
     conversation_id: str = "",
     read_only: bool = False,
-) -> str:
-    """Run one Niko conversation. Returns the conversation id (may be new).
+    from_hub: bool = False,
+) -> tuple[str, str]:
+    """Run one Niko conversation. Returns ``(conversation_id, next_action)``.
+
+    The id may be a new one. ``next_action`` is ``"saved"`` when the user asked
+    for the saved-conversations hub and ``""`` otherwise, so the caller opens the
+    hub instead of this page doing it — that is what keeps hub and page from
+    calling each other without bound.
 
     ``read_only`` opens a saved conversation for reading — the hub's snapshot
     view, where the composer is hidden and only scrolling and Back are live.
+    ``from_hub`` drops the "Saved" action, since that is where the caller came
+    from.
     """
     from yeaboi.niko import engine, suggestions
     from yeaboi.niko.store import NikoStore
@@ -113,7 +121,13 @@ def run_niko_page(
     message = "Saved conversation — read-only" if read_only else ""
     turn: _Turn | None = None
     started = 0.0
-    actions = ["Back"] if read_only else NIKO_ACTIONS
+    next_action = ""
+    if read_only:
+        actions = ["Back"]
+    elif from_hub:
+        actions = [a for a in NIKO_ACTIONS if a != "Saved"]
+    else:
+        actions = list(NIKO_ACTIONS)
 
     def render():
         width, height = console.size
@@ -224,6 +238,9 @@ def run_niko_page(
                 conversation_id, turns[:] = "", []
                 scroll_offset, message = 0, "New conversation."
                 logger.info("niko page: new conversation")
+            if chosen == "Saved":
+                next_action = "saved"
+                break
             continue
 
         event = composer.handle_key(key)
@@ -240,8 +257,8 @@ def run_niko_page(
         elif isinstance(event, Cleared | Restored):
             message = clear_notice(event)
 
-    logger.info("niko page closed (conversation=%s)", conversation_id or "none")
-    return conversation_id
+    logger.info("niko page closed (conversation=%s, next=%s)", conversation_id or "none", next_action or "none")
+    return conversation_id, next_action
 
 
 def _dictate(live, console, read_key) -> str:

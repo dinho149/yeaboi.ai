@@ -37,7 +37,7 @@ COMPOSER_MAX_ROWS = 4
 
 #: Buttons under the composer. "Ask" is what Enter already does — it is here so
 #: the row is navigable by mouse and by someone reading rather than typing.
-NIKO_ACTIONS = ["Ask", "New", "Back"]
+NIKO_ACTIONS = ["Ask", "New", "Saved", "Back"]
 
 _WHO = {"user": "You", "assistant": "Niko"}
 

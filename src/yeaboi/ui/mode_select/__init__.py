@@ -12362,6 +12362,11 @@ def _run_category_screen(
         elif key in ("q", "esc"):
             logger.info("quit from category screen")
             return None
+        elif key == "n":
+            # Niko reaches the landing split too — it is the first screen there
+            # is, and the assistant answers for both halves of it. No companion
+            # mascot is drawn here, so the keycap is the only door.
+            _open_niko(console, live, read_key, _FRAME_TIME, supports_timeout)
         elif isinstance(key, str) and key.startswith("click:"):
             try:
                 cx, cy = (int(p) for p in key.split(":")[1:3])
@@ -12489,7 +12494,9 @@ def _run_niko_hub(console: Console, live, read_key, frame_time: float, supports_
             store.purge(run.run_id)
 
     def run_new():
-        run_niko_page(console, live, read_key, frame_time, supports_timeout)
+        # from_hub: the page's own "Saved" action is where we already are, so it
+        # is dropped — which is also what stops hub → page → hub nesting.
+        run_niko_page(console, live, read_key, frame_time, supports_timeout, from_hub=True)
 
     _run_mode_hub(
         console,
@@ -12512,6 +12519,24 @@ def _run_niko_hub(console: Console, live, read_key, frame_time: float, supports_
         share_theme=NIKO_THEME,
         new_message="Conversation saved.",
     )
+
+
+def _open_niko(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Open Niko, the global assistant — the duck's own door.
+
+    Niko is a keycap and a click on the mascot rather than a mode card, so this
+    is what both of those call. It opens the chat straight away (a first-time
+    user has no saved conversations to browse); the page's "Saved" action hands
+    off to the hub once, and a page opened from there offers no "Saved" of its
+    own, which bounds the two at one level.
+    """
+    from yeaboi.ui.mode_select._niko import run_niko_page
+
+    logger.info("niko opened from mode select")
+    with mode_log("niko"):
+        _conversation_id, next_action = run_niko_page(console, live, read_key, frame_time, supports_timeout)
+        if next_action == "saved":
+            _run_niko_hub(console, live, read_key, frame_time, supports_timeout)
 
 
 def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -12914,7 +12939,6 @@ SAVED_SESSION_HUBS = {
     "poker": _run_poker_hub,
     "reporting": _run_reporting_hub,
     "ship": _run_ship_hub,
-    "niko": _run_niko_hub,
 }
 
 
@@ -13209,6 +13233,14 @@ def select_mode(
                     run_ceremonies_page(console, live, read_key, _FRAME_TIME, _supports_timeout, dry_run=dry_run)
                     _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
                     select_time = time.monotonic()
+                elif key == "n":
+                    # Niko, the global assistant. A keycap and the duck himself
+                    # rather than a mode card, for the same reason as `s`: an
+                    # eleventh card pushes the version row off at 84x40. Clicking
+                    # the mascot is the discoverable half; this is the keyboard.
+                    _open_niko(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    select_time = time.monotonic()
                 elif key == "f":
                     # Quick feedback comes out of the duck: his tip bubble becomes a
                     # composer in place, so the welcome screen never leaves. The full
@@ -13282,18 +13314,24 @@ def select_mode(
                     except ValueError:
                         _cx = _cy = -1
                     _w, _h = console.size
-                    if mascot == "duck" and duck_hit(_w, _h, row=_cy, col=_cx):
-                        # Click the duck → his shades lift to reveal a second
-                        # pair. Duck-only: the robo companion wears a visor.
-                        logger.info("duck clicked — double-shades gag")
-                        _play_duck_shades(
-                            console,
-                            live,
-                            selected,
-                            tip_offset=tip_offset,
-                            start_time=start_time,
-                            select_time=select_time,
-                        )
+                    if duck_hit(_w, _h, row=_cy, col=_cx):
+                        # Click the mascot → the gag plays, then Niko opens. The
+                        # shades lift to reveal a second pair underneath; the robo
+                        # wears a fixed visor and has no lift, so he opens Niko
+                        # straight away. Either way the mascot is Niko's door.
+                        logger.info("mascot clicked — gag, then niko")
+                        if mascot == "duck":
+                            _play_duck_shades(
+                                console,
+                                live,
+                                selected,
+                                tip_offset=tip_offset,
+                                start_time=start_time,
+                                select_time=select_time,
+                            )
+                        _open_niko(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                        select_time = time.monotonic()
                         continue
                     _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx, cards=cards)
                     if _hit is not None:
@@ -14389,15 +14427,6 @@ def select_mode(
                     # unrecorded.
                     if show_beta_notice(live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="ship"):
                         SAVED_SESSION_HUBS["ship"](console, live, read_key, _FRAME_TIME, _supports_timeout)
-                _restart_mode_select = True
-                _skip_fade_in = True
-                continue
-
-            # ── Route: Niko → saved conversations with the assistant ─────
-            if chosen["key"] == "niko":
-                logger.info("Niko mode selected")
-                with mode_log("niko"):
-                    SAVED_SESSION_HUBS["niko"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue

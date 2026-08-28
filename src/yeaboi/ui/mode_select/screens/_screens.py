@@ -102,13 +102,6 @@ _MODE_CARDS: list[dict[str, Any]] = [
         "color": "rgb(235,140,60)",
     },
     {
-        "key": "niko",
-        "title": "Niko",
-        "description": "Ask the duck anything: what yeaboi does, what your data says, and where to go next.",
-        "available": True,
-        "color": "rgb(229,166,48)",
-    },
-    {
         "key": "usage",
         "title": "Usage",
         "description": "View API token usage, session history, and cost estimates.",
@@ -236,17 +229,19 @@ _PAD = PAD  # alias for backward compatibility within this module
 # dimension the loop shows the "too small" duck instead (see
 # :func:`_build_too_small_screen`). Tunable.
 _MIN_WIDTH = 84
-# 41 rather than 40 since Niko became the eleventh Humans card: each card costs
-# two rows plus a spacer, and at 40 the bottom-left version row was the thing
-# that fell off. Below this the "size up" duck shows instead of a clipped menu.
-_MIN_HEIGHT = 41
+# Ten cards at two rows plus a spacer each, the selected description, and the
+# bottom-left version row all fit in 40. An eleventh card is what pushes that
+# row off — which is why Niko and Ceremonies are keycaps (see
+# :func:`_build_version_row`). Below this the "size up" duck shows instead of a
+# clipped menu.
+_MIN_HEIGHT = 40
 
 # The bottom-right duck companion + its speech-bubble tip need extra room: the
 # bubble reserves a right-hand lane, so the longest mode title must still fit to
 # its left. Only shown at/above these thresholds. On the WIDTH axis, _MIN_WIDTH
 # (84) to _COMPANION_MIN_WIDTH-1 renders the full-width compact menu (tip pinned
-# at the bottom). On height, _MIN_HEIGHT (40) already clears the companion's
-# vertical need (39), so a tall-enough-but-narrow terminal is the only compact case.
+# at the bottom). On height, _MIN_HEIGHT already clears the companion's vertical
+# need (39), so a tall-enough-but-narrow terminal is the only compact case.
 _COMPANION_MIN_WIDTH = 108
 _COMPANION_MIN_HEIGHT = 39  # rows the full companion welcome (menu + tip bubble + duck + pocket) needs to fit
 _COMPANION_HEAD_W = 13  # tight render width of the duck head (matches _mascot)
@@ -587,7 +582,22 @@ def _build_update_box(*, cols: int) -> Panel | None:
     )
 
 
-def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
+# What the version row costs beyond its own text: the panel's two borders plus
+# two columns of padding each side (build_page_panel's ``padding=(1, 2, 0, 2)``).
+_VERSION_ROW_CHROME = 6
+
+
+def _version_row_budget(width: int, *, show_companion: bool) -> int:
+    """Cells the bottom-left version row can actually draw into.
+
+    Rich crops this row rather than wrapping it, so a chip that overruns simply
+    vanishes — mid-word, silently. The companion layout pins the row inside the
+    left grid column, so the duck's lane comes off the budget too.
+    """
+    return max(0, width - _VERSION_ROW_CHROME - (_COMPANION_COLS if show_companion else 0))
+
+
+def _build_version_row(width: int, *, suppress_upgrade: bool = False, show_companion: bool = False) -> Text:
     """Build the bottom-left version hint: current version + changelog keycap.
 
     Sits as the last interior row of the mode screen — bottom-left, opposite the
@@ -629,23 +639,27 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
         # explicit check (the branch above is off when _build_update_box has it).
         row.append("  ·  ", style=dim)
         row.append("✓ updated", style=accent)
-    row.append("  ·  ", style=dim)
-    row.append("c", style=key_style)
-    row.append(" changelog", style=dim)
-    row.append("  ·  ", style=dim)
-    row.append("f", style=key_style)
-    row.append(" feedback", style=dim)
-    row.append("  ·  ", style=dim)
-    row.append("a", style=key_style)
-    row.append(" all tips", style=dim)
-    # Ceremonies is a keycap rather than an eleventh mode card: the menu renders
-    # every card with no scrolling, and an eleventh pushes THIS row off screen at
-    # the enforced 84x40 minimum — trading the version, changelog and feedback
-    # affordances for one menu entry. Dropped first on narrow terminals.
-    if width >= 72:
+    # Keycaps, widest-terminal-last: each is appended only while the row still
+    # fits its budget, so the rightmost are the first to go. Ceremonies and Niko
+    # are keycaps rather than mode cards because the menu renders every card with
+    # no scrolling, and an eleventh pushes THIS row off screen at the enforced
+    # 84x40 minimum — trading version, changelog and feedback for one entry.
+    # Niko is last because the duck himself is its primary affordance.
+    budget = _version_row_budget(width, show_companion=show_companion)
+    for key, label, wide_only in (
+        ("c", "changelog", False),
+        ("f", "feedback", False),
+        ("a", "all tips", False),
+        ("s", "schedule", True),
+        ("n", "niko", True),
+    ):
+        if wide_only and width < 72:
+            break
+        if row.cell_len + len(label) + 7 > budget:  # "  ·  " + key + " " + label
+            break
         row.append("  ·  ", style=dim)
-        row.append("s", style=key_style)
-        row.append(" schedule", style=dim)
+        row.append(key, style=key_style)
+        row.append(f" {label}", style=dim)
     return row
 
 
@@ -748,7 +762,7 @@ def _build_mode_screen(
 
     # Bottom-left version hint (+ upgrade advisory when a newer release exists and
     # the update box isn't already carrying it), opposite the music bar below it.
-    version_row = _build_version_row(width, suppress_upgrade=update_box is not None)
+    version_row = _build_version_row(width, suppress_upgrade=update_box is not None, show_companion=show_companion)
 
     # The duck quacks when a new tip appears: his beak toggles open/closed a few
     # times over the first _QUACK_SECONDS of each tip window (tips rotate every

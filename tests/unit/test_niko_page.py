@@ -117,3 +117,103 @@ class TestTurnAccumulator:
         turn = _Turn()
         turn.on_event(engine.Done("c1"))
         assert turn.text == [] and turn.tools == []
+
+
+class _Live:
+    """Stand-in for the Rich Live the page drives; records nothing it need not."""
+
+    def update(self, renderable, refresh: bool = False) -> None:  # noqa: ARG002
+        self.last = renderable
+
+
+class _Store:
+    """A NikoStore that holds no database."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def messages(self, conversation_id: str):  # noqa: ARG002
+        return []
+
+
+def _drive(monkeypatch, keys: list[str], **kwargs) -> tuple[str, str]:
+    """Run the page loop against a scripted keyboard and no database."""
+    import io
+
+    from rich.console import Console
+
+    from yeaboi.niko import store as store_module
+    from yeaboi.niko import suggestions
+    from yeaboi.ui.mode_select._niko import run_niko_page
+
+    monkeypatch.setattr(store_module, "NikoStore", _Store)
+    monkeypatch.setattr(suggestions, "for_route", lambda route: [])
+    pending = list(keys)
+    return run_niko_page(
+        Console(file=io.StringIO(), width=100, height=40),
+        _Live(),
+        lambda *a, **k: pending.pop(0) if pending else "escape",
+        0.05,
+        False,
+        **kwargs,
+    )
+
+
+class TestSavedHandoff:
+    """The page asks for the hub; it never opens one itself.
+
+    That is what bounds the two: the hub opens the page with ``from_hub``, which
+    drops the action that would open a hub again.
+    """
+
+    def test_saved_returns_the_handoff(self, monkeypatch):
+        # Ask · New · Saved · Back — two rights lands on Saved.
+        assert _drive(monkeypatch, ["right", "right", "enter"]) == ("", "saved")
+
+    def test_from_hub_has_no_saved_action(self, monkeypatch):
+        # Same two rights, but the row is Ask · New · Back, so this is Back —
+        # which leaves with no handoff rather than asking for a second hub.
+        assert _drive(monkeypatch, ["right", "right", "enter"], from_hub=True) == ("", "")
+
+    def test_escape_asks_for_nothing(self, monkeypatch):
+        assert _drive(monkeypatch, ["escape"]) == ("", "")
+
+
+class TestOpenNiko:
+    """The duck's door: open the chat, and hand off to the hub only when asked."""
+
+    @staticmethod
+    def _patch(monkeypatch, next_action: str) -> list[str]:
+        """Record the order the page and the hub are opened in."""
+        import yeaboi.ui.mode_select as mode_select
+        from yeaboi.ui.mode_select import _niko as niko_page
+
+        seen: list[str] = []
+
+        def _page(*args, **kwargs):
+            seen.append("page")
+            return "c1", next_action
+
+        def _hub(*args, **kwargs):
+            seen.append("hub")
+
+        monkeypatch.setattr(niko_page, "run_niko_page", _page)
+        monkeypatch.setattr(mode_select, "_run_niko_hub", _hub)
+        return seen
+
+    def test_opens_the_chat_and_stops_there(self, monkeypatch):
+        import yeaboi.ui.mode_select as mode_select
+
+        seen = self._patch(monkeypatch, "")
+        mode_select._open_niko(None, None, None, 0.05, False)
+        assert seen == ["page"]
+
+    def test_saved_hands_off_to_the_hub_once(self, monkeypatch):
+        import yeaboi.ui.mode_select as mode_select
+
+        seen = self._patch(monkeypatch, "saved")
+        mode_select._open_niko(None, None, None, 0.05, False)
+        assert seen == ["page", "hub"]

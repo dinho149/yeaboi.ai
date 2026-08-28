@@ -394,7 +394,10 @@ CAPABILITIES: dict[str, dict] = {
         # must never call back through the dispatcher.
         "engines": {("yeaboi.niko.engine", "ask")},
         "mcp_tools": {"niko_ask"},
-        "tui_mode": "niko",
+        "tui_mode": Exempt(
+            "the mascot himself plus a welcome-screen keycap (n), not a card — the menu draws "
+            "every card and an eleventh pushes the version row off at the enforced 84x40 minimum"
+        ),
         "cli": {"ask"},
         "skill": "niko",
         # Chrome rather than a page: Niko is a panel over every route, so it
