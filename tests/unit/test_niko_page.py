@@ -182,6 +182,24 @@ class TestSavedHandoff:
         assert _drive(monkeypatch, ["escape"]) == ("", "")
 
 
+class TestClicks:
+    """A click on the action row is hit-tested against the frame it landed on.
+
+    The buttons are the only mouse target on the page, and getting the call
+    wrong crashes the whole TUI rather than missing a button — the page renders
+    the panel it clicks into, so the two cannot disagree.
+    """
+
+    def test_clicking_saved_asks_for_the_hub(self, monkeypatch):
+        # Row 37 is the label row of the four action buttons at 100x40; column 41
+        # is inside the third ("Saved").
+        assert _drive(monkeypatch, ["click:41:37"]) == ("", "saved")
+
+    def test_a_click_on_nothing_leaves_the_page_running(self, monkeypatch):
+        # A miss must neither raise nor act — the following hit still lands.
+        assert _drive(monkeypatch, ["click:2:2", "click:41:37"]) == ("", "saved")
+
+
 class TestOpenNiko:
     """The duck's door: open the chat, and hand off to the hub only when asked."""
 

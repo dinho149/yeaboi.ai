@@ -14,6 +14,8 @@ smaller thing to keep correct.
 
 from __future__ import annotations
 
+import re
+
 import rich.box
 from rich.console import Group
 from rich.panel import Panel
@@ -52,6 +54,145 @@ def wrap_rows(text: str, width: int) -> list[str]:
     return out
 
 
+# Niko answers in prose, but a language model reaches for Markdown whatever the
+# prompt says, and raw ``**stars**`` in a terminal read as a bug. These cover what
+# actually turns up in an answer — emphasis, code, lists, the occasional heading.
+_FENCE = re.compile(r"^\s*```")
+_HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*$")
+_BULLET = re.compile(r"^(\s*)[-*+]\s+(.*)$")
+_NUMBERED = re.compile(r"^(\s*)(\d{1,2})[.)]\s+(.*)$")
+_QUOTE = re.compile(r"^\s*>\s?(.*)$")
+_RULE = re.compile(r"^\s*(([-*_])\s*){3,}$")
+_INLINE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|(?<![*\w])\*([^*\n]+)\*(?![*\w])")
+
+
+def _inline_runs(line: str, base: str, theme) -> list[tuple[str, str]]:
+    """Split one line into ``(text, style)`` runs, resolving inline Markdown."""
+    runs: list[tuple[str, str]] = []
+    pos = 0
+    for match in _INLINE.finditer(line):
+        if match.start() > pos:
+            runs.append((line[pos : match.start()], base))
+        bold, bold_alt, code, italic = match.groups()
+        if code is not None:
+            runs.append((code, theme.accent))
+        elif italic is not None:
+            runs.append((italic, f"italic {base}"))
+        else:
+            runs.append((bold if bold is not None else bold_alt, f"bold {theme.accent_bright}"))
+        pos = match.end()
+    if pos < len(line):
+        runs.append((line[pos:], base))
+    return runs
+
+
+def _wrap_runs(runs: list[tuple[str, str]], width: int, *, first: str, rest: str) -> list[Text]:
+    """Greedy word-wrap over styled runs, keeping each word's own style.
+
+    Wrapping the flattened string and mapping styles back by index is what keeps
+    a bold phrase bold when it straddles a line break.
+    """
+    plain = "".join(text for text, _ in runs)
+    styles: list[str] = []
+    for text, style in runs:
+        styles.extend([style] * len(text))
+    if not plain.strip():
+        return []
+
+    rows: list[Text] = []
+    indent = first
+    start = 0
+    limit = max(8, width)
+    while start < len(plain):
+        while start < len(plain) and plain[start] == " ":
+            start += 1
+        if start >= len(plain):
+            break
+        end = min(len(plain), start + limit)
+        if end < len(plain):
+            cut = plain.rfind(" ", start, end + 1)
+            end = cut if cut > start else end  # an unbreakable token is cut hard
+        row = Text(indent)
+        run_start = start
+        for i in range(start + 1, end + 1):
+            if i == end or styles[i] != styles[run_start]:
+                row.append(plain[run_start:i], style=styles[run_start])
+                run_start = i
+        rows.append(row)
+        start, indent = end, rest
+    return rows
+
+
+def markdown_rows(text: str, width: int, *, base: str, theme) -> list[Text]:
+    """Render an answer's Markdown as styled rows, at ``width`` cells of body.
+
+    Not a general Markdown engine: tables, nested lists and reference links are
+    left as they are rather than half-rendered. Fenced code is emitted verbatim
+    (never re-wrapped) because wrapping a command is worse than cropping it.
+    """
+    rows: list[Text] = []
+    in_code = False
+    for raw in (text or "").splitlines():
+        if _FENCE.match(raw):
+            in_code = not in_code
+            continue
+        if in_code:
+            rows.append(Text("    " + raw, style=theme.accent, no_wrap=True, overflow="crop"))
+            continue
+        if not raw.strip():
+            rows.append(Text(""))
+            continue
+        if _RULE.match(raw):
+            rows.append(Text("  " + "\u2500" * max(8, min(width - 2, 32)), style=theme.dim))
+            continue
+        heading = _HEADING.match(raw)
+        if heading:
+            rows.extend(
+                _wrap_runs(
+                    _inline_runs(heading.group(2), f"bold {theme.accent_bright}", theme),
+                    width,
+                    first="",
+                    rest="",
+                )
+            )
+            continue
+        quote = _QUOTE.match(raw)
+        if quote:
+            rows.extend(
+                _wrap_runs(_inline_runs(quote.group(1), theme.dim, theme), width - 2, first="\u2502 ", rest="\u2502 ")
+            )
+            continue
+        bullet = _BULLET.match(raw)
+        if bullet:
+            pad = " " * min(4, len(bullet.group(1)))
+            rows.extend(
+                _wrap_runs(
+                    _inline_runs(bullet.group(2), base, theme),
+                    width - len(pad) - 2,
+                    first=f"{pad}\u2022 ",
+                    rest=f"{pad}  ",
+                )
+            )
+            continue
+        numbered = _NUMBERED.match(raw)
+        if numbered:
+            pad = " " * min(4, len(numbered.group(1)))
+            marker = f"{numbered.group(2)}. "
+            rows.extend(
+                _wrap_runs(
+                    _inline_runs(numbered.group(3), base, theme),
+                    width - len(pad) - len(marker),
+                    first=pad + marker,
+                    rest=pad + " " * len(marker),
+                )
+            )
+            continue
+        rows.extend(_wrap_runs(_inline_runs(raw.strip(), base, theme), width, first="", rest=""))
+    while rows and not rows[-1].plain.strip():
+        rows.pop()
+    return rows
+
+
 def transcript_rows(turns: list[dict], width: int) -> list[Text]:
     """The conversation as flat, styled rows.
 
@@ -78,8 +219,12 @@ def transcript_rows(turns: list[dict], width: int) -> list[Text]:
             rows.append(line)
         body = turn.get("text", "")
         if body:
-            style = theme.desc if role == "assistant" else "white"
-            rows.extend(Text(PAD + "  " + row, style=style) for row in wrap_rows(body, width - len(PAD) - 4))
+            body_w = width - len(PAD) - 4
+            if role == "assistant":
+                # Only Niko writes Markdown; what the user typed is shown as typed.
+                rows.extend(Text(PAD + "  ") + row for row in markdown_rows(body, body_w, base=theme.desc, theme=theme))
+            else:
+                rows.extend(Text(PAD + "  " + row, style="white") for row in wrap_rows(body, body_w))
         route = turn.get("route", "")
         if route:
             hop = Text(PAD + "  ")

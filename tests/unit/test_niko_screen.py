@@ -16,10 +16,12 @@ from rich.panel import Panel
 from yeaboi.ui.mode_select.screens._screens_niko import (
     NIKO_ACTIONS,
     _build_niko_screen,
+    markdown_rows,
     transcript_rows,
     wrap_rows,
 )
 from yeaboi.ui.session.chat._composer import ChatComposer
+from yeaboi.ui.shared._components import NIKO_THEME
 
 TURNS = [
     {"role": "user", "text": "what did my agents cost?", "tools": []},
@@ -172,3 +174,77 @@ class TestWrapRows:
 
     def test_a_silly_width_does_not_hang(self):
         assert wrap_rows("hello world", 0)
+
+
+class TestMarkdownRows:
+    """Niko's answers arrive as Markdown; the terminal must not show the syntax.
+
+    A model reaches for ``**stars**`` whatever the prompt asks for, so the
+    renderer is the guarantee — not the prompt.
+    """
+
+    @staticmethod
+    def _rows(text: str, width: int = 60):
+        return markdown_rows(text, width, base=NIKO_THEME.desc, theme=NIKO_THEME)
+
+    def _plain(self, text: str, width: int = 60) -> str:
+        return "\n".join(row.plain for row in self._rows(text, width))
+
+    def _styles(self, text: str, width: int = 60) -> list[str]:
+        return [str(span.style) for row in self._rows(text, width) for span in row.spans]
+
+    def test_bold_loses_its_stars_and_gains_a_style(self):
+        out = self._plain("Costs were **$4.50** last week.")
+        assert out == "Costs were $4.50 last week."
+        assert any("bold" in style for style in self._styles("Costs were **$4.50** last week."))
+
+    def test_inline_code_loses_its_backticks(self):
+        assert self._plain("Run `yeaboi ship` first.") == "Run yeaboi ship first."
+
+    def test_italics_survive_without_their_markers(self):
+        assert self._plain("That is *everything* I know.") == "That is everything I know."
+
+    def test_a_bare_asterisk_is_left_alone(self):
+        # Multiplication and footnote markers are not emphasis.
+        assert self._plain("3 * 4 = 12") == "3 * 4 = 12"
+
+    def test_bullets_become_real_bullets(self):
+        out = self._plain("- Opus\n- Sonnet")
+        assert out == "\u2022 Opus\n\u2022 Sonnet"
+
+    def test_numbered_lists_keep_their_numbers(self):
+        assert self._plain("1. Check usage\n2. Set a budget") == "1. Check usage\n2. Set a budget"
+
+    def test_headings_lose_their_hashes(self):
+        assert self._plain("## Where it went") == "Where it went"
+
+    def test_fenced_code_is_verbatim_and_unwrapped(self):
+        rows = self._rows("```\nyeaboi agentwatch usage --week --and-a-very-long-flag-that-would-wrap\n```", 30)
+        assert len(rows) == 1
+        assert "--and-a-very-long-flag-that-would-wrap" in rows[0].plain
+        assert rows[0].no_wrap is True
+
+    def test_a_long_bold_phrase_stays_bold_across_the_wrap(self):
+        rows = self._rows("**" + "bold words here " * 6 + "**", 30)
+        assert len(rows) > 1
+        assert all(any("bold" in str(span.style) for span in row.spans) for row in rows)
+
+    def test_nothing_survives_of_an_empty_answer(self):
+        assert self._rows("") == []
+
+    def test_trailing_blank_rows_are_dropped(self):
+        # They would otherwise push the newest turn off the bottom of the viewport.
+        assert self._plain("Done.\n\n\n") == "Done."
+
+
+class TestAssistantMarkdownInTranscript:
+    def test_the_transcript_renders_niko_markdown(self):
+        rows = transcript_rows([{"role": "assistant", "text": "Spend was **$4.50**.", "tools": []}], 80)
+        joined = "\n".join(row.plain for row in rows)
+        assert "**" not in joined
+        assert "$4.50" in joined
+
+    def test_what_the_user_typed_is_shown_as_typed(self):
+        # Their own asterisks are theirs; only Niko writes Markdown.
+        rows = transcript_rows([{"role": "user", "text": "what does **this** mean?", "tools": []}], 80)
+        assert "**this**" in "\n".join(row.plain for row in rows)

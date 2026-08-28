@@ -196,8 +196,10 @@ def run_niko_page(
         logger.info("niko page: turn settled in %.1fs (tools=%d)", time.monotonic() - started, len(answer.tool_calls))
 
     logger.info("niko page opened (conversation=%s read_only=%s)", conversation_id or "new", read_only)
+    panel = None
     while True:
-        live.update(render(), refresh=True)
+        panel = render()  # kept: button_click hit-tests against the frame the user clicked
+        live.update(panel, refresh=True)
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
 
         if turn is not None and turn.done.is_set():
@@ -209,7 +211,7 @@ def run_niko_page(
 
         click = parse_click(key)
         if click is not None:
-            hit = button_click(click, actions, console.size[1])
+            hit = button_click(console, panel, click[0], click[1], actions)
             if hit is None:
                 continue
             action_sel = hit
