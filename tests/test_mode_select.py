@@ -22,6 +22,7 @@ from yeaboi.ui.mode_select.screens._screens import (
     _MIN_HEIGHT,
     _MODE_CARDS,
     _build_mode_screen,
+    _companion_duck_bottom,
     duck_hit,
     mode_at_row,
     selected_title_offset,
@@ -534,6 +535,106 @@ class TestDuckHit:
     def test_false_well_above_the_duck(self):
         w, h = 120, 40
         assert duck_hit(w, h, row=6, col=w - 15) is False
+
+    def test_true_on_his_last_row(self):
+        w, h = 120, 40
+        assert duck_hit(w, h, row=_companion_duck_bottom(h), col=w - 15) is True
+
+    def test_true_on_the_caption_under_him(self):
+        # `n  ask niko` is what advertises the gesture, so clicking the words
+        # themselves has to work — not just the sprite.
+        w, h = 120, 40
+        assert duck_hit(w, h, row=_companion_duck_bottom(h) + 1, col=w - 15) is True
+
+
+class TestCompanionCaption:
+    """The mascot's permanent `n  ask niko` label — Niko's only always-on door.
+
+    The rotating tip that says the same thing shows for six seconds in every
+    three minutes and disappears entirely when tips are hidden, so none of these
+    may depend on the tip.
+    """
+
+    @staticmethod
+    def _lane_rows(txt: str, width: int) -> list[str]:
+        return [line[width - 44 :] for line in txt.splitlines()]
+
+    def _frame(self, width=120, height=40, **kwargs) -> str:
+        return _text_of(_build_mode_screen(0, width=width, height=height, shimmer_tick=0.0, **kwargs), width, height)
+
+    def test_present_with_tips_on(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+        assert "n  ask niko" in self._frame()
+
+    def test_survives_tips_being_hidden(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: False)
+        frame = self._frame()
+        assert "n  ask niko" in frame
+        assert "t show tips" in frame  # the bubble is gone; the caption is not
+
+    def test_the_robo_says_it_too(self):
+        # The mascot is Niko's door on the Agents menu as well.
+        assert "n  ask niko" in self._frame(mascot="robo")
+
+    def test_absent_without_a_lane(self):
+        assert "n  ask niko" not in self._frame(width=_COMPANION_MIN_WIDTH - 1)
+
+    def test_sits_directly_under_him(self):
+        w, h = 120, 40
+        rows = self._lane_rows(self._frame(w, h), w)
+        bottom = _companion_duck_bottom(h)  # 1-based, so index `bottom` is the row below him
+        assert "ask niko" in rows[bottom]
+        assert "\u2588" in rows[bottom - 1]  # his last block row
+
+
+class TestCompanionFoot:
+    """Everything anchored on the duck derives his bottom row from one helper.
+
+    Three functions used to re-derive it independently, so a row added under him
+    silently slid the compose and sign-in bubbles onto his crown.
+    """
+
+    @staticmethod
+    def _duck_bottom(txt: str, width: int) -> int:
+        rows = [i + 1 for i, line in enumerate(txt.splitlines()) if "\u2588" in line[width - 44 :]]
+        return rows[-1]
+
+    @staticmethod
+    def _compose_state() -> dict:
+        from yeaboi.ui.shared._voice_input import DoubleTapSpace
+
+        return {
+            "field": 2,
+            "kind": 0,
+            "area": 0,
+            "buf": "hi",
+            "cur": 2,
+            "status": "",
+            "notice": "",
+            "presence": 1.0,
+            "closing": False,
+            "attachments": [],
+            "dts": DoubleTapSpace(),
+            "thread": None,
+            "done_at": 0.0,
+        }
+
+    @pytest.mark.parametrize("height", [40, 45, 50])
+    def test_rendered_foot_matches_the_helper(self, height):
+        w = 120
+        txt = _text_of(_build_mode_screen(0, width=w, height=height, shimmer_tick=0.0), w, height)
+        assert self._duck_bottom(txt, w) == _companion_duck_bottom(height)
+
+    def test_the_composer_does_not_move_him(self):
+        # The composer is an overlay anchored on the duck; if opening it changed
+        # the lane's foot, the bubble would draw over his head.
+        w, h = 120, 40
+        plain = _text_of(_build_mode_screen(0, width=w, height=h, shimmer_tick=0.0), w, h)
+        typing = _text_of(
+            _build_mode_screen(0, width=w, height=h, shimmer_tick=0.0, compose=self._compose_state()), w, h
+        )
+        assert self._duck_bottom(typing, w) == self._duck_bottom(plain, w) == _companion_duck_bottom(h)
+        assert "n  ask niko" in typing
 
 
 class TestCompanionEntrance:
