@@ -61,6 +61,7 @@ def create_app():
         tools_anonymize,
         tools_artifacts,
         tools_ceremonies,
+        tools_niko,
         tools_performance,
         tools_planning,
         tools_poker,
@@ -91,6 +92,7 @@ def create_app():
         tools_ship,
         tools_ceremonies,
         tools_slack,
+        tools_niko,
     )
     for module in modules:
         module.register(app)

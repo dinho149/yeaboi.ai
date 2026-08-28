@@ -192,3 +192,25 @@ class TestRowHeightIsUnaffected:
     def test_absurdly_long_title_with_a_chip_still_crops(self):
         card = {"title": "A" * 60, "description": "x", "available": True, "badge": "BETA", "color": "rgb(220,110,90)"}
         assert self._row_count(card, selected=False, width=60) == 2
+
+
+class TestNikoIsNotACard:
+    """Niko reaches the terminal as a keycap and the mascot, not an eleventh card.
+
+    The menu draws every card with no scrolling, so an eleventh costs the
+    bottom-left version row — the same trade Ceremonies refused. The exemption
+    is recorded in tests/unit/test_surface_parity.py's CAPABILITIES row.
+    """
+
+    def test_the_humans_menu_does_not_carry_it(self):
+        assert "niko" not in {card["key"] for card in _MODE_CARDS}
+
+    def test_ten_cards_still_clear_the_enforced_minimum(self):
+        from yeaboi.ui.mode_select.screens._screens import _MIN_HEIGHT, _MIN_WIDTH
+
+        console = Console(file=io.StringIO(), width=_MIN_WIDTH, height=_MIN_HEIGHT)
+        console.print(_build_mode_screen(0, width=_MIN_WIDTH, height=_MIN_HEIGHT, shimmer_tick=0.0, desc_reveal=999))
+        rendered = console.file.getvalue().splitlines()
+        assert len(rendered) == _MIN_HEIGHT
+        # The version row is what an eleventh card pushed off; it is back.
+        assert any("changelog" in line for line in rendered)

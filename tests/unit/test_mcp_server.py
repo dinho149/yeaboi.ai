@@ -23,6 +23,7 @@ from yeaboi.mcp.server import create_app  # noqa: E402
 
 EXPECTED_TOOLS = {
     "artifact_edit_apply",
+    "niko_ask",
     "ceremonies_list",
     "ceremonies_history",
     "artifact_edit_history",

@@ -229,14 +229,19 @@ _PAD = PAD  # alias for backward compatibility within this module
 # dimension the loop shows the "too small" duck instead (see
 # :func:`_build_too_small_screen`). Tunable.
 _MIN_WIDTH = 84
+# Ten cards at two rows plus a spacer each, the selected description, and the
+# bottom-left version row all fit in 40. An eleventh card is what pushes that
+# row off — which is why Niko and Ceremonies are keycaps (see
+# :func:`_build_version_row`). Below this the "size up" duck shows instead of a
+# clipped menu.
 _MIN_HEIGHT = 40
 
 # The bottom-right duck companion + its speech-bubble tip need extra room: the
 # bubble reserves a right-hand lane, so the longest mode title must still fit to
 # its left. Only shown at/above these thresholds. On the WIDTH axis, _MIN_WIDTH
 # (84) to _COMPANION_MIN_WIDTH-1 renders the full-width compact menu (tip pinned
-# at the bottom). On height, _MIN_HEIGHT (40) already clears the companion's
-# vertical need (39), so a tall-enough-but-narrow terminal is the only compact case.
+# at the bottom). On height, _MIN_HEIGHT already clears the companion's vertical
+# need (39), so a tall-enough-but-narrow terminal is the only compact case.
 _COMPANION_MIN_WIDTH = 108
 _COMPANION_MIN_HEIGHT = 39  # rows the full companion welcome (menu + tip bubble + duck + pocket) needs to fit
 _COMPANION_HEAD_W = 13  # tight render width of the duck head (matches _mascot)
@@ -577,7 +582,22 @@ def _build_update_box(*, cols: int) -> Panel | None:
     )
 
 
-def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
+# What the version row costs beyond its own text: the panel's two borders plus
+# two columns of padding each side (build_page_panel's ``padding=(1, 2, 0, 2)``).
+_VERSION_ROW_CHROME = 6
+
+
+def _version_row_budget(width: int, *, show_companion: bool) -> int:
+    """Cells the bottom-left version row can actually draw into.
+
+    Rich crops this row rather than wrapping it, so a chip that overruns simply
+    vanishes — mid-word, silently. The companion layout pins the row inside the
+    left grid column, so the duck's lane comes off the budget too.
+    """
+    return max(0, width - _VERSION_ROW_CHROME - (_COMPANION_COLS if show_companion else 0))
+
+
+def _build_version_row(width: int, *, suppress_upgrade: bool = False, show_companion: bool = False) -> Text:
     """Build the bottom-left version hint: current version + changelog keycap.
 
     Sits as the last interior row of the mode screen — bottom-left, opposite the
@@ -619,23 +639,27 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
         # explicit check (the branch above is off when _build_update_box has it).
         row.append("  ·  ", style=dim)
         row.append("✓ updated", style=accent)
-    row.append("  ·  ", style=dim)
-    row.append("c", style=key_style)
-    row.append(" changelog", style=dim)
-    row.append("  ·  ", style=dim)
-    row.append("f", style=key_style)
-    row.append(" feedback", style=dim)
-    row.append("  ·  ", style=dim)
-    row.append("a", style=key_style)
-    row.append(" all tips", style=dim)
-    # Ceremonies is a keycap rather than an eleventh mode card: the menu renders
-    # every card with no scrolling, and an eleventh pushes THIS row off screen at
-    # the enforced 84x40 minimum — trading the version, changelog and feedback
-    # affordances for one menu entry. Dropped first on narrow terminals.
-    if width >= 72:
+    # Keycaps, widest-terminal-last: each is appended only while the row still
+    # fits its budget, so the rightmost are the first to go. Ceremonies and Niko
+    # are keycaps rather than mode cards because the menu renders every card with
+    # no scrolling, and an eleventh pushes THIS row off screen at the enforced
+    # 84x40 minimum — trading version, changelog and feedback for one entry.
+    # Niko is last because the duck himself is its primary affordance.
+    budget = _version_row_budget(width, show_companion=show_companion)
+    for key, label, wide_only in (
+        ("c", "changelog", False),
+        ("f", "feedback", False),
+        ("a", "all tips", False),
+        ("s", "schedule", True),
+        ("n", "niko", True),
+    ):
+        if wide_only and width < 72:
+            break
+        if row.cell_len + len(label) + 7 > budget:  # "  ·  " + key + " " + label
+            break
         row.append("  ·  ", style=dim)
-        row.append("s", style=key_style)
-        row.append(" schedule", style=dim)
+        row.append(key, style=key_style)
+        row.append(f" {label}", style=dim)
     return row
 
 
@@ -738,7 +762,7 @@ def _build_mode_screen(
 
     # Bottom-left version hint (+ upgrade advisory when a newer release exists and
     # the update box isn't already carrying it), opposite the music bar below it.
-    version_row = _build_version_row(width, suppress_upgrade=update_box is not None)
+    version_row = _build_version_row(width, suppress_upgrade=update_box is not None, show_companion=show_companion)
 
     # The duck quacks when a new tip appears: his beak toggles open/closed a few
     # times over the first _QUACK_SECONDS of each tip window (tips rotate every
@@ -903,23 +927,33 @@ def selected_title_offset(selected: int, *, width: int, height: int, cards: list
     return mid_top + 3 * selected
 
 
+_COMPANION_CAPTION_ROWS = 1  # the "n  ask niko" line under the mascot
+
+
+def _companion_duck_bottom(height: int) -> int:
+    """1-based frame row of the mascot head's last row.
+
+    The lane bottom-anchors, so everything anchored on the duck — the click band,
+    the compose bubble, the sign-in bubble — derives from here rather than
+    re-deriving it and drifting when the lane's foot changes.
+    """
+    return height - 1 - _MUSIC_POCKET_ROWS - _COMPANION_CAPTION_ROWS
+
+
 def duck_hit(width: int, height: int, *, row: int, col: int) -> bool:
     """Whether a 1-based click at (row, col) landed on the companion duck — used to
-    trigger the click-the-duck double-shades gag.
+    trigger the click-the-duck double-shades gag, which opens Niko.
 
     Mirrors the companion layout: the duck sits in the right-hand lane, bottom-
-    aligned just above the ``chilling`` caption (1 row) at the lane foot. The
-    resting head is 7 rows tall, so it spans a fixed band near the bottom of the
-    panel. Generous by a row each way so the caption counts as the duck too.
+    aligned just above his ``n  ask niko`` caption at the lane foot. The resting
+    head is 7 rows tall, so it spans a fixed band near the bottom of the panel.
+    Generous by a row each way, which is what puts the caption itself in the band.
     """
     if not (width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT):
         return False
     if col <= width - _COMPANION_COLS:  # not in the duck's right-hand lane
         return False
-    # The lane bottom-anchors in the grid (inner_h − music pocket); the head is now
-    # its last element (chilling moved to the pocket row), so the head's bottom row
-    # is the grid's bottom row.
-    duck_bottom = height - 1 - _MUSIC_POCKET_ROWS  # 1-based row of the head's last row
+    duck_bottom = _companion_duck_bottom(height)
     duck_top = duck_bottom - 6  # 7-row head
     return duck_top - 1 <= row <= duck_bottom + 2  # margin: crown above, caption below
 
@@ -1072,7 +1106,7 @@ def _draw_compose_bubble(console, options, lines: list, compose: dict) -> None:
     base = lines[-1][0].style
     bg_style = Style(bgcolor=base.bgcolor) if base and base.bgcolor else None
 
-    duck_top = height - 1 - _MUSIC_POCKET_ROWS - _COMPANION_HEAD_H
+    duck_top = _companion_duck_bottom(height) - _COMPANION_HEAD_H  # the row above his crown
     bottom = duck_top - 1 - _COMPOSE_TAIL_ROWS  # the tail sits between them
     right = width - 5  # level with the tip bubble's right edge
     cols = min(_COMPOSE_OVERLAY_COLS, right - _COMPOSE_LEFT_MARGIN)
@@ -1198,6 +1232,27 @@ def _build_compose_bubble(compose: dict, *, cols: int, max_rows: int = _COMPOSE_
     return bubble
 
 
+def _build_niko_caption(fade: float, *, left_pad: int) -> RenderableType:
+    """The mascot's own label — ``n  ask niko`` — centred under his head.
+
+    The duck is Niko's door, and the rotating tip that says so is on screen for
+    six seconds in every three minutes and vanishes with ``t``. So this row is
+    permanent, and :func:`duck_hit` already reaches it — the words are clickable
+    too, not just the sprite.
+
+    It always occupies its row. The lane bottom-anchors, so a row that came and
+    went would move the duck and everything anchored on him; it fades instead.
+    """
+    # Key first, in the tip row's gold, so it reads as a control rather than prose.
+    caption = Text()
+    caption.append("n", style=f"bold {lerp_color(fade, BLACK_RGB, _TIP_DOT_ON)}")
+    caption.append("  ask niko", style=lerp_color(fade, BLACK_RGB, _TIP_DOT_DIM))
+    # Centred under the head rather than the lane, and padded from the head's own
+    # left pad, so it glides in with him instead of sitting still while he slides.
+    indent = max(0, (_COMPANION_HEAD_W - caption.cell_len) // 2)
+    return Padding(caption, (0, 0, 0, left_pad + indent))
+
+
 def _build_companion(
     tip_line: Text,
     *,
@@ -1273,7 +1328,9 @@ def _build_companion(
         # resizing the mode list beside it. The lane itself just loses its tip.
         presence = min(1.0, max(0.0, compose.get("presence", 1.0)))
         tail = Align.center(Text("▾", style=lerp_color(presence, BLACK_RGB, (120, 135, 150))))
-        return Align.center(Group(tail, duck), vertical="bottom")
+        # The caption rides along: it is what the lane's foot is measured from, so
+        # dropping it here would float the duck a row while you type.
+        return Align.center(Group(tail, duck, _build_niko_caption(1.0, left_pad=left_pad)), vertical="bottom")
     if update_box is not None and show_extras:
         # More pressing than the tip: it sits at the top of the lane, above the
         # bubble, with a blank line separating the two boxes.
@@ -1307,8 +1364,9 @@ def _build_companion(
         # Tips hidden → no bubble to carry the "t show tips" hint; keep it visible.
         parts.append(controls)
     parts.append(duck)
-    # "chilling" is no longer tucked under the duck — it's rendered on the music
-    # pocket row, just above the bottom border (see _build_music_pocket caption).
+    # Faded by the entrance, not by ``reveal``: the caption is the duck's own
+    # label, so it arrives with him rather than with the tip bubble above him.
+    parts.append(_build_niko_caption(intro, left_pad=left_pad))
     return Align.center(Group(*parts), vertical="bottom")
 
 
@@ -1432,7 +1490,7 @@ def _draw_signin_bubble(console, options, lines: list, state: dict) -> None:
     base = lines[-1][0].style
     bg_style = Style(bgcolor=base.bgcolor) if base and base.bgcolor else None
 
-    duck_top = height - 1 - _MUSIC_POCKET_ROWS - _COMPANION_HEAD_H
+    duck_top = _companion_duck_bottom(height) - _COMPANION_HEAD_H  # the row above his crown
     bottom = duck_top - 1 - _COMPOSE_TAIL_ROWS
     right = width - 5
     cols = min(_SIGNIN_OVERLAY_COLS, right - _SIGNIN_LEFT_MARGIN)

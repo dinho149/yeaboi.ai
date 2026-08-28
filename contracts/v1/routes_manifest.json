@@ -212,6 +212,11 @@
       "title": "Share online"
     },
     {
+      "path": "action:ask-niko",
+      "capability": "niko",
+      "title": "Ask Niko"
+    },
+    {
       "path": "action:anonymize",
       "capability": "anonymize",
       "title": "Anonymize output"

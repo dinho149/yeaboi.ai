@@ -189,6 +189,11 @@ class AppServer:
         # The open planning conversations (routes_chat) — sessions live here
         # so a reloaded window rejoins the one it left.
         self.chats = chats if chats is not None else ChatSupervisor()
+        # One lock per Niko conversation (routes_niko), so two windows cannot
+        # run the same thread's turn at once. A plain dict rather than a
+        # supervisor: a Niko turn owns no process and holds nothing between
+        # turns, so there is no session to keep alive — only a turn to serialise.
+        self.niko_turns: dict[str, threading.Lock] = {}
         # The live boards and open shares (routes_boards) — they outlive every
         # window, and `stop_all` at shutdown is what keeps a tunnel from
         # outliving the app.

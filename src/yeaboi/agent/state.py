@@ -2054,6 +2054,78 @@ class MessageRef:
 
 
 # ---------------------------------------------------------------------------
+# Niko — the global assistant's records
+# ---------------------------------------------------------------------------
+
+#: What Niko is allowed to do. Read and point; never change. The tool registry
+#: (yeaboi/niko/tools.py) is built to match, and the parity test asserts it.
+NIKO_READ_ONLY = True
+
+
+@dataclass(frozen=True)
+class NikoToolCall:
+    """One tool Niko reached for, and how it went.
+
+    ``result`` is the JSON-able payload the tool returned, kept so a replayed
+    conversation shows the same cards it showed live — the platform this was
+    ported from dropped tool blocks on replay and its resumed conversations
+    forgot what they had looked up.
+    """
+
+    name: str = ""
+    arguments: dict = field(default_factory=dict)
+    ok: bool = True
+    result: object = None
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class NikoMessage:
+    """One turn in a Niko conversation, as stored.
+
+    ``route`` is the desktop route (or TUI mode) the question was asked from.
+    It is a snapshot, not a live value: "what was I looking at when I asked
+    this?" is the whole reason the answer reads the way it does.
+    """
+
+    id: str = ""
+    conversation_id: str = ""
+    role: str = "user"  # "user" | "assistant"
+    content: str = ""
+    tool_calls: tuple[NikoToolCall, ...] = ()
+    route: str = ""
+    created_at: str = ""
+
+
+@dataclass(frozen=True)
+class NikoConversation:
+    """A Niko thread. ``title`` is written once, from the opening question."""
+
+    id: str = ""
+    title: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    archived: bool = False
+    message_count: int = 0
+
+
+@dataclass(frozen=True)
+class NikoAnswer:
+    """One finished turn — what every surface renders.
+
+    ``route`` is Niko's navigation suggestion (the ``navigate`` tool), empty
+    when it did not offer one. It is a suggestion: the desktop pushes it, the
+    terminal prints it, and neither is obliged.
+    """
+
+    conversation_id: str = ""
+    text: str = ""
+    tool_calls: tuple[NikoToolCall, ...] = ()
+    route: str = ""
+    warnings: tuple[str, ...] = ()
+
+
+# ---------------------------------------------------------------------------
 # Questionnaire state (mutable — updated incrementally by intake node)
 # ---------------------------------------------------------------------------
 

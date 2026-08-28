@@ -404,6 +404,18 @@ AREAS: tuple[Area, ...] = (
             # posts and answers with their store.
             "src/yeaboi/slack/",
             "src/yeaboi/tools/slack.py",
+            # Niko, the global assistant. Cross-mode by construction: its tool
+            # surface reads every other mode's store, so it belongs beside mcp/
+            # rather than to any one mode. Its prompt is named here too —
+            # `prompts/` as a whole belongs to planning, and a Niko prompt change
+            # must run the niko tests, not only the planning ones.
+            "src/yeaboi/niko/",
+            "src/yeaboi/prompts/niko.py",
+            # Its TUI halves too: `ui/` as a whole belongs to the UI area, whose
+            # tests do not include test_niko_*.py, so a page-only change would
+            # otherwise never run them.
+            "src/yeaboi/ui/mode_select/_niko.py",
+            "src/yeaboi/ui/mode_select/screens/_screens_niko.py",
             "claude-plugin/",
             "packaging/",
         ),
@@ -425,6 +437,7 @@ AREAS: tuple[Area, ...] = (
             # The standup wiring consumes the chain; a provenance change must
             # prove it did not break its first consumer.
             "tests/unit/test_standup_provenance_log.py",
+            "tests/unit/test_niko_*.py",
         ),
     ),
 )

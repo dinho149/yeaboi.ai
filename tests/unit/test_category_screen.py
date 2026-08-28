@@ -341,21 +341,30 @@ class TestSeedFrame:
     def test_it_is_not_the_mode_menu(self):
         # The row that flashed. If the seed ever goes back to _build_mode_screen
         # this is what reappears, so name it rather than assert a shape.
-        from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
+        # _MIN_HEIGHT is the screen's own minimum — the menu's hint row is the
+        # first thing to fall off below it, and this test's premise is that the
+        # row is there.
+        from yeaboi.ui.mode_select.screens._screens import _MIN_HEIGHT, _build_mode_screen
 
-        console = Console(width=185, height=40, force_terminal=False)
+        console = Console(width=185, height=_MIN_HEIGHT, force_terminal=False)
 
         def _flat(renderable):
-            rows = console.render_lines(renderable, console.options.update(height=40), pad=True)
+            rows = console.render_lines(renderable, console.options.update(height=_MIN_HEIGHT), pad=True)
             return "\n".join("".join(seg.text for seg in row) for row in rows)
 
         menu = _flat(
             _build_mode_screen(
-                0, width=185, height=40, shimmer_tick=0.0, desc_reveal=0, sweep_front=0.0, companion_intro=0.0
+                0,
+                width=185,
+                height=_MIN_HEIGHT,
+                shimmer_tick=0.0,
+                desc_reveal=0,
+                sweep_front=0.0,
+                companion_intro=0.0,
             )
         )
         assert "changelog" in menu, "premise: the menu's hint row is what used to flash"
-        assert "changelog" not in _flat(self._seed(width=185, height=40))
+        assert "changelog" not in _flat(self._seed(width=185, height=_MIN_HEIGHT))
 
     def test_it_opens_on_the_remembered_category(self):
         from yeaboi.ui.mode_select.screens._screens_category import category_index
