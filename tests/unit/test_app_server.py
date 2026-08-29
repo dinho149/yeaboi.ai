@@ -56,6 +56,7 @@ class TestMetaRoutes:
         payload = json.loads(request(app, "GET", "/api/meta/changelog").body)
         assert payload["entries"], "bundled changelog should never be empty"
         assert {"version", "date", "summary", "highlights"} <= set(payload["entries"][0])
+        assert {"text", "areas", "surfaces"} <= set(payload["entries"][0]["highlights"][0])
 
 
 class TestToolRoutes:

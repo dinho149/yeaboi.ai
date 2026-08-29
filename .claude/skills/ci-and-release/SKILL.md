@@ -67,7 +67,7 @@ gh api repos/:owner/:repo/rulesets/<id> --jq '.rules[] | select(.type=="required
 
 `release.yml` in **yeaboi-desktop** builds, signs and notarizes the app, and it holds the eight signing secrets that used to live here — `CSC_LINK` + `CSC_KEY_PASSWORD`, `APPLE_ID` + `APPLE_APP_SPECIFIC_PASSWORD` + `APPLE_TEAM_ID`, `AZURE_TENANT_ID` + `AZURE_CLIENT_ID` + `AZURE_CLIENT_SECRET`. Nothing here triggers it, and nothing here needs them.
 
-What still matters on this side is the ordering: **the desktop wraps a wheel that already exists.** Its workflow refuses a version that is not a final `X.Y.Z` on PyPI, so a desktop release always lags a Python one and is promoted by hand. The app's version *is* the version of the yeaboi it bundles; that repo has no version line of its own.
+What still matters on this side is the ordering: **the desktop wraps a wheel that already exists.** Its workflow refuses a wheel version that is not a final `X.Y.Z` on PyPI, so a desktop release always lags a Python one and is promoted by hand. The app carries **its own semver** (that repo's `package.json`, bumped by hand alongside its shell changelog); the bundled wheel version is a separate workflow input, visible at runtime via `/api/meta/version`. Changelog separation: highlights in `src/yeaboi/changelog_data.json` may carry a `surfaces` tag (`tui`/`desktop`/`web`, absent = all three); the TUI's `c` page filters to `tui`, the desktop's What's New filters to `desktop` and merges in its own shell ledger.
 
 ### When a Claude workflow fails
 

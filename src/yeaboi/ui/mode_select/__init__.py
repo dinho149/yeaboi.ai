@@ -5489,11 +5489,12 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
     select. Data is the bundled ``changelog_data.json`` (no network); the upgrade
     banner reflects whatever the background PyPI check has found so far.
     """
-    from yeaboi.changelog import load_changelog
+    from yeaboi.changelog import filter_for_surface, load_changelog
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_changelog_screen
     from yeaboi.update_check import get_update_status
 
-    entries = load_changelog()
+    # Desktop- and web-only notes belong to those surfaces' own What's New views.
+    entries = filter_for_surface(load_changelog(), "tui")
     update_status = get_update_status()
     logger.info(
         "changelog: page opened (%d entries, update_available=%s)", len(entries), update_status["update_available"]
