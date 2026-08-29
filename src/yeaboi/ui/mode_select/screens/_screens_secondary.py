@@ -3426,7 +3426,8 @@ def _build_changelog_screen(
 ) -> Panel:
     """Build the Changelog page: per-version AI-written notes with area tags.
 
-    ``entries`` is ``changelog.load_changelog()`` output (newest-first). Each
+    ``entries`` is ``changelog.load_changelog()`` output, filtered by the caller
+    to the surface being shown (newest-first). Each
     highlight's feature-area tags render in that mode's accent colour
     (``changelog.AREA_COLORS``) so a change reads as the feature the user already
     knows by colour. ``update_status`` (``update_check.get_update_status()``)

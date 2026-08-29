@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import resources
 
 logger = logging.getLogger(__name__)
@@ -39,13 +39,20 @@ AREA_COLORS: dict[str, str] = {
     "general": "rgb(160,160,180)",
 }
 
+# The surfaces a highlight applies to: the terminal app + CLI, the Electron
+# desktop app, and the browser-served share/board pages. A highlight with no
+# tag applies to all three — backend/engine work is the common case.
+VALID_SURFACES = frozenset({"tui", "desktop", "web"})
+ALL_SURFACES: tuple[str, ...] = ("tui", "desktop", "web")
+
 
 @dataclass(frozen=True)
 class ChangelogHighlight:
-    """One shipped change, tagged with the feature areas it touches."""
+    """One shipped change, tagged with the feature areas and surfaces it touches."""
 
     text: str = ""
     areas: tuple[str, ...] = ()
+    surfaces: tuple[str, ...] = ALL_SURFACES
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,14 @@ def _coerce_areas(raw: object) -> tuple[str, ...]:
     return tuple(dict.fromkeys(areas)) or ("general",)
 
 
+def _coerce_surfaces(raw: object) -> tuple[str, ...]:
+    """Validate surface tags; missing, malformed, or empty means all surfaces."""
+    if not isinstance(raw, list):
+        return ALL_SURFACES
+    surfaces = [s for s in raw if isinstance(s, str) and s in VALID_SURFACES]
+    return tuple(dict.fromkeys(surfaces)) or ALL_SURFACES
+
+
 def _parse_entry(raw: object) -> ChangelogEntry | None:
     """Parse one raw JSON entry; None (skipped) when malformed."""
     if not isinstance(raw, dict) or not isinstance(raw.get("version"), str) or not raw.get("version"):
@@ -79,7 +94,13 @@ def _parse_entry(raw: object) -> ChangelogEntry | None:
     highlights = []
     for item in raw.get("highlights") or []:
         if isinstance(item, dict) and isinstance(item.get("text"), str) and item["text"]:
-            highlights.append(ChangelogHighlight(text=item["text"], areas=_coerce_areas(item.get("areas"))))
+            highlights.append(
+                ChangelogHighlight(
+                    text=item["text"],
+                    areas=_coerce_areas(item.get("areas")),
+                    surfaces=_coerce_surfaces(item.get("surfaces")),
+                )
+            )
     return ChangelogEntry(
         version=raw["version"],
         date=raw.get("date", "") if isinstance(raw.get("date"), str) else "",
@@ -101,6 +122,23 @@ def load_changelog() -> list[ChangelogEntry]:
     entries = [entry for entry in (_parse_entry(raw) for raw in raw_entries) if entry is not None]
     logger.debug("changelog loaded: %d entries", len(entries))
     return entries
+
+
+def filter_for_surface(entries: list[ChangelogEntry], surface: str) -> list[ChangelogEntry]:
+    """Keep only the entries and highlights that apply to ``surface``.
+
+    An entry with no highlights at all carries no surface information and is
+    kept whole — absence means everywhere, same as an untagged highlight.
+    """
+    filtered = []
+    for entry in entries:
+        if not entry.highlights:
+            filtered.append(entry)
+            continue
+        highlights = tuple(h for h in entry.highlights if surface in h.surfaces)
+        if highlights:
+            filtered.append(replace(entry, highlights=highlights))
+    return filtered
 
 
 def build_changelog_text(entries: list[ChangelogEntry] | None = None) -> str:

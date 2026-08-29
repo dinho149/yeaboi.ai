@@ -333,7 +333,8 @@ jobs:
                - "version": the new version (no leading "v")
                - "date": today's UTC date, YYYY-MM-DD
                - "summary": one user-friendly paragraph describing what this PR changes for a user of the app — plain English, no code or file names
-               - "highlights": 1-5 objects of {"text": "...", "areas": [...]} — each a short user-facing change, tagged ONLY with areas from this fixed vocabulary: analysis, planning, standup, retro, performance, reporting, usage, settings, general
+               - "highlights": 1-5 objects of {"text": "...", "areas": [...]} — each a short user-facing change, tagged ONLY with areas from this fixed vocabulary: analysis, planning, standup, retro, performance, reporting, usage, settings, agents, general
+               - Each highlight MAY also carry "surfaces": which of the product's surfaces the change applies to, from this fixed vocabulary: tui (terminal app + CLI), desktop (the desktop app), web (browser share/board pages). OMIT the key when the change applies everywhere — backend/engine work, the common case. Tag only surface-specific changes: a terminal screen layout change is ["tui"], a share-page change is ["web"], a desktop-only backend route is ["desktop"].
                If an entry for that version already exists, update it in place instead. Keep the JSON valid (validate by running: python -c "import json; json.load(open('src/yeaboi/changelog_data.json'))").
 
             5. Commit the pyproject.toml and changelog_data.json changes together (changelog-only mode: just changelog_data.json) to this PR branch and push. Use commit message:
