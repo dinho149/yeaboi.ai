@@ -100,7 +100,9 @@ CAPABILITIES: dict[str, dict] = {
             "--architecture-spike",
         },
         "skill": "plan-sprint",
-        "desktop": {"/humans/planning", "/humans/planning/chat", "/humans/planning/plan"},
+        # Planning folded into the desktop's project flow: the blueprint is
+        # the intake and /projects/:id/plan renders the finished plan.
+        "desktop": {"/projects/:id/blueprint", "/projects/:id/plan"},
     },
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
@@ -108,7 +110,10 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("sessions are surfaced inside the planning-mode screens, no dedicated card"),
         "cli": {"--list-sessions", "--resume", "--clear-sessions"},
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
-        "desktop": {"/humans/planning/sessions"},
+        "desktop": Exempt(
+            "saved plans surface through each project's plan panel (the iteration carries its "
+            "session id) — a raw session browser would be a second door to the same room"
+        ),
     },
     "standup": {
         "engines": {
@@ -238,7 +243,7 @@ CAPABILITIES: dict[str, dict] = {
         # carrying a milestone that has shipped: the intake tile needs a
         # roadmap path that is not TUI-only, and no surface has one yet — the
         # same gap the four rows above already track.
-        "desktop": {"/humans/planning/roadmap"},
+        "desktop": {"/projects/new/from-roadmap"},
     },
     "anonymize": {
         # Post-processing action, not a mode of its own: an "Anonymize" button on every

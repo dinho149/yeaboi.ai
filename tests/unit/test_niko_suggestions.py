@@ -85,7 +85,9 @@ class TestScreenFor:
         assert suggestions.screen_for("/humans/retro/board/anything")["capability"] == "retro-board"
 
     def test_the_longest_prefix_wins(self):
-        assert suggestions.screen_for("/humans/planning/chat")["capability"] == "planning"
+        # /ceremonies and /ceremonies/slack both match; the deeper row's
+        # capability must win.
+        assert suggestions.screen_for("/ceremonies/slack/anything")["capability"] == "slack-inbound"
 
     def test_an_unknown_route_resolves_to_nothing_rather_than_guessing(self):
         assert suggestions.screen_for("/teleport") == {"capability": "", "title": ""}

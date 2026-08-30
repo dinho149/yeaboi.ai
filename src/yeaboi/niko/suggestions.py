@@ -32,9 +32,6 @@ BY_CAPABILITY: dict[str, list[dict]] = {
         _chip("What have I planned?", "List my saved planning sessions and how far each one got.", "layers"),
         _chip("Where did this plan come from?", "Trace the decisions behind my most recent plan.", "compass"),
     ],
-    "sessions": [
-        _chip("What have I planned?", "List my saved planning sessions and how far each one got.", "layers"),
-    ],
     "roadmap": [
         _chip("What is roadmap intake?", "Explain what Roadmap intake does and when I should use it.", "info"),
     ],
