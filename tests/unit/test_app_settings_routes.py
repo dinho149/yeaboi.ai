@@ -95,6 +95,30 @@ class TestProviderProbes:
         assert json.loads(models.body)["models"][0] == "m1"
 
 
+class TestConnectionVerify:
+    def test_requires_auth_and_kind(self, app):
+        assert request(app, "POST", "/api/settings/connection/verify", {"kind": "github"}, authed=False).code == 401
+        assert request(app, "POST", "/api/settings/connection/verify", {"token": "t"}).code == 400
+
+    def test_unknown_kind_is_400(self, app):
+        resp = request(app, "POST", "/api/settings/connection/verify", {"kind": "gitlab"})
+        assert resp.code == 400
+        assert "unknown connection kind" in json.loads(resp.body)["error"]
+
+    def test_delegates_and_never_echoes_the_token(self, app, monkeypatch):
+        secret = "ghp_super-secret-raw-token-value"
+        monkeypatch.setattr("yeaboi.provider_verification._verify_vc_token", lambda vc, token: (True, "authenticated"))
+        resp = request(app, "POST", "/api/settings/connection/verify", {"kind": "github", "token": secret})
+        assert json.loads(resp.body) == {"ok": True, "message": "authenticated"}
+        assert secret not in resp.body.decode()
+
+    def test_missing_field_is_400(self, app, monkeypatch):
+        monkeypatch.delenv("NOTION_TOKEN", raising=False)
+        resp = request(app, "POST", "/api/settings/connection/verify", {"kind": "notion"})
+        assert resp.code == 400
+        assert "needs token" in json.loads(resp.body)["error"]
+
+
 class FakeSignIn:
     """A SubscriptionSignIn stand-in with a scriptable lifecycle."""
 

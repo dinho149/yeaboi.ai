@@ -6909,6 +6909,21 @@ def _build_settings_screen(
             env="VOICE_DEVICE",
         )
         _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)", env="VOICE_MODEL")
+        # Cloud voice/video keys — read by the desktop app's call features, kept
+        # here so every settings surface shows the same inventory.
+        _row("ElevenLabs Key", config_data.get("ELEVENLABS_API_KEY", ""), masked=True, env="ELEVENLABS_API_KEY")
+        _row(
+            "ElevenLabs Voice",
+            config_data.get("ELEVENLABS_VOICE_ID", "") or "provider default",
+            value_style="" if config_data.get("ELEVENLABS_VOICE_ID", "") else theme.dim,
+            env="ELEVENLABS_VOICE_ID",
+        )
+        _row(
+            "ElevenLabs Model",
+            config_data.get("ELEVENLABS_MODEL_ID", "") or "eleven_turbo_v2_5 (default)",
+            env="ELEVENLABS_MODEL_ID",
+        )
+        _row("Tavus Key", config_data.get("TAVUS_API_KEY", ""), masked=True, env="TAVUS_API_KEY")
 
     def _sec_advanced() -> None:
         """Everything here with a closed set of answers is a pick, not a text field.

@@ -66,6 +66,7 @@ over this wire. Writes are allowlisted to the engine's field registry
 | POST | `/api/settings/data-dir` | body `{value, move?: bool}` → same write shape with `restart_required: true` |
 | POST | `/api/settings/provider/verify` | body `{provider, credential, model?}` → `{ok, message}` (network, up to ~8s) |
 | POST | `/api/settings/provider/models` | body `{provider, credential}` → `{models, default, hints}` (discovered-first merge) |
+| POST | `/api/settings/connection/verify` | body `{kind: github\|jira\|confluence\|notion\|elevenlabs\|tavus, token?, base_url?, email?, space_key?}` → `{ok, message}`; omitted fields fall back to saved values, so a stored credential can be re-checked without echoing it — but a stored token only travels to the stored host: a caller-supplied `base_url`/`email` requires `token` in the same request, and a supplied `base_url` must be https (400 otherwise; network, up to ~10s) |
 | POST | `/api/settings/signin/start` | spawn `claude setup-token` → `{started, message}` |
 | GET | `/api/settings/signin` | poll → `{active, url?, awaiting_code?, done?, ok?, saved?, message?}`; on first token sighting the credential is persisted before `saved: true` is reported — the token itself is never in the body |
 | POST | `/api/settings/signin/code` | body `{code}` → `{ok: true}`; 404 with no session |

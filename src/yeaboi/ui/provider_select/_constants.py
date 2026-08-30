@@ -43,6 +43,14 @@ TOKEN_HELP: dict[str, dict[str, str]] = {
         "url": "https://id.atlassian.com/manage-profile/security/api-tokens",
         "scope": "Account needs view + create/update pages (and attachments) in the target space",
     },
+    "ELEVENLABS_API_KEY": {
+        "url": "https://elevenlabs.io/app/settings/api-keys",
+        "scope": "A default key works — restrict to 'Text to Speech' if scoping; powers the duck's spoken voice",
+    },
+    "TAVUS_API_KEY": {
+        "url": "https://platform.tavus.io",
+        "scope": "API key from the Tavus portal — powers avatar video in desktop calls",
+    },
 }
 
 # ---------------------------------------------------------------------------

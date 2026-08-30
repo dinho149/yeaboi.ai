@@ -1477,6 +1477,11 @@ def _collect_settings_data() -> dict:
         "TEAM_ANALYSIS_GITHUB_OWNERS",
         "VOICE_MODEL",
         "VOICE_DEVICE",
+        # Cloud voice/video keys the desktop's call features read from the shared env.
+        "ELEVENLABS_API_KEY",
+        "ELEVENLABS_VOICE_ID",
+        "ELEVENLABS_MODEL_ID",
+        "TAVUS_API_KEY",
         "AWS_REGION",
         "AWS_PROFILE",
         "LOG_LEVEL",

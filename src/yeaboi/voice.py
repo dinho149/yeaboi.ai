@@ -73,6 +73,9 @@ _SAMPLE_WIDTH_BYTES = 2  # int16
 # first transcription so the (potentially large) model download happens once.
 _MODEL_CACHE: dict = {}
 
+# The missing-optional-extra note is logged once per process, not per query.
+_sounddevice_missing_logged = False
+
 
 def voice_install_command() -> str:
     """Return the install command that will actually work for *this* install.
@@ -384,6 +387,7 @@ def list_input_devices() -> list[dict]:
     Returns an empty list if sounddevice is missing or the query fails, so
     callers can render "no microphones found" rather than crash.
     """
+    global _sounddevice_missing_logged
     try:
         import sounddevice as sd
 
@@ -392,7 +396,14 @@ def list_input_devices() -> list[dict]:
             default_index = sd.default.device[0]
         except Exception:  # noqa: BLE001 - no default configured on this host
             default_index = None
-    except Exception:  # noqa: BLE001 - sounddevice absent or PortAudio unhappy
+    except ImportError:
+        # The optional voice extra isn't installed — expected, so say it once
+        # quietly instead of a traceback on every settings fetch.
+        if not _sounddevice_missing_logged:
+            _sounddevice_missing_logged = True
+            logger.info("Voice input unavailable: sounddevice not installed (pip install 'yeaboi[voice]')")
+        return []
+    except Exception:  # noqa: BLE001 - PortAudio unhappy
         logger.warning("Could not list audio input devices", exc_info=True)
         return []
 

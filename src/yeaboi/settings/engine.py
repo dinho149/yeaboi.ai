@@ -36,6 +36,8 @@ SECRET_ENVS: frozenset[str] = frozenset(
         "SLACK_WEBHOOK_URL",
         "SLACK_BOT_TOKEN",
         "STANDUP_SMTP_PASSWORD",
+        "ELEVENLABS_API_KEY",
+        "TAVUS_API_KEY",
     }
 )
 
@@ -148,6 +150,11 @@ def _build_fields() -> tuple[SettingField, ...]:
         SettingField("VOICE_INSTALL_OFFER", "Install Offer", "voice"),
         SettingField("VOICE_DEVICE", "Input Device", "voice", action="voice-device"),
         SettingField("VOICE_MODEL", "Model Size", "voice"),
+        # Cloud voice/video keys the desktop's call features read from the shared env.
+        SettingField("ELEVENLABS_API_KEY", "ElevenLabs Key", "voice", secret=True),
+        SettingField("ELEVENLABS_VOICE_ID", "ElevenLabs Voice", "voice"),
+        SettingField("ELEVENLABS_MODEL_ID", "ElevenLabs Model", "voice", default="eleven_turbo_v2_5"),
+        SettingField("TAVUS_API_KEY", "Tavus Key", "voice", secret=True),
         # -- advanced ------------------------------------------------------
         SettingField("LOG_LEVEL", "Log Level", "advanced", choices=VALID_LOG_LEVELS, default="WARNING"),
         SettingField("SESSION_PRUNE_DAYS", "Session Prune Days", "advanced", default="30"),
@@ -404,6 +411,80 @@ def _provider_card(provider: str) -> dict:
     if card is None:
         raise ValueError(f"unknown provider: {provider}")
     return card
+
+
+# Optional-integration verification: kind -> ((field name, env fallback), ...).
+# Confluence reuses the Jira Atlassian account (see tools/confluence.py).
+_CONNECTION_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "github": (("token", "GITHUB_TOKEN"),),
+    "jira": (("base_url", "JIRA_BASE_URL"), ("email", "JIRA_EMAIL"), ("token", "JIRA_API_TOKEN")),
+    "confluence": (
+        ("base_url", "JIRA_BASE_URL"),
+        ("email", "JIRA_EMAIL"),
+        ("token", "JIRA_API_TOKEN"),
+        ("space_key", "CONFLUENCE_SPACE_KEY"),
+    ),
+    "notion": (("token", "NOTION_TOKEN"),),
+    "elevenlabs": (("token", "ELEVENLABS_API_KEY"),),
+    "tavus": (("token", "TAVUS_API_KEY"),),
+}
+
+
+def verify_connection(kind: str, fields: dict[str, str]) -> dict:
+    """Live-check one optional integration's credentials.
+
+    Kinds: github/jira/confluence/notion, plus the desktop's voice & face keys
+    (elevenlabs/tavus).
+
+    A field omitted from ``fields`` falls back to the stored env value — secrets
+    are write-only over the wire, so this is how a caller re-checks a saved
+    credential without ever seeing it. A stored token only ever travels to the
+    stored host: pairing it with a caller-supplied ``base_url`` or ``email``
+    is refused (it would exfiltrate the saved secret in one request), and a
+    caller-supplied ``base_url`` must be https. Returns ``{ok, message}``;
+    network-bound (up to ~10s). Raises ValueError for an unknown kind or a
+    field that is neither provided nor stored. No credential appears in the
+    result or the log.
+    """
+    from yeaboi import provider_verification
+
+    spec = _CONNECTION_KINDS.get(kind)
+    if spec is None:
+        raise ValueError(f"unknown connection kind: {kind}")
+    resolved: dict[str, str] = {}
+    supplied: set[str] = set()
+    for name, env in spec:
+        value = (fields.get(name) or "").strip()
+        if value:
+            supplied.add(name)
+        else:
+            value = os.environ.get(env, "").strip()
+        if not value:
+            raise ValueError(f"{kind} verification needs {name}")
+        resolved[name] = value
+    if "token" not in supplied and supplied & {"base_url", "email"}:
+        raise ValueError(
+            f"{kind} verification with the stored token also uses the stored base_url and email — "
+            "supply the token to verify against other values"
+        )
+    if "base_url" in supplied and not resolved["base_url"].startswith("https://"):
+        raise ValueError(f"{kind} base_url must start with https://")
+    if kind == "github":
+        ok, message = provider_verification._verify_vc_token({"env_var": "GITHUB_TOKEN"}, resolved["token"])
+    elif kind == "jira":
+        ok, message = provider_verification._verify_jira(resolved["base_url"], resolved["email"], resolved["token"])
+    elif kind == "confluence":
+        ok, message = provider_verification._verify_confluence(
+            resolved["base_url"], resolved["email"], resolved["token"], resolved["space_key"]
+        )
+    elif kind == "notion":
+        ok, message = provider_verification._verify_notion(resolved["token"])
+    elif kind == "elevenlabs":
+        ok, message = provider_verification._verify_elevenlabs(resolved["token"])
+    else:
+        ok, message = provider_verification._verify_tavus(resolved["token"])
+    logger.info("settings: connection verify %s → ok=%s", kind, ok)
+    return {"ok": ok, "message": message}
 
 
 def verify_provider(provider: str, credential: str, model: str = "") -> dict:
