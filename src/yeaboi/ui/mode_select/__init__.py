@@ -343,6 +343,24 @@ def _confirm_ticket_generation(
             return False
 
 
+def _record_project_profile(profile) -> None:
+    """The analysis→planning edge: an active project remembers the profile its
+    analysis produced, so the next scoped plan seeds it automatically."""
+    from yeaboi.projects.active import get_active_project
+
+    project_id = get_active_project()
+    team_id = getattr(profile, "team_id", "") if profile else ""
+    if not project_id or not team_id:
+        return
+    try:
+        from yeaboi.projects.engine import set_project_defaults
+
+        set_project_defaults(project_id, {"default_analysis_profile_id": team_id})
+        logger.info("analysis: recorded profile %s as default for project %s", team_id, project_id)
+    except Exception:
+        logger.warning("analysis: could not record the project's default profile", exc_info=True)
+
+
 def _run_preview_flow(
     live,
     console,
@@ -705,6 +723,7 @@ def _run_preview_flow(
     global _ana_sid  # noqa: PLW0603
     if not _ana_sid:
         try:
+            from yeaboi.projects.active import get_active_project
             from yeaboi.sessions import SessionStore, make_session_id
 
             _ana_sid = make_session_id()
@@ -713,8 +732,10 @@ def _run_preview_flow(
                     _ana_sid,
                     project_name=getattr(ta_profile, "project_key", "") if ta_profile else "",
                     mode="analysis",
+                    project_id=get_active_project(),
                 )
             logger.info("Created analysis session for preview: %s", _ana_sid)
+            _record_project_profile(ta_profile)
         except Exception:
             logger.debug("Failed to create analysis session", exc_info=True)
 
@@ -14481,6 +14502,7 @@ def select_mode(
                                     subtitle=_ta_sub,
                                 ):
                                     from yeaboi.agent.nodes import _format_team_calibration
+                                    from yeaboi.projects.active import get_active_project as _gap
                                     from yeaboi.sessions import SessionStore as _AStore
                                     from yeaboi.sessions import make_session_id
 
@@ -14491,7 +14513,9 @@ def select_mode(
                                                 _ana_sid,
                                                 _ta_profile.project_key if _ta_profile else "",
                                                 mode="analysis",
+                                                project_id=_gap(),
                                             )
+                                        _record_project_profile(_ta_profile)
                                     except Exception:
                                         pass
 
