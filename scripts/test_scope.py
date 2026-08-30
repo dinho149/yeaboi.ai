@@ -390,6 +390,10 @@ AREAS: tuple[Area, ...] = (
             "src/yeaboi/update_check.py",
             "src/yeaboi/changelog.py",
             "src/yeaboi/changelog_data.json",
+            # The tui/desktop/web vocabulary the changelog and the tips share.
+            # Its other consumer's guards (test_tips, test_surface_parity) are
+            # in ALWAYS, so they run whatever this selects.
+            "src/yeaboi/surfaces.py",
             "src/yeaboi/mcp/",
             # Cross-mode shared infrastructure, like config/paths above: the
             # tamper-evident decision chain every mode records into.
@@ -427,6 +431,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_setup_wizard.py",
             "tests/unit/test_update_*.py",
             "tests/unit/test_changelog*.py",
+            "tests/unit/test_surfaces.py",
             "tests/unit/test_mcp_*.py",
             "tests/unit/test_provenance_*.py",
             "tests/unit/test_ceremonies_*.py",

@@ -5552,7 +5552,7 @@ def _run_all_tips_page(console: Console, live, read_key, frame_time: float, supp
 
     Read-only gallery of every tip: Up/Down scrolls, Enter/Esc/q returns to mode
     select. Mirrors ``_run_changelog_page`` — including having no actions of its
-    own; content comes live from ``get_tips()``.
+    own; content comes live from ``tips_for_surface("tui")``.
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_all_tips_screen
 

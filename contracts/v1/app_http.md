@@ -34,7 +34,7 @@ The token never appears in URLs. Missing/wrong token → `401 {"error":"unauthor
 | GET | `/api/health` | unauthenticated; `{ok, pid, version, schema}` |
 | GET | `/api/meta/version` | `{version, schema_version, python, platform}` |
 | GET | `/api/meta/capabilities` | the TUI card inventory verbatim: `{categories, modes, agents, intake}` |
-| GET | `/api/meta/tips` | `{tips: [{key, text, mode_key, is_new, is_beta}]}` |
+| GET | `/api/meta/tips` | `{tips: [{key, text, mode_key, is_new, is_beta, surfaces}]}` |
 | GET | `/api/meta/changelog` | `{entries: [{version, date, summary, highlights[{text, areas, surfaces}]}]}` |
 | GET | `/api/tools` | `{available, tools: [name…]}` — the MCP inventory the dispatcher serves |
 | POST | `/api/tool/{name}` | body `{"arguments": {...}, "op_id"?: "..."}` → the MCP envelope verbatim: `{ok, llm_mode, warnings, data}` or `{ok:false, error:{type,message}, hint?}`. 404 unknown tool, 503 when the `mcp` extra is missing |
@@ -49,6 +49,17 @@ A changelog highlight's `surfaces` names which product surfaces it applies to,
 from the fixed vocabulary `tui`, `desktop`, `web`. The key is always present on
 the wire — the loader coerces a missing or invalid tag in the bundled data to
 all three — and clients filter to their own surface.
+
+`/api/meta/tips` carries the same vocabulary but, unlike the changelog, filters
+at the source: the tip registry tags every tip with the surfaces it is true on,
+and this backend is the desktop app's, so the payload is **already** the
+`desktop` list. A tip naming a terminal keycap or a CLI flag never crosses the
+wire. `surfaces` is still serialised, so the tag is legible to a reader, but the
+client has nothing left to decide — filtering on it again is a no-op.
+
+Two consequences for a client. `key` is not unique: one capability may carry
+several tips. And the terminal's list is a different list, not a subset — so an
+index into this one means nothing anywhere else.
 
 ## Settings routes (M4)
 

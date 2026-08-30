@@ -14,6 +14,10 @@ import logging
 from dataclasses import dataclass, replace
 from importlib import resources
 
+# A highlight with no surface tag applies to all three — backend/engine work is
+# the common case. The vocabulary itself is shared with the tips registry.
+from yeaboi.surfaces import ALL_SURFACES, VALID_SURFACES
+
 logger = logging.getLogger(__name__)
 
 _DATA_FILENAME = "changelog_data.json"
@@ -38,12 +42,6 @@ AREA_COLORS: dict[str, str] = {
     "agents": "rgb(90,160,210)",
     "general": "rgb(160,160,180)",
 }
-
-# The surfaces a highlight applies to: the terminal app + CLI, the Electron
-# desktop app, and the browser-served share/board pages. A highlight with no
-# tag applies to all three — backend/engine work is the common case.
-VALID_SURFACES = frozenset({"tui", "desktop", "web"})
-ALL_SURFACES: tuple[str, ...] = ("tui", "desktop", "web")
 
 
 @dataclass(frozen=True)

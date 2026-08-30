@@ -10,16 +10,17 @@ other screens want to surface a tip.
 Design notes:
 - **Feature-keyed tips.** Every tip that describes a real product capability is a
   :class:`FeatureTip` keyed by its ``CAPABILITIES`` key (see
-  ``tests/unit/test_surface_parity.py``). A parity test fails ``make test`` if a
-  capability ships without a tip — so the tips stay current as features land.
+  ``tests/unit/test_surface_parity.py``). One parity test per surface fails
+  ``make test`` if a capability reaches a surface without a tip there — so both
+  lists stay current as features land.
 - **Driven by the existing render tick.** The mode-select loop already re-renders
   at 60 FPS and threads a continuous ``shimmer_tick`` (seconds since the loop
   started) into the screen builder. :func:`current_tip` turns that float into a
   tip index with plain modulo arithmetic — no timer or background thread. The loop
   may also pass a manual ``override`` index (‹/› browsing) via :func:`resolve_index`.
 - **Availability-aware ambient tips.** The first tip adapts to whether the voice
-  extra is installed and the last to whether ffplay is present, mirroring
-  ``_voice_hint()`` in the input screens.
+  extra is installed, and the terminal's last to whether ffplay is present,
+  mirroring ``_voice_hint()`` in the input screens.
 - **Cached list.** Voice/music availability can't change during a process, so the
   tip list is memoised — this keeps the per-frame render from re-running the
   ``find_spec`` availability probe 60×/second.
@@ -31,6 +32,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from yeaboi.beta import BETA_LABEL
+from yeaboi.surfaces import ALL_SURFACES, VALID_SURFACES
 
 # Seconds each tip stays on screen before the next one rotates in.
 TIP_ROTATE_SECONDS = 6.0
@@ -48,6 +50,12 @@ class FeatureTip:
     ``is_beta`` renders a BETA badge — the capability ships and works, but its
     output isn't verified yet. The two are different claims and must not be
     conflated; where both are set, BETA wins (see the render sites).
+
+    ``surfaces`` are the surfaces the tip is true on. Untagged means all of them,
+    which is the common case: a tip that describes what a feature does holds
+    everywhere, and only a tip that names a gesture — a keycap, a CLI flag, a
+    control that exists in one window and not the other — needs splitting. Two
+    tips may share a ``key`` and differ only by surface (see ``niko``).
     """
 
     key: str
@@ -55,6 +63,7 @@ class FeatureTip:
     mode_key: str | None = None
     is_new: bool = False
     is_beta: bool = False
+    surfaces: tuple[str, ...] = ALL_SURFACES
 
 
 # Feature tips — one per user-facing capability. Each is short (one line) and
@@ -123,13 +132,23 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         mode_key="reporting",
         is_new=True,
     ),
+    # No mode_key on either: Niko is a keycap and the mascot, not a card, so
+    # there is no `g open` target. On the companion layout this tip renders
+    # inside the duck's own speech bubble, which makes him the one telling you
+    # to click.
     FeatureTip(
         "niko",
         "\U0001f986 Tip: click the duck — or press n — to ask Niko anything about yeaboi or your data",
-        # No mode_key: Niko is a keycap and the mascot, not a card, so there is
-        # no `g open` target. On the companion layout this tip renders inside the
-        # duck's own speech bubble, which makes him the one telling you to click.
         is_new=True,
+        surfaces=("tui",),
+    ),
+    FeatureTip(
+        "niko",
+        "\U0001f986 Tip: click the duck at the bottom of any screen to ask Niko about yeaboi or your data",
+        # No keycap: the shortcut is ⌘. on macOS and Ctrl+. elsewhere, and this
+        # is one static string for every platform the app ships on.
+        is_new=True,
+        surfaces=("desktop",),
     ),
     FeatureTip(
         "usage",
@@ -146,10 +165,18 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     FeatureTip(
         "sessions",
         "\U0001f5c2️ Tip: every plan is saved — resume any past session with --resume",
+        surfaces=("tui",),
     ),
+    FeatureTip(
+        "sessions",
+        "\U0001f5c2️ Tip: every plan is saved — reopen any past run from Saved plans",
+        surfaces=("desktop",),
+    ),
+    # No desktop route (CAPABILITIES marks it exempt there), so no desktop tip.
     FeatureTip(
         "team-learning",
         "\U0001f9e0 Tip: yeaboi learns your team's velocity & estimation patterns over time",
+        surfaces=("tui",),
     ),
     FeatureTip(
         "roadmap",
@@ -158,11 +185,24 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     FeatureTip(
         "anonymize",
         "\U0001f576️ Tip: press Anonymize on any result screen to mask names before sharing",
+        surfaces=("tui",),
+    ),
+    FeatureTip(
+        "anonymize",
+        "\U0001f576️ Tip: Anonymize a result before you share it — names are masked, numbers aren't",
+        surfaces=("desktop",),
     ),
     FeatureTip(
         "ceremonies",
         "\U0001f5d3️ Tip: press s to schedule a mode — it runs while yeaboi is closed and posts to your channels",
         is_new=True,
+        surfaces=("tui",),
+    ),
+    FeatureTip(
+        "ceremonies",
+        "\U0001f5d3️ Tip: Ceremonies schedules a mode — it runs while yeaboi is closed and posts to your channels",
+        is_new=True,
+        surfaces=("desktop",),
     ),
     FeatureTip(
         "slack-inbound",
@@ -209,6 +249,13 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "provenance",
         "\U0001f512 Tip: `yeaboi provenance audit` verifies the tamper-evident log behind every signal",
         is_new=True,
+        surfaces=("tui",),
+    ),
+    FeatureTip(
+        "provenance",
+        "\U0001f512 Tip: Provenance verifies the tamper-evident log behind every signal",
+        is_new=True,
+        surfaces=("desktop",),
     ),
     FeatureTip(
         "ship",
@@ -221,23 +268,62 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
 # Ambient tips — not tied to a capability, so exempt from parity. The generic
 # meta tips sit between the (dynamic) voice and music tips assembled in get_tips().
 _META_TIPS: tuple[FeatureTip, ...] = (
-    FeatureTip("meta:theme", "\U0001f4a1 Tip: switch between --theme dark and --theme light"),
-    FeatureTip("meta:headless", "\U0001f4a1 Tip: run headless with --non-interactive for scripts & pipelines"),
+    FeatureTip(
+        "meta:theme",
+        "\U0001f4a1 Tip: switch between --theme dark and --theme light",
+        surfaces=("tui",),
+    ),
+    FeatureTip(
+        "meta:theme",
+        "\U0001f4a1 Tip: Settings ▸ Themes — pick a theme or build your own",
+        surfaces=("desktop",),
+    ),
+    # No desktop counterpart: a window has no headless mode to offer.
+    FeatureTip(
+        "meta:headless",
+        "\U0001f4a1 Tip: run headless with --non-interactive for scripts & pipelines",
+        surfaces=("tui",),
+    ),
     FeatureTip("meta:export", "\U0001f4a1 Tip: export a plan to HTML or JSON for sharing and CI/CD"),
+)
+
+# The desktop app's own furniture: features with no terminal equivalent and so no
+# CAPABILITIES row. A `desktop:<slug>` key names the route it points at, which is
+# what TestDesktopOnlyTips checks against the desktop's own route manifest.
+_DESKTOP_TIPS: tuple[FeatureTip, ...] = (
+    FeatureTip(
+        "desktop:projects",
+        "\U0001f4c1 Tip: Projects holds every blueprint session, diagram and deliverable you've made",
+        surfaces=("desktop",),
+    ),
+    FeatureTip(
+        "desktop:board",
+        "\U0001f4cb Tip: Board shows every ticket across projects, waves and sprints in one place",
+        surfaces=("desktop",),
+    ),
+    FeatureTip(
+        "desktop:whats-new",
+        "\U0001f381 Tip: What's New lists everything that shipped in the version you're running",
+        surfaces=("desktop",),
+    ),
 )
 
 
 @lru_cache(maxsize=1)
 def get_tips() -> tuple[FeatureTip, ...]:
-    """Return the ordered tips shown on the welcome screen.
+    """Assemble every tip, for every surface, in rotation order.
 
-    The first entry is the voice tip and the last is the music tip; both adapt to
-    whether their optional dependency is installed (dictation extra / the ffplay
-    binary), showing an install hint otherwise. Between them come the feature tips
-    (one per capability) and the generic meta tips. Memoised because the tips are
-    rebuilt on every welcome-screen frame; the memo is dropped by
-    :func:`yeaboi.voice_install.refresh_imports` when an in-app install changes
-    the answer part-way through a run.
+    This is the assembly point, not the read API — a screen wants
+    :func:`tips_for_surface`, which is what keeps the terminal's keycaps out of
+    the desktop app and vice versa. Both lists still open on their voice tip, and
+    the terminal's still ends on the music tip.
+
+    The voice tip adapts to whether the dictation extra is installed and is built
+    once per surface, since the gesture differs (a double-tap in the terminal, a
+    mic button in the window) while the availability question does not. Memoised
+    because the tips are rebuilt on every welcome-screen frame; the memo is
+    dropped by :func:`yeaboi.voice_install.refresh_imports` when an in-app
+    install changes the answer part-way through a run.
     """
     from yeaboi.music import is_music_available
     from yeaboi.voice import unsupported_blocker, voice_install_command, voice_state
@@ -255,21 +341,59 @@ def get_tips() -> tuple[FeatureTip, ...]:
             # the user to a second terminal for something one keystroke does.
             "installable": "\U0001f3a4 Tip: double-tap Space in any text field — one keystroke sets dictation up",
         }.get(state, f"\U0001f3a4 Tip: enable dictation with — {voice_install_command()}")
-    voice_tip = FeatureTip("voice", voice_text)
+    voice_tip = FeatureTip("voice", voice_text, surfaces=("tui",))
+    # Same availability answer, the window's gesture. Every state is spelled out:
+    # the terminal's copy for a state the desktop has no sentence for would be a
+    # shell command in a window, which is the thing the surfaces split prevents.
+    # The mic opens the setup flow, so "declined" needs no install command.
+    desktop_voice_text = {
+        "ready": "\U0001f3a4 Tip: click the mic in any text field to dictate",
+        "installable": "\U0001f3a4 Tip: click the mic in any text field — one click sets dictation up",
+        "declined": "\U0001f3a4 Tip: click the mic in any text field to set dictation up",
+        # A machine fact, not a gesture: both surfaces say the same sentence.
+        "unsupported": voice_text,
+    }[state]
+    desktop_voice_tip = FeatureTip("voice", desktop_voice_text, surfaces=("desktop",))
     music_available, _music_reason = is_music_available()
+    # Terminal-only: focus music is a pair of keybindings there, and the desktop
+    # app ships no control for it.
     music_tip = FeatureTip(
         "music",
         "\U0001f3b5 Tip: press Ctrl+P for focus music · Ctrl+O to switch channel"
         if music_available
         else "\U0001f3b5 Tip: play focus music while you plan — brew install ffmpeg",
+        surfaces=("tui",),
     )
-    return (voice_tip, *_FEATURE_TIPS, *_META_TIPS, music_tip)
+    return (
+        voice_tip,
+        desktop_voice_tip,
+        *_FEATURE_TIPS,
+        *_META_TIPS,
+        *_DESKTOP_TIPS,
+        music_tip,
+    )
+
+
+def tips_for_surface(surface: str) -> tuple[FeatureTip, ...]:
+    """Return the tips that are true on ``surface``, in rotation order.
+
+    Not memoised on purpose: the cost :func:`get_tips` exists to avoid is the
+    availability probe, which stays behind its own memo, and filtering the
+    assembled tuple per frame is free.
+
+    Raises on an unknown surface rather than returning nothing: a typo would
+    otherwise leave a screen with an empty rotation, and :func:`tip_at` divides
+    by the length.
+    """
+    if surface not in VALID_SURFACES:
+        raise ValueError(f"unknown surface {surface!r}; expected one of {sorted(VALID_SURFACES)}")
+    return tuple(tip for tip in get_tips() if surface in tip.surfaces)
 
 
 def build_tips_text() -> str:
     """Render every tip as a copy-pasteable Markdown list.
 
-    Powers the "Copy all" action on the All Tips page, mirroring
+    Powers the "Copy all" action on the terminal's All Tips page, mirroring
     ``build_changelog_text``. Pure — :func:`get_tips` already resolves
     voice/music availability. Carded tips note the mode they open (by its
     friendly ``_MODE_CARDS`` title), freshly-shipped ones are marked ``(NEW)``
@@ -280,7 +404,7 @@ def build_tips_text() -> str:
 
     titles = {card["key"]: card["title"] for card in _MODE_CARDS}
     lines = ["# yeaboi — Tips", ""]
-    for tip in get_tips():
+    for tip in tips_for_surface("tui"):
         line = f"- {tip.text}"
         # BETA outranks NEW: a maturity caveat matters more than a freshness cue,
         # and a copied tip list that says both reads as neither.
@@ -295,13 +419,13 @@ def build_tips_text() -> str:
 
 
 def tip_count() -> int:
-    """Number of tips in rotation (used to render position dots)."""
-    return len(get_tips())
+    """Number of tips in the terminal's rotation (used to render position dots)."""
+    return len(tips_for_surface("tui"))
 
 
 def tip_at(index: int) -> FeatureTip:
-    """Return the tip at ``index`` (wrapped modulo the tip count)."""
-    tips = get_tips()
+    """Return the terminal tip at ``index`` (wrapped modulo the tip count)."""
+    tips = tips_for_surface("tui")
     return tips[index % len(tips)]
 
 
@@ -314,7 +438,7 @@ def resolve_index(tick: float, offset: int = 0, rotate_seconds: float = TIP_ROTA
     the list *and auto-rotation keeps running* from the new position — no pause,
     no pinned index that could get stuck.
     """
-    tips = get_tips()
+    tips = tips_for_surface("tui")
     if not tips:  # pragma: no cover - defensive; the list is always populated
         return 0
     period = rotate_seconds if rotate_seconds > 0 else TIP_ROTATE_SECONDS

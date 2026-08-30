@@ -1,5 +1,8 @@
 """Tests for the rotating welcome-screen tips (ui/shared/_tips.py)."""
 
+import pytest
+
+from yeaboi.surfaces import ALL_SURFACES
 from yeaboi.ui.shared import _tips
 from yeaboi.ui.shared._tips import (
     TIP_ROTATE_SECONDS,
@@ -11,6 +14,7 @@ from yeaboi.ui.shared._tips import (
     tip_at,
     tip_brightness,
     tip_count,
+    tips_for_surface,
 )
 from yeaboi.voice import voice_install_command
 
@@ -122,7 +126,7 @@ def test_current_tip_stable_within_window(monkeypatch):
 def test_current_tip_wraps_around(monkeypatch):
     _clear_cache()
     monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
-    n = len(get_tips())
+    n = len(tips_for_surface("tui"))
     # After a full cycle we return to the first tip.
     idx_first, _ = current_tip(0.0)
     idx_wrapped, _ = current_tip(n * TIP_ROTATE_SECONDS + 0.1)
@@ -168,9 +172,12 @@ def test_build_tips_text_lists_every_tip(monkeypatch):
     monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
     text = build_tips_text()
     assert text.startswith("# yeaboi — Tips")
-    # Every tip's text appears as a bullet.
-    for tip in get_tips():
+    # Every terminal tip's text appears as a bullet — and no other surface's.
+    for tip in tips_for_surface("tui"):
         assert tip.text in text
+    for tip in get_tips():
+        if "tui" not in tip.surfaces:
+            assert tip.text not in text
     assert text.endswith("\n")
     _clear_cache()
 
@@ -249,10 +256,12 @@ def test_module_constant_present():
     assert _tips.TIP_ROTATE_SECONDS > 0
 
 
-def test_tip_count_matches_get_tips(monkeypatch):
+def test_tip_count_matches_the_tui_rotation(monkeypatch):
     _clear_cache()
     monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
-    assert tip_count() == len(get_tips())
+    assert tip_count() == len(tips_for_surface("tui"))
+    # The terminal never counts the whole registry: it holds both surfaces.
+    assert tip_count() < len(get_tips())
     _clear_cache()
 
 
@@ -275,3 +284,72 @@ def test_tip_brightness_in_unit_range():
     for t in (0.0, 0.5, 2.9, 3.0, 5.9, 6.1, 42.0):
         b = tip_brightness(t)
         assert 0.0 <= b <= 1.0
+
+
+# --- per-surface split -----------------------------------------------------
+
+
+def test_untagged_tips_reach_every_surface():
+    tip = FeatureTip("x", "some text")
+    assert tip.surfaces == ALL_SURFACES
+
+
+def test_tips_for_surface_keeps_rotation_order(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+    everything = get_tips()
+    tui = tips_for_surface("tui")
+    assert list(tui) == [t for t in everything if "tui" in t.surfaces]
+    _clear_cache()
+
+
+@pytest.mark.parametrize("state", ["ready", "installable", "declined", "unsupported"])
+def test_each_surface_opens_on_its_own_voice_tip(monkeypatch, state):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: state)
+    monkeypatch.setattr("yeaboi.voice.unsupported_blocker", lambda: "no libportaudio2")
+    tui, desktop = (tips_for_surface(s)[0] for s in ("tui", "desktop"))
+    assert tui.key == desktop.key == "voice"
+    if state == "unsupported":
+        # The one state that is a fact about the machine rather than a gesture.
+        assert tui.text == desktop.text
+    else:
+        assert "mic" in desktop.text and "mic" not in tui.text
+    _clear_cache()
+
+
+def test_the_two_surfaces_disagree(monkeypatch):
+    # The whole point of the split: neither list is the other's.
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+    tui = {t.text for t in tips_for_surface("tui")}
+    desktop = {t.text for t in tips_for_surface("desktop")}
+    assert tui - desktop and desktop - tui
+    # …and they still share the tips that describe the product rather than a gesture.
+    assert len(tui & desktop) > 10
+    _clear_cache()
+
+
+def test_terminal_only_tips_never_reach_the_desktop(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+    keys = {t.key for t in tips_for_surface("desktop")}
+    # Focus music has no desktop control, and a window has no headless mode.
+    assert "music" not in keys
+    assert "meta:headless" not in keys
+    _clear_cache()
+
+
+def test_desktop_only_tips_never_reach_the_terminal(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+    assert not [t for t in tips_for_surface("tui") if t.key.startswith("desktop:")]
+    assert [t for t in tips_for_surface("desktop") if t.key.startswith("desktop:")]
+    _clear_cache()
+
+
+def test_tips_for_an_unknown_surface_raise():
+    # Not an empty tuple: a typo would leave a screen with nothing to rotate,
+    # and tip_at divides by the length.
+    with pytest.raises(ValueError, match="unknown surface"):
+        tips_for_surface("fax-machine")

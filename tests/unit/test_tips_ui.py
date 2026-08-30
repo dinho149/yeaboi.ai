@@ -150,7 +150,7 @@ def test_tip_rows_open_hint_only_for_carded_tip(monkeypatch):
     monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
     _tips.get_tips.cache_clear()
-    tips = _tips.get_tips()
+    tips = _tips.tips_for_surface("tui")
     carded = next(i for i, t in enumerate(tips) if t.mode_key is not None)
     ambient = next(i for i, t in enumerate(tips) if t.mode_key is None)
     assert "open" in _tip_rows_text(shimmer_tick=0.0, tip_offset=carded)
@@ -162,7 +162,7 @@ def test_tip_rows_new_badge_when_flagged(monkeypatch):
     monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
     _tips.get_tips.cache_clear()
-    tips = _tips.get_tips()
+    tips = _tips.tips_for_surface("tui")
     new_idx = next(i for i, t in enumerate(tips) if t.is_new)
     plain_idx = next(i for i, t in enumerate(tips) if not t.is_new)
     assert "NEW" in _tip_rows_text(shimmer_tick=0.0, tip_offset=new_idx)
@@ -174,7 +174,7 @@ def test_tip_rows_beta_badge_when_flagged(monkeypatch):
     monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
     _tips.get_tips.cache_clear()
-    tips = _tips.get_tips()
+    tips = _tips.tips_for_surface("tui")
     beta_idx = next(i for i, t in enumerate(tips) if t.is_beta)
     plain_idx = next(i for i, t in enumerate(tips) if not t.is_beta and not t.is_new)
     assert "BETA" in _tip_rows_text(shimmer_tick=0.0, tip_offset=beta_idx)
@@ -200,7 +200,7 @@ def test_tip_offset_shifts_the_shown_tip(monkeypatch):
     monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
     _tips.get_tips.cache_clear()
-    tips = _tips.get_tips()
+    tips = _tips.tips_for_surface("tui")
     # At tick 0 the auto index is 0, so a browse offset selects tips[offset] —
     # and because it's an offset (not a pin) auto-rotation keeps advancing.
     assert tips[0].text in _tip_rows_text(shimmer_tick=0.0, tip_offset=0)
@@ -259,7 +259,7 @@ def test_all_tips_screen_groups_every_tip_once(monkeypatch):
         lambda *_args, **_kwargs: None,
     )
     _tips.get_tips.cache_clear()
-    tips = _tips.get_tips()
+    tips = _tips.tips_for_surface("tui")
     out = _all_tips_rendered(height=200, shimmer_tick=0.0, sub_reveal=99)
     assert out.index("Modes") < out.index("More workflows") < out.index("Shortcuts & setup")
     content_lines = [line.strip().strip("│").strip() for line in out.splitlines()[1:-1]]
@@ -268,6 +268,30 @@ def test_all_tips_screen_groups_every_tip_once(monkeypatch):
         _prefix, marker, display_text = tip.text.partition("Tip: ")
         expected = display_text if marker else tip.text
         assert normalized_out.count(" ".join(expected.split())) == 1
+    _tips.get_tips.cache_clear()
+
+
+def test_all_tips_screen_shows_no_desktop_tip(monkeypatch):
+    # The gallery is the terminal's, so the window's furniture — and the desktop
+    # wording of a tip the terminal words differently — must not appear in it.
+    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr(
+        "yeaboi.ui.mode_select.screens._screens_secondary.build_scrollbar",
+        lambda *_args, **_kwargs: None,
+    )
+    _tips.get_tips.cache_clear()
+    out = _all_tips_rendered(height=200, shimmer_tick=0.0, sub_reveal=99)
+    # Strip the panel's border glyphs the way the sibling test above does —
+    # wrapped text is interrupted by them, so an un-stripped haystack makes
+    # "not in" trivially true and the assertion vacuous.
+    content_lines = [line.strip().strip("│").strip() for line in out.splitlines()[1:-1]]
+    normalized = " ".join(" ".join(content_lines).split())
+    for tip in _tips.get_tips():
+        if "tui" in tip.surfaces:
+            continue
+        _prefix, marker, display_text = tip.text.partition("Tip: ")
+        expected = " ".join((display_text if marker else tip.text).split())
+        assert expected not in normalized, f"desktop tip {tip.key!r} leaked into the terminal gallery"
     _tips.get_tips.cache_clear()
 
 

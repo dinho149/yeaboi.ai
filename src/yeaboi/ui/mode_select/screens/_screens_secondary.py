@@ -3573,7 +3573,7 @@ def _build_all_tips_screen(
     """Build the All Tips gallery page: every discoverability tip in one scroll.
 
     Same scrollable Panel skeleton as :func:`_build_changelog_screen`. Content is
-    the live ``get_tips()`` list, grouped into modes, workflows, and setup so the
+    the live ``tips_for_surface("tui")`` list, grouped into modes, workflows and setup so the
     gallery scans like the other sectioned pages. Freshly-shipped features get a
     gold ``NEW`` badge and tips that map to a home card note the mode they open.
     Read-only, with no actions of its own — going back is the app-wide back tab.
@@ -3582,7 +3582,7 @@ def _build_all_tips_screen(
 
     from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS, _TIP_DOT_ON
     from yeaboi.ui.shared._components import CHANGELOG_THEME, build_reveal_subtitle, tips_title
-    from yeaboi.ui.shared._tips import get_tips
+    from yeaboi.ui.shared._tips import tips_for_surface
 
     theme = CHANGELOG_THEME
     title = tips_title(shimmer_tick, width=width)
@@ -3609,7 +3609,7 @@ def _build_all_tips_screen(
     tip_wrap_w = max(16, viewport_body_w - len(bullet_prefix) - 1)
     separator_w = max(8, min(viewport_body_w - len(_PAD) - 2, 40))
 
-    tips = get_tips()
+    tips = tips_for_surface("tui")
     grouped_tips = (
         ("Modes", [tip for tip in tips if tip.mode_key]),
         (
