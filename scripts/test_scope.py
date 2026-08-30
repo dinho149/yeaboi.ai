@@ -88,6 +88,11 @@ AREAS: tuple[Area, ...] = (
         src=("contracts/site.json", "scripts/gen_site_contract.py"),
     ),
     Area(
+        "projects",
+        src=("src/yeaboi/projects/",),
+        tests=("tests/unit/test_projects_*.py",),
+    ),
+    Area(
         "standup",
         src=("src/yeaboi/standup/", "src/yeaboi/mcp/tools_standup.py"),
         tests=("tests/unit/test_mcp_server.py", "tests/unit/test_standup_*.py", "tests/unit/prompts/test_standup_*.py"),

@@ -11,7 +11,7 @@ contract change — update both sides and this file in the same PR.
 stdout, then nothing else ever:
 
 ```
-YEABOI_APP_READY {"pid":12345,"schema":30,"token":"…","url":"http://127.0.0.1:52341","version":"3.25.0"}
+YEABOI_APP_READY {"pid":12345,"schema":31,"token":"…","url":"http://127.0.0.1:52341","version":"3.25.0"}
 ```
 
 - JSON keys: `url`, `token`, `pid`, `schema` (sessions.py `CURRENT_SCHEMA_VERSION`),
