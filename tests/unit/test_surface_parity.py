@@ -294,6 +294,7 @@ CAPABILITIES: dict[str, dict] = {
             ("yeaboi.settings.engine", "set_data_dir"),
             ("yeaboi.settings.engine", "provider_catalog"),
             ("yeaboi.settings.engine", "verify_provider"),
+            ("yeaboi.settings.engine", "verify_connection"),
             ("yeaboi.settings.engine", "discover_models"),
         },
         "mcp_tools": Exempt("MCP servers must not rewrite host credentials"),

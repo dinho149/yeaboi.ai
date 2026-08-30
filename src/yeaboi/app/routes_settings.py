@@ -85,6 +85,21 @@ def provider_models(app, request: Request) -> Response:
     return json_response(engine.discover_models(_required_str(payload, "provider"), str(payload.get("credential", ""))))
 
 
+def connection_verify(app, request: Request) -> Response:
+    """``POST /api/settings/connection/verify`` — live check for an optional integration.
+
+    Flat body ``{kind, token?, base_url?, email?, space_key?}``; omitted fields
+    fall back to stored values inside the engine, so a saved credential can be
+    re-checked without echoing it.
+    """
+    payload = request.json()
+    from yeaboi.settings import engine
+
+    kind = _required_str(payload, "kind")
+    fields = {k: "" if payload.get(k) is None else str(payload[k]) for k in ("token", "base_url", "email", "space_key")}
+    return json_response(engine.verify_connection(kind, fields))
+
+
 def _required_str(payload: dict, key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value:

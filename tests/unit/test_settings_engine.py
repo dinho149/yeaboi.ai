@@ -65,6 +65,18 @@ class TestMasking:
         assert github.help_url.startswith("https://")
         assert "repo" in github.help_scope
 
+    def test_voice_video_keys_are_masked_voice_fields(self, monkeypatch):
+        monkeypatch.setenv("ELEVENLABS_API_KEY", "el-super-secret-123456")
+        monkeypatch.setenv("TAVUS_API_KEY", "tv-super-secret-123456")
+        snap = engine.get_settings()
+        for env in ("ELEVENLABS_API_KEY", "TAVUS_API_KEY"):
+            row = next(f for f in snap.fields if f.env == env)
+            assert row.section == "voice" and row.secret
+            assert "secret" not in row.value
+            assert row.help_url.startswith("https://")
+        model = next(f for f in snap.fields if f.env == "ELEVENLABS_MODEL_ID")
+        assert model.default == "eleven_turbo_v2_5"
+
 
 class TestChoiceResolution:
     def test_unset_resolves_to_the_asymmetric_defaults(self):
@@ -189,6 +201,98 @@ class TestProviderCatalog:
         )
         result = engine.discover_models("bedrock", "us-east-1")
         assert result["models"] == ["us.anthropic.claude-sonnet-4-6-v1:0"]
+
+
+class TestConnectionVerify:
+    def test_unknown_kind_is_refused(self):
+        with pytest.raises(ValueError, match="unknown connection kind"):
+            engine.verify_connection("gitlab", {})
+
+    def test_missing_field_with_empty_env_is_refused(self, monkeypatch):
+        monkeypatch.delenv("NOTION_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="notion verification needs token"):
+            engine.verify_connection("notion", {})
+
+    def test_explicit_fields_win_over_env(self, monkeypatch):
+        seen: dict[str, str] = {}
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_stored")
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_vc_token",
+            lambda vc, token: (seen.__setitem__("token", token), (True, "ok"))[1],
+        )
+        result = engine.verify_connection("github", {"token": "ghp_typed"})
+        assert result == {"ok": True, "message": "ok"}
+        assert seen["token"] == "ghp_typed"
+
+    def test_env_fallback_covers_omitted_fields(self, monkeypatch):
+        seen: dict[str, tuple] = {}
+        monkeypatch.setenv("JIRA_BASE_URL", "https://org.atlassian.net")
+        monkeypatch.setenv("JIRA_EMAIL", "dev@org.com")
+        monkeypatch.setenv("JIRA_API_TOKEN", "jira-stored")
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_jira",
+            lambda base_url, email, token: (seen.__setitem__("args", (base_url, email, token)), (True, "jira ok"))[1],
+        )
+        result = engine.verify_connection("jira", {})
+        assert result["ok"] is True
+        assert seen["args"] == ("https://org.atlassian.net", "dev@org.com", "jira-stored")
+
+    def test_stored_token_refuses_a_caller_supplied_host(self, monkeypatch):
+        monkeypatch.setenv("JIRA_BASE_URL", "https://org.atlassian.net")
+        monkeypatch.setenv("JIRA_EMAIL", "dev@org.com")
+        monkeypatch.setenv("JIRA_API_TOKEN", "jira-stored")
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_jira",
+            lambda *a: pytest.fail("the stored token must never travel to a caller-chosen host"),
+        )
+        with pytest.raises(ValueError, match="supply the token"):
+            engine.verify_connection("jira", {"base_url": "https://attacker.example"})
+        with pytest.raises(ValueError, match="supply the token"):
+            engine.verify_connection("jira", {"email": "attacker@example.com"})
+
+    def test_caller_supplied_base_url_must_be_https(self, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_jira",
+            lambda *a: pytest.fail("credentials must not go out over plain http"),
+        )
+        fields = {"base_url": "http://org.atlassian.net", "email": "dev@org.com", "token": "t"}
+        with pytest.raises(ValueError, match="https"):
+            engine.verify_connection("jira", fields)
+
+    def test_confluence_takes_the_atlassian_account_plus_space(self, monkeypatch):
+        seen: dict[str, tuple] = {}
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_confluence",
+            lambda base_url, email, token, space_key: (
+                seen.__setitem__("args", (base_url, email, token, space_key)),
+                (False, "space not found"),
+            )[1],
+        )
+        fields = {"base_url": "https://org.atlassian.net", "email": "dev@org.com", "token": "t", "space_key": "ENG"}
+        result = engine.verify_connection("confluence", fields)
+        assert result == {"ok": False, "message": "space not found"}
+        assert seen["args"] == ("https://org.atlassian.net", "dev@org.com", "t", "ENG")
+
+    def test_elevenlabs_dispatches_the_typed_key(self, monkeypatch):
+        seen: dict[str, str] = {}
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_elevenlabs",
+            lambda token: (seen.__setitem__("token", token), (True, "ElevenLabs verified"))[1],
+        )
+        result = engine.verify_connection("elevenlabs", {"token": "xi-typed"})
+        assert result == {"ok": True, "message": "ElevenLabs verified"}
+        assert seen["token"] == "xi-typed"
+
+    def test_tavus_falls_back_to_the_stored_key(self, monkeypatch):
+        seen: dict[str, str] = {}
+        monkeypatch.setenv("TAVUS_API_KEY", "tv-stored")
+        monkeypatch.setattr(
+            "yeaboi.provider_verification._verify_tavus",
+            lambda token: (seen.__setitem__("token", token), (False, "Invalid Tavus API key"))[1],
+        )
+        result = engine.verify_connection("tavus", {})
+        assert result == {"ok": False, "message": "Invalid Tavus API key"}
+        assert seen["token"] == "tv-stored"
 
 
 class TestTuiParity:

@@ -685,6 +685,43 @@ def _verify_notion(token: str) -> tuple[bool, str]:
         return False, _connection_error(e)
 
 
+def _verify_elevenlabs(token: str) -> tuple[bool, str]:
+    """Verify an ElevenLabs API key against GET /v1/user — the cheapest authenticated endpoint."""
+    try:
+        import httpx
+
+        resp = httpx.get("https://api.elevenlabs.io/v1/user", headers={"xi-api-key": token}, timeout=10)
+        if resp.status_code == 200:
+            tier = ""
+            try:
+                tier = str(resp.json().get("subscription", {}).get("tier", ""))
+            except Exception:
+                pass
+            return True, f"ElevenLabs verified — {tier} tier" if tier else "ElevenLabs verified"
+        if resp.status_code == 401:
+            return False, "Invalid ElevenLabs API key"
+        if resp.status_code == 403:
+            return False, "ElevenLabs key is restricted or disabled"
+        return False, f"Unexpected response: {resp.status_code}"
+    except Exception as e:
+        return False, _connection_error(e)
+
+
+def _verify_tavus(token: str) -> tuple[bool, str]:
+    """Verify a Tavus API key by listing replicas — free, and the key's core permission."""
+    try:
+        import httpx
+
+        resp = httpx.get("https://tavusapi.com/v2/replicas", headers={"x-api-key": token}, timeout=10)
+        if resp.status_code == 200:
+            return True, "Tavus verified"
+        if resp.status_code in (401, 403):
+            return False, "Invalid Tavus API key"
+        return False, f"Unexpected response: {resp.status_code}"
+    except Exception as e:
+        return False, _connection_error(e)
+
+
 def _verify_azdevops(org_url: str, project: str, token: str) -> tuple[bool, str]:
     """Verify Azure DevOps credentials by listing work item types for the project."""
     try:

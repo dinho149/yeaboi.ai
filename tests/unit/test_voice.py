@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import io
+import logging
 import sys
 import time
 import types
@@ -394,6 +395,16 @@ class TestListInputDevices:
     def test_missing_sounddevice_returns_empty(self, _inject):
         _inject(sounddevice=False)
         assert voice.list_input_devices() == []
+
+    def test_missing_sounddevice_logs_one_info_line_not_a_warning(self, _inject, caplog, monkeypatch):
+        _inject(sounddevice=False)
+        monkeypatch.setattr(voice, "_sounddevice_missing_logged", False)
+        with caplog.at_level(logging.INFO, logger="yeaboi.voice"):
+            assert voice.list_input_devices() == []
+            assert voice.list_input_devices() == []
+        notes = [r for r in caplog.records if "sounddevice not installed" in r.message]
+        assert len(notes) == 1
+        assert all(r.levelno < logging.WARNING for r in caplog.records)
 
 
 class TestResolveDevice:
