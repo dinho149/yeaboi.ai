@@ -72,6 +72,7 @@ def _standup_run(
     azdo_repositories: list | None,
     documentation_sources: list | None,
     review_transcripts: bool,
+    project_id: str,
 ):
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.standup.engine import run_standup
@@ -79,6 +80,7 @@ def _standup_run(
     resolved = resolve_session_id(session_id)
     return run_standup(
         resolved,
+        project_id=project_id,
         review_transcripts=review_transcripts,
         deliver=deliver,
         days=days or None,
@@ -446,6 +448,7 @@ def register(app) -> None:
         azdo_repositories: list[str] | None = None,
         documentation_sources: list[str] | None = None,
         review_transcripts: bool = True,
+        project_id: str = "",
     ) -> dict:
         """Run a Daily Standup: collect team activity (Jira/AzDO/GitHub/git/docs), score sprint
         confidence, and summarize per member. Returns the report for you to present; deliver=true
@@ -461,7 +464,9 @@ def register(app) -> None:
         Confluence/Notion providers without changing saved config. days overrides the activity look-back
         window. review_transcripts (default true) first reviews any unreviewed standup meeting
         transcripts covering earlier dates, so yesterday's corrections inform today's report; it
-        drafts issues locally and never writes to GitHub. Blank session_id = most recent session."""
+        drafts issues locally and never writes to GitHub. Blank session_id = most recent session.
+        project_id scopes the run to a project (project_list shows them): sprint and roster
+        context come from the project's latest plan; blank inherits the session's own link."""
         return await run_engine(
             ctx,
             _standup_run,
@@ -479,6 +484,7 @@ def register(app) -> None:
             azdo_repositories,
             documentation_sources,
             review_transcripts,
+            project_id,
         )
 
     @app.tool()

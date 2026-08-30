@@ -128,6 +128,7 @@ def _plan_generate(
     prior_art: list[str] | None,
     ac_format: str,
     architecture_spike: str,
+    project_id: str,
     on_progress,
 ) -> dict:
     from yeaboi.agent.headless import run_planning_pipeline
@@ -140,6 +141,7 @@ def _plan_generate(
         prior_art=prior_art,
         ac_format=ac_format,
         architecture_spike=architecture_spike or "auto",
+        project_id=project_id,
     )
     plan = json.loads(export_plan_json(state))
     plan["session_id"] = state.get("_session_id", "")
@@ -329,6 +331,7 @@ def register(app) -> None:
         prior_art: list[str] | None = None,
         ac_format: str = "",
         architecture_spike: str = "auto",
+        project_id: str = "",
     ) -> dict:
         """Generate a full sprint plan (analysis, epics, stories, tasks, sprints) from a project
         description. Gather the intake_questions smart_essentials from the user first and pass
@@ -341,7 +344,10 @@ def register(app) -> None:
         (clear testable statements); empty follows the learned team profile.
         `architecture_spike`: when the analyzer's architecture decision is open (2+ options),
         whether to add a validation spike — 'include' / 'skip', or 'auto' (default: add it
-        unless the analyzer's confidence is high)."""
+        unless the analyzer's confidence is high).
+        `project_id`: link the session to a project (project_list shows them); a scoped run
+        reads ceremony context from the project's own sessions and seeds the analysis profile
+        from the project's defaults. Empty = unscoped (team-wide context)."""
 
         def report(node_name: str, step: int) -> None:
             # Called from the engine's worker thread — bridge the async
@@ -362,6 +368,7 @@ def register(app) -> None:
             prior_art,
             ac_format,
             architecture_spike,
+            project_id,
             report,
         )
 

@@ -180,6 +180,10 @@ def run_ceremony(
     ``CeremonyNotFoundError`` is the one exception, and it is raised before anything
     has happened: there is nothing to record a run against.
 
+    No project parameter, by design: a ceremony inherits project scope through
+    its session — the engine it drives resolves ``sessions_meta.project_id``
+    from the ``session_id`` it is invoked with (see projects/scope.py).
+
     ``suppress_terminal`` drops the terminal channel from the fan-out, for a
     caller that already owns the screen. The TUI runs a ceremony on a worker
     thread while the main thread repaints a ``Live`` every 100 ms, so a channel

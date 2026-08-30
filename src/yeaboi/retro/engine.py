@@ -58,8 +58,6 @@ def carried_action_items_for_session(
 
     # See CLAUDE.md — Retro action-item carry-forward loop (mirrors Performance 1:1s)
     """
-    from dataclasses import replace
-
     try:
         from yeaboi.paths import get_db_path
         from yeaboi.retro.store import RetroStore
@@ -88,6 +86,48 @@ def carried_action_items_for_session(
     prior_report = reports[0] if reports else None
     if prior_report is None:
         return ()
+    return _carried_from_report(prior_report)
+
+
+def standup_blocker_cards(
+    scope: ProjectScope | None, *, db_path: Path | None = None, existing: tuple[RetroCard, ...] = ()
+) -> tuple[RetroCard, ...]:
+    """The standup→retro edge: the project's recent blockers as review cards.
+
+    Returns dismissible ``pending`` cards (text badged ``[Standup]``), deduped
+    against the ``existing`` carried cards they are seeded beside. Unscoped
+    boards (``scope=None``) get none — the team-wide board keeps its
+    carry-forward-only seeding. Never raises.
+    """
+    from yeaboi.projects.scope import recent_standup_blockers
+
+    blockers = recent_standup_blockers(scope, db_path=db_path)
+    if not blockers:
+        return ()
+    seen = {c.text.strip().lower() for c in existing}
+    cards: list[RetroCard] = []
+    for i, blocker in enumerate(blockers):
+        text = f"[Standup] {blocker}"
+        if text.lower() in seen:
+            continue
+        cards.append(
+            RetroCard(
+                id=f"standup-{i}",
+                grid="action_items",
+                text=text,
+                author="Standup",
+                origin="carryover",
+                status="pending",
+            )
+        )
+    if cards:
+        logger.info("retro: %d standup blocker card(s) for project %s", len(cards), scope.project_id if scope else "")
+    return tuple(cards)
+
+
+def _carried_from_report(prior_report: RetroReport) -> tuple[RetroCard, ...]:
+    from dataclasses import replace
+
     # Source = last retro's action_items grid PLUS any items it explicitly kept open in
     # its own review column (its carried_action_items with a still-open status). The
     # latter matters when the team marked something "Carried Over" but never clicked
@@ -105,10 +145,9 @@ def carried_action_items_for_session(
         combined.append(c)
     carried = tuple(replace(c, origin="carryover", status="pending") for c in combined)
     logger.info(
-        "retro: %d carried-over action item(s) available from session %s (current=%s)",
+        "retro: %d carried-over action item(s) available from session %s",
         len(carried),
         prior_report.session_id,
-        session_id,
     )
     return carried
 

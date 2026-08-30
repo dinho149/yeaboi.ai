@@ -78,6 +78,7 @@ def _report_delivery(
     period_label_override: str,
     theme: str,
     sources: dict | None,
+    project_id: str,
 ):
     if period not in _PERIODS:
         raise ValueError(f"period must be one of {', '.join(_PERIODS)} — got {period!r}")
@@ -88,6 +89,7 @@ def _report_delivery(
         session_id=session_id,
         jira_project=jira_project,
         azdo_project=azdo_project,
+        project_id=project_id,
         window_start=window_start,
         window_end=window_end,
         sprint_names=tuple(sprint_names or ()),
@@ -113,6 +115,7 @@ def register(app) -> None:
         period_label_override: str = "",
         theme: str = "midnight",
         sources: dict[str, list[str]] | None = None,
+        project_id: str = "",
     ) -> dict:
         """Generate a stakeholder-friendly delivery report of completed work from the team's
         tracker (Jira/Azure DevOps): executive summary, outcome themes, metrics, highlights.
@@ -125,7 +128,8 @@ def register(app) -> None:
         'azuredevops'], 'docs': ['confluence','notion']} — delivery picks the tracker(s)
         tickets come from, code/docs add supporting PR/commit and doc-update context
         (azdevops/azure_devops accepted as aliases); omit for all configured. Blank
-        session_id = most recent session (sprint length/project name)."""
+        session_id = most recent session (sprint length/project name). project_id scopes the
+        sprint framing to a project's latest plan; blank inherits the session's own link."""
         return await run_engine(
             ctx,
             _report_delivery,
@@ -139,6 +143,7 @@ def register(app) -> None:
             period_label_override,
             theme,
             sources,
+            project_id,
         )
 
     @app.tool()

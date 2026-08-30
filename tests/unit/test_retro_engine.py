@@ -298,3 +298,49 @@ class TestCarriedActionItemsScope:
             store.record_run(_prior_report("prev"))
         scope = ProjectScope("proj-11112222", ())
         assert engine.carried_action_items_for_session("cur", db_path=db, scope=scope) == ()
+
+
+class TestStandupBlockerCards:
+    def _seed_standup_report(self, db, session_id, blockers):
+        from dataclasses import asdict
+
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+        from yeaboi.standup.store import StandupStore
+
+        report = StandupReport(
+            date="2026-07-10",
+            session_id=session_id,
+            member_updates=tuple(MemberUpdate(name=n, blockers=b) for n, b in blockers),
+        )
+        with StandupStore(db) as store:
+            store._conn.execute(
+                "INSERT INTO standup_history "
+                "(session_id, run_at, standup_date, sprint_day, confidence_pct, report_json, status) "
+                "VALUES (?, ?, ?, 1, 80, ?, 'success')",
+                (session_id, "2026-07-10T09:00:00+00:00", "2026-07-10", json.dumps(asdict(report))),
+            )
+
+    def test_scoped_board_gets_badged_blocker_cards(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed_standup_report(db, "proj-sess", [("Alice", "waiting on review"), ("Bob", "")])
+        self._seed_standup_report(db, "other-sess", [("Eve", "other project blocker")])
+        scope = ProjectScope("proj-11112222", ("proj-sess",))
+        cards = engine.standup_blocker_cards(scope, db_path=db)
+        assert [c.text for c in cards] == ["[Standup] Alice: waiting on review"]
+        assert cards[0].status == "pending" and cards[0].origin == "carryover"
+
+    def test_dedupes_against_existing_carried_cards(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed_standup_report(db, "proj-sess", [("Alice", "waiting on review")])
+        existing = (RetroCard(id="c1", grid="action_items", text="[Standup] Alice: waiting on review"),)
+        scope = ProjectScope("proj-11112222", ("proj-sess",))
+        assert engine.standup_blocker_cards(scope, db_path=db, existing=existing) == ()
+
+    def test_unscoped_board_gets_none(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        self._seed_standup_report(db, "proj-sess", [("Alice", "waiting on review")])
+        assert engine.standup_blocker_cards(None, db_path=db) == ()

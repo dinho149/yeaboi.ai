@@ -421,7 +421,11 @@ that the window never runs past today, are one answer on every surface.
 
 A **run** streams `op`, `progress`, then `done: {report, delivered}`; cancelling
 the op raises at the next stage boundary, before anything is persisted, and the
-stream ends `cancelled`.
+stream ends `cancelled`. The run body also takes an optional `project_id`
+(a `proj-<8hex>` projects-table row id): a scoped run frames itself with
+that project's latest sprint plan; blank inherits the session's own link. The
+standup run needs no such field — its session is the scope (an unlinked session
+runs team-wide, exactly as before projects existed).
 
 `/api/reporting/fit` answers `{extra_slides, style}`. `extra_slides: 0` means
 there is nothing to ask — the style that comes back is the one to export with.

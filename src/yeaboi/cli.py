@@ -574,6 +574,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     report_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
     report_p.add_argument(
+        "--project",
+        default="",
+        metavar="PROJ_ID",
+        help="Project to scope by (see `yeaboi project list`); default inherits the session's own link",
+    )
+    report_p.add_argument(
         "--window-start", default="", metavar="YYYY-MM-DD", help="Explicit window start (quarter/window periods)"
     )
     report_p.add_argument("--window-end", default="", metavar="YYYY-MM-DD", help="Explicit window end")
@@ -616,6 +622,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     standup_p = subparsers.add_parser("standup", help="Run a Daily Standup (alias of --standup-run, more knobs)")
     standup_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
+    standup_p.add_argument(
+        "--project",
+        default="",
+        metavar="PROJ_ID",
+        help="Project to scope by (sprint/roster from its latest plan); default inherits the session's own link",
+    )
     standup_p.add_argument("--deliver", action="store_true", help="Send to the configured channels (default: print)")
     standup_p.add_argument(
         "--channels", nargs="+", choices=["terminal", "desktop", "slack", "email"], help="Override delivery channels"
@@ -778,6 +790,12 @@ def build_parser() -> argparse.ArgumentParser:
     prep_p = perf_sub.add_parser("prep", help="Prepare a 1:1 for an engineer", description=PERFORMANCE_BETA_NOTICE)
     prep_p.add_argument("engineer", help="Engineer name (see `yeaboi perf roster`)")
     prep_p.add_argument("--session", default="", metavar="ID", help="Session for team context (default: most recent)")
+    prep_p.add_argument(
+        "--project",
+        default="",
+        metavar="PROJ_ID",
+        help="Accepted for cross-mode uniformity; performance data is engineer-keyed, so this is a no-op",
+    )
     prep_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     prep_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
     prep_p.add_argument(
@@ -808,6 +826,12 @@ def build_parser() -> argparse.ArgumentParser:
     review_p.add_argument("engineer", help="Engineer name")
     review_p.add_argument("--months", type=int, default=6, help="Review period in months (default 6)")
     review_p.add_argument("--session", default="", metavar="ID", help="Session for team context")
+    review_p.add_argument(
+        "--project",
+        default="",
+        metavar="PROJ_ID",
+        help="Accepted for cross-mode uniformity; performance data is engineer-keyed, so this is a no-op",
+    )
     review_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     review_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
     review_p.add_argument(
@@ -2024,6 +2048,7 @@ def _cmd_report(args: argparse.Namespace, console: Console) -> int:
         session_id=_resolve_cli_session(args.session) or "",
         jira_project=args.jira_project,
         azdo_project=args.azdo_project,
+        project_id=args.project,
         window_start=args.window_start,
         window_end=args.window_end,
         sprint_names=sprint_names,
@@ -2094,6 +2119,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: Console) -> int:
         return 0
     report = run_standup(
         session_id,
+        project_id=args.project,
         deliver=args.deliver,
         days=args.days or None,
         channels=args.channels,
@@ -2326,6 +2352,7 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
             jira_project=args.jira_project,
             azdo_project=args.azdo_project,
             deep_scan=args.deep_scan,
+            project_id=args.project,
         )
         for warning in prep.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
@@ -2369,6 +2396,7 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
             azdo_project=args.azdo_project,
             period_months=args.months,
             deep_scan=args.deep_scan,
+            project_id=args.project,
         )
         for warning in review.warnings:
             print(f"⚠ {warning}", file=sys.stderr)

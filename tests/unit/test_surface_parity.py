@@ -193,11 +193,14 @@ CAPABILITIES: dict[str, dict] = {
     "retro-board": {
         # carried_action_items_for_session: the headless carry-forward load (prior
         # retro's action items) the TUI/browser adapt for the review column.
+        # standup_blocker_cards: its project-scoped sibling — the standup→retro
+        # edge, seeding a scoped board with the project's recent blockers.
         # history_providers/report_payload: the board's step-back through previous
         # retros — the same runs `retro_history` already reads, shaped as cards.
         "engines": {
             ("yeaboi.retro.engine", "generate_action_items"),
             ("yeaboi.retro.engine", "carried_action_items_for_session"),
+            ("yeaboi.retro.engine", "standup_blocker_cards"),
             ("yeaboi.retro.engine", "history_providers"),
             ("yeaboi.retro.engine", "report_payload"),
         },
@@ -557,17 +560,19 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
 CLI_RENAMES: dict[str, dict[str, str]] = {
-    "report": {"session": "session_id", "label": "period_label_override"},
-    "standup": {"session": "session_id"},
+    "report": {"session": "session_id", "label": "period_label_override", "project": "project_id"},
+    "standup": {"session": "session_id", "project": "project_id"},
     # --transcript/--date carry explicit dest= in cli.py, so only --session
     # needs a rename here.
     "standup-review": {"session": "session_id"},
-    "perf prep": {"session": "session_id"},
+    "perf prep": {"session": "session_id", "project": "project_id"},
     "perf complete": {"session": "session_id"},
-    "perf review": {"session": "session_id", "months": "period_months"},
+    "perf review": {"session": "session_id", "months": "period_months", "project": "project_id"},
     "ship run": {"session": "session_id", "check": "check_command"},
     "ship resume": {"check": "check_command"},
     "analyze": {
+        # NOT project_id: analysis's --project is the tracker key (Jira/AzDO),
+        # a different id space from the projects table's proj-<8hex> ids.
         "project": "project_key",
         "sprints": "sprint_count",
         "depth": "analysis_depth",

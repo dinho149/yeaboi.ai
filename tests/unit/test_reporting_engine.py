@@ -488,3 +488,34 @@ class TestDeckStylePlumbing:
         monkeypatch.setattr("yeaboi.reporting.export.export_report", _capture)
         engine.run_delivery_report("last_sprint", db_path=db_path)
         assert seen["style"] == sentinel
+
+
+class TestProjectScopedReport:
+    """The planning→reporting edge: sprint framing from the project's plan."""
+
+    def test_scoped_report_frames_with_the_projects_plan(self, monkeypatch, db_path):
+        from yeaboi.agent.state import Sprint
+        from yeaboi.projects.store import ProjectStore
+        from yeaboi.sessions import SessionStore
+
+        with ProjectStore(db_path) as projects:
+            pid = projects.create("Apollo")["project_id"]
+        with SessionStore(db_path) as s:
+            s.create_session("plan-1", "Apollo", mode="planning", project_id=pid)
+            s.save_state(
+                "plan-1",
+                {
+                    "project_name": "Apollo",
+                    "sprints": [Sprint(id="SP-1", name="Sprint 1", goal="", capacity_points=10, story_ids=())],
+                },
+            )
+        _patch_activity(monkeypatch, items=_items(1))
+        _patch_llm(monkeypatch, json.dumps({"headline": "h", "executive_summary": "s"}))
+        report = engine.run_delivery_report("last_sprint", project_id=pid, db_path=db_path)
+        assert report.project_name == "Apollo"
+
+    def test_unscoped_report_is_unchanged(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=_items(1))
+        _patch_llm(monkeypatch, json.dumps({"headline": "h", "executive_summary": "s"}))
+        report = engine.run_delivery_report("last_sprint", session_id="", db_path=db_path)
+        assert report.project_name == ""

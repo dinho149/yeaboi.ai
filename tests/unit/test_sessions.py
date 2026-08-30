@@ -270,3 +270,12 @@ class TestPruneSparesProjects:
             assert store.prune_old_sessions(30) == 1
             remaining = {row["session_id"] for row in store.list_sessions()}
             assert remaining == {"stale-linked", "fresh-unscoped"}
+
+
+class TestProjectIdStateRoundTrip:
+    def test_project_id_survives_save_and_load(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test", project_id="proj-11112222")
+            store.save_state("s1", {"messages": [], "project_id": "proj-11112222"})
+            loaded = store.load_state("s1")
+        assert loaded["project_id"] == "proj-11112222"

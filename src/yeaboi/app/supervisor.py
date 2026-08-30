@@ -227,8 +227,9 @@ class BoardSupervisor:
     def start_retro(self) -> BoardSession:
         """Open a retro board for the latest session, seeded with carried actions."""
         from yeaboi.config import get_retro_server_port
+        from yeaboi.projects.scope import resolve_scope
         from yeaboi.retro.board import RetroBoard
-        from yeaboi.retro.engine import carried_action_items_for_session, history_providers
+        from yeaboi.retro.engine import carried_action_items_for_session, history_providers, standup_blocker_cards
         from yeaboi.retro.server import RetroServer
         from yeaboi.retro.setup import resolve_session
 
@@ -237,10 +238,13 @@ class BoardSupervisor:
             raise ValueError("no project session yet")
         board = RetroBoard(target.session_id, project_name=target.project_name, sprint_name=target.sprint_name)
         # Seeded before the server starts, so the first browser poll already
-        # shows the "Last sprint's actions" column.
+        # shows the "Last sprint's actions" column. A project-linked session
+        # scopes the carry and adds the project's recent standup blockers.
+        scope = resolve_scope(session_id=target.session_id, db_path=self.db_path)
         carried = carried_action_items_for_session(
-            target.session_id, project_name=target.project_name, db_path=self.db_path
+            target.session_id, project_name=target.project_name, db_path=self.db_path, scope=scope
         )
+        carried = (*carried, *standup_blocker_cards(scope, db_path=self.db_path, existing=carried))
         if carried:
             board.seed_carried(list(carried))
         server = RetroServer(board, port=get_retro_server_port())

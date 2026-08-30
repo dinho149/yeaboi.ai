@@ -256,3 +256,38 @@ class TestRunPlanningPipeline:
         qs = build_questionnaire_from_answers({1: "A test project"})
         run_planning_pipeline(qs, save_session=False)
         assert not db.exists()
+
+
+class TestProjectScopedPipeline:
+    def test_project_id_links_session_and_seeds_profile(self, fake_graph, tmp_path):
+        from yeaboi.projects.store import ProjectStore
+        from yeaboi.sessions import SessionStore
+
+        db = tmp_path / "sessions.db"
+        with ProjectStore(db) as projects:
+            project = projects.create("Apollo")
+            projects.set_settings(project["project_id"], {"default_analysis_profile_id": "team-apollo"})
+
+        qs = build_questionnaire_from_answers({1: "A test project", 6: "4", 8: "2"})
+        state = run_planning_pipeline(qs, db_path=db, project_id=project["project_id"])
+
+        assert state["project_id"] == project["project_id"]
+        # The analysis→planning edge: the project's default profile is seeded.
+        assert state["analysis_profile_id"] == "team-apollo"
+        with SessionStore(db) as store:
+            assert store.session_project_id(state["_session_id"]) == project["project_id"]
+
+    def test_project_without_defaults_seeds_no_profile(self, fake_graph, tmp_path):
+        from yeaboi.projects.store import ProjectStore
+
+        db = tmp_path / "sessions.db"
+        with ProjectStore(db) as projects:
+            project = projects.create("Apollo")
+        qs = build_questionnaire_from_answers({1: "A test project", 6: "4", 8: "2"})
+        state = run_planning_pipeline(qs, db_path=db, project_id=project["project_id"])
+        assert "analysis_profile_id" not in state
+
+    def test_unscoped_run_carries_no_project_state(self, fake_graph):
+        qs = build_questionnaire_from_answers({1: "A test project", 6: "4", 8: "2"})
+        state = run_planning_pipeline(qs, save_session=False)
+        assert "project_id" not in state

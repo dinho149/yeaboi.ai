@@ -182,6 +182,7 @@ def run_planning_pipeline(
     prior_art: list[str] | None = None,
     ac_format: str = "",
     architecture_spike: str = "auto",
+    project_id: str = "",
 ) -> dict:
     """Run the full planning pipeline headlessly and return the final graph state.
 
@@ -214,6 +215,9 @@ def run_planning_pipeline(
             "auto" (default) applies the confidence rule (validate unless the
             analyzer's confidence is high). Irrelevant when the architecture
             is pinned or has a single option — nothing is added then.
+        project_id: Project to link the session to ("" = unscoped). A scoped
+            run hard-filters ceremony context to the project's own sessions
+            and seeds the analysis profile from the project's defaults.
 
     Returns:
         The final graph state dict (analysis, features, stories, tasks,
@@ -271,6 +275,20 @@ def run_planning_pipeline(
             # A pre-made choice means the spike question is never asked;
             # "auto" leaves it unset so _next_auto_input's confidence rule answers.
             graph_state["spike_choice"] = architecture_spike
+        if project_id:
+            graph_state["project_id"] = project_id
+            try:
+                from yeaboi.projects.store import ProjectStore
+
+                with ProjectStore(db_path or get_db_path()) as projects:
+                    default_profile = str(projects.get_settings(project_id).get("default_analysis_profile_id", ""))
+                if default_profile:
+                    # The analysis→planning edge: the project remembers which
+                    # team profile its last analysis produced.
+                    graph_state["analysis_profile_id"] = default_profile
+                    logger.info("Headless: seeded analysis profile %s from project %s", default_profile, project_id)
+            except Exception:
+                logger.warning("Could not read project defaults for %s (continuing)", project_id, exc_info=True)
 
         store = SessionStore(db_path or get_db_path()) if save_session else None
         session_created = False
@@ -307,7 +325,7 @@ def run_planning_pipeline(
             if store is not None:
                 try:
                     if not session_created:
-                        store.create_session(session_id)
+                        store.create_session(session_id, project_id=project_id)
                         session_created = True
                     store.save_state(session_id, graph_state)
                     if not project_name_recorded:

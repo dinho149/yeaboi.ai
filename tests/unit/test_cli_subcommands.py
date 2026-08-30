@@ -301,9 +301,11 @@ class TestStandupCommand:
             azdo_repositories,
             documentation_sources,
             review_transcripts,
+            project_id,
         ):
             captured.update(
                 session_id=session_id,
+                project_id=project_id,
                 deliver=deliver,
                 days=days,
                 channels=channels,
@@ -326,6 +328,7 @@ class TestStandupCommand:
         assert _cmd_standup(args, _console()) == 0
         assert captured == {
             "session_id": "sid",
+            "project_id": "",
             "deliver": True,
             "days": 2,
             "channels": ["slack"],

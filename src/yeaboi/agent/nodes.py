@@ -6698,12 +6698,16 @@ def project_analyzer(state: ScrumState) -> dict:
     )
     team_profile_summary = team_calibration_text.strip()
 
-    # Gather the team's recent Standup + Retro history (team-wide, graceful — an
-    # empty context when nothing has run). Recency-dominant here: pre-analysis we
-    # have no reliable project name to match on, so we pass "" and let the most
-    # recent ceremonies inform the plan. Action items are stashed for story_writer.
+    # Gather the team's recent Standup + Retro history (graceful — an empty
+    # context when nothing has run). Unscoped runs are recency-dominant:
+    # pre-analysis we have no reliable project name to match on, so we pass ""
+    # and let the most recent ceremonies inform the plan. A project-scoped run
+    # knows its project up front and hard-filters to its own sessions instead.
+    # Action items are stashed for story_writer.
     # See docs: "Session Management" — SQLite persistence
-    ceremony = gather_ceremony_context()
+    from yeaboi.projects.scope import resolve_scope
+
+    ceremony = gather_ceremony_context(scope=resolve_scope(state.get("project_id", "")))
 
     # Gather per-engineer Performance signal (open 1:1 action items + review focus
     # areas) so the analysis is *person-aware* — e.g. flags an engineer's growth

@@ -2812,3 +2812,59 @@ class TestConflictAndProvenanceWiring:
         monkeypatch.setattr(provenance_log, "record_run", _boom)
         report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
         assert any("Audit trail not recorded" in w for w in report.warnings)
+
+
+class TestProjectScopedStandup:
+    """The planning→standup edge: sprint/roster context from the project's plan."""
+
+    def _seed_project(self, db_path, *, link_standup: bool):
+        from yeaboi.agent.state import Sprint
+        from yeaboi.projects.store import ProjectStore
+
+        sprint = Sprint(id="SP-1", name="Sprint 1", goal="", capacity_points=10, story_ids=())
+        with ProjectStore(db_path) as projects:
+            project = projects.create("Apollo")
+        pid = project["project_id"]
+        with SessionStore(db_path) as s:
+            s.create_session("plan-1", "Apollo", mode="planning", project_id=pid)
+            s.save_state(
+                "plan-1",
+                {
+                    "selected_team_members": ("Carol",),
+                    "sprint_length_weeks": 3,
+                    "sprints": [sprint],
+                },
+            )
+            s.create_session("standup-1", "Apollo", project_id=pid if link_standup else "")
+            s.save_state("standup-1", {"selected_team_members": ("Alice",), "sprint_length_weeks": 2})
+        return pid
+
+    def _run(self, monkeypatch, db_path, *, project_id=""):
+        captured = {}
+
+        def _capture_gather(state, **kw):
+            captured["state"] = state
+            return SprintContext(sprint_name="S", sprint_length_weeks=2)
+
+        _patch_common(monkeypatch, items=[], counts=[])
+        monkeypatch.setattr(engine.sprint_context, "gather", _capture_gather)
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        engine.run_standup("standup-1", deliver=False, db_path=db_path, today=date(2026, 7, 10), project_id=project_id)
+        return captured["state"]
+
+    def test_explicit_project_uses_the_plans_state(self, monkeypatch, db_path):
+        pid = self._seed_project(db_path, link_standup=False)
+        state = self._run(monkeypatch, db_path, project_id=pid)
+        assert state.get("sprint_length_weeks") == 3
+        assert tuple(state.get("selected_team_members", ())) == ("Carol",)
+
+    def test_linked_session_inherits_the_project(self, monkeypatch, db_path):
+        self._seed_project(db_path, link_standup=True)
+        state = self._run(monkeypatch, db_path)
+        assert state.get("sprint_length_weeks") == 3
+
+    def test_unlinked_session_keeps_its_own_state(self, monkeypatch, db_path):
+        self._seed_project(db_path, link_standup=False)
+        state = self._run(monkeypatch, db_path)
+        assert state.get("sprint_length_weeks") == 2
+        assert tuple(state.get("selected_team_members", ())) == ("Alice",)

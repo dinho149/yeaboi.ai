@@ -1407,6 +1407,7 @@ def run_standup(
     review_transcripts: bool = True,
     deliver: bool = True,
     dry_run: bool = False,
+    project_id: str = "",
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -1437,6 +1438,10 @@ def run_standup(
             writes to GitHub — issues are drafted, and filing is a separate act.
         deliver: when True, fan out to delivery channels (skipped if dry_run).
         dry_run: build the report but do not deliver (used by the TUI "Generate" preview).
+        project_id: project to scope by ("" inherits the session's own link;
+            an unlinked session stays team-wide). A scoped run reads sprint
+            and roster context from the project's latest sprint plan rather
+            than this session's own saved state.
         db_path: override sessions.db path (tests); defaults to paths.get_db_path().
         today: override for the current date (tests).
         on_progress: optional ``callable(str)`` invoked (best-effort) as each
@@ -1467,6 +1472,19 @@ def run_standup(
     # 1. Load session state + standup config.
     with SessionStore(db_path) as sessions:
         state = sessions.load_state(session_id) or {}
+
+    # Planning→standup edge: a project-scoped run reads the project's latest
+    # sprint plan instead of this session's own state, so a standup session
+    # created beside the plan still knows the sprint, capacity and roster.
+    from yeaboi.projects.scope import latest_planning_state, resolve_scope
+
+    scope = resolve_scope(project_id, session_id, db_path=db_path)
+    if scope is not None:
+        planned = latest_planning_state(scope, db_path=db_path)
+        if planned is not None:
+            plan_session_id, plan_state = planned
+            logger.info("run_standup: sprint context from project %s plan %s", scope.project_id, plan_session_id)
+            state = plan_state
     with StandupStore(db_path) as store:
         config = store.load_config(session_id)
         self_reported = store.get_my_updates(session_id, date_str)

@@ -60,6 +60,40 @@ def resolve_scope(project_id: str = "", session_id: str = "", *, db_path: Path |
         return None
 
 
+def recent_standup_blockers(scope: ProjectScope | None, *, limit: int = 10, db_path: Path | None = None) -> list[str]:
+    """Blockers from the project's recent standups, newest first, deduped.
+
+    Feeds the standup→retro edge: a scoped retro board seeds these as
+    dismissible review cards. Unscoped (``None``) returns nothing — the
+    team-wide board keeps its carry-forward-only seeding. Never raises.
+    """
+    if scope is None or not scope.session_ids:
+        return []
+    try:
+        from yeaboi.paths import get_db_path
+        from yeaboi.standup.store import StandupStore
+
+        path = db_path or get_db_path()
+        if not Path(path).exists():
+            return []
+        with StandupStore(path) as store:
+            reports = store.get_recent_reports(limit, session_ids=scope.session_ids)
+    except Exception:  # noqa: BLE001 — same never-raise contract as resolve_scope
+        logger.debug("recent_standup_blockers failed (non-fatal)", exc_info=True)
+        return []
+    seen: set[str] = set()
+    blockers: list[str] = []
+    for report in reports:
+        for member in report.member_updates:
+            text = (member.blockers or "").strip()
+            if not text or text.lower() in seen:
+                continue
+            seen.add(text.lower())
+            blockers.append(f"{member.name}: {text}" if member.name else text)
+    logger.info("recent_standup_blockers: project=%s blockers=%d", scope.project_id, len(blockers))
+    return blockers
+
+
 def latest_planning_state(scope: ProjectScope | None, *, db_path: Path | None = None) -> tuple[str, dict] | None:
     """The project's newest planning session that carries a sprint plan.
 

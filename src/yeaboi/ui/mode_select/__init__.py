@@ -11326,8 +11326,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         return
 
     from yeaboi.config import get_retro_server_port
+    from yeaboi.projects.scope import resolve_scope
     from yeaboi.retro.board import RetroBoard, board_to_report
-    from yeaboi.retro.engine import carried_action_items_for_session, history_providers
+    from yeaboi.retro.engine import carried_action_items_for_session, history_providers, standup_blocker_cards
     from yeaboi.retro.server import RetroServer
     from yeaboi.retro.store import RetroStore
 
@@ -11335,7 +11336,13 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # Seed last sprint's action items for review before the server starts, so the
     # first browser poll already shows the "Last sprint's actions" column. Best-effort:
     # carried_action_items_for_session returns () when there's no prior retro.
-    carried = carried_action_items_for_session(session_id, project_name=project_name, db_path=_ana_dbp)
+    # A project-linked session hard-filters the carry to its own project and adds
+    # the project's recent standup blockers as dismissible review cards.
+    _retro_scope = resolve_scope(session_id=session_id, db_path=_ana_dbp)
+    carried = carried_action_items_for_session(
+        session_id, project_name=project_name, db_path=_ana_dbp, scope=_retro_scope
+    )
+    carried = (*carried, *standup_blocker_cards(_retro_scope, db_path=_ana_dbp, existing=carried))
     if carried:
         board.seed_carried(list(carried))
         logger.info("retro: seeded %d carried-over action item(s) (session=%s)", len(carried), session_id)
