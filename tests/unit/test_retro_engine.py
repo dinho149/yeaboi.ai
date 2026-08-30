@@ -269,3 +269,32 @@ class TestCarryForwardInGenerate:
         # Open item is handed to the LLM as STILL_OPEN context; the resolved one isn't.
         assert "in progress work" in captured["prompt"]
         assert "done thing" not in captured["prompt"]
+
+
+class TestCarriedActionItemsScope:
+    def test_scope_filters_to_the_projects_sessions(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("proj-sess", date="2026-07-01"))
+            # Newer, but belongs to another project's session — must not win.
+            store.record_run(
+                RetroReport(
+                    session_id="other-sess",
+                    date="2026-07-09",
+                    cards=(RetroCard(id="o1", grid="action_items", text="other project's item", author="AI"),),
+                )
+            )
+        scope = ProjectScope("proj-11112222", ("proj-sess",))
+        carried = engine.carried_action_items_for_session("cur", db_path=db, scope=scope)
+        assert [c.text for c in carried] == ["ship the docs"]
+
+    def test_empty_scope_carries_nothing(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("prev"))
+        scope = ProjectScope("proj-11112222", ())
+        assert engine.carried_action_items_for_session("cur", db_path=db, scope=scope) == ()

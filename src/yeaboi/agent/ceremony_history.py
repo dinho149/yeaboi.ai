@@ -27,8 +27,12 @@ import logging
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from yeaboi.timeparse import parse_datetime
+
+if TYPE_CHECKING:
+    from yeaboi.projects.scope import ProjectScope
 
 logger = logging.getLogger(__name__)
 
@@ -232,12 +236,13 @@ def format_ceremony_history_md(ctx: CeremonyContext) -> str:
 
 
 def gather_ceremony_context(
-    project_name: str = "", *, retro_limit: int = 5, standup_limit: int = 10
+    project_name: str = "", *, retro_limit: int = 5, standup_limit: int = 10, scope: ProjectScope | None = None
 ) -> CeremonyContext:
     """Read the team's recent retros + standups and distil them (team-wide).
 
     Retros are fetched project-first (matching ``project_name`` sort ahead of
     others); standups are recency-based (their table has no project column).
+    A ``scope`` hard-filters both reads to the project's own sessions instead.
     Graceful: a missing DB / empty tables / any error yields an empty context —
     planning/analysis then behave exactly as before.
 
@@ -252,11 +257,12 @@ def gather_ceremony_context(
         if not db_path.exists():
             return CeremonyContext()
 
+        session_ids = scope.session_ids if scope is not None else None
         with RetroStore(db_path) as rstore:
-            retros = rstore.get_recent_reports(retro_limit, project_name)
+            retros = rstore.get_recent_reports(retro_limit, "" if scope else project_name, session_ids=session_ids)
             retro_hist = rstore.get_all_history(100)
         with StandupStore(db_path) as sstore:
-            standups = sstore.get_recent_reports(standup_limit)
+            standups = sstore.get_recent_reports(standup_limit, session_ids=session_ids)
             standup_hist = sstore.get_all_history(100)
     except Exception:  # noqa: BLE001 — ceremony history is best-effort; never abort a plan
         logger.debug("gather_ceremony_context failed (non-fatal)", exc_info=True)

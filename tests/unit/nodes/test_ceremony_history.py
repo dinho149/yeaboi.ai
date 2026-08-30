@@ -263,3 +263,43 @@ class TestGather:
             _seed_standup(s, "s0", "2026-06-02T00:00:00+00:00", 0, status="error")
             reports = s.get_recent_reports(limit=10)
         assert len(reports) == 1
+
+
+class TestScopedGather:
+    """A ProjectScope hard-filters both store reads to the project's sessions."""
+
+    def _seed_two_projects(self, db):
+        with RetroStore(db) as r:
+            _seed_retro(r, "proj-sess", "2026-06-01T00:00:00+00:00", "Alpha", [_ac("Alpha item")])
+            _seed_retro(r, "other-sess", "2026-07-01T00:00:00+00:00", "Beta", [_ac("Beta item")])
+        with StandupStore(db) as s:
+            _seed_standup(s, "proj-sess", "2026-06-02T00:00:00+00:00", 70)
+            _seed_standup(s, "other-sess", "2026-07-02T00:00:00+00:00", 80)
+
+    def test_scope_filters_both_reads(self, tmp_path, monkeypatch):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed_two_projects(db)
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        ctx = gather_ceremony_context(scope=ProjectScope("proj-11112222", ("proj-sess",)))
+        assert ctx.retro_count == 1
+        assert ctx.standup_count == 1
+        assert ctx.action_items == ("Alpha item",)
+
+    def test_no_scope_is_the_legacy_teamwide_read(self, tmp_path, monkeypatch):
+        db = tmp_path / "sessions.db"
+        self._seed_two_projects(db)
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        ctx = gather_ceremony_context()
+        assert ctx.retro_count == 2
+        assert ctx.standup_count == 2
+
+    def test_empty_scope_reads_nothing(self, tmp_path, monkeypatch):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed_two_projects(db)
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        ctx = gather_ceremony_context(scope=ProjectScope("proj-11112222", ()))
+        assert ctx.retro_count == 0 and ctx.standup_count == 0

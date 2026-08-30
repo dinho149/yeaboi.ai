@@ -21,16 +21,19 @@ import logging
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from yeaboi.agent.state import RetroCard, RetroReport
 from yeaboi.retro.board import CARRIED_OPEN_STATUSES, RetroBoard
+
+if TYPE_CHECKING:
+    from yeaboi.projects.scope import ProjectScope
 
 logger = logging.getLogger(__name__)
 
 
 def carried_action_items_for_session(
-    session_id: str, *, project_name: str = "", db_path: Path | None = None
+    session_id: str, *, project_name: str = "", db_path: Path | None = None, scope: ProjectScope | None = None
 ) -> tuple[RetroCard, ...]:
     """Return the previous retro's action items for review, reset to ``pending``.
 
@@ -64,7 +67,12 @@ def carried_action_items_for_session(
         path = db_path or get_db_path()
         with RetroStore(path) as store:
             # Project-first, newest-first across ALL sessions (see docstring).
-            reports = store.get_recent_reports(limit=5, project_name=project_name)
+            # A scope replaces the name bias with a hard session filter.
+            reports = store.get_recent_reports(
+                limit=5,
+                project_name="" if scope else project_name,
+                session_ids=scope.session_ids if scope is not None else None,
+            )
     except Exception as exc:  # pragma: no cover - defensive; carry-forward is best-effort
         logger.warning("retro: could not load carried action items (session=%s): %s", session_id, exc)
         return ()

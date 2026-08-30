@@ -1279,3 +1279,29 @@ class TestConflictsRoundTrip:
             )
             loaded = store.get_latest_report("s1")
         assert loaded.conflicts == ()
+
+
+class TestScopedRecentReports:
+    """The session_ids hard filter a ProjectScope resolves to."""
+
+    def test_none_is_the_legacy_read(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(session_id="s1"))
+            store.record_run(_make_report(session_id="s2", date="2026-07-11"))
+            legacy = store.get_recent_reports(limit=5)
+            explicit = store.get_recent_reports(limit=5, session_ids=None)
+        assert [r.session_id for r in legacy] == [r.session_id for r in explicit]
+        assert len(legacy) == 2
+
+    def test_filters_to_the_given_sessions_and_skips_failures(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(session_id="s1"))
+            store.record_run(_make_report(session_id="s2", date="2026-07-11"))
+            store.record_run(_make_report(session_id="s2", date="2026-07-12"), status="error")
+            scoped = store.get_recent_reports(limit=5, session_ids=("s2",))
+        assert [r.session_id for r in scoped] == ["s2"]
+
+    def test_empty_scope_means_no_rows(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(session_id="s1"))
+            assert store.get_recent_reports(limit=5, session_ids=()) == []

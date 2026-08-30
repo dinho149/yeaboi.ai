@@ -1177,12 +1177,26 @@ class StandupStore:
     #    Planning / Analysis with the team's recent standups. standup_history has
     #    no project_name column, so these are recency-based (team-wide).
 
-    def get_recent_reports(self, limit: int = 10) -> list[StandupReport]:
-        """Return recent StandupReports across ALL sessions, newest first."""
-        rows = self._conn.execute(
-            "SELECT report_json FROM standup_history WHERE status = 'success' ORDER BY run_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    def get_recent_reports(self, limit: int = 10, session_ids: tuple[str, ...] | None = None) -> list[StandupReport]:
+        """Return recent StandupReports across ALL sessions, newest first.
+
+        ``session_ids`` is the hard filter a ProjectScope resolves to; an
+        empty tuple means no rows, not all rows.
+        """
+        if session_ids is not None:
+            if not session_ids:
+                return []
+            slots = ", ".join("?" for _ in session_ids)
+            rows = self._conn.execute(
+                f"SELECT report_json FROM standup_history WHERE session_id IN ({slots}) "  # noqa: S608 — placeholders, not values
+                "AND status = 'success' ORDER BY run_at DESC LIMIT ?",
+                (*session_ids, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT report_json FROM standup_history WHERE status = 'success' ORDER BY run_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         reports: list[StandupReport] = []
         for row in rows:
             if not row[0]:

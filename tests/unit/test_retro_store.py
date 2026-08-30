@@ -165,3 +165,29 @@ class TestProvenanceSelfHeal:
             cols = {r[1] for r in store._conn.execute("PRAGMA table_info(retro_history)")}
             assert {"origin", "edited_from_id"} <= cols
             assert store.record_run(_report()) > 0  # the INSERT that names origin
+
+
+class TestScopedRecentReports:
+    """The session_ids hard filter a ProjectScope resolves to."""
+
+    def test_none_is_the_legacy_read(self, tmp_path):
+        with RetroStore(tmp_path / "sessions.db") as store:
+            store.record_run(_report("sess-1"))
+            store.record_run(RetroReport(session_id="sess-2", date="2026-07-12", cards=(RetroCard(text="x"),)))
+            legacy = store.get_recent_reports(limit=5)
+            explicit = store.get_recent_reports(limit=5, session_ids=None)
+        assert [r.session_id for r in legacy] == [r.session_id for r in explicit]
+        assert len(legacy) == 2
+
+    def test_filters_to_the_given_sessions(self, tmp_path):
+        with RetroStore(tmp_path / "sessions.db") as store:
+            store.record_run(_report("sess-1"))
+            store.record_run(RetroReport(session_id="sess-2", date="2026-07-12", cards=(RetroCard(text="x"),)))
+            scoped = store.get_recent_reports(limit=5, session_ids=("sess-2",))
+        assert [r.session_id for r in scoped] == ["sess-2"]
+
+    def test_empty_scope_means_no_rows(self, tmp_path):
+        # () is "a project with no sessions yet", never "everything".
+        with RetroStore(tmp_path / "sessions.db") as store:
+            store.record_run(_report("sess-1"))
+            assert store.get_recent_reports(limit=5, session_ids=()) == []
