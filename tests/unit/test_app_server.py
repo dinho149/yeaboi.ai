@@ -47,10 +47,18 @@ class TestMetaRoutes:
         assert [card["key"] for card in payload["modes"]] == [card["key"] for card in _MODE_CARDS]
         assert [card["key"] for card in payload["agents"]] == [card["key"] for card in _AGENT_CARDS]
 
-    def test_tips_serves_the_rotation(self, app):
+    def test_tips_serves_the_desktop_rotation(self, app):
+        # The registry holds both surfaces' tips; this endpoint is the desktop
+        # app's, so a terminal keycap or CLI flag must never reach it.
         payload = json.loads(request(app, "GET", "/api/meta/tips").body)
         keys = {tip["key"] for tip in payload["tips"]}
         assert "planning" in keys and "voice" in keys
+        assert "meta:headless" not in keys and "music" not in keys
+        assert "desktop:projects" in keys
+        assert not [t for t in payload["tips"] if "--" in t["text"] or "press " in t["text"]]
+        # Pin the shape: a field added to FeatureTip lands on the wire for free,
+        # so the contract doc only stays true if something notices.
+        assert set(payload["tips"][0]) == {"key", "text", "mode_key", "is_new", "is_beta", "surfaces"}
 
     def test_changelog_serves_entries(self, app):
         payload = json.loads(request(app, "GET", "/api/meta/changelog").body)

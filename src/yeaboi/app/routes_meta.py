@@ -70,11 +70,16 @@ def capabilities(app, request: Request) -> Response:
 
 
 def tips(app, request: Request) -> Response:
-    """The rotating discoverability tips (voice/music availability resolved)."""
-    from yeaboi.ui.shared._tips import get_tips
+    """The desktop's discoverability tips (voice availability resolved).
+
+    Filtered at the source: the registry tags every tip with the surfaces it is
+    true on, and this backend is the desktop app's, so a tip naming a terminal
+    keycap or a CLI flag never crosses the wire.
+    """
+    from yeaboi.ui.shared._tips import tips_for_surface
 
     # to_jsonable flattens one dataclass, not a list of them — convert per item.
-    return json_response({"tips": [to_jsonable(tip) for tip in get_tips()]})
+    return json_response({"tips": [to_jsonable(tip) for tip in tips_for_surface("desktop")]})
 
 
 def changelog(app, request: Request) -> Response:

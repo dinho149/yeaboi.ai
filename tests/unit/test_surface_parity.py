@@ -787,38 +787,110 @@ class TestTuiModes:
 
 
 # ---------------------------------------------------------------------------
-# 3b. Discoverability tips — every capability surfaces a rotating tip on the
-#     welcome screen, so tips stay current as features land. Model: the same
-#     two-way set-equality as the mode-card check above.
+# 3b. Discoverability tips — every capability surfaces a rotating tip, so tips
+#     stay current as features land. Model: the same two-way set-equality as the
+#     mode-card check above, once per surface.
+#
+#     Once per surface is the point: a tip names a gesture as often as it names a
+#     feature, and a keycap is not a thing the desktop app has. Each tip carries
+#     the surfaces it is true on (untagged means all of them), and each surface is
+#     checked against the capabilities that actually reached it.
 # ---------------------------------------------------------------------------
 
-# Capabilities that deliberately have no welcome-screen tip. Empty today — every
-# capability is worth surfacing. Add a `key: "reason (>10 chars)"` entry to opt a
-# capability out (TestTips enforces the reason length, like Exempt).
+# Capabilities that deliberately have no tip on a surface they do reach. Both
+# empty today — every capability is worth surfacing. Add a
+# `key: "reason (>10 chars)"` entry to opt one out.
 TIP_EXEMPT: dict[str, str] = {}
+DESKTOP_TIP_EXEMPT: dict[str, str] = {}
 
 _TIP_HOW_TO = (
     "Fix: add a FeatureTip for this capability in src/yeaboi/ui/shared/_tips.py "
-    "(_FEATURE_TIPS), or record a TIP_EXEMPT entry in tests/unit/test_surface_parity.py."
+    "(_FEATURE_TIPS) — tagged with the surface, or untagged if it is true on both — "
+    "or record a TIP_EXEMPT / DESKTOP_TIP_EXEMPT entry in tests/unit/test_surface_parity.py."
 )
+
+# Terminal gestures that must never appear in a tip the desktop app is served.
+# This is the guard that catches the real regression: a new tip written at a
+# terminal and tagged for both surfaces without anyone opening the window.
+_TERMINAL_GESTURES = ("--", "press ", "Ctrl+", "`yeaboi ", "double-tap")
 
 
 class TestTips:
-    def test_every_capability_has_a_tip(self):
+    def test_every_capability_has_a_tui_tip(self):
         from yeaboi.ui.shared._tips import _FEATURE_TIPS
 
-        actual = {t.key for t in _FEATURE_TIPS}
+        actual = {t.key for t in _FEATURE_TIPS if "tui" in t.surfaces}
         registered = set(CAPABILITIES) - set(TIP_EXEMPT)
         assert actual == registered, (
-            f"welcome-screen feature tips vs CAPABILITIES differ.\n"
+            f"terminal feature tips vs CAPABILITIES differ.\n"
             f"  capabilities with no tip: {sorted(registered - actual)}\n"
             f"  tips for an unknown/exempt capability: {sorted(actual - registered)}\n{_TIP_HOW_TO}"
         )
 
+    def test_every_desktop_capability_has_a_desktop_tip(self):
+        # The desktop column is itself checked against contracts/v1/routes_manifest.json
+        # further down, so this reads "the capabilities the app actually ships".
+        from yeaboi.ui.shared._tips import _FEATURE_TIPS
+
+        actual = {t.key for t in _FEATURE_TIPS if "desktop" in t.surfaces}
+        registered = set(_non_exempt("desktop")) - set(DESKTOP_TIP_EXEMPT)
+        assert actual == registered, (
+            f"desktop feature tips vs the desktop capabilities differ.\n"
+            f"  capabilities the app has but no tip mentions: {sorted(registered - actual)}\n"
+            f"  tips for something the app does not have: {sorted(actual - registered)}\n{_TIP_HOW_TO}"
+        )
+
     def test_tip_exempt_reasons_are_meaningful(self):
-        for cap, reason in TIP_EXEMPT.items():
-            assert cap in CAPABILITIES, f"TIP_EXEMPT names unknown capability {cap!r}"
-            assert len(reason) > 10, f"TIP_EXEMPT[{cap!r}] needs a real reason, got {reason!r}"
+        for name, exempt in (("TIP_EXEMPT", TIP_EXEMPT), ("DESKTOP_TIP_EXEMPT", DESKTOP_TIP_EXEMPT)):
+            for cap, reason in exempt.items():
+                assert cap in CAPABILITIES, f"{name} names unknown capability {cap!r}"
+                assert len(reason) > 10, f"{name}[{cap!r}] needs a real reason, got {reason!r}"
+
+    def test_every_tip_names_valid_surfaces(self):
+        from yeaboi.surfaces import VALID_SURFACES
+        from yeaboi.ui.shared._tips import get_tips
+
+        for tip in get_tips():
+            assert tip.surfaces, f"tip {tip.key!r} is tagged for no surface at all"
+            unknown = set(tip.surfaces) - VALID_SURFACES
+            assert not unknown, f"tip {tip.key!r} names unknown surface(s) {sorted(unknown)}"
+
+    @pytest.mark.parametrize("voice", ["ready", "installable", "declined", "unsupported"])
+    def test_desktop_tips_name_no_terminal_gesture(self, monkeypatch, voice):
+        # Driven over every voice state: the voice tip is the one built at run
+        # time, so leaving it on this machine's answer tests one branch of four.
+        from yeaboi.ui.shared import _tips
+
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: voice)
+        monkeypatch.setattr("yeaboi.voice.unsupported_blocker", lambda: "no libportaudio2")
+        _tips.get_tips.cache_clear()
+        for tip in _tips.tips_for_surface("desktop"):
+            found = [g for g in _TERMINAL_GESTURES if g in tip.text]
+            assert not found, (
+                f"desktop tip {tip.key!r} names a terminal-only gesture {found}:\n"
+                f"  {tip.text}\n"
+                'Fix: reword it for the window, or tag this one surfaces=("tui",) and add a '
+                "desktop sibling under the same key."
+            )
+        _tips.get_tips.cache_clear()
+
+    def test_desktop_only_tips_name_a_real_route(self):
+        # `desktop:<slug>` names `/slug` in the app's own route manifest. These
+        # tips answer to no capability, so without this a renamed route leaves a
+        # tip pointing at a page that no longer exists.
+        import json
+
+        from yeaboi.ui.shared._tips import _DESKTOP_TIPS
+
+        paths = {r["path"] for r in json.loads(DESKTOP_MANIFEST.read_text(encoding="utf-8"))["routes"]}
+        for tip in _DESKTOP_TIPS:
+            prefix, _, slug = tip.key.partition(":")
+            assert prefix == "desktop" and slug, f"desktop-only tip {tip.key!r} must be keyed `desktop:<slug>`"
+            assert f"/{slug}" in paths, (
+                f"tip {tip.key!r} names route /{slug}, which is not in contracts/v1/routes_manifest.json.\n"
+                "Fix: rename the tip's key to the route it points at, or drop the tip."
+            )
+            assert tip.surfaces == ("desktop",), f"{tip.key!r} is desktop furniture and must be tagged so"
 
     def test_carded_capabilities_have_jump_targets(self):
         # Every capability that owns a mode card must have a tip whose mode_key
@@ -828,12 +900,12 @@ class TestTips:
         from yeaboi.ui.shared._tips import _FEATURE_TIPS
 
         card_keys = {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
-        by_key = {t.key: t for t in _FEATURE_TIPS}
         for cap, tui_mode in _non_exempt("tui_mode").items():
-            tip = by_key.get(cap)
-            assert tip is not None and tip.mode_key == tui_mode, (
-                f"capability {cap!r} has mode card {tui_mode!r} but its tip's mode_key is "
-                f"{getattr(tip, 'mode_key', None)!r} — jump-into-feature would miss.\n{_TIP_HOW_TO}"
+            # "some tip", not "the tip": several capabilities carry more than one.
+            tips = [t for t in _FEATURE_TIPS if t.key == cap and "tui" in t.surfaces]
+            assert any(t.mode_key == tui_mode for t in tips), (
+                f"capability {cap!r} has mode card {tui_mode!r} but no terminal tip points at it "
+                f"(got {sorted({t.mode_key for t in tips})}) — jump-into-feature would miss.\n{_TIP_HOW_TO}"
             )
         # No tip may point at a non-existent card.
         for tip in _FEATURE_TIPS:
