@@ -655,6 +655,7 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False, show_compa
         ("a", "all tips", False),
         ("s", "schedule", True),
         ("n", "niko", True),
+        ("P", "projects", True),
         ("p", "privacy", True),
         ("k", "system check", True),
     ):

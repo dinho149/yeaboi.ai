@@ -104,6 +104,32 @@ CAPABILITIES: dict[str, dict] = {
         # the intake and /projects/:id/plan renders the finished plan.
         "desktop": {"/projects/:id/blueprint", "/projects/:id/plan"},
     },
+    "projects": {
+        "engines": {
+            ("yeaboi.projects.engine", "create_project"),
+            ("yeaboi.projects.engine", "list_projects"),
+            ("yeaboi.projects.engine", "get_project"),
+            ("yeaboi.projects.engine", "link_session"),
+            ("yeaboi.projects.engine", "set_project_defaults"),
+        },
+        "mcp_tools": {
+            "project_create",
+            "project_list",
+            "project_get",
+            "project_link_session",
+            "project_set_defaults",
+        },
+        "tui_mode": Exempt(
+            "a welcome-screen keycap (p) opening the project switcher, not a card — "
+            "an eleventh card breaks the 84x40 layout, the ceremonies/niko argument"
+        ),
+        "cli": {"project"},
+        "skill": Exempt(
+            "a scoping primitive, not a guided workflow — modes gain --project/project_id, "
+            "and agents call the project_* tools directly"
+        ),
+        "desktop": {"/projects", "/projects/:id"},
+    },
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
         "mcp_tools": {"sessions_list", "session_get", "session_delete"},
@@ -489,6 +515,11 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "provenance_audit": ("yeaboi.provenance.engine", "run_provenance_audit"),
     "provenance_trace": ("yeaboi.provenance.engine", "trace_entity"),
     "niko_ask": ("yeaboi.niko.engine", "ask"),
+    "project_create": ("yeaboi.projects.engine", "create_project"),
+    "project_list": ("yeaboi.projects.engine", "list_projects"),
+    "project_get": ("yeaboi.projects.engine", "get_project"),
+    "project_link_session": ("yeaboi.projects.engine", "link_session"),
+    "project_set_defaults": ("yeaboi.projects.engine", "set_project_defaults"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
@@ -556,6 +587,11 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
     "ship run": ("yeaboi.ship.engine", "run_ship"),
     "ship resume": ("yeaboi.ship.engine", "resume_ship"),
+    "project create": ("yeaboi.projects.engine", "create_project"),
+    "project list": ("yeaboi.projects.engine", "list_projects"),
+    "project show": ("yeaboi.projects.engine", "get_project"),
+    "project link": ("yeaboi.projects.engine", "link_session"),
+    "project set-defaults": ("yeaboi.projects.engine", "set_project_defaults"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -570,6 +606,7 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
     "perf review": {"session": "session_id", "months": "period_months", "project": "project_id"},
     "ship run": {"session": "session_id", "check": "check_command"},
     "ship resume": {"check": "check_command"},
+    "project link": {"session": "session_id"},
     "analyze": {
         # NOT project_id: analysis's --project is the tracker key (Jira/AzDO),
         # a different id space from the projects table's proj-<8hex> ids.
@@ -609,6 +646,12 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     # --split picks the entry point (run_ship_batch) rather than a run_ship param.
     "ship run": {"format", "strict", "split"},
     "ship resume": {"format", "strict"},
+    "project create": set(),
+    "project list": set(),
+    "project show": set(),
+    "project link": set(),
+    # --analysis-profile is one key of the engine's `defaults` dict.
+    "project set-defaults": {"analysis_profile"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -650,6 +693,9 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
     "ship resume": {
         "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
         "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
+    },
+    "project set-defaults": {
+        "defaults": "assembled from the per-key flags (--analysis-profile); a raw dict flag invites typos",
     },
 }
 

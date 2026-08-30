@@ -72,6 +72,12 @@ class FeatureTip:
 # ``mode_key`` (when set) MUST be a _MODE_CARDS key so the jump-into-feature key
 # lands on the right card.
 _FEATURE_TIPS: tuple[FeatureTip, ...] = (
+    # No mode_key: projects open from the welcome screen's `P` keycap, not a card.
+    FeatureTip(
+        "projects",
+        "\U0001f5c2️ Tip: Press P to pick a project — scoped runs feed each other's context",
+        is_new=True,
+    ),
     FeatureTip(
         "team-analysis",
         "\U0001f50d Tip: Analysis reads your board for velocity, estimation & delivery signals",

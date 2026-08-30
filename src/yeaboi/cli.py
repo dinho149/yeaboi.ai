@@ -565,7 +565,7 @@ def build_parser() -> argparse.ArgumentParser:
     # See CLAUDE.md "REQUIRED: Surface Parity" — each mode needs a CLI path;
     # these run the same engines the TUI and the MCP server use.
     subparsers = parser.add_subparsers(
-        dest="command", metavar="{report,standup,standup-review,perf,retro,poker,analyze,agents}"
+        dest="command", metavar="{report,standup,standup-review,perf,project,retro,poker,analyze,agents}"
     )
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
@@ -773,6 +773,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     review_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     review_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    # ── project ───────────────────────────────────────────────────────────
+    project_p = subparsers.add_parser("project", help="Manage projects — the identity that links sessions across modes")
+    project_sub = project_p.add_subparsers(
+        dest="project_command", metavar="{create,list,show,link,set-defaults}", required=True
+    )
+    project_create_p = project_sub.add_parser("create", help="Create a project")
+    project_create_p.add_argument("name", help="Short human project name")
+    project_create_p.add_argument("--description", default="", metavar="TEXT", help="One-line description")
+    project_list_p = project_sub.add_parser("list", help="List projects (most recently active first)")
+    project_list_p.add_argument("--all", dest="include_archived", action="store_true", help="Include archived projects")
+    project_show_p = project_sub.add_parser("show", help="Show one project and its linked sessions")
+    project_show_p.add_argument("project_id", metavar="PROJ_ID", help="Project id (see `yeaboi project list`)")
+    project_link_p = project_sub.add_parser(
+        "link", help="Link a session to a project so its runs count toward the project's context"
+    )
+    project_link_p.add_argument("project_id", metavar="PROJ_ID", help="Project id")
+    project_link_p.add_argument("--session", default="", metavar="ID", help="Session to link (default: most recent)")
+    project_defaults_p = project_sub.add_parser("set-defaults", help="Set a project's default settings")
+    project_defaults_p.add_argument("project_id", metavar="PROJ_ID", help="Project id")
+    project_defaults_p.add_argument(
+        "--analysis-profile",
+        default="",
+        metavar="ID",
+        help="Team profile a scoped plan seeds when the caller passes none",
+    )
 
     perf_p = subparsers.add_parser(
         "perf",
@@ -1964,6 +1990,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "standup": _cmd_standup,
         "standup-review": _cmd_standup_review,
         "perf": _cmd_perf,
+        "project": _cmd_project,
         "retro": _cmd_retro,
         "poker": _cmd_poker,
         "analyze": _cmd_analyze,
@@ -2325,6 +2352,60 @@ def _cmd_standup_review_inner(args: argparse.Namespace, console: Console) -> int
 
     warnings = list(review.warnings) + list(filing.warnings if filing else [])
     return _strict_exit(args.strict, warnings)
+
+
+def _cmd_project(args: argparse.Namespace, console: Console) -> int:
+    logging.getLogger(__name__).info("project %s", args.project_command)
+
+    if args.project_command == "create":
+        from yeaboi.projects.engine import create_project
+
+        project = create_project(args.name, args.description)
+        console.print(f"Created [bold]{project['name']}[/bold] — {project['project_id']}")
+        return 0
+
+    if args.project_command == "list":
+        from yeaboi.projects.engine import list_projects
+
+        rows = list_projects(args.include_archived)
+        if not rows:
+            console.print("[yellow]No projects yet — `yeaboi project create <name>`.[/yellow]")
+            return 0
+        for project in rows:
+            suffix = " [dim](archived)[/dim]" if project["archived"] else ""
+            console.print(
+                f"  {project['project_id']}  [bold]{project['name']}[/bold]"
+                f"  {project['session_count']} session(s){suffix}"
+            )
+        return 0
+
+    if args.project_command == "show":
+        from yeaboi.projects.engine import get_project
+
+        project = get_project(args.project_id)
+        console.print(f"[bold]{project['name']}[/bold] — {project['project_id']}")
+        if project["description"]:
+            console.print(project["description"])
+        console.print(f"Settings: {project['settings'] or '—'}")
+        console.print(f"Sessions: {', '.join(project['session_ids']) or '—'}")
+        return 0
+
+    if args.project_command == "link":
+        from yeaboi.projects.engine import link_session
+
+        linked = link_session(args.project_id, _resolve_cli_session(args.session) or "")
+        console.print(f"Linked {linked['session_id']} → {linked['project_id']}")
+        return 0
+
+    # set-defaults
+    from yeaboi.projects.engine import set_project_defaults
+
+    defaults: dict = {}
+    if args.analysis_profile:
+        defaults["default_analysis_profile_id"] = args.analysis_profile
+    result = set_project_defaults(args.project_id, defaults)
+    console.print(f"Defaults for {args.project_id}: {result['settings'] or '—'}")
+    return 0
 
 
 def _cmd_perf(args: argparse.Namespace, console: Console) -> int:

@@ -65,6 +65,7 @@ def create_app():
         tools_performance,
         tools_planning,
         tools_poker,
+        tools_projects,
         tools_provenance,
         tools_reporting,
         tools_retro,
@@ -79,6 +80,7 @@ def create_app():
     modules = (
         tools_artifacts,
         tools_planning,
+        tools_projects,
         tools_sessions,
         tools_standup,
         tools_reporting,

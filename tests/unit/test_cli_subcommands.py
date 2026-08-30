@@ -1521,3 +1521,55 @@ class TestShipCommand:
         args = build_parser().parse_args(["ship", "run", "US-001", "--repo", str(repo), "--strict"])
         assert _run_subcommand(args) == 3
         assert "⚠ boom" in capsys.readouterr().err
+
+
+class TestProjectCommand:
+    def test_create_list_show_round_trip(self, tmp_path, monkeypatch):
+        from yeaboi.cli import _cmd_project, build_parser
+
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        buf = io.StringIO()
+        args = build_parser().parse_args(["project", "create", "Apollo", "--description", "the big one"])
+        assert _cmd_project(args, _console(buf)) == 0
+        assert "Apollo" in buf.getvalue()
+
+        buf = io.StringIO()
+        args = build_parser().parse_args(["project", "list"])
+        assert _cmd_project(args, _console(buf)) == 0
+        out = buf.getvalue()
+        assert "Apollo" in out and "proj-" in out
+
+        project_id = next(w for w in out.split() if w.startswith("proj-"))
+        buf = io.StringIO()
+        args = build_parser().parse_args(["project", "show", project_id])
+        assert _cmd_project(args, _console(buf)) == 0
+        assert "Apollo" in buf.getvalue()
+
+    def test_link_uses_the_resolved_session(self, tmp_path, monkeypatch):
+        from yeaboi.cli import _cmd_project, build_parser
+        from yeaboi.projects.engine import create_project
+        from yeaboi.sessions import SessionStore
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        project = create_project("Apollo", db_path=db)
+        with SessionStore(db) as sessions:
+            sessions.create_session("s1")
+        buf = io.StringIO()
+        args = build_parser().parse_args(["project", "link", project["project_id"], "--session", "s1"])
+        assert _cmd_project(args, _console(buf)) == 0
+        with SessionStore(db) as sessions:
+            assert sessions.session_project_id("s1") == project["project_id"]
+
+    def test_set_defaults_assembles_the_dict(self, tmp_path, monkeypatch):
+        from yeaboi.cli import _cmd_project, build_parser
+        from yeaboi.projects.engine import create_project, get_project
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        project = create_project("Apollo", db_path=db)
+        args = build_parser().parse_args(
+            ["project", "set-defaults", project["project_id"], "--analysis-profile", "team-x"]
+        )
+        assert _cmd_project(args, _console()) == 0
+        assert get_project(project["project_id"], db_path=db)["settings"] == {"default_analysis_profile_id": "team-x"}

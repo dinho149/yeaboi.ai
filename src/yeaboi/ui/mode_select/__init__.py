@@ -2685,9 +2685,12 @@ def _collect_standup_data(message: str = "") -> dict:
 def _standup_generate(session_id: str, on_progress=None) -> str:
     """Run a standup for preview (no delivery) and return a status message."""
     try:
+        from yeaboi.projects.active import get_active_project
         from yeaboi.standup.engine import run_standup
 
-        report = run_standup(session_id, deliver=False, dry_run=True, on_progress=on_progress)
+        report = run_standup(
+            session_id, deliver=False, dry_run=True, on_progress=on_progress, project_id=get_active_project()
+        )
         warn = f" · {len(report.warnings)} notice(s)" if report.warnings else ""
         logger.info(
             "standup: generated report — day %s/%s, %d notice(s) (session=%s)",
@@ -9832,6 +9835,13 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     session_id = base["session_id"]
     session_name = base["session_name"]
 
+    def _active_project() -> str:
+        # Read at generate time, not page entry — the switcher can change it
+        # while this page is open.
+        from yeaboi.projects.active import get_active_project
+
+        return get_active_project()
+
     q_label, q_start, q_end = quarter_bounds()
     periods = [(o["key"], o["label"], o["description"]) for o in report_setup.period_options()]
     # Loaded once per page entry — custom palettes come from reporting_themes.json;
@@ -10092,6 +10102,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             return run_delivery_report(
                 period_key,
                 session_id=session_id,
+                project_id=_active_project(),
                 db_path=_ana_dbp,
                 theme=state["theme"],
                 sources=state["sources"],
@@ -10116,6 +10127,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             return run_delivery_report(
                 PERIOD_QUARTER,
                 session_id=session_id,
+                project_id=_active_project(),
                 db_path=_ana_dbp,
                 window_start=window_start,
                 window_end=window_end,
@@ -10178,6 +10190,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             return run_delivery_report(
                 PERIOD_WINDOW,
                 session_id=session_id,
+                project_id=_active_project(),
                 db_path=_ana_dbp,
                 window_start=start_iso,
                 window_end=end_iso,
@@ -11338,7 +11351,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # carried_action_items_for_session returns () when there's no prior retro.
     # A project-linked session hard-filters the carry to its own project and adds
     # the project's recent standup blockers as dismissible review cards.
-    _retro_scope = resolve_scope(session_id=session_id, db_path=_ana_dbp)
+    from yeaboi.projects.active import get_active_project
+
+    _retro_scope = resolve_scope(get_active_project(), session_id, db_path=_ana_dbp)
     carried = carried_action_items_for_session(
         session_id, project_name=project_name, db_path=_ana_dbp, scope=_retro_scope
     )
@@ -13461,6 +13476,17 @@ def select_mode(
                     from yeaboi.ui.mode_select._ceremonies import run_ceremonies_page
 
                     run_ceremonies_page(console, live, read_key, _FRAME_TIME, _supports_timeout, dry_run=dry_run)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    select_time = time.monotonic()
+                elif key == "P":
+                    # Projects — the switcher for which project scoped runs read
+                    # their context through. A keycap rather than a mode card for
+                    # the same screen-budget reason as `s` and `n`; shifted because
+                    # lowercase `p` is the Privacy page.
+                    logger.info("projects opened from mode select")
+                    from yeaboi.ui.mode_select._projects import run_projects_page
+
+                    run_projects_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
                     select_time = time.monotonic()
                 elif key == "n":

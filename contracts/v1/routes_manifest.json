@@ -213,12 +213,12 @@
     },
     {
       "path": "/projects",
-      "capability": null,
+      "capability": "projects",
       "title": "Projects"
     },
     {
       "path": "/projects/:id",
-      "capability": null,
+      "capability": "projects",
       "title": "Project"
     },
     {

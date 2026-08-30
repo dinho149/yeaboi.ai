@@ -42,6 +42,7 @@ COLOR_RGB: dict[str, tuple[int, int, int]] = {
     "rgb(240,180,70)": (240, 180, 70),  # Agent Advisor accent (amber)
     "rgb(235,140,60)": (235, 140, 60),  # Ship accent (cargo orange)
     "rgb(120,150,175)": (120, 150, 175),  # Ceremonies accent (slate)
+    "rgb(150,170,90)": (150, 170, 90),  # Projects accent (olive)
     "rgb(229,166,48)": (229, 166, 48),  # Niko accent (duck gold — the desktop's own --primary)
 }
 
