@@ -31,8 +31,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from yeaboi.beta import BETA_LABEL
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import AGENTS_THEME, SOLO_THEME, TEAM_THEME, build_page_panel
+from yeaboi.ui.shared._components import AGENTS_THEME, SOLO_THEME, TEAM_THEME, build_badge, build_page_panel
 from yeaboi.ui.shared._mascot import FRAMES, flock_cells, flock_head_cells, full_cells, mini_cells
 
 _CATEGORY_CARDS: list[dict[str, Any]] = [
@@ -46,6 +47,8 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
         "dim": "rgb(95,80,45)",  # the resting shade — no theme slot for it
         "tint": "rgb(30,25,15)",  # card-bg convention: a dark shade of the accent
         "mascot": "duck",
+        # A whole beta world, not just beta modes: the chip rides the card.
+        "badge": BETA_LABEL,
     },
     {
         "key": "team",
@@ -68,6 +71,7 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
         "dim": "rgb(50,88,115)",
         "tint": "rgb(15,24,32)",
         "mascot": "robo",
+        "badge": BETA_LABEL,
     },
 ]
 
@@ -301,6 +305,12 @@ def _card_half(
     verb.no_wrap = True
     verb.overflow = "ellipsis"
 
+    # A beta world wears the chip on the reserved row between wordmark and
+    # verb — the row is blank either way, so the card height never moves.
+    # Dim on the resting card, matching the mode-row treatment; it enters with
+    # the wordmark it annotates, not before it.
+    chip = build_badge(card["badge"], dim=not selected) if card.get("badge") and intro >= 0.5 else Text(" ")
+
     inner_budget = max(16, half_width - 2)  # card padding
     caps = _capability_rows(card, selected=selected, budget=inner_budget)
 
@@ -309,7 +319,7 @@ def _card_half(
         Align.center(mascot),
         Text(""),
         Align.center(title),
-        Text(""),
+        Align.center(chip),
         Align.center(verb),
         *[Align.center(row) for row in caps],
     )

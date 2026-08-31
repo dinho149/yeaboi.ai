@@ -64,6 +64,12 @@ class TestCards:
         for card in _CATEGORY_CARDS:
             assert {"key", "title", "verb", "capabilities", "color", "bright", "dim", "tint", "mascot"} <= set(card)
 
+    def test_solo_and_agents_are_the_beta_worlds(self):
+        from yeaboi.beta import BETA_LABEL
+
+        badged = {card["key"] for card in _CATEGORY_CARDS if card.get("badge") == BETA_LABEL}
+        assert badged == {"solo", "agents"}
+
 
 class TestRender:
     def test_both_mascots_render(self):
@@ -257,6 +263,22 @@ class TestRender:
                 with console.capture() as cap:
                     console.print(_card_half(card, selected=selected, shimmer_tick=0.0, intro=1.0))
                 assert "╭" not in cap.get(), (card["key"], selected)
+
+    def test_beta_worlds_wear_the_chip(self):
+        import re
+
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", _render(width=110))
+        chip_rows = [line for line in plain.splitlines() if "BETA" in line]
+        assert chip_rows, "no BETA chip rendered"
+        # Two chips on one row — solo's and agents'; the team card carries none
+        # (its column between them stays blank).
+        assert chip_rows[0].count("BETA") == 2
+
+    def test_the_chip_enters_with_the_wordmark(self):
+        import re
+
+        early = re.sub(r"\x1b\[[0-9;]*m", "", _render(width=110, intro=0.0))
+        assert "BETA" not in early
 
     def test_headline_and_hints(self):
         out = _render_chromed()
