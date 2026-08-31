@@ -224,8 +224,16 @@ class TestTheFetchSeam:
             params = list(inspect.signature(getattr(module, connector.fetch)).parameters)
             assert params == ["window_start", "window_end"], f"{connector.key} takes {params}"
 
+    # Delivery trackers verify a credential and feed the catalog, but the
+    # ops-event vocabulary has no delivery kind — their read/write path is the
+    # tracker integration, not a gather. Verify stays: a credential the user
+    # just typed must be probeable.
+    _CATALOG_ONLY = {"linear", "trello"}
+
     def test_a_connector_that_can_be_verified_can_be_gathered_from(self):
         # An entry in the catalog that verifies but returns nothing is a settings
         # screen pretending to be a feature.
-        missing = [c.key for c in registry.all_connectors() if c.verify and not c.fetch]
+        missing = [
+            c.key for c in registry.all_connectors() if c.verify and not c.fetch and c.key not in self._CATALOG_ONLY
+        ]
         assert missing == [], f"{missing} verify but gather nothing"

@@ -59,6 +59,20 @@
       "accent": "rgb(0,120,212)"
     },
     {
+      "key": "linear",
+      "label": "Linear",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(94,106,210)"
+    },
+    {
+      "key": "trello",
+      "label": "Trello",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(0,121,191)"
+    },
+    {
       "key": "bitbucket",
       "label": "Bitbucket",
       "family": "code",

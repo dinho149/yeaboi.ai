@@ -19,8 +19,10 @@
     "gitlab",
     "grafana",
     "incidentio",
+    "linear",
     "pagerduty",
-    "sentry"
+    "sentry",
+    "trello"
   ],
   "timing": {
     "refused_hold_sleep_ms": 1500

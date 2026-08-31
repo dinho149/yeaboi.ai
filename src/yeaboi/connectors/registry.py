@@ -14,7 +14,20 @@ import logging
 import os
 from collections.abc import Mapping
 
-from yeaboi.connectors import aws, azure_cloud, bitbucket, datadog, gcp, gitlab, grafana, incidentio, pagerduty, sentry
+from yeaboi.connectors import (
+    aws,
+    azure_cloud,
+    bitbucket,
+    datadog,
+    gcp,
+    gitlab,
+    grafana,
+    incidentio,
+    linear,
+    pagerduty,
+    sentry,
+    trello,
+)
 from yeaboi.connectors.spec import FAMILY_ORDER, Connector
 
 logger = logging.getLogger(__name__)
@@ -32,6 +45,8 @@ _CONNECTORS: tuple[Connector, ...] = (
     azure_cloud.CONNECTOR,
     gitlab.CONNECTOR,
     bitbucket.CONNECTOR,
+    linear.CONNECTOR,
+    trello.CONNECTOR,
 )
 
 

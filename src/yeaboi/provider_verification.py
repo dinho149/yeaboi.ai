@@ -1068,6 +1068,57 @@ def _verify_bitbucket(email: str, token: str, workspace: str) -> tuple[bool, str
     return True, "Bitbucket verified"
 
 
+def _verify_linear(token: str) -> tuple[bool, str]:
+    """Verify a Linear API key with the cheapest authenticated query — the viewer.
+
+    Linear is GraphQL-only, so this is the one probe that POSTs. The host is
+    fixed, the query is a constant, and nothing from the response beyond the
+    presence of a viewer id is read.
+    """
+    try:
+        import httpx
+
+        resp = httpx.post(
+            "https://api.linear.app/graphql",
+            headers={"Authorization": token, "Content-Type": "application/json"},
+            json={"query": "{ viewer { id } }"},
+            timeout=10,
+        )
+        if resp.status_code in (400, 401, 403):
+            return False, INVALID_KEY
+        if resp.status_code != 200:
+            return False, f"Unexpected response: {resp.status_code}"
+        body = resp.json() if resp.content else {}
+        if isinstance(body, dict) and body.get("errors"):
+            return False, INVALID_KEY
+        return True, "Linear verified"
+    except Exception as e:
+        return False, _connection_error(e)
+
+
+def _verify_trello(api_key: str, token: str) -> tuple[bool, str]:
+    """Verify a Trello key/token pair against GET /1/members/me.
+
+    Trello authenticates on the query string, so the URL carries both
+    credentials — it must never be logged or echoed, and the failure messages
+    here are constants for that reason.
+    """
+    from urllib.parse import urlencode
+
+    try:
+        import httpx
+
+        creds = urlencode({"key": api_key, "token": token})
+        resp = httpx.get(f"https://api.trello.com/1/members/me?{creds}", timeout=10)
+        if resp.status_code in (401, 403):
+            return False, INVALID_KEY
+        if resp.status_code != 200:
+            return False, f"Unexpected response: {resp.status_code}"
+        return True, "Trello verified"
+    except Exception as e:
+        return False, _connection_error(e)
+
+
 def _verify_elevenlabs(token: str) -> tuple[bool, str]:
     """Verify an ElevenLabs API key against GET /v1/user — the cheapest authenticated endpoint."""
     try:
