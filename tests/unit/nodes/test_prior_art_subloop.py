@@ -471,3 +471,31 @@ class TestEmptyCardChoices:
         labels = [label for label, _ in view.choices]
         assert labels == [PRIOR_ART_CONTINUE]
         assert CONFIRM_ACCEPT not in labels
+
+
+class TestAnalysisToggleGate:
+    def test_analysis_off_settles_the_stage_without_a_scan(self, monkeypatch):
+        # A blank profile id still auto-detects inside the scan, so the toggle
+        # must stop the step before shortlist() runs at all.
+        def _boom(*a, **k):
+            raise AssertionError("the prior-art scan must not run with analysis off")
+
+        monkeypatch.setattr(prior_art, "shortlist", _boom)
+        qs = _qs()
+        qs._analysis_enabled = False
+        result = _show_summary_or_pto(qs)
+        assert result["pending_review"] == "project_intake"
+        assert qs._prior_art_stage == "done"
+
+    def test_analysis_on_still_offers_prior_art(self, monkeypatch):
+        called = {}
+
+        def _fake(*a, **k):
+            called["yes"] = True
+            return prior_art.Shortlist(empty_reason=prior_art.EMPTY_NO_PROFILE)
+
+        monkeypatch.setattr(prior_art, "shortlist", _fake)
+        qs = _qs()
+        assert qs._analysis_enabled is True
+        _show_summary_or_pto(qs)
+        assert called.get("yes")

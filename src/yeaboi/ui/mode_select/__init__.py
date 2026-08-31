@@ -10762,6 +10762,14 @@ def _pick_analysis_profile(
     """
     if not board_configured:
         return ""
+    from yeaboi.projects.active import get_context_deps
+
+    _deps = get_context_deps()
+    if _deps is not None and "analysis" not in _deps:
+        # The Context toggles switched analysis off for this run — offering a
+        # profile that would then be dropped is worse than not asking.
+        logger.info("analysis dep off — skipping the analysis-profile picker")
+        return ""
     selected_profile_id = ""
     try:
         from yeaboi.team_profile import TeamProfileStore

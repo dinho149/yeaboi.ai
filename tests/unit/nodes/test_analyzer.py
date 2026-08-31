@@ -1286,6 +1286,20 @@ class TestWantsDep:
 
         assert not _wants_dep({"context_deps": "[]"}, "retro")
 
+    def test_effective_profile_id_survives_when_analysis_is_on(self):
+        from yeaboi.agent.nodes import _effective_analysis_profile_id
+
+        assert _effective_analysis_profile_id({"analysis_profile_id": "jira-X"}) == "jira-X"
+        assert _effective_analysis_profile_id({"analysis_profile_id": "jira-X", "context_deps": ""}) == "jira-X"
+
+    def test_effective_profile_id_is_dropped_when_analysis_is_off(self):
+        # The toggle beats an explicit pick — incognito means incognito.
+        from yeaboi.agent.nodes import _effective_analysis_profile_id
+
+        assert _effective_analysis_profile_id({"analysis_profile_id": "jira-X", "context_deps": '["retro"]'}) == ""
+        assert _effective_analysis_profile_id({"analysis_profile_id": "jira-X", "context_deps": "[]"}) == ""
+        assert _effective_analysis_profile_id({"context_deps": "[]"}) == ""
+
 
 class TestAnalysisDepGatesCalibration:
     def _analyze(self, monkeypatch, state_extras):

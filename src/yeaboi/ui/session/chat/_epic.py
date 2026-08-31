@@ -29,11 +29,20 @@ def load_epic_profile(graph_state: dict) -> tuple[str, dict | None]:
     """Resolve the analysis profile for the epic card banner and reformat.
 
     Returns (profile_id, examples). Explicit selection wins; otherwise
-    auto-detect from configured trackers (resumed sessions).
+    auto-detect from configured trackers (resumed sessions). With the run's
+    ``analysis`` toggle off, nothing loads — auto-detect included.
     """
-    profile_id = graph_state.get("analysis_profile_id", "")
     profile = None
     examples = None
+    try:
+        from yeaboi.agent.nodes import _wants_dep
+
+        if not _wants_dep(graph_state, "analysis"):
+            graph_state["_epic_profile"] = None
+            return "", None
+    except Exception:
+        logger.debug("Epic profile toggle check failed", exc_info=True)
+    profile_id = graph_state.get("analysis_profile_id", "")
     try:
         from yeaboi.agent.nodes import _load_profile_by_id, _load_team_examples, _load_team_profile
 

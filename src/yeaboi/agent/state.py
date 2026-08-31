@@ -2275,6 +2275,10 @@ class QuestionnaireState:
     # _repo_context is, so the summary path can reach it without threading
     # graph state through eleven call sites.
     _analysis_profile_id: str = ""
+    # Transient: whether this run's context toggles allow analysis reads at all.
+    # A blank _analysis_profile_id still auto-detects from configured trackers,
+    # so the prior-art step needs an explicit off switch, not just an empty id.
+    _analysis_enabled: bool = True
     # Transient: active sprint number from Jira (e.g. 104). Used to compute
     # the start date offset when the user selects a future sprint (e.g. Sprint 107).
     # Set during Q27 processing; None when Jira is not configured.

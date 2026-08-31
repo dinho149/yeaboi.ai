@@ -3937,6 +3937,11 @@ def _show_summary_or_pto(questionnaire: QuestionnaireState, prefix: str = "") ->
     # the repositories analysis found and let the user rule each in or out.
     # Same shape as the PTO sub-loop above: a stage flag on the questionnaire,
     # awaiting_confirmation set so the handler runs in the confirmation gate.
+    if not questionnaire._prior_art_stage and not questionnaire._analysis_enabled:
+        # Analysis is toggled off for this run: the shortlist would auto-detect
+        # a profile even with a blank id, so the stage settles without a scan.
+        logger.info("analysis dep off — skipping the prior-art offer")
+        questionnaire._prior_art_stage = "done"
     if not questionnaire._prior_art_stage and _prior_art_applies(questionnaire):
         prompt = _start_prior_art(questionnaire)
         if prompt is not None:
@@ -4294,7 +4299,9 @@ def project_intake(state: ScrumState) -> dict:
     if questionnaire is not None:
         # Refresh the stash on every invoke, so a resumed session — whose
         # transients were dropped — reaches the prior-art step with a profile.
-        questionnaire._analysis_profile_id = state.get("analysis_profile_id", "") or ""
+        # The analysis toggle beats the stash: off means no id and no prior art.
+        questionnaire._analysis_profile_id = _effective_analysis_profile_id(state)
+        questionnaire._analysis_enabled = _wants_dep(state, "analysis")
 
     # ── Tracker choice resolution ────────────────────────────────────
     # When both Jira and Azure DevOps are configured, the user picks one
@@ -4344,7 +4351,8 @@ def project_intake(state: ScrumState) -> dict:
         # The prior-art step runs from _show_summary_or_pto, which sees only the
         # questionnaire — stash the profile id rather than thread graph state
         # through eleven call sites. Same pattern as _repo_context.
-        qs._analysis_profile_id = state.get("analysis_profile_id", "") or ""
+        qs._analysis_profile_id = _effective_analysis_profile_id(state)
+        qs._analysis_enabled = _wants_dep(state, "analysis")
 
         # Apply tracker preference from the choice resolution above (if any).
         if _pending_tracker_pref:
@@ -4401,7 +4409,7 @@ def project_intake(state: ScrumState) -> dict:
         # ── Analysis profile auto-fill ────────────────────────────────
         # If the user selected an analysis profile in the profile picker,
         # extract Q6/Q8/Q9 from it. Priority: description > SCRUM.md > analysis.
-        _analysis_profile_id = state.get("analysis_profile_id", "")
+        _analysis_profile_id = _effective_analysis_profile_id(state)
         if _analysis_profile_id:
             _ap, _ap_ex = _load_profile_by_id(_analysis_profile_id)
             if _ap:
@@ -4499,7 +4507,7 @@ def project_intake(state: ScrumState) -> dict:
             # Q28 (bank holidays) choices are prepared so the user sees a confirmation.
             # See docs: "Scrum Standards" — capacity planning
             # ── Derive tracker preference from analysis profile if selected ──
-            _ap_id = state.get("analysis_profile_id", "")
+            _ap_id = _effective_analysis_profile_id(state)
             if _ap_id and not qs._preferred_tracker:
                 _ap_source = _ap_id.split("-", 1)[0]
                 if _ap_source in ("jira", "azdevops"):
@@ -4866,7 +4874,7 @@ def project_intake(state: ScrumState) -> dict:
                     questionnaire.answers[6] = f"{len(_sel_names)} ({_names_str})"
                     logger.info("Q6 member select: %d members: %s", len(_sel_names), _names_str)
 
-                    _ap_id = state.get("analysis_profile_id", "")
+                    _ap_id = _effective_analysis_profile_id(state)
                     if _ap_id:
                         try:
                             _, _ap_ex2 = _load_profile_by_id(_ap_id)
@@ -5067,7 +5075,7 @@ def project_intake(state: ScrumState) -> dict:
                 # Couldn't fetch active sprint from live tracker
                 logger.warning("Tracker sprint fetch failed: %s", jira_status)
                 # Try analysis sprint data as fallback
-                _ap_id = state.get("analysis_profile_id", "")
+                _ap_id = _effective_analysis_profile_id(state)
                 _used_analysis = False
                 if _ap_id:
                     try:
@@ -5777,7 +5785,7 @@ def project_intake(state: ScrumState) -> dict:
                 _names_str = ", ".join(_selected_names)
                 questionnaire.answers[6] = f"{len(_selected_names)} ({_names_str})"
                 # Calculate velocity from selected members
-                _ap_id = state.get("analysis_profile_id", "")
+                _ap_id = _effective_analysis_profile_id(state)
                 if _ap_id:
                     try:
                         _, _ap_ex2 = _load_profile_by_id(_ap_id)
@@ -6616,6 +6624,19 @@ def _state_scope(state):
     from yeaboi.projects.scope import resolve_scope
 
     return resolve_scope(state.get("project_id", ""), context_deps=state.get("context_deps") or None)
+
+
+def _effective_analysis_profile_id(state) -> str:
+    """The state's analysis profile id, unless the analysis toggle is off.
+
+    The toggle beats an explicit pick: with ``analysis`` off, a seeded or
+    resumed profile id is dropped (logged) so intake never auto-fills from it.
+    """
+    pid = state.get("analysis_profile_id", "") or ""
+    if pid and not _wants_dep(state, "analysis"):
+        logger.info("analysis dep off — dropping analysis profile %s for this run", pid)
+        return ""
+    return pid
 
 
 def project_analyzer(state: ScrumState) -> dict:

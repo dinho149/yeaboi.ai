@@ -220,6 +220,17 @@ def _run_session_body(
                 logger.info("Planning session context deps: %s", graph_state["context_deps"])
         except Exception:  # noqa: BLE001 — toggles are best-effort, never block a session
             logger.debug("could not read context toggles", exc_info=True)
+        try:
+            from yeaboi.projects.active import get_context_deps as _get_deps
+
+            _deps = _get_deps()
+            if analysis_profile_id and _deps is not None and "analysis" not in _deps:
+                # The toggle beats an explicit pick: analysis off means no
+                # profile seed and no DoD extraction for this run.
+                logger.info("analysis dep off — dropping picked analysis profile %s", analysis_profile_id)
+                analysis_profile_id = ""
+        except Exception:  # noqa: BLE001
+            logger.debug("could not apply the analysis toggle", exc_info=True)
         if analysis_profile_id:
             graph_state["analysis_profile_id"] = analysis_profile_id
             # Extract custom DoD items from the analysis profile
