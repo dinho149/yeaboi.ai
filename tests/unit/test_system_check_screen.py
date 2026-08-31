@@ -14,7 +14,10 @@ from yeaboi.ui.mode_select.screens._screens_secondary import _build_system_check
 def _report() -> SystemReport:
     return SystemReport(
         checks=(
-            CheckResult("provider", "AI provider", "ok", detail="ollama configured", feature="Every mode"),
+            CheckResult(
+                "provider", "AI provider", "ok", detail="ollama configured", feature="Every mode", category="ai"
+            ),
+            CheckResult("github", "GitHub", "ok", detail="configured", category="integrations"),
             CheckResult(
                 "music",
                 "Music (ffplay)",
@@ -22,9 +25,17 @@ def _report() -> SystemReport:
                 detail="ffplay not on PATH",
                 hint="Install ffmpeg to enable music",
                 feature="Background music",
+                category="tools",
             ),
-            CheckResult("voice", "Dictation", "unsupported", detail="no wheel for this platform", feature="Dictation"),
-            CheckResult("disk", "Disk space", "unknown", detail="probe failed"),
+            CheckResult(
+                "voice",
+                "Dictation",
+                "unsupported",
+                detail="no wheel for this platform",
+                feature="Dictation",
+                category="packages",
+            ),
+            CheckResult("disk", "Disk space", "unknown", detail="probe failed", category="machine"),
         )
     )
 
@@ -59,3 +70,48 @@ class TestBuildSystemCheckScreen:
     def test_rerun_hint_is_shown(self):
         out = _render(_build_system_check_screen(_report(), width=100, height=40))
         assert "r re-run" in out
+        assert "esc back" in out
+
+
+class TestSections:
+    def test_every_populated_category_gets_a_header(self):
+        out = _render(_build_system_check_screen(_report(), width=120, height=60), width=120)
+        for category, _rows in _report().by_category():
+            assert category["title"].upper() in out
+
+    def test_an_empty_category_renders_no_header(self):
+        report = SystemReport(checks=(CheckResult("git", "Git", "ok", category="tools"),))
+        out = _render(_build_system_check_screen(report, width=120, height=40), width=120)
+        assert "TOOLS ON PATH" in out
+        assert "INTEGRATIONS" not in out
+
+    def test_headers_carry_a_readiness_meter_and_count(self):
+        report = SystemReport(
+            checks=(
+                CheckResult("git", "Git", "ok", category="tools"),
+                CheckResult("music", "Music (ffplay)", "missing", category="tools"),
+            )
+        )
+        out = _render(_build_system_check_screen(report, width=120, height=40), width=120)
+        assert "1/2" in out
+        assert "▰" in out and "▱" in out
+
+    def test_hints_are_marked_as_the_actionable_line(self):
+        out = _render(_build_system_check_screen(_report(), width=120, height=60), width=120)
+        assert "→ Install ffmpeg" in out
+
+    def test_glyph_map_matches_the_declared_categories_two_ways(self):
+        from yeaboi.system_check import CHECK_CATEGORIES
+        from yeaboi.ui.mode_select.screens._screens_secondary import _CATEGORY_GLYPHS
+
+        assert set(_CATEGORY_GLYPHS) == {category["key"] for category in CHECK_CATEGORIES}
+
+    def test_glyphs_are_single_width(self):
+        from rich.cells import cell_len
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _CATEGORY_GLYPHS
+
+        # An emoji (or a variation selector) measures differently across
+        # terminals and would make the section rule's fill arithmetic a lie.
+        for glyph in _CATEGORY_GLYPHS.values():
+            assert len(glyph) == 1 and cell_len(glyph) == 1, glyph

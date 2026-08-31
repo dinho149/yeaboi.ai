@@ -3768,6 +3768,22 @@ _PRIVACY_ENV_RE = r"\b(?:YEABOI|LANGSMITH|CLOUDFLARED)_[A-Z_]+(?:=[\w.]+)?"
 _PRIVACY_TRUTHY = {"true", "1", "yes", "on"}
 _PRIVACY_FALSY = {"false", "0", "no", "off"}
 
+# One mark per state bucket and one per egress path, mirroring the desktop
+# page's lucide GROUP_ICONS/PATH_ICONS so the same path means the same thing on
+# both surfaces. Single-width BMP glyphs only — see _CATEGORY_GLYPHS.
+_PRIVACY_GROUP_GLYPHS = {"always": "◉", "tunnel": "↗", "opt-in": "◌", "you": "➤"}
+_PRIVACY_PATH_GLYPHS = {
+    "llm": "◈",
+    "update-check": "↻",
+    "desktop-update": "▽",
+    "tunnel": "↗",
+    "doh": "◍",
+    "cloudflared-download": "⇣",
+    "telemetry": "▤",
+    "tracing": "∿",
+    "feedback": "✎",
+}
+
 
 def privacy_switch_is_on(env: str, on_value: str) -> bool:
     """Whether the path behind ``env`` fires right now."""
@@ -3810,7 +3826,14 @@ def _build_privacy_screen(
     into ``scroll_meta`` (``focus_lines``/``focus_envs``) for the runner.
     """
     from yeaboi.privacy import EGRESS_DISCLOSURES, EGRESS_GROUPS, EGRESS_SWITCHES, PRIVACY_HEADLINE, PRIVACY_STATEMENT
-    from yeaboi.ui.shared._components import PRIVACY_THEME, build_badge, build_reveal_subtitle, privacy_title
+    from yeaboi.ui.shared._components import (
+        PRIVACY_THEME,
+        build_badge,
+        build_key_hints,
+        build_reveal_subtitle,
+        build_section_rule,
+        privacy_title,
+    )
 
     theme = PRIVACY_THEME
     title = privacy_title(shimmer_tick, width=width)
@@ -3822,7 +3845,7 @@ def _build_privacy_screen(
     body_lines: list = []
     wrap_w = max(24, width - len(_PAD) - 12)
 
-    def _wrapped(text: str, style: str, *, indent: str = "    ", highlight: str | None = None) -> None:
+    def _wrapped(text: str, style: str, *, indent: str = "      ", highlight: str | None = None) -> None:
         for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
             line = Text(_PAD + indent + chunk, style=style, justify="left")
             if highlight:
@@ -3861,22 +3884,22 @@ def _build_privacy_screen(
         if len(rows) > 1 and len(row_envs) == len(rows) and len(set(row_envs)) == 1:
             header_switch = switch_by_key[rows[0]["key"]]
 
-        label = group["title"].upper()
-        tail = str(len(rows))
-        body_lines.append(Text(""))
-        header = Text(_PAD + "  ", justify="left")
-        header.append(label, style=f"bold {theme.accent_bright}")
+        badge = None
         if header_switch is not None:
             chip_label, chip_rgb, chip_dim = _privacy_switch_chip(
                 header_switch["env"], header_switch["on_value"], on_use=True
             )
-            header.append("  ")
-            header.append_text(build_badge(chip_label, rgb=chip_rgb, dim=chip_dim))
-            fill = wrap_w - len(label) - len(chip_label) - len(tail) - 8
-        else:
-            fill = wrap_w - len(label) - len(tail) - 4
-        header.append(" " + "─" * max(3, fill), style=theme.sep)
-        header.append("  " + tail, style=theme.muted)
+            badge = build_badge(chip_label, rgb=chip_rgb, dim=chip_dim)
+        body_lines.append(Text(""))
+        header = build_section_rule(
+            group["title"].upper(),
+            width=wrap_w,
+            theme=theme,
+            pad=_PAD + "  ",
+            glyph=_PRIVACY_GROUP_GLYPHS.get(group["key"], ""),
+            badge=badge,
+            tail=str(len(rows)),
+        )
         if header_switch is not None:
             _focusable(header, header_switch["env"], header_switch["on_value"])
         else:
@@ -3885,24 +3908,29 @@ def _build_privacy_screen(
         for row in rows:
             switch = None if header_switch is not None else switch_by_key.get(row["key"])
             body_lines.append(Text(""))
-            heading = Text(_PAD + "  ", justify="left")
+            heading = Text(_PAD + "    ", justify="left")
+            # The chip stays leftmost on a toggleable row so the focus stripe
+            # reads as "this is the control"; the path glyph sits after it.
             if switch is not None:
                 chip_label, chip_rgb, chip_dim = _privacy_switch_chip(switch["env"], switch["on_value"])
                 heading.append_text(build_badge(chip_label, rgb=chip_rgb, dim=chip_dim))
                 heading.append(" ")
-                heading.append(row["what"], style=f"bold {theme.value}")
+            elif row["key"] in _PRIVACY_STATIC_CHIPS:
+                chip_label, chip_rgb, chip_dim = _PRIVACY_STATIC_CHIPS[row["key"]]
+                heading.append_text(build_badge(chip_label, rgb=chip_rgb, dim=chip_dim))
+                heading.append(" ")
+            glyph = _PRIVACY_PATH_GLYPHS.get(row["key"], "")
+            if glyph:
+                heading.append(glyph + " ", style=theme.accent)
+            heading.append(row["what"], style=f"bold {theme.value}")
+            if switch is not None:
                 _focusable(heading, switch["env"], switch["on_value"])
             else:
-                if row["key"] in _PRIVACY_STATIC_CHIPS:
-                    chip_label, chip_rgb, chip_dim = _PRIVACY_STATIC_CHIPS[row["key"]]
-                    heading.append_text(build_badge(chip_label, rgb=chip_rgb, dim=chip_dim))
-                    heading.append(" ")
-                heading.append(row["what"], style=f"bold {theme.value}")
                 body_lines.append(heading)
             _wrapped(f"{row['where']}  ·  {row['when']}", theme.desc)
             # The one honest switchless row stays visible but does not glow.
             off_style = theme.muted if row["off_switch"].lower().startswith("none") else theme.warn
-            _wrapped(f"Off-switch: {row['off_switch']}", off_style, highlight=f"bold {theme.warn}")
+            _wrapped(f"→ Off-switch: {row['off_switch']}", off_style, highlight=f"bold {theme.warn}")
 
     if scroll_meta is not None:
         scroll_meta["focus_lines"] = [offset for _, _, offset in focusables]
@@ -3937,7 +3965,7 @@ def _build_privacy_screen(
         Text(""),
         _viewport_with_scrollbar(padded_lines, _sb_text),
         Text(""),
-        Text(_PAD + "  tab focus · enter toggle · ↑↓ scroll · esc back", style=theme.muted, justify="left"),
+        build_key_hints([("tab", "focus"), ("enter", "toggle"), ("↑↓", "scroll"), ("esc", "back")], pad=_PAD + "  "),
         status_line,
     )
     return build_page_panel(content, theme=PRIVACY_THEME, height=height)
@@ -3945,6 +3973,10 @@ def _build_privacy_screen(
 
 # One glyph per system-check status, coloured by the theme at render time.
 _SYSTEM_CHECK_GLYPHS = {"ok": "✓", "missing": "○", "unsupported": "✗", "unknown": "?"}
+
+# One glyph per CHECK_CATEGORIES key. Single-width BMP marks, never emoji — see
+# the note above _build_all_tips_screen on variation selectors and panel borders.
+_CATEGORY_GLYPHS = {"ai": "◈", "integrations": "⇄", "tools": "⌘", "packages": "▣", "machine": "▤"}
 
 
 def _build_system_check_screen(
@@ -3962,8 +3994,18 @@ def _build_system_check_screen(
     ``report`` is :func:`yeaboi.system_check.run_system_check` output. Every
     probe behind it is offline by that module's policy, so the runner can
     re-run it on demand without causing egress.
+
+    Rows are sectioned by ``report.by_category()``; each header carries its own
+    readiness meter.
     """
-    from yeaboi.ui.shared._components import SYSTEM_CHECK_THEME, build_reveal_subtitle, system_check_title
+    from yeaboi.ui.shared._components import (
+        SYSTEM_CHECK_THEME,
+        build_key_hints,
+        build_meter,
+        build_reveal_subtitle,
+        build_section_rule,
+        system_check_title,
+    )
 
     theme = SYSTEM_CHECK_THEME
     title = system_check_title(shimmer_tick, width=width)
@@ -3978,20 +4020,35 @@ def _build_system_check_screen(
         for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
             body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
-    for check in report.checks:
+    for category, checks in report.by_category():
+        ok, total = category["ok"], category["total"]
+        tail = build_meter(ok, total, width=5, theme=theme, style=theme.good if ok == total else theme.warn)
+        tail.append(f"  {ok}/{total}", style=theme.muted)
         body_lines.append(Text(""))
-        style = _status_styles.get(check.status, theme.muted)
-        line = Text(_PAD + "  ", justify="left")
-        line.append(_SYSTEM_CHECK_GLYPHS.get(check.status, "?") + " ", style=f"bold {style}")
-        line.append(check.label, style=f"bold {theme.value}")
-        if check.feature:
-            line.append("  ·  ", style=theme.sep)
-            line.append(check.feature, style=theme.muted)
-        body_lines.append(line)
-        if check.detail:
-            _wrapped(check.detail, theme.desc)
-        if check.hint:
-            _wrapped(check.hint, style)
+        body_lines.append(
+            build_section_rule(
+                category["title"].upper(),
+                width=wrap_w,
+                theme=theme,
+                pad=_PAD + "  ",
+                glyph=_CATEGORY_GLYPHS.get(category["key"], "·"),
+                tail=tail,
+            )
+        )
+        for check in checks:
+            body_lines.append(Text(""))
+            style = _status_styles.get(check.status, theme.muted)
+            line = Text(_PAD + "    ", justify="left")
+            line.append(_SYSTEM_CHECK_GLYPHS.get(check.status, "?") + " ", style=f"bold {style}")
+            line.append(check.label, style=f"bold {theme.value}")
+            if check.feature:
+                line.append("  ·  ", style=theme.sep)
+                line.append(check.feature, style=theme.muted)
+            body_lines.append(line)
+            if check.detail:
+                _wrapped(check.detail, theme.desc)
+            if check.hint:
+                _wrapped(f"→ {check.hint}", style)
 
     viewport_h = calc_viewport(height, header_h=6, action_h=3)
     total_lines = len(body_lines)
@@ -4016,7 +4073,7 @@ def _build_system_check_screen(
         Text(""),
         _viewport_with_scrollbar(padded_lines, _sb_text),
         Text(""),
-        Text(_PAD + "  r re-run · esc back", style=theme.muted, justify="left"),
+        build_key_hints([("r", "re-run"), ("↑↓", "scroll"), ("esc", "back")], pad=_PAD + "  "),
         Text(""),  # keeps the content above the music pocket band
     )
     return build_page_panel(content, theme=SYSTEM_CHECK_THEME, height=height)

@@ -753,6 +753,42 @@ def build_meter(
     return meter
 
 
+def build_section_rule(
+    title: str,
+    *,
+    width: int,
+    theme: Theme | None = None,
+    pad: str = "",
+    glyph: str = "",
+    badge: Text | None = None,
+    tail: Text | str = "",
+) -> Text:
+    """Build a section heading: ``◈ TITLE  [BADGE] ──────────  tail``.
+
+    The flat heading the chrome pages share — a rule rather than a bordered box,
+    because these pages scroll through a viewport that assumes one body line per
+    rendered row. ``width`` is the width the heading may occupy including ``pad``;
+    the rule fills whatever the title, badge and tail leave. Glyphs must be
+    single-width (no emoji): a variation selector makes the fill count a lie.
+    """
+    _theme = theme or ANALYSIS_THEME
+    tail_text = tail if isinstance(tail, Text) else Text(str(tail), style=_theme.muted)
+    head = Text(pad, justify="left")
+    if glyph:
+        head.append(glyph + " ", style=_theme.accent)
+    head.append(title, style=f"bold {_theme.accent_bright}")
+    if badge is not None:
+        head.append("  ")
+        head.append_text(badge)
+    used = head.cell_len
+    fill = width - used - tail_text.cell_len - 4
+    head.append(" " + "─" * max(3, fill), style=_theme.sep)
+    if tail_text.cell_len:
+        head.append("  ")
+        head.append_text(tail_text)
+    return head
+
+
 def calc_viewport(height: int, *, header_h: int = 7, action_h: int = 4) -> int:
     """Calculate viewport height from terminal height.
 

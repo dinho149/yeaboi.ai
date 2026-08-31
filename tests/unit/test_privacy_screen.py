@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 
+from rich.cells import cell_len
 from rich.console import Console
 from rich.panel import Panel
 
@@ -65,6 +66,44 @@ class TestBuildPrivacyScreen:
         out = _render(_build_privacy_screen(width=100, height=40))
         assert "enter toggle" in out
         assert "esc back" in out
+
+    def test_every_group_and_path_carries_its_glyph(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            _PRIVACY_GROUP_GLYPHS,
+            _PRIVACY_PATH_GLYPHS,
+        )
+
+        full = "".join(
+            _render(_build_privacy_screen(scroll_offset=offset, width=120, height=40), width=120, height=40)
+            for offset in (0, 20, 40, 60)
+        )
+        for glyph in {*_PRIVACY_GROUP_GLYPHS.values(), *_PRIVACY_PATH_GLYPHS.values()}:
+            assert glyph in full, glyph
+
+    def test_glyphs_are_single_width(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            _PRIVACY_GROUP_GLYPHS,
+            _PRIVACY_PATH_GLYPHS,
+        )
+
+        # An emoji (or a variation selector) measures differently across
+        # terminals and would make the section rule's fill arithmetic a lie.
+        for glyph in (*_PRIVACY_GROUP_GLYPHS.values(), *_PRIVACY_PATH_GLYPHS.values()):
+            assert len(glyph) == 1 and cell_len(glyph) == 1, glyph
+
+    def test_glyph_maps_match_the_copy_owner_two_ways(self):
+        from yeaboi.privacy import EGRESS_DISCLOSURES, EGRESS_GROUPS
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            _PRIVACY_GROUP_GLYPHS,
+            _PRIVACY_PATH_GLYPHS,
+        )
+
+        assert set(_PRIVACY_GROUP_GLYPHS) == {group["key"] for group in EGRESS_GROUPS}
+        assert set(_PRIVACY_PATH_GLYPHS) == {row["key"] for row in EGRESS_DISCLOSURES}
+
+    def test_off_switch_is_marked_as_the_actionable_line(self):
+        out = _render(_build_privacy_screen(scroll_offset=200, width=120, height=40), width=120, height=40)
+        assert "→ Off-switch:" in out
 
     def test_focus_meta_names_every_unique_switch(self):
         from yeaboi.privacy import EGRESS_SWITCHES

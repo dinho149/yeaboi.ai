@@ -60,7 +60,7 @@ class TestSystemCheckRoute:
 
         canned = SystemReport(
             checks=(
-                CheckResult("git", "Git", "ok", detail="on PATH", feature="Ship mode"),
+                CheckResult("git", "Git", "ok", detail="on PATH", feature="Ship mode", category="tools"),
                 CheckResult("music", "Music (ffplay)", "missing", detail="not on PATH", hint="brew install ffmpeg"),
             )
         )
@@ -68,7 +68,7 @@ class TestSystemCheckRoute:
         resp = request(app, "GET", "/api/system/check")
         assert resp.code == 200
         payload = json.loads(resp.body)
-        assert set(payload) == {"summary", "checks"}
+        assert set(payload) == {"summary", "categories", "checks"}
         assert payload["summary"] == canned.summary
         assert payload["checks"][0] == {
             "key": "git",
@@ -77,4 +77,14 @@ class TestSystemCheckRoute:
             "detail": "on PATH",
             "hint": "",
             "feature": "Ship mode",
+            "category": "tools",
         }
+
+    def test_categories_are_the_module_s_verbatim(self, app):
+        from yeaboi.system_check import CHECK_CATEGORIES
+
+        payload = json.loads(request(app, "GET", "/api/system/check").body)
+        assert payload["categories"] == list(CHECK_CATEGORIES)
+        # Every rendered row names a section the payload declares.
+        keys = {category["key"] for category in payload["categories"]}
+        assert {check["category"] for check in payload["checks"]} <= keys
