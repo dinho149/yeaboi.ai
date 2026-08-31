@@ -174,6 +174,20 @@ class TestRunSetupWizard:
         assert "ANTHROPIC_API_KEY=sk-ant-validkey" in content
         assert "LLM_PROVIDER=anthropic" in content
 
+    def test_welcome_panel_states_the_privacy_headline(self, monkeypatch, tmp_path):
+        # The wizard renders yeaboi.privacy's headline — the copy owner every
+        # surface shares — so first-run and the privacy page can never disagree.
+        from yeaboi.privacy import PRIVACY_HEADLINE
+
+        _patch_config_file(monkeypatch, tmp_path)
+        _patch_provider(monkeypatch, "1")
+        monkeypatch.setattr("yeaboi.setup_wizard.prompt", _mock_inputs("sk-ant-validkey", "n", "n", "n"))
+        console = _make_console()
+        run_setup_wizard(console)
+        out = console.file.getvalue()
+        assert PRIVACY_HEADLINE in out
+        assert "~/.yeaboi" in out
+
     def test_openai_provider_saves_openai_key_and_provider(self, monkeypatch, tmp_path):
         _patch_config_file(monkeypatch, tmp_path)
         _patch_provider(monkeypatch, "2")

@@ -99,6 +99,37 @@ def changelog(app, request: Request) -> Response:
     )
 
 
+def privacy(app, request: Request) -> Response:
+    """The privacy statement and egress-disclosure table, verbatim.
+
+    Serialized from :mod:`yeaboi.privacy` — the copy owner every surface
+    renders — so the desktop page can never say something the TUI does not.
+    """
+    from yeaboi.privacy import EGRESS_DISCLOSURES, EGRESS_GROUPS, EGRESS_SWITCHES, PRIVACY_HEADLINE, PRIVACY_STATEMENT
+
+    return json_response(
+        {
+            "headline": PRIVACY_HEADLINE,
+            "statement": list(PRIVACY_STATEMENT),
+            "groups": list(EGRESS_GROUPS),
+            "switches": list(EGRESS_SWITCHES),
+            "egress": list(EGRESS_DISCLOSURES),
+        }
+    )
+
+
+def system_check(app, request: Request) -> Response:
+    """Run the offline system check and serialize the report.
+
+    Offline by :mod:`yeaboi.system_check`'s policy — opening the page causes
+    no egress, so it is safe to run on every GET.
+    """
+    from yeaboi.system_check import run_system_check
+
+    report = run_system_check()
+    return json_response({"summary": report.summary, "checks": [to_jsonable(check) for check in report.checks]})
+
+
 def tools(app, request: Request) -> Response:
     """The MCP tool inventory the dispatcher serves (empty when unavailable)."""
     dispatcher = app.dispatcher

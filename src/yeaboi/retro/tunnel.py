@@ -154,6 +154,15 @@ def _cached_binary_path() -> Path:
     return get_bin_dir() / name
 
 
+def cloudflared_cached() -> Path:
+    """The managed cloudflared cache path, for offline presence checks.
+
+    The system check reads this instead of :func:`ensure_cloudflared`, which
+    downloads on a miss — a doctor must observe, never provision.
+    """
+    return _cached_binary_path()
+
+
 def _make_executable(path: Path) -> None:
     """Make ``path`` runnable by its owner and by nobody else.
 

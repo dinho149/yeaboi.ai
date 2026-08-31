@@ -2,6 +2,44 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.35.0",
+      "date": "2026-08-31",
+      "headline": "See your privacy settings and system health at a glance",
+      "summary": "The new Privacy page discloses every way data can leave this machine and lets you flip each real off-switch in place. A System Check page diagnoses missing optional prerequisites without causing any network traffic.",
+      "highlights": [
+        {
+          "text": "Every path data can take off this machine, disclosed and toggleable on the Privacy page",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
+          ]
+        },
+        {
+          "text": "An offline System Check spots missing prerequisites before a feature trips over them",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
+          ]
+        },
+        {
+          "text": "One switch on the tunnel group turns all board-sharing egress off at once",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.34.0",
       "date": "2026-08-31",
       "headline": "Reach six more AI models directly",

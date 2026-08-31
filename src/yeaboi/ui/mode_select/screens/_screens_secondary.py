@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import os
 import textwrap
 
 import rich.box
@@ -3741,6 +3742,299 @@ def _changelog_filter_row(areas: list | None, area_filter: str, theme, width: in
     return row
 
 
+# Chip channels — twins of Theme.warn/good/muted as tuples, because build_badge
+# does arithmetic on the channels. Amber = fires without you, green = stays off.
+_PRIVACY_CHIP_ON = (220, 180, 60)
+_PRIVACY_CHIP_OFF = (80, 220, 120)
+_PRIVACY_CHIP_YOU = (120, 120, 140)
+
+# Static chips for the rows without a live switch.
+_PRIVACY_STATIC_CHIPS = {
+    "llm": ("ON", _PRIVACY_CHIP_ON, False),
+    "desktop-update": ("ON", _PRIVACY_CHIP_ON, False),
+    "feedback": ("YOU SEND", _PRIVACY_CHIP_YOU, False),
+}
+
+# The env vars a disclosure row may name; bolded inside the off-switch line so
+# the actual control pops out of the prose.
+_PRIVACY_ENV_RE = r"\b(?:YEABOI|LANGSMITH|CLOUDFLARED)_[A-Z_]+(?:=[\w.]+)?"
+
+
+# The alias spellings the owning modules honour (update_check.py, config.py,
+# telemetry.py). settings_choice_value folds anything outside true/false to the
+# field default, which would misreport exactly the values the page's own copy
+# instructs — YEABOI_NO_TUNNEL=1, YEABOI_UPDATE_CHECK=off — so the ledger
+# resolves truthiness itself; an unrecognised value falls back to the default.
+_PRIVACY_TRUTHY = {"true", "1", "yes", "on"}
+_PRIVACY_FALSY = {"false", "0", "no", "off"}
+
+
+def privacy_switch_is_on(env: str, on_value: str) -> bool:
+    """Whether the path behind ``env`` fires right now."""
+    raw = (os.environ.get(env) or "").strip().lower()
+    if raw in _PRIVACY_TRUTHY:
+        value = "true"
+    elif raw in _PRIVACY_FALSY:
+        value = "false"
+    else:
+        value = SETTINGS_CHOICE_DEFAULTS[env]
+    return value == on_value
+
+
+def _privacy_switch_chip(env: str, on_value: str, *, on_use: bool = False):
+    """Live state chip for a toggleable path: label + rgb + dim, from the env."""
+    if privacy_switch_is_on(env, on_value):
+        return ("ON USE" if on_use else "ON", _PRIVACY_CHIP_ON, on_use)
+    return ("OFF", _PRIVACY_CHIP_OFF, False)
+
+
+def _build_privacy_screen(
+    *,
+    scroll_offset: int = 0,
+    scroll_meta: dict | None = None,
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+    sub_reveal: float | None = None,
+    focus_index: int | None = None,
+    status: str = "",
+) -> Panel:
+    """Build the Privacy page: the statement plus the egress-disclosure ledger.
+
+    Content comes verbatim from :mod:`yeaboi.privacy` (the copy owner every
+    surface renders) — this builder lays it out, it never words it. Rows are
+    grouped by the module's state buckets, most-active first, so scanning the
+    page top to bottom is the audit. Rows backed by ``EGRESS_SWITCHES`` are
+    focusable live toggles: their chips read the env at render time, the
+    focused one wears the settings focus stripe, and the anchors are published
+    into ``scroll_meta`` (``focus_lines``/``focus_envs``) for the runner.
+    """
+    from yeaboi.privacy import EGRESS_DISCLOSURES, EGRESS_GROUPS, EGRESS_SWITCHES, PRIVACY_HEADLINE, PRIVACY_STATEMENT
+    from yeaboi.ui.shared._components import PRIVACY_THEME, build_badge, build_reveal_subtitle, privacy_title
+
+    theme = PRIVACY_THEME
+    title = privacy_title(shimmer_tick, width=width)
+    sub = build_reveal_subtitle("What leaves this machine — and every off-switch", sub_reveal, pad=_PAD + "  ")
+
+    switch_by_key = {entry["key"]: entry for entry in EGRESS_SWITCHES}
+    focusables: list[tuple[str, str, int]] = []  # (env, on_value, line offset)
+
+    body_lines: list = []
+    wrap_w = max(24, width - len(_PAD) - 12)
+
+    def _wrapped(text: str, style: str, *, indent: str = "    ", highlight: str | None = None) -> None:
+        for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
+            line = Text(_PAD + indent + chunk, style=style, justify="left")
+            if highlight:
+                line.highlight_regex(_PRIVACY_ENV_RE, highlight)
+            body_lines.append(line)
+
+    def _focusable(line: Text, env: str, on_value: str) -> None:
+        if focus_index is not None and len(focusables) == focus_index:
+            line.stylize(f"on {_SETTINGS_FOCUS_BG}")
+        focusables.append((env, on_value, len(body_lines)))
+        body_lines.append(line)
+
+    body_lines.append(Text(""))
+    body_lines.append(Text(_PAD + "  " + PRIVACY_HEADLINE, style=f"bold {theme.accent_bright}", justify="left"))
+    for paragraph in PRIVACY_STATEMENT:
+        body_lines.append(Text(""))
+        _wrapped(paragraph, theme.desc, indent="  ")
+
+    n_always = sum(1 for row in EGRESS_DISCLOSURES if row["group"] == "always")
+    summary = f"{len(EGRESS_DISCLOSURES)} paths · {n_always} on out of the box · every off-switch named below"
+    body_lines.append(Text(""))
+    body_lines.append(Text(_PAD + "  " + summary, style=theme.muted, justify="left"))
+
+    rows_by_group: dict = {}
+    for row in EGRESS_DISCLOSURES:
+        rows_by_group.setdefault(row["group"], []).append(row)
+
+    for group in EGRESS_GROUPS:
+        rows = rows_by_group.get(group["key"], [])
+        if not rows:
+            continue
+        # A group whose toggleable rows all share one switch carries it on the
+        # header (state lives once); otherwise each row toggles itself.
+        row_envs = [switch_by_key[row["key"]]["env"] for row in rows if row["key"] in switch_by_key]
+        header_switch = None
+        if len(rows) > 1 and len(row_envs) == len(rows) and len(set(row_envs)) == 1:
+            header_switch = switch_by_key[rows[0]["key"]]
+
+        label = group["title"].upper()
+        tail = str(len(rows))
+        body_lines.append(Text(""))
+        header = Text(_PAD + "  ", justify="left")
+        header.append(label, style=f"bold {theme.accent_bright}")
+        if header_switch is not None:
+            chip_label, chip_rgb, chip_dim = _privacy_switch_chip(
+                header_switch["env"], header_switch["on_value"], on_use=True
+            )
+            header.append("  ")
+            header.append_text(build_badge(chip_label, rgb=chip_rgb, dim=chip_dim))
+            fill = wrap_w - len(label) - len(chip_label) - len(tail) - 8
+        else:
+            fill = wrap_w - len(label) - len(tail) - 4
+        header.append(" " + "─" * max(3, fill), style=theme.sep)
+        header.append("  " + tail, style=theme.muted)
+        if header_switch is not None:
+            _focusable(header, header_switch["env"], header_switch["on_value"])
+        else:
+            body_lines.append(header)
+
+        for row in rows:
+            switch = None if header_switch is not None else switch_by_key.get(row["key"])
+            body_lines.append(Text(""))
+            heading = Text(_PAD + "  ", justify="left")
+            if switch is not None:
+                chip_label, chip_rgb, chip_dim = _privacy_switch_chip(switch["env"], switch["on_value"])
+                heading.append_text(build_badge(chip_label, rgb=chip_rgb, dim=chip_dim))
+                heading.append(" ")
+                heading.append(row["what"], style=f"bold {theme.value}")
+                _focusable(heading, switch["env"], switch["on_value"])
+            else:
+                if row["key"] in _PRIVACY_STATIC_CHIPS:
+                    chip_label, chip_rgb, chip_dim = _PRIVACY_STATIC_CHIPS[row["key"]]
+                    heading.append_text(build_badge(chip_label, rgb=chip_rgb, dim=chip_dim))
+                    heading.append(" ")
+                heading.append(row["what"], style=f"bold {theme.value}")
+                body_lines.append(heading)
+            _wrapped(f"{row['where']}  ·  {row['when']}", theme.desc)
+            # The one honest switchless row stays visible but does not glow.
+            off_style = theme.muted if row["off_switch"].lower().startswith("none") else theme.warn
+            _wrapped(f"Off-switch: {row['off_switch']}", off_style, highlight=f"bold {theme.warn}")
+
+    if scroll_meta is not None:
+        scroll_meta["focus_lines"] = [offset for _, _, offset in focusables]
+        scroll_meta["focus_envs"] = [(env, on_value) for env, on_value, _ in focusables]
+
+    viewport_h = calc_viewport(height, header_h=6, action_h=3)
+    total_lines = len(body_lines)
+    max_scroll = max(0, total_lines - viewport_h)
+    actual_scroll = min(scroll_offset, max_scroll)
+    publish_geometry(scroll_meta, max_scroll, viewport_h)
+    visible = body_lines[actual_scroll : actual_scroll + viewport_h]
+
+    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    padded_lines: list = list(visible)
+    for _ in range(max(0, viewport_h - len(visible))):
+        padded_lines.append(Text(""))
+    # Pin each body line to a single terminal row (see _build_changelog_screen).
+    for _ln in padded_lines:
+        _ln.no_wrap = True
+        _ln.overflow = "crop"
+
+    status_line = (
+        Text(_PAD + "  " + status, style=theme.good, justify="left")
+        if status
+        else Text("")  # keeps the content above the music pocket band
+    )
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        sub,
+        Text(""),
+        _viewport_with_scrollbar(padded_lines, _sb_text),
+        Text(""),
+        Text(_PAD + "  tab focus · enter toggle · ↑↓ scroll · esc back", style=theme.muted, justify="left"),
+        status_line,
+    )
+    return build_page_panel(content, theme=PRIVACY_THEME, height=height)
+
+
+# One glyph per system-check status, coloured by the theme at render time.
+_SYSTEM_CHECK_GLYPHS = {"ok": "✓", "missing": "○", "unsupported": "✗", "unknown": "?"}
+
+
+def _build_system_check_screen(
+    report,
+    *,
+    scroll_offset: int = 0,
+    scroll_meta: dict | None = None,
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+    sub_reveal: float | None = None,
+) -> Panel:
+    """Build the System Check page: one row per optional-feature prerequisite.
+
+    ``report`` is :func:`yeaboi.system_check.run_system_check` output. Every
+    probe behind it is offline by that module's policy, so the runner can
+    re-run it on demand without causing egress.
+    """
+    from yeaboi.ui.shared._components import SYSTEM_CHECK_THEME, build_reveal_subtitle, system_check_title
+
+    theme = SYSTEM_CHECK_THEME
+    title = system_check_title(shimmer_tick, width=width)
+    sub = build_reveal_subtitle(report.summary, sub_reveal, pad=_PAD + "  ")
+
+    _status_styles = {"ok": theme.good, "missing": theme.warn, "unsupported": theme.bad, "unknown": theme.muted}
+
+    body_lines: list = []
+    wrap_w = max(24, width - len(_PAD) - 12)
+
+    def _wrapped(text: str, style: str, *, indent: str = "      ") -> None:
+        for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
+            body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
+
+    for check in report.checks:
+        body_lines.append(Text(""))
+        style = _status_styles.get(check.status, theme.muted)
+        line = Text(_PAD + "  ", justify="left")
+        line.append(_SYSTEM_CHECK_GLYPHS.get(check.status, "?") + " ", style=f"bold {style}")
+        line.append(check.label, style=f"bold {theme.value}")
+        if check.feature:
+            line.append("  ·  ", style=theme.sep)
+            line.append(check.feature, style=theme.muted)
+        body_lines.append(line)
+        if check.detail:
+            _wrapped(check.detail, theme.desc)
+        if check.hint:
+            _wrapped(check.hint, style)
+
+    viewport_h = calc_viewport(height, header_h=6, action_h=3)
+    total_lines = len(body_lines)
+    max_scroll = max(0, total_lines - viewport_h)
+    actual_scroll = min(scroll_offset, max_scroll)
+    publish_geometry(scroll_meta, max_scroll, viewport_h)
+    visible = body_lines[actual_scroll : actual_scroll + viewport_h]
+
+    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    padded_lines: list = list(visible)
+    for _ in range(max(0, viewport_h - len(visible))):
+        padded_lines.append(Text(""))
+    for _ln in padded_lines:
+        _ln.no_wrap = True
+        _ln.overflow = "crop"
+
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        sub,
+        Text(""),
+        _viewport_with_scrollbar(padded_lines, _sb_text),
+        Text(""),
+        Text(_PAD + "  r re-run · esc back", style=theme.muted, justify="left"),
+        Text(""),  # keeps the content above the music pocket band
+    )
+    return build_page_panel(content, theme=SYSTEM_CHECK_THEME, height=height)
+
+
+def _viewport_with_scrollbar(padded_lines: list, sb_text) -> object:
+    """The two-column viewport cell the chrome pages share (content + track)."""
+    if sb_text is None:
+        return Group(*padded_lines)
+    from rich.table import Table as _SbTable
+
+    _vp_table = _SbTable(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False, expand=True)
+    _vp_table.add_column(ratio=1)
+    _vp_table.add_column(width=1)
+    _vp_table.add_row(Group(*padded_lines), sb_text)
+    return _vp_table
+
+
 def _build_all_tips_screen(
     *,
     scroll_offset: int = 0,
@@ -6328,7 +6622,7 @@ _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
     # board is the first thing a host looks for, and a tab name is visible the
     # instant Settings opens.
     "Sharing": ["sharing"],
-    "System": ["storage", "standup", "voice", "advanced"],
+    "System": ["storage", "standup", "voice", "privacy", "advanced"],
 }
 
 # Sections whose box spans the full grid width instead of taking a column slot.
@@ -6404,6 +6698,9 @@ SETTINGS_CHOICES: dict[str, tuple[str, ...]] = {
     # "on". The terminal renders its ducks for everything except "off".
     "SAVER_STYLE": tuple(SAVER_STYLES),
     "LANGSMITH_TRACING": ("true", "false"),
+    "YEABOI_TELEMETRY": ("true", "false"),
+    "YEABOI_UPDATE_CHECK": ("true", "false"),
+    "YEABOI_NO_TUNNEL": ("true", "false"),
     "LOG_LEVEL": VALID_LOG_LEVELS,
     "LLM_PROVIDER": LLM_PROVIDERS,
     "ANTHROPIC_AUTH_MODE": ANTHROPIC_AUTH_MODES,
@@ -6416,6 +6713,9 @@ SETTINGS_CHOICE_LABELS: dict[str, dict[str, str]] = {
     "DUCK_ENABLED": {"true": "on", "false": "off"},
     "SAVER_STYLE": dict(SAVER_STYLES),
     "LANGSMITH_TRACING": {"true": "enabled", "false": "disabled"},
+    "YEABOI_TELEMETRY": {"true": "on", "false": "off"},
+    "YEABOI_UPDATE_CHECK": {"true": "on", "false": "off"},
+    "YEABOI_NO_TUNNEL": {"true": "tunnels off", "false": "tunnels allowed"},
     "ANTHROPIC_AUTH_MODE": {"api_key": "api key", "subscription": "subscription"},
 }
 
@@ -6427,6 +6727,11 @@ SETTINGS_CHOICE_DEFAULTS: dict[str, str] = {
     "DUCK_ENABLED": "true",
     "SAVER_STYLE": DEFAULT_SAVER_STYLE,
     "LANGSMITH_TRACING": "false",
+    # Privacy: telemetry stays off and tunnels stay allowed unless the literal
+    # opt-in; the update check runs unless the literal opt-out.
+    "YEABOI_TELEMETRY": "false",
+    "YEABOI_UPDATE_CHECK": "true",
+    "YEABOI_NO_TUNNEL": "false",
     "LOG_LEVEL": "WARNING",
     # Matches agent/llm.py's own default when LLM_PROVIDER is unset.
     "LLM_PROVIDER": "anthropic",
@@ -7126,6 +7431,17 @@ def _build_settings_screen(
         _choice_row("LangSmith", "LANGSMITH_TRACING")
         _row("Config File", config_data.get("_config_path", ""))  # read-only path
 
+    def _sec_privacy() -> None:
+        """The switches the privacy page's egress table names.
+
+        Disclosure and control side by side (see yeaboi.privacy): the rows
+        default to current behavior, so the section changes nothing by existing.
+        """
+        _heading("Privacy")
+        _choice_row("Telemetry", "YEABOI_TELEMETRY")
+        _choice_row("Update Check", "YEABOI_UPDATE_CHECK")
+        _choice_row("Board Sharing Off-Switch", "YEABOI_NO_TUNNEL")
+
     def _sec_sharing() -> None:
         """How shared boards reach the people you send them to.
 
@@ -7179,6 +7495,7 @@ def _build_settings_screen(
         "storage": _sec_storage,
         "standup": _sec_standup,
         "voice": _sec_voice,
+        "privacy": _sec_privacy,
         "sharing": _sec_sharing,
         "advanced": _sec_advanced,
     }

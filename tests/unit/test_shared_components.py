@@ -687,9 +687,9 @@ class TestSettingsScreen:
             _build_settings_screen,
         )
 
-        # box 3 / field 1 is Session Prune Days on the System tab (AWS Bedrock used
-        # to sit here as a fifth box; its rows moved beside the provider).
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2, sel_box=3, sel_field=1)
+        # box 4 / field 1 is Session Prune Days on the System tab (Privacy is the
+        # fourth box now; AWS Bedrock's old fifth box moved beside the provider).
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2, sel_box=4, sel_field=1)
         rows = self._segments(panel, width=130, height=44)
         barred = [r for r in rows if any(_SETTINGS_FOCUS_BG in str(s.style) for s in r)]
         assert len(barred) == 1  # exactly one value is highlighted
