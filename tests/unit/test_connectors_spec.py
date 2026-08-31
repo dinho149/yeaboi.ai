@@ -15,6 +15,7 @@ from yeaboi.connectors import registry
 from yeaboi.connectors.spec import ACCENT_RE, FAMILIES, FAMILY_LABELS, FAMILY_ORDER
 
 ALL = registry.all_connectors()
+LEGACY = registry.legacy_entries()
 
 
 class TestIdentity:
@@ -237,3 +238,62 @@ class TestTheFetchSeam:
             c.key for c in registry.all_connectors() if c.verify and not c.fetch and c.key not in self._CATALOG_ONLY
         ]
         assert missing == [], f"{missing} verify but gather nothing"
+
+
+class TestLegacyEntries:
+    """The display-only catalog entries hold to the same identity rules.
+
+    They share the catalog with the real connectors, so a duplicate key or a
+    reused accent would make two rows read as one thing.
+    """
+
+    def test_they_never_join_the_registry(self):
+        # Everything derived from _CONNECTORS (settings fields, verify tables,
+        # secret masks) must keep deriving from connectors alone.
+        assert not {c.key for c in LEGACY} & {c.key for c in ALL}
+        for entry in LEGACY:
+            assert registry.by_key(entry.key) is None, f"{entry.key} leaked into _CONNECTORS"
+
+    def test_keys_are_unique_slugs_across_the_whole_catalog(self):
+        keys = [c.key for c in ALL] + [c.key for c in LEGACY]
+        assert len(keys) == len(set(keys))
+        for entry in LEGACY:
+            assert re.fullmatch(r"[a-z][a-z0-9_]*", entry.key), f"{entry.key!r} is not a slug"
+
+    def test_families_are_known_and_marks_resolve(self):
+        for entry in LEGACY:
+            assert entry.family in FAMILIES, f"{entry.key} family {entry.family!r} is unknown"
+            assert entry.mark.strip(), f"{entry.key} renders no glyph"
+
+    def test_accents_are_distinct_across_the_whole_catalog(self):
+        accents = [c.accent for c in ALL] + [c.accent for c in LEGACY]
+        assert len(accents) == len(set(accents)), "two catalog entries share an accent"
+        for entry in LEGACY:
+            m = ACCENT_RE.match(entry.accent)
+            assert m, f"{entry.key} accent {entry.accent!r} is not rgb(r,g,b)"
+            assert all(0 <= int(part) <= 255 for part in m.groups())
+
+    def test_credential_fields_are_marked_secret(self):
+        # SPACE_KEY is an identifier, not a credential — the words that matter
+        # are the ones that name a bearer value.
+        for entry in LEGACY:
+            for field in entry.fields:
+                if any(word in field.env for word in ("TOKEN", "API_KEY", "WEBHOOK")):
+                    assert field.secret, f"{entry.key}.{field.env} is a credential but not secret"
+
+    def test_connectedness_matches_the_config_getters(self, monkeypatch):
+        from yeaboi.connectors import legacy
+
+        for env in registry.legacy_envs():
+            monkeypatch.delenv(env, raising=False)
+        # Confluence rides Jira's Atlassian identity plus its own space key.
+        confluence = legacy.by_key("confluence")
+        assert not legacy.is_connected(confluence)
+        for env in ("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "CONFLUENCE_SPACE_KEY"):
+            monkeypatch.setenv(env, "x")
+        assert legacy.is_connected(confluence)
+        # Slack counts with either credential alone.
+        slack = legacy.by_key("slack")
+        assert not legacy.is_connected(slack)
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-1")
+        assert legacy.is_connected(slack)

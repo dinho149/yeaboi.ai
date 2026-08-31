@@ -34,7 +34,7 @@ from yeaboi.connectors.spec import FAMILY_LABELS
 
 logger = logging.getLogger(__name__)
 
-SCHEMA = 1
+SCHEMA = 2
 OUTPUT = Path(__file__).resolve().parents[1] / "contracts" / "v1" / "connectors.json"
 
 
@@ -45,6 +45,10 @@ def render() -> str:
         "$generated_by": "scripts/gen_connectors_contract.py",
         # Every key needs a mark the desktop can draw — a real logomark, or a
         # deliberate family fallback. A monogram is what "we forgot" looks like.
+        # Since schema 2 the legacy integrations ride too: the catalog shows the
+        # whole roster, so the whole roster needs marks. ``managed_by`` says
+        # whether a connect form belongs here ("connections") or deep-links to
+        # Credentials/setup ("credentials").
         "connectors": [
             {
                 "key": c.key,
@@ -52,8 +56,13 @@ def render() -> str:
                 "family": c.family,
                 "family_label": FAMILY_LABELS.get(c.family, c.family.title()),
                 "accent": c.accent,
+                "managed_by": managed_by,
             }
-            for c in registry.all_connectors()
+            for connectors, managed_by in (
+                (registry.all_connectors(), "connections"),
+                (registry.legacy_entries(), "credentials"),
+            )
+            for c in connectors
         ],
     }
     return json.dumps(document, ensure_ascii=False, indent=2) + "\n"

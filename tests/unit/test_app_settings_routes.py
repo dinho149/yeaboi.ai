@@ -305,8 +305,14 @@ class TestConnectionsCatalog:
         body = json.loads(request(app, "GET", "/api/connections?all=1").body)
         from yeaboi.connectors import registry
 
-        assert [c["key"] for c in body["connectors"]] == [c.key for c in registry.all_connectors()]
+        # The browse view is the whole roster: connectors plus the built-in
+        # integrations as managed_by:"credentials" rows.
+        expected = {c.key for c in registry.all_connectors()} | {c.key for c in registry.legacy_entries()}
+        assert {c["key"] for c in body["connectors"]} == expected
         assert body["connectors"][0]["connected"] is False
+        managed = {c["key"]: c["managed_by"] for c in body["connectors"]}
+        assert managed["datadog"] == "connections"
+        assert managed["github"] == "credentials"
 
     def test_never_carries_a_field_value(self, app, monkeypatch):
         secret = "dd-api-key-never-on-the-wire"

@@ -104,17 +104,18 @@ def connection_verify(app, request: Request) -> Response:
 
 
 def connections_list(app, request: Request) -> Response:
-    """``GET /api/connections`` — the read-only integration catalog.
+    """``GET /api/connections`` — the integration catalog.
 
-    ``?all=1`` includes connectors that are not set up (the "add one" picker);
-    the default lists only what is connected. Never carries a field value —
-    each field reports whether it is set and nothing more.
+    ``?all=1`` is the browse view: every connector that could be added, plus the
+    built-in integrations as ``managed_by:"credentials"`` rows; the default
+    lists only what is connected. Never carries a field value — each field
+    reports whether it is set and nothing more.
     """
     from yeaboi.connectors.engine import list_connections
 
     show_all = str(request.query.get("all", "")).strip().lower() in ("1", "true", "yes")
     family = str(request.query.get("family", "") or "")
-    return json_response(list_connections(family=family, connected_only=not show_all))
+    return json_response(list_connections(family=family, connected_only=not show_all, include_legacy=show_all))
 
 
 def access_state(app, request: Request) -> Response:

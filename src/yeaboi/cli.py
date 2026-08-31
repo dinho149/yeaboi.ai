@@ -1085,7 +1085,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     conn_list = connections_sub.add_parser("list", help="What is connected (--all for the whole catalog)")
     conn_list.add_argument("--family", default="", help="Only this family (e.g. observability)")
-    conn_list.add_argument("--all", action="store_true", help="Include connectors you have not set up")
+    conn_list.add_argument(
+        "--all", action="store_true", help="The whole catalog: connectors you have not set up + built-in integrations"
+    )
     conn_list.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     conn_show = connections_sub.add_parser("show", help="One connector: its fields and whether each is set")
@@ -2655,14 +2657,14 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
 
     from rich.markup import escape
 
-    from yeaboi.connectors import registry
+    from yeaboi.connectors import legacy, registry
     from yeaboi.connectors.engine import list_connections
 
     to_json = getattr(args, "format", "text") == "json"
     command = args.connections_command
 
     if command == "list":
-        payload = list_connections(family=args.family, connected_only=not args.all)
+        payload = list_connections(family=args.family, connected_only=not args.all, include_legacy=args.all)
         if to_json:
             print(json.dumps(payload, indent=2))
             return 0
@@ -2677,20 +2679,35 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
             # each one is for, on the line under it.
             if row["summary"]:
                 console.print(f"   [dim]{row['summary']}[/dim]")
+            if row["managed_by"] == "credentials":
+                console.print("   [dim]set up via: yeaboi --setup (Settings ▸ Credentials)[/dim]")
         return 0
 
     connector = registry.by_key(args.name) if getattr(args, "name", "") else None
-    if getattr(args, "name", "") and connector is None:
-        known = ", ".join(c.key for c in registry.all_connectors())
+    legacy_entry = legacy.by_key(args.name) if connector is None and getattr(args, "name", "") else None
+    if getattr(args, "name", "") and connector is None and legacy_entry is None:
+        known = ", ".join([c.key for c in registry.all_connectors()] + [c.key for c in registry.legacy_entries()])
         print(f"Error: unknown connector {args.name!r}. Known: {known}", file=sys.stderr)
         return 1
 
+    if legacy_entry is not None and command in ("add", "remove", "fetch"):
+        # A built-in integration's credentials belong to Credentials/setup —
+        # they are shared with features this command must not silently unplug.
+        print(
+            f"{legacy_entry.label} is set up via `yeaboi --setup` or Settings ▸ Credentials, "
+            f"not `yeaboi connections {command}`.",
+            file=sys.stderr,
+        )
+        return 1
+
     if command == "show":
-        payload = list_connections(connected_only=False)
-        row = next(r for r in payload["connectors"] if r["key"] == connector.key)
+        payload = list_connections(connected_only=False, include_legacy=True)
+        shown_key = (connector or legacy_entry).key
+        row = next(r for r in payload["connectors"] if r["key"] == shown_key)
         if to_json:
             print(json.dumps(row, indent=2))
             return 0
+        entry = connector or legacy_entry
         console.print(f"{row['glyph']} [bold]{row['label']}[/bold]  [dim]{row['family_label']}[/dim]")
         if row["detail"]:
             from rich.padding import Padding
@@ -2698,19 +2715,19 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
             # Padding, not a literal indent: the detail wraps, and only the first
             # wrapped line would carry a leading-space indent.
             console.print(Padding(f"[dim]{row['detail']}[/dim]", (0, 0, 1, 2)))
-        chosen = registry.chosen_method(connector)
+        chosen = registry.chosen_method(entry)
         if chosen is not None:
             console.print(f"  [bold]{chosen.label}[/bold]  [dim]{chosen.summary}[/dim]")
             if chosen.warning:
                 console.print(f"  [yellow]⚠  {chosen.warning}[/yellow]")
-        shown = {f.env for f in connector.fields_for(chosen.key)} if chosen else None
+        shown = {f.env for f in entry.fields_for(chosen.key)} if chosen else None
         for field in row["fields"]:
             if shown is not None and field["env"] not in shown:
                 continue
             state = "[green]set[/green]" if field["is_set"] else "[dim]not set[/dim]"
             need = "" if field["required"] else " [dim](optional)[/dim]"
             console.print(f"  {field['label']}: {state}{need}  [dim]{field['env']}[/dim]")
-        for method in connector.auth_methods:
+        for method in entry.auth_methods:
             if chosen is not None and method.key == chosen.key:
                 continue
             console.print(f"  [dim]or {method.key}: {method.summary}[/dim]")
@@ -2718,12 +2735,17 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
                 console.print(f"  [dim]   ⚠  {method.warning}[/dim]")
         if row["docs_url"]:
             console.print(f"  [dim]docs: {row['docs_url']}[/dim]")
+        if row["managed_by"] == "credentials":
+            console.print("  [dim]set up via: yeaboi --setup (Settings ▸ Credentials)[/dim]")
         return 0
 
     if command == "verify":
         from yeaboi.settings.engine import verify_connection
 
-        targets = [connector.key] if connector else registry.connected()
+        if legacy_entry is not None and legacy_entry.key not in legacy.LEGACY_VERIFY_KINDS:
+            print(f"{legacy_entry.label} has no live probe — check it under Settings ▸ System.", file=sys.stderr)
+            return 1
+        targets = [(connector or legacy_entry).key] if (connector or legacy_entry) else registry.connected()
         if not targets:
             console.print("[dim]Nothing connected to verify.[/dim]")
             return 0

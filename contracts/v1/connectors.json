@@ -1,5 +1,5 @@
 {
-  "$schema_version": 1,
+  "$schema_version": 2,
   "$generated_by": "scripts/gen_connectors_contract.py",
   "connectors": [
     {
@@ -7,84 +7,160 @@
       "label": "Datadog",
       "family": "observability",
       "family_label": "Observability",
-      "accent": "rgb(147,111,218)"
+      "accent": "rgb(147,111,218)",
+      "managed_by": "connections"
     },
     {
       "key": "grafana",
       "label": "Grafana",
       "family": "observability",
       "family_label": "Observability",
-      "accent": "rgb(242,131,32)"
+      "accent": "rgb(242,131,32)",
+      "managed_by": "connections"
     },
     {
       "key": "incidentio",
       "label": "incident.io",
       "family": "incidents",
       "family_label": "Incidents & on-call",
-      "accent": "rgb(242,85,51)"
+      "accent": "rgb(242,85,51)",
+      "managed_by": "connections"
     },
     {
       "key": "pagerduty",
       "label": "PagerDuty",
       "family": "incidents",
       "family_label": "Incidents & on-call",
-      "accent": "rgb(6,172,105)"
+      "accent": "rgb(6,172,105)",
+      "managed_by": "connections"
     },
     {
       "key": "sentry",
       "label": "Sentry",
       "family": "errors",
       "family_label": "Error tracking",
-      "accent": "rgb(106,84,164)"
+      "accent": "rgb(106,84,164)",
+      "managed_by": "connections"
     },
     {
       "key": "aws",
       "label": "AWS",
       "family": "cloud",
       "family_label": "Cloud",
-      "accent": "rgb(255,153,0)"
+      "accent": "rgb(255,153,0)",
+      "managed_by": "connections"
     },
     {
       "key": "gcp",
       "label": "Google Cloud",
       "family": "cloud",
       "family_label": "Cloud",
-      "accent": "rgb(66,133,244)"
+      "accent": "rgb(66,133,244)",
+      "managed_by": "connections"
     },
     {
       "key": "azure_cloud",
       "label": "Microsoft Azure",
       "family": "cloud",
       "family_label": "Cloud",
-      "accent": "rgb(0,120,212)"
+      "accent": "rgb(0,120,212)",
+      "managed_by": "connections"
     },
     {
       "key": "linear",
       "label": "Linear",
       "family": "delivery",
       "family_label": "Delivery tracking",
-      "accent": "rgb(94,106,210)"
+      "accent": "rgb(94,106,210)",
+      "managed_by": "connections"
     },
     {
       "key": "trello",
       "label": "Trello",
       "family": "delivery",
       "family_label": "Delivery tracking",
-      "accent": "rgb(0,121,191)"
+      "accent": "rgb(0,121,191)",
+      "managed_by": "connections"
     },
     {
       "key": "bitbucket",
       "label": "Bitbucket",
       "family": "code",
       "family_label": "Code",
-      "accent": "rgb(0,82,204)"
+      "accent": "rgb(0,82,204)",
+      "managed_by": "connections"
     },
     {
       "key": "gitlab",
       "label": "GitLab",
       "family": "code",
       "family_label": "Code",
-      "accent": "rgb(226,67,41)"
+      "accent": "rgb(226,67,41)",
+      "managed_by": "connections"
+    },
+    {
+      "key": "azdevops",
+      "label": "Azure DevOps Boards",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(0,90,158)",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "jira",
+      "label": "Jira",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(38,132,255)",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "github",
+      "label": "GitHub",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(110,118,129)",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "confluence",
+      "label": "Confluence",
+      "family": "docs",
+      "family_label": "Docs",
+      "accent": "rgb(76,154,255)",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "notion",
+      "label": "Notion",
+      "family": "docs",
+      "family_label": "Docs",
+      "accent": "rgb(55,53,47)",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "slack",
+      "label": "Slack",
+      "family": "chat",
+      "family_label": "Chat",
+      "accent": "rgb(74,21,75)",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "elevenlabs",
+      "label": "ElevenLabs",
+      "family": "media",
+      "family_label": "Voice & video",
+      "accent": "rgb(28,28,28)",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "tavus",
+      "label": "Tavus",
+      "family": "media",
+      "family_label": "Voice & video",
+      "accent": "rgb(255,79,100)",
+      "managed_by": "credentials"
     }
   ]
 }

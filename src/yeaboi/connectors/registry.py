@@ -140,4 +140,24 @@ def connection_kinds() -> dict[str, tuple[tuple[str, str], ...]]:
 
 def accents() -> tuple[str, ...]:
     """The connector keys the front end must own a ``[data-connector]`` block for."""
-    return tuple(c.key for c in all_connectors())
+    return tuple(c.key for c in all_connectors()) + tuple(c.key for c in legacy_entries())
+
+
+def legacy_entries() -> tuple[Connector, ...]:
+    """The pre-connector integrations, as display-only catalog entries.
+
+    Ordered like :func:`all_connectors`. These never join ``_CONNECTORS`` —
+    nothing derives settings fields or verify tables from them; see
+    :mod:`yeaboi.connectors.legacy`.
+    """
+    from yeaboi.connectors import legacy
+
+    order = {family: i for i, family in enumerate(FAMILY_ORDER)}
+    return tuple(sorted(legacy.LEGACY, key=lambda c: (order.get(c.family, len(order)), c.label.lower())))
+
+
+def legacy_envs() -> tuple[str, ...]:
+    """Every env a legacy catalog entry reads, in descriptor order."""
+    from yeaboi.connectors import legacy
+
+    return legacy.all_envs()

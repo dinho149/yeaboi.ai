@@ -26,7 +26,7 @@ from yeaboi.connectors.spec import FAMILY_LABELS, FAMILY_ORDER
 logger = logging.getLogger(__name__)
 
 
-def list_connections(*, family: str = "", connected_only: bool = True) -> dict:
+def list_connections(*, family: str = "", connected_only: bool = True, include_legacy: bool = False) -> dict:
     """The connector catalog: what exists, what is connected, and what it needs.
 
     Never returns a credential — a field reports ``is_set`` and nothing more, so
@@ -34,15 +34,23 @@ def list_connections(*, family: str = "", connected_only: bool = True) -> dict:
 
     ``connected_only`` defaults to True: that default IS "hidden until
     connected". Pass False for the "add a connection" picker, which is the one
-    place a user has asked to see everything.
+    place a user has asked to see everything. ``include_legacy`` (honoured only
+    there) adds the pre-connector integrations as ``managed_by:"credentials"``
+    rows, so a catalog can show the whole roster while a connect form knows to
+    hand those to Credentials/setup instead of rendering fields.
     """
+    from yeaboi.connectors import legacy
+
     connectors = registry.all_connectors()
+    if not connected_only and include_legacy:
+        connectors = connectors + registry.legacy_entries()
     if family:
         connectors = tuple(c for c in connectors if c.family == family)
 
     rows = []
     for connector in connectors:
-        linked = registry.is_connected(connector)
+        is_legacy = legacy.by_key(connector.key) is connector
+        linked = legacy.is_connected(connector) if is_legacy else registry.is_connected(connector)
         if connected_only and not linked:
             continue
         rows.append(
@@ -56,10 +64,13 @@ def list_connections(*, family: str = "", connected_only: bool = True) -> dict:
                 "section": connector.section,
                 "connected": linked,
                 "read_only": connector.read_only,
+                # Where configuring happens: "connections" rows carry their own
+                # add flow; "credentials" rows deep-link to Credentials/setup.
+                "managed_by": "credentials" if is_legacy else "connections",
                 "docs_url": connector.docs_url,
                 "glyph": connector.mark,
                 "accent": connector.accent,
-                "verify_kind": connector.key if connector.verify else "",
+                "verify_kind": _verify_kind(connector, is_legacy),
                 # The ways in, and which one is in force. A connector with one
                 # way sends an empty list and no selector, so a surface that
                 # ignores these keys renders exactly as it did before.
@@ -103,6 +114,20 @@ def list_connections(*, family: str = "", connected_only: bool = True) -> dict:
     ]
     logger.info("connectors: catalog listed %d connector(s), connected_only=%s", len(rows), connected_only)
     return {"connectors": rows, "families": families, "connected": registry.connected(family)}
+
+
+def _verify_kind(connector, is_legacy: bool) -> str:
+    """The ``verify_connection`` kind for a row, or ``""`` when nothing probes.
+
+    Legacy kinds live in ``settings/engine``'s hand-written table rather than on
+    the descriptor; :data:`~yeaboi.connectors.legacy.LEGACY_VERIFY_KINDS` names
+    which entries that table covers.
+    """
+    from yeaboi.connectors.legacy import LEGACY_VERIFY_KINDS
+
+    if is_legacy:
+        return connector.key if connector.key in LEGACY_VERIFY_KINDS else ""
+    return connector.key if connector.verify else ""
 
 
 def fetch_ops_events(key: str = "", *, since: str = "14d", now: datetime | None = None) -> dict:

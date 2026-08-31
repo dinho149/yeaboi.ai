@@ -42,8 +42,11 @@ def test_the_contract_is_not_stale():
 
 def test_it_names_every_connector_and_only_those():
     # Two-way, like every other registry check: a removed connector must not
-    # leave a rule behind in the desktop's icon table either.
-    assert [row["key"] for row in ROWS] == [c.key for c in registry.all_connectors()]
+    # leave a rule behind in the desktop's icon table either. Since schema 2
+    # the legacy integrations ride too — the catalog shows the whole roster,
+    # so the desktop needs a mark for the whole roster.
+    expected = [c.key for c in registry.all_connectors()] + [c.key for c in registry.legacy_entries()]
+    assert [row["key"] for row in ROWS] == expected
 
 
 def test_every_row_carries_what_a_mark_needs():
@@ -54,8 +57,10 @@ def test_every_row_carries_what_a_mark_needs():
 
 
 def test_it_carries_no_presentation():
-    # Identifiers, labels and one accent. A payload carries text and numbers,
-    # never markup — an SVG path here would put the desktop's icons in this repo.
-    allowed = {"key", "label", "family", "family_label", "accent"}
+    # Identifiers, labels, one accent and where configuring happens. A payload
+    # carries text and numbers, never markup — an SVG path here would put the
+    # desktop's icons in this repo.
+    allowed = {"key", "label", "family", "family_label", "accent", "managed_by"}
     for row in ROWS:
         assert set(row) == allowed, f"{row['key']} carries {sorted(set(row) - allowed)}"
+        assert row["managed_by"] in ("connections", "credentials")

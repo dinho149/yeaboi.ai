@@ -20,10 +20,10 @@ from yeaboi.mcp.runtime import run_readonly
 logger = logging.getLogger(__name__)
 
 
-def _list(family: str, connected_only: bool):
+def _list(family: str, connected_only: bool, include_legacy: bool):
     from yeaboi.connectors.engine import list_connections
 
-    return list_connections(family=family, connected_only=connected_only)
+    return list_connections(family=family, connected_only=connected_only, include_legacy=include_legacy)
 
 
 def _fetch(key: str, since: str):
@@ -40,15 +40,17 @@ def register(app) -> None:
         ctx: Context,
         family: str = "",
         connected_only: bool = True,
+        include_legacy: bool = False,
     ) -> dict:
         """List the read-only integrations yeaboi can gather from, and which are set up.
 
         family narrows to one group (observability, incidents, errors, cloud, …).
         connected_only defaults to true — pass false for the full catalog of what
-        could be added. Field values are never returned: each field reports only
-        whether it is set.
+        could be added, and include_legacy true to also list the built-in
+        integrations (GitHub, Jira, …) as managed_by:"credentials" rows. Field
+        values are never returned: each field reports only whether it is set.
         """
-        return await run_readonly(_list, family, connected_only)
+        return await run_readonly(_list, family, connected_only, include_legacy)
 
     @app.tool()
     async def connections_fetch(

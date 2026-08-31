@@ -25,7 +25,7 @@ APP_KEY = "dd-app-key-abcdefghijkl"
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
-    for env in registry.all_envs():
+    for env in registry.all_envs() + registry.legacy_envs():
         monkeypatch.delenv(env, raising=False)
 
 
