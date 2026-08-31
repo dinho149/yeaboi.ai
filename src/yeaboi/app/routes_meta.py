@@ -124,10 +124,16 @@ def system_check(app, request: Request) -> Response:
     Offline by :mod:`yeaboi.system_check`'s policy — opening the page causes
     no egress, so it is safe to run on every GET.
     """
-    from yeaboi.system_check import run_system_check
+    from yeaboi.system_check import CHECK_CATEGORIES, run_system_check
 
     report = run_system_check()
-    return json_response({"summary": report.summary, "checks": [to_jsonable(check) for check in report.checks]})
+    return json_response(
+        {
+            "summary": report.summary,
+            "categories": list(CHECK_CATEGORIES),
+            "checks": [to_jsonable(check) for check in report.checks],
+        }
+    )
 
 
 def tools(app, request: Request) -> Response:

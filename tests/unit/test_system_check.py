@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+import sys
 
 import pytest
 
@@ -14,12 +15,15 @@ _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
 @pytest.fixture
-def _all_probes_stubbed(monkeypatch):
+def _all_probes_stubbed(monkeypatch, tmp_path):
     """Every wrapped probe pinned to a happy, hermetic answer.
 
     The check functions import their probes at call time, so patching the
     owning modules is enough — no probe touches the real machine.
     """
+    for name in _INTEGRATION_ENVS:
+        monkeypatch.setenv(name, "set-for-the-test")
+    monkeypatch.setattr("yeaboi.paths.ROOT_DIR", tmp_path)
     monkeypatch.setattr("yeaboi.config.get_llm_provider", lambda: "ollama")
     monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (True, ""))
     monkeypatch.setattr("yeaboi.config.get_ollama_base_url", lambda: "http://localhost:11434")
@@ -60,7 +64,7 @@ class TestReportShape:
         # cloudflared is on PATH via the stubbed which(); everything reports ok.
         assert all(c.status == "ok" for c in report.checks), {k: c.status for k, c in by_key.items()}
         assert report.ok_count == len(report.checks)
-        assert "optional features ready" in report.summary
+        assert "checks ready" in report.summary
 
     def test_every_check_has_a_stable_key_and_label(self, _all_probes_stubbed):
         report = run_system_check()
@@ -69,14 +73,22 @@ class TestReportShape:
             "provider",
             "ollama-installed",
             "ollama-server",
-            "voice",
+            "github",
+            "jira",
+            "azure",
+            "confluence",
+            "notion",
+            "slack",
+            "git",
+            "coding-agent",
+            "cloudflared",
             "music",
             "charts",
-            "cloudflared",
+            "voice",
             "access",
-            "coding-agent",
-            "git",
+            "data-dir",
             "disk",
+            "python",
         ]
         assert all(c.label for c in report.checks)
         assert all(c.status in ("ok", "missing", "unsupported", "unknown") for c in report.checks)
@@ -107,17 +119,127 @@ class TestReportShape:
         assert disk.hint
 
 
+class TestCategories:
+    def test_every_check_declares_a_known_category(self, _all_probes_stubbed):
+        report = run_system_check()
+        known = {c["key"] for c in system_check.CHECK_CATEGORIES}
+        assert {c.category for c in report.checks} == known
+
+    def test_by_category_follows_the_declared_order(self, _all_probes_stubbed):
+        report = run_system_check()
+        grouped = report.by_category()
+        assert [c["key"] for c, _ in grouped] == [c["key"] for c in system_check.CHECK_CATEGORIES]
+        assert all(c["title"] and c["blurb"] for c, _ in grouped)
+
+    def test_counts_agree_with_the_rows(self, _all_probes_stubbed):
+        report = run_system_check()
+        for category, rows in report.by_category():
+            assert category["total"] == len(rows)
+            assert category["ok"] == sum(1 for row in rows if row.status == "ok")
+        assert sum(c["total"] for c, _ in report.by_category()) == len(report.checks)
+
+    def test_empty_categories_are_dropped(self):
+        report = SystemReport(checks=(CheckResult("git", "Git", "ok", category="tools"),))
+        assert [c["key"] for c, _ in report.by_category()] == ["tools"]
+
+    def test_an_unknown_category_still_renders(self):
+        report = SystemReport(checks=(CheckResult("mystery", "Mystery", "ok", category="nope"),))
+        grouped = report.by_category()
+        assert len(grouped) == 1
+        assert grouped[0][1][0].key == "mystery"
+
+
+#: Every env var the integration getters read, so a test can start from nothing.
+_INTEGRATION_ENVS = (
+    "GITHUB_TOKEN",
+    "JIRA_BASE_URL",
+    "JIRA_EMAIL",
+    "JIRA_API_TOKEN",
+    "AZURE_DEVOPS_ORG_URL",
+    "AZURE_DEVOPS_TOKEN",
+    "CONFLUENCE_BASE_URL",
+    "CONFLUENCE_EMAIL",
+    "CONFLUENCE_API_TOKEN",
+    "CONFLUENCE_SPACE_KEY",
+    "NOTION_TOKEN",
+    "SLACK_WEBHOOK_URL",
+    "SLACK_BOT_TOKEN",
+)
+
+
+def _entry(key: str) -> dict:
+    return next(e for e in system_check._INTEGRATIONS if e["key"] == key)
+
+
+@pytest.fixture
+def _no_credentials(monkeypatch):
+    for name in _INTEGRATION_ENVS:
+        monkeypatch.delenv(name, raising=False)
+
+
+class TestIntegrations:
+    def test_all_missing_with_a_bare_environment(self, _no_credentials):
+        for entry in system_check._INTEGRATIONS:
+            result = system_check._check_integration(entry)
+            assert result.status == "missing", entry["key"]
+            assert result.detail == "not configured"
+            assert result.hint.startswith("Settings ▸ ")
+
+    def test_partial_config_names_what_is_left(self, _no_credentials, monkeypatch):
+        monkeypatch.setenv("JIRA_BASE_URL", "https://example.atlassian.net")
+        result = system_check._check_integration(_entry("jira"))
+        assert result.status == "missing"
+        assert result.detail == "missing email, API token"
+
+    def test_either_slack_credential_is_enough(self, _no_credentials, monkeypatch):
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+        assert system_check._check_integration(_entry("slack")).status == "ok"
+
+    def test_confluence_reads_its_own_credentials(self, _no_credentials, monkeypatch):
+        for name in ("CONFLUENCE_BASE_URL", "CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN", "CONFLUENCE_SPACE_KEY"):
+            monkeypatch.setenv(name, "set-for-the-test")
+        assert system_check._check_integration(_entry("confluence")).status == "ok"
+
+    def test_confluence_inherits_the_jira_account(self, _no_credentials, monkeypatch):
+        # get_confluence_* falls back to the Jira creds; the doctor must agree
+        # with the feature rather than report a working setup as broken.
+        for name in ("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN"):
+            monkeypatch.setenv(name, "set-for-the-test")
+        monkeypatch.setenv("CONFLUENCE_SPACE_KEY", "DOCS")
+        assert system_check._check_integration(_entry("confluence")).status == "ok"
+
+
+class TestMachine:
+    def test_data_dir_ok_when_writable(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.ROOT_DIR", tmp_path)
+        result = system_check._check_data_dir()
+        assert result.status == "ok"
+        assert str(tmp_path) in result.detail
+
+    def test_data_dir_missing_when_absent(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.ROOT_DIR", tmp_path / "nope")
+        result = system_check._check_data_dir()
+        assert result.status == "missing"
+        assert result.hint
+
+    def test_python_runtime_reports_the_running_interpreter(self):
+        result = system_check._check_python()
+        assert result.status == "ok"
+        assert result.detail.startswith(".".join(str(p) for p in sys.version_info[:3]))
+
+
 class TestCrashSafety:
     def test_a_crashing_probe_reports_unknown_and_never_raises(self, monkeypatch):
         def _boom() -> CheckResult:
             raise RuntimeError("probe exploded")
 
         _boom.__name__ = "_check_provider"
-        monkeypatch.setattr(system_check, "_CHECKS", (_boom,))
+        monkeypatch.setattr(system_check, "_CHECKS", (("ai", _boom),))
         report = run_system_check()
         assert len(report.checks) == 1
         assert report.checks[0].status == "unknown"
         assert report.checks[0].key == "provider"
+        assert report.checks[0].category == "ai"
 
 
 class TestOfflinePolicy:

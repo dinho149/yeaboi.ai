@@ -16,6 +16,7 @@ from yeaboi.ui.shared._components import (
     build_page_panel,
     build_progress_dots,
     build_scrollbar,
+    build_section_rule,
     calc_viewport,
 )
 
@@ -283,6 +284,50 @@ class TestBuildKeyHints:
         from yeaboi.ui.shared._components import build_key_hints
 
         assert build_key_hints([]).plain == ""
+
+
+class TestBuildSectionRule:
+    def _rule(self, **kwargs):
+        from yeaboi.ui.shared._components import build_section_rule
+
+        return build_section_rule("AI & MODELS", width=60, **kwargs)
+
+    def test_returns_text_with_the_title_and_a_rule(self):
+        rule = self._rule()
+        assert isinstance(rule, Text)
+        assert "AI & MODELS" in rule.plain
+        assert "─" in rule.plain
+
+    def test_glyph_and_tail_are_placed_around_the_rule(self):
+        rule = self._rule(glyph="◈", tail="2/3").plain
+        assert rule.startswith("◈ AI & MODELS")
+        assert rule.endswith("2/3")
+
+    def test_fits_the_requested_width(self):
+        from rich.cells import cell_len
+
+        for width in (40, 60, 120):
+            rule = build_section_rule("TOOLS ON PATH", width=width, pad="  ", glyph="⌘", tail="9/11")
+            assert cell_len(rule.plain) <= width
+
+    def test_long_title_keeps_a_minimum_rule(self):
+        # The floor is what stops a title wider than the page eating the rule.
+        rule = build_section_rule("A" * 80, width=40, tail="1/1").plain
+        assert "───" in rule
+
+    def test_badge_widens_what_the_rule_must_leave(self):
+        from yeaboi.ui.shared._components import build_badge
+
+        plain = self._rule(badge=build_badge("ON USE")).plain
+        assert "ON USE" in plain
+        assert plain.count("─") < self._rule().plain.count("─")
+
+    def test_a_text_tail_keeps_its_own_styling(self):
+        tail = build_meter(1, 3, width=5)
+        assert build_section_rule("MACHINE", width=60, tail=tail).plain.endswith(tail.plain)
+
+    def test_empty_tail_appends_nothing(self):
+        assert not self._rule().plain.rstrip().endswith(" ")
 
 
 class TestBuildMeter:

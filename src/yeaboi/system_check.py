@@ -20,10 +20,13 @@ can never disagree.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import shutil
-from dataclasses import dataclass
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +38,23 @@ _PROBE_TIMEOUT = 2
 # failing in confusing ways — say so before they do.
 _LOW_DISK_BYTES = 1_000_000_000
 
+# The floor pyproject.toml declares; below it nothing here is expected to work.
+_PYTHON_FLOOR = (3, 10)
+
 _STATUSES = ("ok", "missing", "unsupported", "unknown")
+
+# The areas the checks group under, in render order. Surfaces render these titles
+# and map their own icons onto the keys — a glyph is presentation and never
+# crosses the wire.
+CHECK_CATEGORIES: tuple[dict, ...] = (
+    {"key": "ai", "title": "AI & models", "blurb": "The provider a mode talks to, and the local stack"},
+    {"key": "integrations", "title": "Integrations", "blurb": "Trackers and channels you have given yeaboi a key to"},
+    {"key": "tools", "title": "Tools on PATH", "blurb": "Programs yeaboi shells out to"},
+    {"key": "packages", "title": "Packages & extras", "blurb": "Optional installs that unlock a feature"},
+    {"key": "machine", "title": "This machine", "blurb": "Room to work and a runtime to work in"},
+)
+
+_CATEGORY_KEYS = tuple(category["key"] for category in CHECK_CATEGORIES)
 
 
 @dataclass(frozen=True)
@@ -48,6 +67,7 @@ class CheckResult:
     detail: str = ""  # what was found: "3 models pulled" / "not on PATH"
     hint: str = ""  # what would fix it: "install from ollama.com"
     feature: str = ""  # what it unlocks: "Fully local AI", "Board sharing", …
+    category: str = ""  # one of _CATEGORY_KEYS — the section it renders under
 
 
 @dataclass(frozen=True)
@@ -62,7 +82,26 @@ class SystemReport:
 
     @property
     def summary(self) -> str:
-        return f"{self.ok_count} of {len(self.checks)} optional features ready — the app itself needs none of them"
+        return f"{self.ok_count} of {len(self.checks)} checks ready — almost all of them are optional"
+
+    def by_category(self) -> tuple[tuple[dict, tuple[CheckResult, ...]], ...]:
+        """The checks grouped for rendering: ``(category, rows)`` in declared order.
+
+        Each category dict carries ``ok``/``total`` beside its key and title. Empty
+        categories are dropped; a row with an unrecognised category falls into the
+        last one.
+        """
+        buckets: dict[str, list[CheckResult]] = {key: [] for key in _CATEGORY_KEYS}
+        for check in self.checks:
+            buckets[check.category if check.category in buckets else _CATEGORY_KEYS[-1]].append(check)
+        grouped = []
+        for category in CHECK_CATEGORIES:
+            rows = tuple(buckets[category["key"]])
+            if not rows:
+                continue
+            ok = sum(1 for row in rows if row.status == "ok")
+            grouped.append(({**category, "ok": ok, "total": len(rows)}, rows))
+        return tuple(grouped)
 
 
 def _check_provider() -> CheckResult:
@@ -296,33 +335,170 @@ def _check_disk() -> CheckResult:
     )
 
 
-# Order is presentation order: the one thing every mode needs first, then the
-# fully-local stack, then per-feature extras.
-_CHECKS = (
-    _check_provider,
-    _check_ollama_installed,
-    _check_ollama_server,
-    _check_voice,
-    _check_music,
-    _check_charts,
-    _check_cloudflared,
-    _check_access,
-    _check_coding_agent,
-    _check_git,
-    _check_disk,
+def _check_data_dir() -> CheckResult:
+    """Whether the data home exists and is writable."""
+    from yeaboi.paths import ROOT_DIR
+
+    feature = "Sessions, boards, reports"
+    if ROOT_DIR.exists() and os.access(ROOT_DIR, os.W_OK):
+        return CheckResult("data-dir", "Data directory", "ok", detail=str(ROOT_DIR), feature=feature)
+    problem = "does not exist yet" if not ROOT_DIR.exists() else "is not writable"
+    return CheckResult(
+        "data-dir",
+        "Data directory",
+        "missing",
+        detail=f"{ROOT_DIR} {problem}",
+        hint="Point YEABOI_HOME somewhere writable (Settings ▸ System ▸ Storage)",
+        feature=feature,
+    )
+
+
+def _check_python() -> CheckResult:
+    version = ".".join(str(part) for part in sys.version_info[:3])
+    feature = "Every mode"
+    if sys.version_info >= _PYTHON_FLOOR:
+        return CheckResult("python", "Python runtime", "ok", detail=f"{version} ({sys.executable})", feature=feature)
+    floor = ".".join(str(part) for part in _PYTHON_FLOOR)
+    return CheckResult(
+        "python",
+        "Python runtime",
+        "unsupported",
+        detail=f"{version} is below the {floor} floor",
+        hint=f"Run yeaboi on Python {floor} or newer",
+        feature=feature,
+    )
+
+
+# One row per tracker or channel yeaboi can be given a key to. ``parts`` reads
+# through the same ``config`` getters the integration itself calls, so a
+# credential's fallbacks (Confluence reusing the Jira account, say) are decided
+# in one place and the doctor cannot disagree with the feature. Every getter is
+# an environment read: presence, never a live call.
+_INTEGRATIONS: tuple[dict, ...] = (
+    {
+        "key": "github",
+        "label": "GitHub",
+        "feature": "Ship mode, standup, codebase tools",
+        "section": "GitHub",
+        "parts": lambda c: (("token", c.get_github_token()),),
+    },
+    {
+        "key": "jira",
+        "label": "Jira",
+        "feature": "Tracker sync",
+        "section": "Jira",
+        "parts": lambda c: (
+            ("base URL", c.get_jira_base_url()),
+            ("email", c.get_jira_email()),
+            ("API token", c.get_jira_token()),
+        ),
+    },
+    {
+        "key": "azure",
+        "label": "Azure DevOps",
+        "feature": "Tracker sync",
+        "section": "Azure",
+        "parts": lambda c: (
+            ("org URL", c.get_azure_devops_org_url()),
+            ("PAT", c.get_azure_devops_token()),
+        ),
+    },
+    {
+        "key": "confluence",
+        "label": "Confluence",
+        "feature": "Docs export",
+        "section": "Jira",
+        "parts": lambda c: (
+            ("base URL", c.get_confluence_base_url()),
+            ("email", c.get_confluence_email()),
+            ("API token", c.get_confluence_token()),
+            ("space key", c.get_confluence_space_key()),
+        ),
+    },
+    {
+        "key": "notion",
+        "label": "Notion",
+        "feature": "Docs export",
+        "section": "Notion",
+        "parts": lambda c: (("token", c.get_notion_token()),),
+    },
+    {
+        "key": "slack",
+        "label": "Slack",
+        "feature": "Ceremony delivery",
+        "section": "Slack",
+        # Either credential is enough: a webhook posts, a bot token also reads.
+        "parts": lambda c: (("webhook URL or bot token", c.get_slack_webhook_url() or c.get_slack_bot_token()),),
+    },
+)
+
+
+def _check_integration(entry: dict) -> CheckResult:
+    """Whether an integration is configured — a pure environment read."""
+    from yeaboi import config
+
+    parts = entry["parts"](config)
+    missing = [what for what, value in parts if not (value or "").strip()]
+    if not missing:
+        return CheckResult(entry["key"], entry["label"], "ok", detail="configured", feature=entry["feature"])
+    complete = len(missing) == len(parts)
+    detail = "not configured" if complete else f"missing {', '.join(missing)}"
+    return CheckResult(
+        entry["key"],
+        entry["label"],
+        "missing",
+        detail=detail,
+        hint=f"Settings ▸ {entry['section']} — add the {'credentials' if complete else 'rest'}",
+        feature=entry["feature"],
+    )
+
+
+def _integration_probes() -> tuple[Callable[[], CheckResult], ...]:
+    """One zero-argument probe per ``_INTEGRATIONS`` row, named for logging."""
+    probes = []
+    for entry in _INTEGRATIONS:
+        probe = functools.partial(_check_integration, entry)
+        probe.__name__ = f"_check_{entry['key']}"  # type: ignore[attr-defined]
+        probes.append(probe)
+    return tuple(probes)
+
+
+# Every probe, paired with the section it renders under. Order inside a category
+# is presentation order; the categories themselves order by CHECK_CATEGORIES.
+_CHECKS: tuple[tuple[str, Callable[[], CheckResult]], ...] = (
+    ("ai", _check_provider),
+    ("ai", _check_ollama_installed),
+    ("ai", _check_ollama_server),
+    *(("integrations", probe) for probe in _integration_probes()),
+    ("tools", _check_git),
+    ("tools", _check_coding_agent),
+    ("tools", _check_cloudflared),
+    ("tools", _check_music),
+    ("packages", _check_charts),
+    ("packages", _check_voice),
+    ("packages", _check_access),
+    ("machine", _check_data_dir),
+    ("machine", _check_disk),
+    ("machine", _check_python),
 )
 
 
 def run_system_check() -> SystemReport:
-    """Run every probe; a crashing probe reports ``unknown``, never raises."""
+    """Run every probe; a crashing probe reports ``unknown``, never raises.
+
+    Categories are stamped here rather than repeated in every ``CheckResult``, so
+    ``_CHECKS`` is the single place that says which section a row belongs to.
+    """
     results = []
-    for probe in _CHECKS:
+    for category, probe in _CHECKS:
         try:
-            results.append(probe())
+            results.append(replace(probe(), category=category))
         except Exception:
             key = probe.__name__.removeprefix("_check_").replace("_", "-")
             logger.warning("system check: %s probe failed", key, exc_info=True)
-            results.append(CheckResult(key, key.replace("-", " ").title(), "unknown", detail="probe failed"))
+            results.append(
+                CheckResult(key, key.replace("-", " ").title(), "unknown", detail="probe failed", category=category)
+            )
     report = SystemReport(checks=tuple(results))
     logger.info("system check: %d/%d ready", report.ok_count, len(report.checks))
     return report
