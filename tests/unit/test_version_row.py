@@ -69,6 +69,20 @@ class TestVersionRow:
         out = _render(_screens._build_version_row(80))
         assert "a all tips" in out
 
+    def test_shows_privacy_and_system_check_hints_on_wide_terminals(self, _patch_status):
+        _patch_status()
+        out = _render(_screens._build_version_row(140))
+        assert "p privacy" in out
+        assert "k system check" in out
+
+    def test_narrow_terminals_drop_the_new_caps_first(self, _patch_status):
+        # p/k sit after Niko so the budget sheds them before anything older.
+        _patch_status()
+        out = _render(_screens._build_version_row(60), width=60)
+        assert "p privacy" not in out
+        assert "k system check" not in out
+        assert "c changelog" in out
+
     def test_no_upgrade_segment_when_current(self, _patch_status):
         _patch_status()
         out = _render(_screens._build_version_row(80))

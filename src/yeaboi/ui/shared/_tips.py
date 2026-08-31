@@ -285,6 +285,32 @@ _META_TIPS: tuple[FeatureTip, ...] = (
         surfaces=("tui",),
     ),
     FeatureTip("meta:export", "\U0001f4a1 Tip: export a plan to HTML or JSON for sharing and CI/CD"),
+    # The privacy page and the system check exist on both surfaces, but each
+    # names its own way in — a keycap in the terminal, a page on the desktop.
+    FeatureTip(
+        "meta:privacy",
+        "\U0001f512 Tip: press p on this screen — what leaves this machine, and every off-switch",
+        is_new=True,
+        surfaces=("tui",),
+    ),
+    FeatureTip(
+        "meta:privacy",
+        "\U0001f512 Tip: the Privacy page lists what leaves this machine — and every off-switch",
+        is_new=True,
+        surfaces=("desktop",),
+    ),
+    FeatureTip(
+        "meta:system-check",
+        "\U0001fa7a Tip: press k on this screen — which optional features are ready on this machine",
+        is_new=True,
+        surfaces=("tui",),
+    ),
+    FeatureTip(
+        "meta:system-check",
+        "\U0001fa7a Tip: System Check shows which optional features are ready on this machine",
+        is_new=True,
+        surfaces=("desktop",),
+    ),
 )
 
 # The desktop app's own furniture: features with no terminal equivalent and so no

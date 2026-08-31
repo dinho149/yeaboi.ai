@@ -167,6 +167,35 @@ def _build_fields() -> tuple[SettingField, ...]:
         SettingField("ELEVENLABS_VOICE_ID", "ElevenLabs Voice", "voice"),
         SettingField("ELEVENLABS_MODEL_ID", "ElevenLabs Model", "voice", default="eleven_turbo_v2_5"),
         SettingField("TAVUS_API_KEY", "Tavus Key", "voice", secret=True),
+        # -- privacy -------------------------------------------------------
+        # The switches the privacy page's egress table names. Disclosure and
+        # control side by side: every row here maps to an EGRESS_DISCLOSURES
+        # entry in yeaboi.privacy, and the defaults state current behavior —
+        # this section changes nothing by existing.
+        SettingField(
+            "YEABOI_TELEMETRY",
+            "Telemetry",
+            "privacy",
+            choices=("true", "false"),
+            choice_labels=on_off,
+            default="false",
+        ),
+        SettingField(
+            "YEABOI_UPDATE_CHECK",
+            "Update Check",
+            "privacy",
+            choices=("true", "false"),
+            choice_labels=on_off,
+            default="true",
+        ),
+        SettingField(
+            "YEABOI_NO_TUNNEL",
+            "Board Sharing Off-Switch",
+            "privacy",
+            choices=("true", "false"),
+            choice_labels={"true": "tunnels off", "false": "tunnels allowed"},
+            default="false",
+        ),
         # -- advanced ------------------------------------------------------
         SettingField("LOG_LEVEL", "Log Level", "advanced", choices=VALID_LOG_LEVELS, default="WARNING"),
         SettingField("SESSION_PRUNE_DAYS", "Session Prune Days", "advanced", default="30"),
@@ -217,6 +246,7 @@ SECTIONS: tuple[str, ...] = (
     "storage",
     "standup",
     "voice",
+    "privacy",
     "advanced",
 )
 
@@ -363,6 +393,15 @@ def set_setting(key: str, value: str) -> SettingWrite:
         config.apply_config_value(key, value)
     # Key names only — the value may be a credential.
     logger.info("settings: %s %s", key, "updated" if value else "cleared")
+    if key == "YEABOI_TELEMETRY":
+        # telemetry.TELEMETRY_ENABLED is baked at import — the flip is
+        # persisted now but only read at the next launch.
+        return SettingWrite(
+            ok=True,
+            key=key,
+            message=f"{fld.label} {'updated' if value else 'cleared'} — takes effect at next launch",
+            restart_required=True,
+        )
     return SettingWrite(ok=True, key=key, message=f"{fld.label} {'updated' if value else 'cleared'}")
 
 

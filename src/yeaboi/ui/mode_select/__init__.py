@@ -1505,6 +1505,10 @@ def _collect_settings_data() -> dict:
         "CLOUDFLARE_ACCESS_AUD",
         "CLOUDFLARE_ACCESS_ADMIN_EMAILS",
         "LANGSMITH_TRACING",
+        # Privacy — the switches the privacy page's egress table names.
+        "YEABOI_TELEMETRY",
+        "YEABOI_UPDATE_CHECK",
+        "YEABOI_NO_TUNNEL",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
         "SAVER_STYLE",
@@ -5666,6 +5670,145 @@ def _run_all_tips_page(console: Console, live, read_key, frame_time: float, supp
             break
         _render()
     logger.info("all tips: page closed")
+
+
+def _run_privacy_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Event loop for the Privacy page (opened with `p` from mode select).
+
+    Up/Down scrolls, Tab cycles the live toggles, Enter/space flips the focused
+    one (via the settings engine — same write path as Settings), Esc/q returns
+    to mode select. Content is ``yeaboi.privacy`` verbatim.
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_privacy_screen
+
+    logger.info("privacy: page opened")
+    scroll = 0
+    focus: int | None = None
+    status = ""
+    _scroll_meta: dict = {}
+    anim_start = time.monotonic()  # typewriter subtitle clock
+
+    def _render() -> None:
+        w, h = console.size
+        elapsed = time.monotonic() - anim_start
+        live.update(
+            _build_privacy_screen(
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=max(10, h - 1),
+                # No shimmer clock — the travelling title highlight reads as a
+                # loader on a page that opens instantly (see the changelog).
+                shimmer_tick=None,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
+                focus_index=focus,
+                status=status,
+            )
+        )
+
+    def _scroll_focus_into_view() -> None:
+        nonlocal scroll
+        lines = _scroll_meta.get("focus_lines") or []
+        if focus is None or focus >= len(lines):
+            return
+        anchor = lines[focus]
+        viewport_h = max(1, _scroll_meta.get("viewport_h", 1))
+        # Keep a line of context above the anchor where there is room.
+        scroll = min(max(scroll, anchor - viewport_h + 2), max(0, anchor - 1))
+
+    _render()
+    while True:
+        k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        # No buttons of its own — a click has nothing to hit.
+        if parse_click(k) is not None:
+            continue
+        if k in SCROLL_KEYS:
+            _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
+            if _ns == scroll:
+                continue
+            scroll = _ns
+        elif k == "tab":
+            toggles = _scroll_meta.get("focus_envs") or []
+            if not toggles:
+                continue
+            focus = 0 if focus is None else (focus + 1) % len(toggles)
+            status = ""
+            _scroll_focus_into_view()
+        elif k in ("enter", " ") and focus is not None:
+            from yeaboi.settings.engine import set_setting
+
+            toggles = _scroll_meta.get("focus_envs") or []
+            if focus >= len(toggles):
+                continue
+            env, on_value = toggles[focus]
+            from yeaboi.ui.mode_select.screens._screens_secondary import privacy_switch_is_on
+
+            now_on = privacy_switch_is_on(env, on_value)
+            value = ("false" if on_value == "true" else "true") if now_on else on_value
+            try:
+                write = set_setting(env, value)
+            except ValueError as exc:
+                status = str(exc)
+                logger.warning("privacy: toggle of %s rejected: %s", env, exc)
+            else:
+                status = write.message
+                logger.info("privacy: toggled %s -> %s", env, value)
+        elif k in ("esc", "q"):
+            break
+        _render()
+    logger.info("privacy: page closed")
+
+
+def _run_system_check_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Event loop for the System Check page (opened with `k` from mode select).
+
+    Up/Down scrolls, `r` re-runs the probes, Esc/q returns to mode select. The
+    check is offline by ``yeaboi.system_check``'s policy, so both the open and
+    a re-run cause no egress.
+    """
+    from yeaboi.system_check import run_system_check
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_system_check_screen
+
+    report = run_system_check()
+    logger.info("system check: page opened (%d/%d ready)", report.ok_count, len(report.checks))
+    scroll = 0
+    _scroll_meta: dict = {}
+    anim_start = time.monotonic()  # typewriter subtitle clock
+
+    def _render() -> None:
+        w, h = console.size
+        elapsed = time.monotonic() - anim_start
+        live.update(
+            _build_system_check_screen(
+                report,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=max(10, h - 1),
+                # No shimmer clock — see the changelog page's reasoning.
+                shimmer_tick=None,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            )
+        )
+
+    _render()
+    while True:
+        k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        # No buttons of its own — a click has nothing to hit here.
+        if parse_click(k) is not None:
+            continue
+        if k in SCROLL_KEYS:
+            _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
+            if _ns == scroll:
+                continue
+            scroll = _ns
+        elif k == "r":
+            report = run_system_check()
+            logger.info("system check: re-run (%d/%d ready)", report.ok_count, len(report.checks))
+        elif k in ("esc", "q"):
+            break
+        _render()
+    logger.info("system check: page closed")
 
 
 def _run_feedback_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -13368,6 +13511,20 @@ def select_mode(
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
+                elif key == "p":
+                    # The Privacy page (bottom-left hint) — same inline pattern
+                    # as the Changelog above; opens instantly (bundled copy).
+                    logger.info("privacy opened from mode select")
+                    _run_privacy_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    select_time = time.monotonic()
+                elif key == "k":
+                    # The System Check page (bottom-left hint). Offline probes
+                    # only, so opening it is as cheap as the changelog.
+                    logger.info("system check opened from mode select")
+                    _run_system_check_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    select_time = time.monotonic()
                 elif key == "clear":
                     # Ctrl+U — the update shortcut advertised by the bottom-right
                     # update box. Only acts when a newer release exists; Ctrl+U is

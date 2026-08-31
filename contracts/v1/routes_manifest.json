@@ -17,6 +17,16 @@
       "title": "Feedback"
     },
     {
+      "path": "/privacy",
+      "capability": null,
+      "title": "Privacy"
+    },
+    {
+      "path": "/system-check",
+      "capability": null,
+      "title": "System Check"
+    },
+    {
       "path": "/usage",
       "capability": "usage",
       "title": "Usage"
@@ -339,6 +349,7 @@
         "storage",
         "standup",
         "voice",
+        "privacy",
         "advanced"
       ]
     }

@@ -116,6 +116,14 @@ class TestWrites:
         assert result.ok and self.applied == {"ANTHROPIC_API_KEY": ""}
         assert "cleared" in result.message
 
+    def test_telemetry_write_says_it_needs_a_restart(self):
+        # TELEMETRY_ENABLED is baked at import (telemetry.py) — the write must
+        # not pretend the flip is live.
+        result = engine.set_setting("YEABOI_TELEMETRY", "true")
+        assert result.ok and self.applied == {"YEABOI_TELEMETRY": "true"}
+        assert result.restart_required is True
+        assert "next launch" in result.message
+
     def test_log_level_retunes_the_live_handlers(self, monkeypatch):
         calls: list[tuple[str, str]] = []
         monkeypatch.setattr("yeaboi.config.set_log_level", lambda level: calls.append(("set", level)))

@@ -180,12 +180,19 @@ def run_setup_wizard(console: Console) -> bool:
     logger.info("Setup wizard started")
     config_file = get_config_file()
 
-    # Welcome panel
+    # Welcome panel. The privacy lines are yeaboi.privacy's statement, the copy
+    # owner every surface renders — reworded here only to fit the panel width.
+    from yeaboi.privacy import PRIVACY_HEADLINE
+
     body = Text.from_markup(
         "[bold cyan]Welcome to yeaboi.ai — First-Time Setup[/bold cyan]\n\n"
         "We'll set up your AI provider now — cloud (API key) or free local\n"
-        "(Ollama, no key needed). Everything is stored locally in\n"
-        "[cyan]~/.yeaboi/.env[/cyan] — never sent anywhere else."
+        "(Ollama, no key needed).\n\n"
+        f"[bold]{PRIVACY_HEADLINE}[/bold] Everything is stored on this machine\n"
+        "under [cyan]~/.yeaboi[/cyan]. Your prompts go only to the provider you\n"
+        "pick — Ollama keeps them fully local — and nothing reaches us unless\n"
+        "you choose to send feedback. Press [cyan]p[/cyan] on the home screen\n"
+        "for the full disclosure, with every off-switch."
     )
     console.print(Panel(body, border_style="cyan", padding=(1, 2)))
 

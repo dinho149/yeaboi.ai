@@ -60,6 +60,10 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/meta/capabilities", routes_meta.capabilities),
     AppRoute("GET", "/api/meta/tips", routes_meta.tips),
     AppRoute("GET", "/api/meta/changelog", routes_meta.changelog),
+    # Chrome like tips/changelog: no capability owns disclosure, and it is
+    # deliberately never gated behind one — the privacy page must always answer.
+    AppRoute("GET", "/api/meta/privacy", routes_meta.privacy),
+    AppRoute("GET", "/api/system/check", routes_meta.system_check),
     AppRoute("GET", "/api/tools", routes_meta.tools),
     AppRoute("POST", "/api/tool/{name}", routes_meta.call_tool),
     AppRoute("GET", "/api/events", routes_meta.events),

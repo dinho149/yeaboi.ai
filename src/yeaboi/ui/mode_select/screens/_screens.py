@@ -646,12 +646,17 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False, show_compa
     # 84x40 minimum — trading version, changelog and feedback for one entry.
     # Niko is last because the duck himself is its primary affordance.
     budget = _version_row_budget(width, show_companion=show_companion)
+    # Privacy and system check sit after Niko: both are reachable through
+    # Settings and the tips too, so they are the cheapest caps to lose when the
+    # budget runs out.
     for key, label, wide_only in (
         ("c", "changelog", False),
         ("f", "feedback", False),
         ("a", "all tips", False),
         ("s", "schedule", True),
         ("n", "niko", True),
+        ("p", "privacy", True),
+        ("k", "system check", True),
     ):
         if wide_only and width < 72:
             break

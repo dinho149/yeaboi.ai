@@ -88,6 +88,9 @@ CHANGELOG_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,22
 # Same rationale as CHANGELOG_THEME: the feedback form's area chip carries the
 # selected mode's colour, so the page frame stays neutral silver.
 FEEDBACK_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
+# App chrome like the changelog: neutral silver, no mode owns these pages.
+PRIVACY_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
+SYSTEM_CHECK_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
 # The two sides of the landing split. HUMANS_THEME is the Theme default palette
 # named, so the existing modes are unchanged; AGENTS_THEME opens the family's
 # "machine" palette, distinct per mode like the human modes: steel blue for the
@@ -408,6 +411,16 @@ def changelog_title(shimmer_tick: float | None = None, *, width: int | None = No
 def feedback_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Feedback ASCII title (silver accent). Optionally shimmering."""
     return build_ascii_title("Feedback", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
+
+
+def privacy_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Privacy ASCII title (silver accent). Optionally shimmering."""
+    return build_ascii_title("Privacy", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
+
+
+def system_check_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the System Check ASCII title (silver accent). Optionally shimmering."""
+    return build_ascii_title("System Check", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
 
 
 def agent_usage_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
