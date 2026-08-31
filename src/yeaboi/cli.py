@@ -2653,6 +2653,8 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
     import json
     import os
 
+    from rich.markup import escape
+
     from yeaboi.connectors import registry
     from yeaboi.connectors.engine import list_connections
 
@@ -2737,7 +2739,9 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
         else:
             for result in results:
                 tick = "[green]ok[/green]" if result["ok"] else "[red]failed[/red]"
-                console.print(f"{result['connector']}: {tick} — {result['message']}")
+                # A probe's message is data, not markup: an install hint saying
+                # yeaboi[cloud] would otherwise lose the extra to a style tag.
+                console.print(f"{result['connector']}: {tick} — {escape(str(result['message']))}")
         return 0 if all(r["ok"] for r in results) else 1
 
     if command == "fetch":
@@ -2760,7 +2764,7 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
             if source["ok"]:
                 console.print(f"  [green]{source['label']}[/green]: {source['count']} event(s)")
             else:
-                console.print(f"  [red]{source['label']}[/red]: {source['error']}")
+                console.print(f"  [red]{source['label']}[/red]: {escape(str(source['error']))}")
         for signal in payload["signals"]:
             worst = f" [dim]worst: {signal['severity']}[/dim]" if signal["severity"] else ""
             console.print(

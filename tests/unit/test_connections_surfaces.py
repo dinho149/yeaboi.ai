@@ -104,6 +104,60 @@ class TestTheTab:
         assert "datadoghq.eu" in out
 
 
+class TestTheAuthChooser:
+    """A connector with more than one way in renders the choice, not a value."""
+
+    AMBIENT = {"_config_path": "/tmp/.env", "AWS_AUTH_METHOD": "ambient", "AWS_CLOUD_REGION": "eu-west-1"}
+
+    def test_the_options_are_visible_not_just_cyclable(self):
+        # Rendered as free text a choice field shows one value and no
+        # alternatives, while Enter silently cycles a list nobody can see.
+        out = _render(self.AMBIENT)
+        assert "assume_role" in out and "ambient" in out
+
+    def test_the_chosen_method_warns_where_the_credential_is_typed(self):
+        out = _render(self.AMBIENT)
+        assert "cannot bound what this identity may do" in out
+
+    def test_only_the_chosen_methods_fields_are_asked_for(self):
+        # The other method's fields are not "not set" — they are no part of
+        # this connection, and showing them asks for something meaningless.
+        out = _render(self.AMBIENT)
+        assert "Region" in out
+        assert "Role ARN" not in out and "External ID" not in out
+
+    def test_the_recommended_method_asks_for_its_own_fields(self):
+        out = _render(
+            {
+                "_config_path": "/tmp/.env",
+                "AWS_AUTH_METHOD": "assume_role",
+                "AWS_ROLE_ARN": "arn:aws:iam::1:role/r",
+                "AWS_EXTERNAL_ID": "yeaboi-abcdefghijkl",
+                "AWS_CLOUD_REGION": "eu-west-1",
+            }
+        )
+        assert "Role ARN" in out and "External ID" in out
+        # And it is not warned about, because it is the one yeaboi can bound.
+        assert "cannot bound" not in out
+
+    def test_the_external_id_is_masked(self):
+        out = _render(
+            {
+                "_config_path": "/tmp/.env",
+                "AWS_AUTH_METHOD": "assume_role",
+                "AWS_ROLE_ARN": "arn:aws:iam::1:role/r",
+                "AWS_EXTERNAL_ID": "yeaboi-abcdefghijkl",
+                "AWS_CLOUD_REGION": "eu-west-1",
+            }
+        )
+        assert "yeaboi-abcdefghijkl" not in out
+
+    def test_a_cloud_connector_with_nothing_set_is_not_named(self):
+        # The §0 invariant at its hardest point: AWS's ambient method needs no
+        # credential of its own, so only requiring the CHOICE keeps it hidden.
+        assert "AWS" not in _render({"_config_path": "/tmp/.env"})
+
+
 class TestNothingConnectedChangesNothing:
     """The governing invariant, asserted directly."""
 
