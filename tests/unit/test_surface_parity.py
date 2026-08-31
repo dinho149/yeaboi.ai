@@ -355,7 +355,7 @@ CAPABILITIES: dict[str, dict] = {
             "a Settings tab, not a mode card — connecting a vendor is configuration, "
             "and an eleventh card costs the welcome screen a row it does not have"
         ),
-        "cli": {"connections"},
+        "cli": {"connections", "webhooks"},
         "skill": Exempt(
             "connecting a vendor is a credential write at the user's own machine; an agent "
             "reads the catalog with connections_list and cannot add one"

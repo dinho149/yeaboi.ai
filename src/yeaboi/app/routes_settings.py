@@ -157,6 +157,51 @@ def custom_connection_delete(app, request: Request) -> Response:
         raise HTTPError(404, str(exc)) from None
 
 
+def webhooks_status(app, request: Request) -> Response:
+    """``GET /api/webhooks/status`` — receiver state and per-connection liveness. Offline."""
+    from yeaboi.connectors.webhooks.server import server_status
+
+    return json_response(server_status())
+
+
+def webhooks_start(app, request: Request) -> Response:
+    """``POST /api/webhooks/start`` — bind the loopback receiver in this process."""
+    from yeaboi.connectors.webhooks.server import start_server
+
+    try:
+        return json_response(start_server())
+    except OSError as exc:
+        raise HTTPError(503, f"could not bind the webhook port — {exc}") from None
+
+
+def webhooks_stop(app, request: Request) -> Response:
+    """``POST /api/webhooks/stop`` — stop the receiver (and any tunnel)."""
+    from yeaboi.connectors.webhooks.server import server_status, stop_server
+
+    stop_server()
+    return json_response(server_status())
+
+
+def webhooks_share(app, request: Request) -> Response:
+    """``POST /api/webhooks/share`` — open the quick tunnel; the URL rotates per share."""
+    from yeaboi.connectors.webhooks.server import server_status, start_share
+
+    url = start_share()
+    if not url:
+        raise HTTPError(503, "could not open the tunnel — the local receiver still runs")
+    return json_response(server_status())
+
+
+def webhook_url(app, request: Request) -> Response:
+    """``GET /api/webhooks/{key}/url`` — the ONE route that returns the secret whole."""
+    from yeaboi.connectors.webhooks.server import connection_url
+
+    info = connection_url(request.params["key"])
+    if info is None:
+        raise HTTPError(404, f"{request.params['key']!r} is not a webhook connection")
+    return json_response(info)
+
+
 def access_state(app, request: Request) -> Response:
     """``GET /api/settings/access/state`` — the Cloudflare Access doctor, offline.
 

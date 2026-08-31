@@ -142,8 +142,24 @@ def create_custom_connection(spec: dict) -> dict:
     parsed = spec_from_dict(spec if isinstance(spec, dict) else {})
     save_custom(parsed)  # raises ValueError with the problems
     logger.info("connectors: custom connection %s created", parsed.key)
+    minted = ""
+    if parsed.kind == "webhook":
+        # The delivery secret is yeaboi's to mint, not the user's to invent —
+        # unguessable by construction, persisted through the masked path, and
+        # returned ONCE here (webhook-url can show it again on request).
+        env = f"{parsed.env_stem}_WEBHOOK_SECRET"
+        if not os.environ.get(env, "").strip():
+            from yeaboi.config import apply_config_value
+            from yeaboi.connectors.webhooks.server import mint_secret
+
+            minted = mint_secret()
+            apply_config_value(env, minted)
+            os.environ[env] = minted
     payload = list_connections(connected_only=False, include_legacy=False)
-    return next(row for row in payload["connectors"] if row["key"] == parsed.key)
+    row = next(row for row in payload["connectors"] if row["key"] == parsed.key)
+    if minted:
+        row = {**row, "webhook_secret": minted}
+    return row
 
 
 def delete_custom_connection(key: str) -> dict:
@@ -198,7 +214,9 @@ def draft_custom_connection(description: str) -> dict:
         | {c.key for c in registry.legacy_entries()}
         | {s.key for s in others}
     )
-    existing_envs = set(registry.all_envs()) | set(registry.legacy_envs())
+    # Builtin + legacy envs by hand — all_envs() reads the merged roster, and a
+    # redraft of an existing key would collide with its own derived envs.
+    existing_envs = {f.env for c in registry.builtin_connectors() for f in c.fields} | set(registry.legacy_envs())
     for other in others:
         existing_envs |= set(other.derived_envs())
     existing_accents = {c.accent for c in registry.builtin_connectors()} | {c.accent for c in registry.legacy_entries()}

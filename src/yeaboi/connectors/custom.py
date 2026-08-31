@@ -75,6 +75,9 @@ class CustomSpec:
     header_name: str = ""
     probe_path: str = "/"
     probe_ok_status: int = 200
+    #: webhook kind only: how a delivery authenticates — a static token header
+    #: ("token") or a Stripe-shaped signature ("hmac").
+    webhook_verify: str = "token"
     events: EventsMapping | None = None
     created_at: str = ""
 
@@ -86,6 +89,10 @@ class CustomSpec:
 
     def derived_envs(self) -> tuple[str, ...]:
         """Every env this connection reads — derived, never authored."""
+        if self.kind == "webhook":
+            # Inbound-only: the one secret is the delivery credential yeaboi
+            # mints; there is no host and no outbound auth.
+            return (f"{self.env_stem}_WEBHOOK_SECRET",)
         envs = [f"{self.env_stem}_BASE_URL"]
         if self.auth_scheme == "basic":
             envs += [f"{self.env_stem}_USERNAME", f"{self.env_stem}_PASSWORD"]
@@ -129,6 +136,28 @@ def to_connector(spec: CustomSpec) -> Connector:
     caller-supplied host with a stored credential, so the request path is
     already covered.
     """
+    if spec.kind == "webhook":
+        return Connector(
+            key=spec.key,
+            label=spec.label,
+            family=spec.family if spec.family in FAMILIES else "observability",
+            section="connections",
+            summary=spec.summary,
+            detail=spec.detail,
+            fetch="fetch_webhook_events",
+            fetch_module="yeaboi.connectors.custom",
+            docs_url=spec.docs_url,
+            glyph=spec.glyph,
+            accent=spec.accent,
+            fields=(
+                ConnectorField(
+                    env=f"{spec.env_stem}_WEBHOOK_SECRET",
+                    label="Webhook Secret",
+                    secret=True,
+                    hint="Minted when the connection is created — `yeaboi connections webhook-url` shows it",
+                ),
+            ),
+        )
     fields = [
         ConnectorField(
             env=f"{spec.env_stem}_BASE_URL",
@@ -249,7 +278,9 @@ def save_custom(spec: CustomSpec) -> None:
         | {c.key for c in registry.legacy_entries()}
         | {s.key for s in others}
     )
-    existing_envs = set(registry.all_envs()) | set(registry.legacy_envs())
+    # Builtin + legacy envs by hand, NOT registry.all_envs(): that helper reads
+    # the merged roster, and a resave would collide with its own derived envs.
+    existing_envs = {f.env for c in registry.builtin_connectors() for f in c.fields} | set(registry.legacy_envs())
     for other in others:
         existing_envs |= set(other.derived_envs())
     existing_accents = {c.accent for c in registry.builtin_connectors()} | {c.accent for c in registry.legacy_entries()}
@@ -309,6 +340,18 @@ def auth_headers(spec: CustomSpec, values=None) -> dict[str, str]:
     if spec.auth_scheme == "header":
         return {spec.header_name: token}
     return {"Authorization": f"Bearer {token}"}
+
+
+def fetch_webhook_events(connector: Connector, window_start, window_end) -> tuple:
+    """The webhook kind's gather: read what the receiver stored for the window.
+
+    Push became pull here — the receiver validated, mapped and persisted each
+    delivery, so a gather is a local read and every ops consumer works with
+    zero further changes.
+    """
+    from yeaboi.connectors.webhook_store import events_in_window
+
+    return events_in_window(connector.key, window_start, window_end)
 
 
 def fetch_events(connector: Connector, window_start, window_end) -> tuple:

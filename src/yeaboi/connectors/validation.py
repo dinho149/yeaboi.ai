@@ -16,8 +16,10 @@ import re
 from yeaboi.connectors.spec import ACCENT_RE, FAMILIES
 from yeaboi.ops.events import EVENT_KINDS
 
-#: What a custom connection may be. "webhook" arrives with the receiver.
-CUSTOM_KINDS: tuple[str, ...] = ("api",)
+#: What a custom connection may be.
+CUSTOM_KINDS: tuple[str, ...] = ("api", "webhook")
+
+WEBHOOK_VERIFY_MODES: tuple[str, ...] = ("token", "hmac")
 
 AUTH_SCHEMES: tuple[str, ...] = ("bearer", "basic", "header")
 
@@ -89,6 +91,23 @@ def descriptor_problems(
 
     if spec.kind not in CUSTOM_KINDS:
         problems.append(f"kind must be one of: {', '.join(CUSTOM_KINDS)}")
+
+    if spec.kind == "webhook":
+        # Inbound-only: no host, no probe, no outbound auth — what matters is
+        # how a delivery authenticates and how its rows become events.
+        if spec.webhook_verify not in WEBHOOK_VERIFY_MODES:
+            problems.append(f"the webhook verify mode must be one of: {', '.join(WEBHOOK_VERIFY_MODES)}")
+        if spec.events is None:
+            problems.append("a webhook connection needs an events mapping — a delivery it cannot map is noise")
+        else:
+            if spec.events.kind not in EVENT_KINDS:
+                problems.append(f"the event kind must be one of: {', '.join(EVENT_KINDS)}")
+            if not (spec.events.title_path or "").strip():
+                problems.append("the events mapping needs a title_path")
+        clashes = sorted(set(spec.derived_envs()) & set(existing_envs))
+        if clashes:
+            problems.append(f"derived env(s) already in use: {', '.join(clashes)}")
+        return problems
 
     if spec.auth_scheme not in AUTH_SCHEMES:
         problems.append(f"the auth scheme must be one of: {', '.join(AUTH_SCHEMES)}")

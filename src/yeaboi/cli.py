@@ -1119,9 +1119,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--from-json", dest="from_json", default="", metavar="FILE", help="A descriptor JSON file instead of prompts"
     )
 
+    conn_wurl = connections_sub.add_parser(
+        "webhook-url", help="Where a webhook connection's deliveries go — URL, header and secret"
+    )
+    conn_wurl.add_argument("name", help="Connection name (a custom webhook connection)")
+    conn_wurl.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    conn_wtest = connections_sub.add_parser(
+        "webhook-test", help="Send one synthetic signed delivery through the local receiver"
+    )
+    conn_wtest.add_argument("name", help="Connection name (a custom webhook connection)")
+
     conn_rm = connections_sub.add_parser("remove", help="Forget a connection's stored values")
     conn_rm.add_argument("name")
     conn_rm.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+
+    webhooks_p = subparsers.add_parser(
+        "webhooks",
+        help="The inbound receiver for webhook connections (loopback; --share tunnels it)",
+    )
+    webhooks_sub = webhooks_p.add_subparsers(dest="webhooks_command", required=True)
+    wh_serve = webhooks_sub.add_parser("serve", help="Run the receiver in the foreground (Ctrl+C stops)")
+    wh_serve.add_argument("--port", type=int, default=0, help="Override the fixed port (default 8642)")
+    wh_serve.add_argument(
+        "--share", action="store_true", help="Also open a cloudflared quick tunnel (URL rotates per share)"
+    )
 
     slack_p = subparsers.add_parser(
         "slack",
@@ -2116,6 +2138,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "ceremonies": _cmd_ceremonies,
         "slack": _cmd_slack,
         "connections": _cmd_connections,
+        "webhooks": _cmd_webhooks,
         "app": _cmd_app,
         "ask": _cmd_ask,
     }
@@ -2700,6 +2723,34 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
         print(f"Error: unknown connector {args.name!r}. Known: {known}", file=sys.stderr)
         return 1
 
+    if command in ("webhook-url", "webhook-test"):
+        from yeaboi.connectors.webhooks.server import connection_url, send_test_delivery
+
+        if command == "webhook-test":
+            outcome = send_test_delivery(args.name)
+            console.print(escape(str(outcome["message"])))
+            return 0 if outcome["ok"] else 1
+        info = connection_url(args.name)
+        if info is None:
+            print(f"Error: {args.name!r} is not a webhook connection.", file=sys.stderr)
+            return 1
+        if to_json:
+            print(json.dumps(info, indent=2))
+            return 0
+        console.print(f"[bold]{escape(info['key'])}[/bold]")
+        console.print(f"  local:  {escape(info['url'])}")
+        if info["tunnel_url"]:
+            console.print(f"  tunnel: {escape(info['tunnel_url'])}  [dim](rotates per share — for testing)[/dim]")
+        console.print(f"  header: {escape(info['header'])}  [dim]({info['verify']})[/dim]")
+        console.print(f"  secret: {escape(info['secret'])}")
+        if not info["running"]:
+            console.print("  [yellow]The receiver is not running — start it with `yeaboi webhooks serve`.[/yellow]")
+        if info["last_received_at"]:
+            console.print(f"  last delivery: {escape(info['last_received_at'])}")
+        else:
+            console.print("  [dim]waiting for the first delivery[/dim]")
+        return 0
+
     if legacy_entry is not None and command in ("add", "remove", "fetch"):
         # A built-in integration's credentials belong to Credentials/setup —
         # they are shared with features this command must not silently unplug.
@@ -2957,6 +3008,37 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
     console.print(f"[green]Created.[/green] {escape(str(row['label']))} is in the catalog.")
     console.print(f"Enter its credentials with: yeaboi connections add {spec_from_dict(raw).key}")
     return 0
+
+
+def _cmd_webhooks(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi webhooks serve` — the loopback receiver, foreground."""
+    import time as _time
+
+    from yeaboi.connectors.webhooks.server import start_server, start_share, stop_server
+
+    if args.webhooks_command != "serve":
+        return 1
+    try:
+        status = start_server(args.port or None)
+    except OSError as exc:
+        # A fixed port is the point — a walk would silently break pasted URLs.
+        print(f"Error: could not bind 127.0.0.1:{args.port or 'default'} — {exc}", file=sys.stderr)
+        return 1
+    console.print(f"[green]Receiver listening[/green] on 127.0.0.1:{status['port']} (loopback only)")
+    if args.share:
+        url = start_share()
+        if url:
+            console.print(f"Tunnel: {url}  [dim](rotates per share and expires — for testing a sender)[/dim]")
+        else:
+            console.print("[yellow]Could not open the tunnel — the local receiver still runs.[/yellow]")
+    console.print("[dim]`yeaboi connections webhook-url <name>` prints each connection's URL. Ctrl+C stops.[/dim]")
+    try:
+        while True:
+            _time.sleep(1)
+    except KeyboardInterrupt:
+        stop_server()
+        console.print("\n[dim]Receiver stopped.[/dim]")
+        return 0
 
 
 def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
