@@ -184,8 +184,10 @@ AREAS: tuple[Area, ...] = (
             # a supervised coding agent to a PR.
             "src/yeaboi/ship/",
             "src/yeaboi/questionnaire_io.py",
-            # The issue-tracker registry every planning dispatch site reads.
+            # The issue-tracker registry every planning dispatch site reads,
+            # and the tracker sync modules its entries resolve to.
             "src/yeaboi/trackers.py",
+            "src/yeaboi/linear_sync.py",
             "src/yeaboi/transcript.py",
             "src/yeaboi/json_exporter.py",
             "src/yeaboi/prd_exporter.py",
@@ -198,6 +200,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/nodes/*.py",
             "tests/unit/prompts/*.py",
             "tests/unit/test_trackers.py",
+            "tests/unit/test_linear_sync.py",
             "tests/unit/test_state.py",
             "tests/unit/test_sessions.py",
             "tests/unit/test_phases_*.py",

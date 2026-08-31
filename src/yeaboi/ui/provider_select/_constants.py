@@ -37,6 +37,10 @@ TOKEN_HELP: dict[str, dict[str, str]] = {
         "url": "https://notion.so/my-integrations",
         "scope": "Capabilities: Read + Insert + Update content — then share your pages with the integration",
     },
+    "LINEAR_API_KEY": {
+        "url": "https://linear.app/settings/account/security",
+        "scope": "A personal API key — powers board reads and approved sprint-plan sync",
+    },
     "SLACK_BOT_TOKEN": {
         "url": "https://api.slack.com/apps",
         "scope": "Bot: chat:write · channels:history · reactions:read · users:read — then /invite it to the channel",
@@ -290,10 +294,33 @@ _AZDEVOPS_TRACKING_FIELDS: list[dict[str, Any]] = [
     },
 ]
 
-# Issue tracking provider options — user picks one before seeing fields
+# Issue tracking fields — Linear
+_LINEAR_TRACKING_FIELDS: list[dict[str, Any]] = [
+    {
+        "env_var": "LINEAR_API_KEY",
+        "label": "API Key",
+        "placeholder": "",
+        "masked": True,
+        "required": True,
+        "hint": "Create at: linear.app → Settings → Security & access → personal API keys",
+    },
+    {
+        "env_var": "LINEAR_TEAM_KEY",
+        "label": "Team Key",
+        "placeholder": "ENG",
+        "masked": False,
+        "required": False,
+        "hint": "The ENG in ENG-123 — only needed when the workspace has several teams",
+    },
+]
+
+# Issue tracking provider options — user picks one before seeing fields.
+# "error_field" is where a failed verification points: the index of the
+# credential the probe most likely rejected.
 _ISSUE_TRACKING_OPTIONS: list[dict[str, Any]] = [
-    {"name": "Jira", "fields": _ISSUE_TRACKING_FIELDS},
-    {"name": "Azure DevOps Boards", "fields": _AZDEVOPS_TRACKING_FIELDS},
+    {"name": "Jira", "fields": _ISSUE_TRACKING_FIELDS, "error_field": 2},
+    {"name": "Azure DevOps Boards", "fields": _AZDEVOPS_TRACKING_FIELDS, "error_field": 2},
+    {"name": "Linear", "fields": _LINEAR_TRACKING_FIELDS, "error_field": 0},
     {"name": "Skip", "fields": []},
 ]
 

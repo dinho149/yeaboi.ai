@@ -149,6 +149,7 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Leave": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Jira": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Azure DevOps": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "Linear": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Configure": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Projects page. "Set active" is the affirmative action (green like Accept);
     # Archive is amber (reversible, but it hides the row).

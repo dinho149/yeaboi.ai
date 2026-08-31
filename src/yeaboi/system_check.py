@@ -423,6 +423,13 @@ _INTEGRATIONS: tuple[dict, ...] = (
         "parts": lambda c: (("token", c.get_notion_token()),),
     },
     {
+        "key": "linear",
+        "label": "Linear",
+        "feature": "Tracker sync",
+        "section": "Connections",
+        "parts": lambda c: (("API key", c.get_linear_api_key()),),
+    },
+    {
         "key": "slack",
         "label": "Slack",
         "feature": "Ceremony delivery",

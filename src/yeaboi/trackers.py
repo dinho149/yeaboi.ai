@@ -242,6 +242,81 @@ def _azdevops_summary(result) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Linear
+# ---------------------------------------------------------------------------
+
+
+def _linear_configured() -> bool:
+    from yeaboi.linear_sync import is_linear_configured
+
+    return is_linear_configured()
+
+
+def _linear_velocity() -> dict | None:
+    """Velocity from the last 3 completed cycles — same wire keys as Jira's."""
+    try:
+        from yeaboi.tools.linear import linear_fetch_velocity
+
+        result = linear_fetch_velocity.invoke({})
+        if result.startswith("Error"):
+            logger.debug("linear_fetch_velocity returned: %s", result)
+            return None
+        return json.loads(result)
+    except Exception:
+        logger.debug("Failed to fetch Linear velocity", exc_info=True)
+    return None
+
+
+def _linear_active_sprint() -> tuple[int | None, str | None, str]:
+    try:
+        from yeaboi.tools.linear import linear_fetch_active_sprint
+
+        result = linear_fetch_active_sprint.invoke({})
+        if result.startswith("Error"):
+            return None, None, result.removeprefix("Error: ")
+        data = json.loads(result)
+        return data["sprint_number"], data.get("start_date"), f"Active cycle: {data['sprint_name']}"
+    except Exception as exc:
+        logger.debug("Failed to fetch Linear cycle for sprint selection", exc_info=True)
+        return None, None, f"Linear connection failed: {exc}"
+
+
+def _linear_sprint_targets() -> tuple[list[dict], str]:
+    try:
+        from yeaboi.tools.linear import fetch_team_cycles
+
+        targets = []
+        for cycle in fetch_team_cycles(states=("active", "future")):
+            targets.append(
+                {
+                    "name": cycle["name"],
+                    "external_id": cycle["id"],
+                    "state": cycle["state"],
+                    "start_date": cycle["start_date"],
+                    "number": cycle.get("number"),
+                }
+            )
+        return targets, f"{len(targets)} open cycle(s) for the team"
+    except Exception as exc:
+        logger.debug("Failed to fetch Linear cycle targets", exc_info=True)
+        return [], f"Linear connection failed: {exc}"
+
+
+def _linear_sync() -> Callable:
+    from yeaboi.linear_sync import sync_all_to_linear
+
+    return sync_all_to_linear
+
+
+def _linear_summary(result) -> dict:
+    return {
+        "epic": result.project_id,
+        "sprints_created": dict(result.cycles_created),
+        "sprints_updated": dict(result.cycles_updated),
+    }
+
+
+# ---------------------------------------------------------------------------
 # The registry
 # ---------------------------------------------------------------------------
 
@@ -269,6 +344,16 @@ TRACKERS: dict[str, TrackerSpec] = {
         fetch_sprint_targets=lambda: _azdevops_sprint_targets(),
         sync_all=lambda: _azdevops_sync(),
         result_summary=lambda result: _azdevops_summary(result),
+    ),
+    "linear": TrackerSpec(
+        key="linear",
+        label="Linear",
+        is_configured=lambda: _linear_configured(),
+        fetch_velocity=lambda: _linear_velocity(),
+        fetch_active_sprint=lambda: _linear_active_sprint(),
+        fetch_sprint_targets=lambda: _linear_sprint_targets(),
+        sync_all=lambda: _linear_sync(),
+        result_summary=lambda result: _linear_summary(result),
     ),
 }
 

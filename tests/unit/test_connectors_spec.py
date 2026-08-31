@@ -193,10 +193,18 @@ class TestSections:
             assert c.section in desktop, f"{c.key}'s section {c.section!r} has no desktop home"
 
 
+# Trackers whose descriptor powers a write path (sprint-plan sync through
+# tools/ + *_sync.py, behind the human-review gate). Everything else must stay
+# read-only — a write path is a credential-scope conversation, not a default.
+_WRITE_CAPABLE = {"linear"}
+
+
 @pytest.mark.parametrize("connector", ALL, ids=lambda c: c.key)
 def test_read_only_connectors_declare_it(connector):
-    # Stage 1 ships read-only connectors only; a write path is a different
-    # credential-scope conversation and must not arrive silently.
+    if connector.key in _WRITE_CAPABLE:
+        assert not connector.read_only, f"{connector.key} is a tracker and must declare its writes"
+        assert "write" in connector.detail.lower(), f"{connector.key} hides its writes from the catalog"
+        return
     assert connector.read_only, f"{connector.key} is not read-only"
 
 

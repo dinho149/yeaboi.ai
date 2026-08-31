@@ -18,7 +18,7 @@ from typing import Any
 from rich.console import Console
 from rich.live import Live
 
-from yeaboi.provider_verification import _verify_azdevops, _verify_jira
+from yeaboi.provider_verification import _verify_azdevops, _verify_jira, _verify_linear
 from yeaboi.ui.provider_select._config import _save_progress
 from yeaboi.ui.provider_select._constants import _ISSUE_TRACKING_OPTIONS
 from yeaboi.ui.provider_select._nav import StepNav, nav_for_key
@@ -59,6 +59,7 @@ def _run_issue_tracking(
     _tracker_cards = [
         {"name": "Jira", "color": "rgb(70,100,180)"},
         {"name": "Azure DevOps", "color": "rgb(70,100,180)"},
+        {"name": "Linear", "color": "rgb(70,100,180)"},
         {"name": "Skip", "color": "rgb(70,100,180)"},
     ]
     tracker_selected = 0
@@ -143,7 +144,6 @@ def _run_issue_tracking(
 
         fields = chosen["fields"]
         tracker_name = chosen["name"]
-        is_azdevops = tracker_name == "Azure DevOps Boards"
 
         it_selected = 0
         it_n = len(fields)
@@ -211,23 +211,19 @@ def _run_issue_tracking(
                     )
                     continue
 
-                # Verify credentials
+                # Verify credentials. One probe per option, dispatched by name
+                # so a new tracker is a row here rather than another branch.
                 verify_result: list[tuple[bool, str]] = []
+                verifiers = {
+                    "Jira": lambda vals: _verify_jira(vals[0], vals[1], vals[2]),
+                    "Azure DevOps Boards": lambda vals: _verify_azdevops(vals[0], vals[1], vals[2]),
+                    "Linear": lambda vals: _verify_linear(vals[0]),
+                }
+                probe = verifiers[tracker_name]
+                cleaned = {i: it_values.get(i, "").strip() for i in range(it_n)}
 
-                if is_azdevops:
-                    org_url = it_values[0].strip()
-                    project_name = it_values[1].strip()
-                    pat = it_values[2].strip()
-
-                    def _do_verify():
-                        verify_result.append(_verify_azdevops(org_url, project_name, pat))
-                else:
-                    jira_url = it_values[0].strip()
-                    jira_email = it_values[1].strip()
-                    jira_token_val = it_values[2].strip()
-
-                    def _do_verify():
-                        verify_result.append(_verify_jira(jira_url, jira_email, jira_token_val))
+                def _do_verify(probe=probe, cleaned=cleaned):
+                    verify_result.append(probe(cleaned))
 
                 logger.info("issue tracking: verifying %s credentials", tracker_name)
                 thread = duck_working_thread(_do_verify, name="tracker-verify")
@@ -322,9 +318,11 @@ def _run_issue_tracking(
                         "issue_tracking": issue_data,
                     }
                 else:
-                    # Point error at the token/PAT field (index 2 for both Jira and AzDO)
-                    it_errors[2] = msg
-                    it_selected = 2
+                    # Point the error at the credential the probe most likely
+                    # rejected — declared per option, not assumed.
+                    _err_i = int(chosen.get("error_field", 0))
+                    it_errors[_err_i] = msg
+                    it_selected = _err_i
                     w, h = console.size
                     _live.update(
                         _build_issue_tracking_screen(

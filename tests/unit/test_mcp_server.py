@@ -749,7 +749,7 @@ class TestPlanSync:
             assert store.load_state(seeded_session)["jira_epic_key"] == "PROJ-1"
 
     def test_sync_bad_destination(self, seeded_session):
-        payload = call_tool("plan_sync", {"destination": "linear"})
+        payload = call_tool("plan_sync", {"destination": "basecamp"})
         assert payload["ok"] is False
         assert "jira" in payload["error"]["message"]
 
