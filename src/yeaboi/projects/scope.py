@@ -55,10 +55,25 @@ class ProjectScope:
         """Whether this scope allows the given context dependency."""
         return self.context_deps is None or dep in self.context_deps
 
+    @property
+    def incognito(self) -> bool:
+        """True only for an explicit empty-deps run — every cross-mode read is off."""
+        return self.context_deps is not None and not self.context_deps
+
 
 def wants(scope: ProjectScope | None, dep: str) -> bool:
     """Whether ``scope`` allows ``dep``; an absent scope allows everything."""
     return scope is None or scope.wants(dep)
+
+
+def incognito(scope: ProjectScope | None) -> bool:
+    """Whether ``scope`` is a full-incognito run; an absent scope never is.
+
+    Gates the cross-mode reads that have no token of their own (poker votes,
+    the latest delivery report): they run for any partial toggle set and go
+    silent only when every source is switched off.
+    """
+    return scope is not None and scope.incognito
 
 
 def normalize_context_deps(value: object) -> frozenset[str] | None:

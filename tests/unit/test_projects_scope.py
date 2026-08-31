@@ -6,6 +6,7 @@ from yeaboi.agent.state import Sprint
 from yeaboi.projects.scope import (
     CONTEXT_DEP_TOKENS,
     ProjectScope,
+    incognito,
     latest_planning_state,
     normalize_context_deps,
     parse_context_spec,
@@ -132,6 +133,18 @@ class TestContextDepsVocabulary:
         assert wants(None, "plan")
         assert wants(ProjectScope("", None, None), "plan")
         assert not wants(ProjectScope("", None, frozenset()), "plan")
+
+
+class TestIncognito:
+    def test_only_an_explicit_empty_set_is_incognito(self):
+        assert ProjectScope("", None, frozenset()).incognito
+        assert not ProjectScope("", None, None).incognito
+        assert not ProjectScope("proj-11112222", ("s1",), frozenset({"retro"})).incognito
+
+    def test_module_helper_treats_an_absent_scope_as_not_incognito(self):
+        assert not incognito(None)
+        assert incognito(ProjectScope("", None, frozenset()))
+        assert not incognito(ProjectScope("", None, frozenset({"plan"})))
 
 
 class TestResolveScopeContextDeps:
