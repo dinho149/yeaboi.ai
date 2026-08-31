@@ -3120,6 +3120,13 @@ def _export_roadmap_via_picker(
     )
 
 
+def _tracker_keys() -> tuple[str, ...]:
+    """Every registered tracker key — the destinations a project can sync to."""
+    from yeaboi import trackers
+
+    return tuple(trackers.TRACKERS)
+
+
 def _project_tracker_sync(
     console,
     live,
@@ -3136,13 +3143,14 @@ def _project_tracker_sync(
     """
     import threading
 
+    from yeaboi import trackers as _trk_registry
     from yeaboi.persistence import load_graph_state, save_graph_state, save_project_snapshot
 
-    tracker_label = "Jira" if action == "jira" else "Azure DevOps"
-    if action == "jira":
-        from yeaboi.jira_sync import sync_all_to_jira as _sync_all_fn
-    else:
-        from yeaboi.azdevops_sync import sync_all_to_azdevops as _sync_all_fn
+    _spec = _trk_registry.by_key(action)
+    if _spec is None:
+        return f"Unknown tracker {action!r}"
+    tracker_label = _spec.label
+    _sync_all_fn = _spec.sync_all()
 
     gs = load_graph_state(project_id)
     if not gs:
@@ -15555,7 +15563,7 @@ def select_mode(
                                         path = f"HTML  {_hp}\nMD    {_mp}"
                                     else:
                                         path = "No saved state for this project"
-                                elif _dest in ("jira", "azdevops"):
+                                elif _dest in _tracker_keys():
                                     path = _project_tracker_sync(
                                         console,
                                         live,

@@ -385,18 +385,23 @@ def _get_active_trackers() -> list[str]:
 
     Returns a list of configured trackers, e.g. ["jira"], ["azdevops"], ["jira", "azdevops"], or [].
     """
-    from yeaboi.jira_sync import is_jira_configured
+    from yeaboi import trackers
 
-    trackers: list[str] = []
-    if is_jira_configured():
-        trackers.append("jira")
+    return trackers.configured()
 
-    from yeaboi.azdevops_sync import is_azdevops_board_configured
 
-    if is_azdevops_board_configured():
-        trackers.append("azdevops")
+def _tracker_key_for_label(label: str) -> str:
+    """The registry key behind a sync button's label, or "" for other buttons."""
+    from yeaboi import trackers
 
-    return trackers
+    return next((key for key, spec in trackers.TRACKERS.items() if spec.label == label), "")
+
+
+def _tracker_labels(keys: list[str]) -> list[str]:
+    """Button labels for a list of tracker keys, in the order given."""
+    from yeaboi import trackers
+
+    return [trackers.TRACKERS[key].label for key in keys if key in trackers.TRACKERS]
 
 
 # ---------------------------------------------------------------------------
@@ -1034,25 +1039,13 @@ def _phase_pipeline(
                 if _qs:
                     _ep_preferred = getattr(_qs, "_preferred_tracker", "")
                 try:
-                    from yeaboi.jira_sync import is_jira_configured
+                    from yeaboi import trackers as _trk_registry
 
-                    _jira_ok = is_jira_configured()
+                    _ep_label = _trk_registry.label_for(_ep_preferred) or _trk_registry.label_for()
                 except Exception:
-                    _jira_ok = False
-                try:
-                    from yeaboi.azdevops_sync import is_azdevops_board_configured
-
-                    _azdo_ok = is_azdevops_board_configured()
-                except Exception:
-                    _azdo_ok = False
-                if _ep_preferred == "jira" and _jira_ok:
-                    _ep_actions.append("Jira")
-                elif _ep_preferred == "azdevops" and _azdo_ok:
-                    _ep_actions.append("Azure DevOps")
-                elif _jira_ok:
-                    _ep_actions.append("Jira")
-                elif _azdo_ok:
-                    _ep_actions.append("Azure DevOps")
+                    _ep_label = ""
+                if _ep_label:
+                    _ep_actions.append(_ep_label)
 
                 logger.info("Epic review: showing project-level epic")
 
@@ -1167,9 +1160,9 @@ def _phase_pipeline(
                         elif _ep_act == "Export":
                             logger.info("Epic review: exporting")
                             _plan_export_flow(live, console, _key, graph_state, "project_analyzer")
-                        elif _ep_act in ("Jira", "Azure DevOps"):
+                        elif _tracker_key_for_label(_ep_act):
                             logger.info("Epic review: syncing to %s", _ep_act)
-                            _btn_tracker = "jira" if _ep_act == "Jira" else "azdevops"
+                            _btn_tracker = _tracker_key_for_label(_ep_act)
                             _sync_result = _handle_tracker_sync(
                                 live,
                                 console,
@@ -1419,8 +1412,7 @@ def _phase_pipeline(
                 acts.append("Share Online")
                 acts.extend(["Adjust", "Revert"] if anon is not None else ["Anonymize"])
             if _active_trackers and (is_story_stage or is_task_stage or is_sprint_stage):
-                for _trk in _active_trackers:
-                    acts.append("Jira" if _trk == "jira" else "Azure DevOps")
+                acts.extend(_tracker_labels(_active_trackers))
             return acts
 
         actions = _compute_actions()
@@ -1833,8 +1825,8 @@ def _phase_pipeline(
                     menu_selected = min(menu_selected, num_actions - 1)
                     btn_targets = [1.0 if i == menu_selected else 0.0 for i in range(num_actions)]
                     btn_fades = list(btn_targets)
-                elif action in ("Jira", "Azure DevOps"):
-                    _btn_tracker = "jira" if action == "Jira" else "azdevops"
+                elif _tracker_key_for_label(action):
+                    _btn_tracker = _tracker_key_for_label(action)
                     logger.info("%s sync requested for %s", action, pending)
                     tracker_result = _handle_tracker_sync(
                         live,
