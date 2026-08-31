@@ -62,6 +62,30 @@ FAMILY_LABELS: dict[str, str] = {
 
 
 @dataclass(frozen=True)
+class AuthMethod:
+    """One way to authenticate to a connector, and how honest it can be.
+
+    Cloud providers are the reason this exists: "connected" is not one set of
+    credentials there, and the difference between the ways in is a difference in
+    what yeaboi can promise. A method that yeaboi cannot bound says so on itself
+    rather than in documentation nobody reads at the moment of choosing.
+    """
+
+    key: str
+    label: str
+    #: One line: what this method actually is.
+    summary: str
+    recommended: bool = False
+    #: Why this one is not recommended. Required on every method that is not.
+    warning: str = ""
+    #: Where the least-privilege snippet lives.
+    setup_url: str = ""
+    #: Which of the connector's fields this method needs. The method selector
+    #: itself is never listed — it is required whatever is chosen.
+    envs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ConnectorField:
     """One env var a connector reads, and how a surface should treat it."""
 
@@ -85,6 +109,9 @@ class ConnectorField:
     # Where the value comes from when this env is unset — Confluence reading
     # Jira's Atlassian identity, declared rather than special-cased.
     fallback_env: str = ""
+    # Which auth method this field belongs to. Empty means every method needs
+    # it — a region, a project id, the method selector itself.
+    auth_method: str = ""
     choices: tuple[str, ...] = ()
     default: str = ""
 
@@ -123,6 +150,14 @@ class Connector:
     #: Terminal identity. ``glyph`` defaults to the family mark.
     glyph: str = ""
     accent: str = ""
+    #: The ways in, when there is more than one. Empty means the connector has
+    #: exactly one and needs no chooser.
+    auth_methods: tuple[AuthMethod, ...] = ()
+    #: The env holding the chosen method's key. An ordinary required choice
+    #: field, and required on purpose: choosing IS the configuration, so a
+    #: connector whose recommended method needs no credential of its own cannot
+    #: report itself connected on a machine that has set nothing.
+    auth_env: str = ""
     #: Read-only connectors gather data and never write to the vendor.
     read_only: bool = True
 
@@ -141,3 +176,29 @@ class Connector:
     @property
     def secret_envs(self) -> tuple[str, ...]:
         return tuple(f.env for f in self.fields if f.secret)
+
+    def method(self, key: str) -> AuthMethod | None:
+        return next((m for m in self.auth_methods if m.key == key), None)
+
+    @property
+    def default_method(self) -> AuthMethod | None:
+        """The method a surface offers first — the recommended one."""
+        if not self.auth_methods:
+            return None
+        return next((m for m in self.auth_methods if m.recommended), self.auth_methods[0])
+
+    def fields_for(self, method_key: str) -> tuple[ConnectorField, ...]:
+        """The fields that matter under one auth method, in descriptor order.
+
+        A field with no ``auth_method`` belongs to all of them. Deciding WHICH
+        method is a caller's job — this file reads no environment.
+        """
+        if not self.auth_methods:
+            return self.fields
+        return tuple(f for f in self.fields if not f.auth_method or f.auth_method == method_key)
+
+    def envs_for(self, method_key: str) -> tuple[str, ...]:
+        """The envs that decide connectedness under one auth method."""
+        if not self.auth_methods:
+            return self.required_envs
+        return tuple(f.env for f in self.fields_for(method_key) if f.required)

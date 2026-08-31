@@ -36,6 +36,27 @@
       "family": "errors",
       "family_label": "Error tracking",
       "accent": "rgb(106,84,164)"
+    },
+    {
+      "key": "aws",
+      "label": "AWS",
+      "family": "cloud",
+      "family_label": "Cloud",
+      "accent": "rgb(255,153,0)"
+    },
+    {
+      "key": "gcp",
+      "label": "Google Cloud",
+      "family": "cloud",
+      "family_label": "Cloud",
+      "accent": "rgb(66,133,244)"
+    },
+    {
+      "key": "azure_cloud",
+      "label": "Microsoft Azure",
+      "family": "cloud",
+      "family_label": "Cloud",
+      "accent": "rgb(0,120,212)"
     }
   ]
 }

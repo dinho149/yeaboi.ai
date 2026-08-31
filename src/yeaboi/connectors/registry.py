@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping
 
-from yeaboi.connectors import datadog, grafana, incidentio, pagerduty, sentry
+from yeaboi.connectors import aws, azure_cloud, datadog, gcp, grafana, incidentio, pagerduty, sentry
 from yeaboi.connectors.spec import FAMILY_ORDER, Connector
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,9 @@ _CONNECTORS: tuple[Connector, ...] = (
     pagerduty.CONNECTOR,
     incidentio.CONNECTOR,
     sentry.CONNECTOR,
+    aws.CONNECTOR,
+    gcp.CONNECTOR,
+    azure_cloud.CONNECTOR,
 )
 
 
@@ -39,9 +43,36 @@ def by_key(key: str) -> Connector | None:
     return next((c for c in _CONNECTORS if c.key == key), None)
 
 
-def is_connected(connector: Connector) -> bool:
+def chosen_method(connector: Connector, values: Mapping[str, str] | None = None):
+    """The auth method in force, or ``None`` for a connector that has one way in.
+
+    Falls back to the recommended method when nothing is chosen, so a surface
+    always has something to render — but see :func:`required_envs`: an unchosen
+    method is never *connected*, because ``auth_env`` is itself required.
+    """
+    if not connector.auth_methods:
+        return None
+    read = os.environ if values is None else values
+    return connector.method(str(read.get(connector.auth_env, "") or "").strip()) or connector.default_method
+
+
+def required_envs(connector: Connector, values: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """The envs that decide whether this connector is connected, here and now.
+
+    ``values`` lets a surface holding its own snapshot ask the same question the
+    environment answers — the settings screen renders from ``config_data``, and
+    two resolvers would be two answers.
+    """
+    method = chosen_method(connector, values)
+    if method is None:
+        return connector.required_envs
+    return connector.envs_for(method.key)
+
+
+def is_connected(connector: Connector, values: Mapping[str, str] | None = None) -> bool:
     """Whether every env this connector needs is set."""
-    return all(os.environ.get(env, "").strip() for env in connector.required_envs)
+    read = os.environ if values is None else values
+    return all(str(read.get(env, "") or "").strip() for env in required_envs(connector, values))
 
 
 def connected(family: str = "") -> list[str]:

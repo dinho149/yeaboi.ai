@@ -94,6 +94,18 @@ def get_json(url: str, *, headers: dict[str, str], timeout: int = DEFAULT_TIMEOU
     return httpx.get(assert_safe_url(url), headers=headers, timeout=timeout)
 
 
+def post_form(url: str, *, data: dict[str, str], timeout: int = DEFAULT_TIMEOUT):
+    """``POST`` a form body to a guarded URL. Returns the raw httpx response.
+
+    The one writeless POST a read-only layer needs: an OAuth token exchange.
+    It goes through the same guard as every GET so the one cloud provider that
+    speaks plain REST cannot become the one that skips it.
+    """
+    import httpx
+
+    return httpx.post(assert_safe_url(url), data=data, timeout=timeout)
+
+
 def probe_status(url: str, *, headers: dict[str, str], timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str]:
     """``(status_code, "")`` for a completed request, or ``(0, message)``.
 

@@ -4190,6 +4190,10 @@ charts = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
+cloud = [
+    { name = "boto3" },
+    { name = "google-auth" },
+]
 dev = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -4240,7 +4244,9 @@ requires-dist = [
     { name = "azure-devops" },
     { name = "boto3", marker = "extra == 'all-providers'" },
     { name = "boto3", marker = "extra == 'bedrock'" },
+    { name = "boto3", marker = "extra == 'cloud'" },
     { name = "faster-whisper", marker = "extra == 'voice'" },
+    { name = "google-auth", marker = "extra == 'cloud'" },
     { name = "holidays" },
     { name = "jira" },
     { name = "langchain" },
@@ -4281,7 +4287,7 @@ requires-dist = [
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'dev'" },
     { name = "yeaboi-web-assets", specifier = ">=1,<2" },
 ]
-provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "ollama", "voice", "charts", "mcp", "access", "all-providers", "dev"]
+provides-extras = ["openai", "google", "pdf", "docs", "bedrock", "cloud", "ollama", "voice", "charts", "mcp", "access", "all-providers", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "syrupy", specifier = ">=5.1.0" }]

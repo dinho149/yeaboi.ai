@@ -11,7 +11,10 @@
     "standup"
   ],
   "connector_accents": [
+    "aws",
+    "azure_cloud",
     "datadog",
+    "gcp",
     "grafana",
     "incidentio",
     "pagerduty",

@@ -839,6 +839,124 @@ def _verify_pagerduty(token: str) -> tuple[bool, str]:
     return True, "PagerDuty verified"
 
 
+def _verify_aws(auth_method: str = "", role_arn: str = "", external_id: str = "", region: str = "") -> tuple[bool, str]:
+    """Verify AWS access, and say whose identity yeaboi ended up as.
+
+    Under ``assume_role`` this proves the whole guarantee at once: the assume
+    call succeeds, and the read-only session policy it carried is what the
+    subsequent DescribeAlarms runs under. Under ambient it reports the caller
+    ARN, because a user pointing yeaboi at whatever this machine happens to be
+    should see what that turned out to mean.
+    """
+    from yeaboi.connectors import aws
+
+    if not aws.installed():
+        return False, aws.PKG_MISSING
+    if auth_method == "assume_role" and not (role_arn and external_id):
+        return False, "Assuming a role needs both a role ARN and an external ID"
+
+    try:
+        import boto3
+
+        caller = boto3.client("sts", region_name=region or "us-east-1").get_caller_identity()
+    except Exception as exc:
+        return False, _connection_error(exc)
+
+    if auth_method != "assume_role":
+        arn = str(caller.get("Arn") or "this machine's identity")
+        return True, f"AWS verified as {arn} — yeaboi cannot bound what this identity may do"
+
+    try:
+        alarms = aws.client("cloudwatch").describe_alarms(MaxRecords=1)
+    except Exception as exc:
+        return False, _connection_error(exc)
+    count = len(alarms.get("MetricAlarms") or []) + len(alarms.get("CompositeAlarms") or [])
+    scope = "read-only session" if count or alarms is not None else "session"
+    return True, f"AWS verified — assumed {role_arn.rsplit('/', 1)[-1]} under a {scope}"
+
+
+def _verify_gcp(auth_method: str = "", project_id: str = "", service_account: str = "") -> tuple[bool, str]:
+    """Verify Google Cloud access, and name the identity the token carries."""
+    from yeaboi.connectors import gcp
+    from yeaboi.connectors.http import probe_status
+
+    if not gcp.installed():
+        return False, gcp.PKG_MISSING
+    if not project_id:
+        return False, "Google Cloud verification needs a project id"
+    if auth_method == "impersonate" and not service_account:
+        return False, "Impersonation needs the service account to impersonate"
+
+    try:
+        token = gcp.access_token()
+    except Exception as exc:
+        return False, _connection_error(exc)
+
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    status, message = probe_status(
+        gcp.group_stats_url(project_id, now - timedelta(hours=1), now),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, "Token minted, but it was refused — the account needs roles/errorreporting.viewer"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    if auth_method != "impersonate":
+        return True, f"Google Cloud verified on {project_id} — yeaboi cannot bound what this identity may do"
+    return True, f"Google Cloud verified on {project_id} as {service_account}"
+
+
+def _verify_azure_cloud(
+    tenant_id: str = "", client_id: str = "", client_secret: str = "", subscription_id: str = ""
+) -> tuple[bool, str]:
+    """Verify an Azure app registration and its Monitoring Reader assignment.
+
+    Two failures worth telling apart: the app registration itself being wrong
+    (the token never issues) and the role assignment being missing (the token
+    issues and ARM refuses it). Reporting either as "invalid Azure credentials"
+    sends the user to re-cut the wrong thing.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from yeaboi.connectors import azure_cloud
+    from yeaboi.connectors.http import probe_status
+
+    missing = [
+        name
+        for name, value in (
+            ("tenant id", tenant_id),
+            ("client id", client_id),
+            ("client secret", client_secret),
+            ("subscription id", subscription_id),
+        )
+        if not value
+    ]
+    if missing:
+        return False, f"Azure verification needs the {', '.join(missing)}"
+
+    try:
+        token = azure_cloud.access_token()
+    except Exception as exc:
+        return False, str(exc) if type(exc).__name__ == "FetchError" else _connection_error(exc)
+
+    now = datetime.now(timezone.utc)
+    status, message = probe_status(
+        azure_cloud.alerts_url(subscription_id, now - timedelta(hours=1), now),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, "App registration verified, but ARM refused it — it needs Monitoring Reader on that subscription"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Microsoft Azure verified — Monitoring Reader on that subscription"
+
+
 def _verify_incidentio(token: str) -> tuple[bool, str]:
     """Verify an incident.io API key, and report the roles it carries.
 

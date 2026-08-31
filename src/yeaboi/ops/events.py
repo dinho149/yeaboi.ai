@@ -36,6 +36,9 @@ _SEVERITY_ALIASES: dict[str, str] = {
     "critical": "critical",
     "crit": "critical",
     "p1": "critical",
+    # Azure numbers its severities from zero, so sev0 is the worst there and
+    # sev1 is the worst everywhere else. Both map to critical.
+    "sev0": "critical",
     "sev1": "critical",
     "fatal": "critical",
     "error": "high",

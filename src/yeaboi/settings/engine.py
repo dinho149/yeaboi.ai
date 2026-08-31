@@ -531,6 +531,16 @@ def _connection_kinds() -> dict[str, tuple[tuple[str, str], ...]]:
     return {**_CONNECTION_KINDS, **registry.connection_kinds()}
 
 
+def _verify_field_names() -> tuple[str, ...]:
+    """Every field name any connection kind accepts on a verify request.
+
+    The wire's allowlist, derived from the same table verification resolves
+    against, so a connector cannot declare a field the HTTP surface silently
+    refuses to carry.
+    """
+    return tuple(sorted({name for spec in _connection_kinds().values() for name, _ in spec}))
+
+
 def _connector_registry():
     from yeaboi.connectors import registry
 

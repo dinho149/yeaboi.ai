@@ -79,6 +79,12 @@ pdf = ["pymupdf"]
 # Confluence/Notion/markdown and the HTML slide deck instead.
 docs = ["python-docx", "python-pptx"]
 bedrock = ["langchain-aws", "boto3"]
+# Read-only cloud connectors (AWS CloudWatch alarms, Google Cloud error groups).
+# Lazy-imported inside each probe, and the descriptors are pure stdlib data, so
+# the catalog lists cloud providers on a plain install and only verifying or
+# gathering asks for this. Azure is deliberately absent: its whole path is plain
+# REST through connectors/http.py, which is what keeps it inside the SSRF guard.
+cloud = ["boto3", "google-auth"]
 # Local LLM via an Ollama server — free, private, no API key. See README:
 # "Local Mode (Ollama)".
 ollama = ["langchain-ollama"]

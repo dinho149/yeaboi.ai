@@ -2696,10 +2696,24 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
             # Padding, not a literal indent: the detail wraps, and only the first
             # wrapped line would carry a leading-space indent.
             console.print(Padding(f"[dim]{row['detail']}[/dim]", (0, 0, 1, 2)))
+        chosen = registry.chosen_method(connector)
+        if chosen is not None:
+            console.print(f"  [bold]{chosen.label}[/bold]  [dim]{chosen.summary}[/dim]")
+            if chosen.warning:
+                console.print(f"  [yellow]⚠  {chosen.warning}[/yellow]")
+        shown = {f.env for f in connector.fields_for(chosen.key)} if chosen else None
         for field in row["fields"]:
+            if shown is not None and field["env"] not in shown:
+                continue
             state = "[green]set[/green]" if field["is_set"] else "[dim]not set[/dim]"
             need = "" if field["required"] else " [dim](optional)[/dim]"
             console.print(f"  {field['label']}: {state}{need}  [dim]{field['env']}[/dim]")
+        for method in connector.auth_methods:
+            if chosen is not None and method.key == chosen.key:
+                continue
+            console.print(f"  [dim]or {method.key}: {method.summary}[/dim]")
+            if method.warning:
+                console.print(f"  [dim]   ⚠  {method.warning}[/dim]")
         if row["docs_url"]:
             console.print(f"  [dim]docs: {row['docs_url']}[/dim]")
         return 0
@@ -2765,7 +2779,42 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
         console.print(f"{connector.mark} [bold]{connector.label}[/bold]")
         if connector.docs_url:
             console.print(f"[dim]{connector.docs_url}[/dim]")
-        for field in connector.fields:
+
+        # The method comes first, because it decides which of the questions
+        # below are even asked. A connector with one way in skips this entirely.
+        method = connector.default_method
+        if connector.auth_methods:
+            for option in connector.auth_methods:
+                tag = " [green](recommended)[/green]" if option.recommended else ""
+                console.print(f"  [bold]{option.key}[/bold]{tag} — {option.summary}")
+                if option.warning:
+                    console.print(f"  [yellow]  ⚠  {option.warning}[/yellow]")
+            picked = input(f"How to connect [{method.key}]: ").strip() or method.key
+            chosen = connector.method(picked)
+            if chosen is None:
+                known = ", ".join(m.key for m in connector.auth_methods)
+                print(f"Error: unknown method {picked!r}. Known: {known}", file=sys.stderr)
+                return 1
+            method = chosen
+            apply_config_value(connector.auth_env, method.key)
+            os.environ[connector.auth_env] = method.key
+            if method.setup_url:
+                console.print(f"[dim]Set it up: {method.setup_url}[/dim]")
+
+        for field in connector.fields_for(method.key) if method else connector.fields:
+            if connector.auth_env and field.env == connector.auth_env:
+                continue
+            # An external ID is yeaboi's to mint, not the user's to invent: it
+            # is what stops a confused deputy assuming the role, so it has to be
+            # unguessable. Shown once, for pasting into the trust policy.
+            if field.env == "AWS_EXTERNAL_ID" and not os.environ.get(field.env, "").strip():
+                from yeaboi.connectors.aws import new_external_id
+
+                generated = new_external_id()
+                apply_config_value(field.env, generated)
+                os.environ[field.env] = generated
+                console.print(f"  External ID (paste into the role's trust policy): [bold]{generated}[/bold]")
+                continue
             hint = f" [{field.default}]" if field.default else ""
             label = f"{field.label}{'' if field.required else ' (optional)'}{hint}: "
             if field.help_scope:

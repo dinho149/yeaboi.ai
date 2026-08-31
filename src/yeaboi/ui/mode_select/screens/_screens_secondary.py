@@ -7615,7 +7615,7 @@ def _build_settings_screen(
         from yeaboi.connectors import registry as _creg
         from yeaboi.connectors.spec import FAMILY_LABELS
 
-        _linked = [c for c in _creg.all_connectors() if all(config_data.get(e, "") for e in c.required_envs)]
+        _linked = [c for c in _creg.all_connectors() if _creg.is_connected(c, config_data)]
         _heading("Connections", wide=True)
         if not _linked:
             hint = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
@@ -7637,8 +7637,23 @@ def _build_settings_screen(
                 _sum = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
                 _sum.append(_c.summary, style=theme.muted)
                 _cur.append(_sum)
-            for _f in _c.fields:
-                _row(f"  {_f.label}", config_data.get(_f.env, ""), masked=_f.secret, env=_f.env)
+            _method = _creg.chosen_method(_c, config_data)
+            if _method is not None and _method.warning:
+                # The one thing a user must read before trusting this row: what
+                # yeaboi cannot promise about the identity they chose.
+                _warn = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+                _warn.append(f"⚠  {_method.warning}", style=theme.warn)
+                _cur.append(_warn)
+            # Only the chosen method's fields: the others are not "not set", they
+            # are not part of this connection at all.
+            for _f in _c.fields_for(_method.key) if _method else _c.fields:
+                if _f.choices:
+                    # A choice field lays its options out with the live one lit.
+                    # Rendered as free text it shows a value and no alternatives,
+                    # and Enter silently cycles a list nobody can see.
+                    _choice_row(f"  {_f.label}", _f.env)
+                else:
+                    _row(f"  {_f.label}", config_data.get(_f.env, ""), masked=_f.secret, env=_f.env)
         add = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
         add.append("\u21b3 add: ", style=theme.muted)
         add.append("yeaboi connections add <name>", style=theme.dim)

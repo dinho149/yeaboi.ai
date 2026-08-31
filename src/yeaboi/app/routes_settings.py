@@ -96,11 +96,10 @@ def connection_verify(app, request: Request) -> Response:
     from yeaboi.settings import engine
 
     kind = _required_str(payload, "kind")
-    # The union of every kind's verify fields. A field a kind does not use is
-    # ignored by the engine, and one it needs but the caller omitted falls back
-    # to the stored value there.
-    accepted = ("token", "app_key", "base_url", "email", "space_key")
-    fields = {k: "" if payload.get(k) is None else str(payload[k]) for k in accepted}
+    # The union of every kind's verify fields, DERIVED. A hand-written list here
+    # goes stale silently — a field it forgot is one a caller can never supply,
+    # and the engine falls back to the stored value with nothing to say so.
+    fields = {k: "" if payload.get(k) is None else str(payload[k]) for k in engine._verify_field_names()}
     return json_response(engine.verify_connection(kind, fields))
 
 

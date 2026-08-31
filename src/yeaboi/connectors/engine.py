@@ -60,6 +60,22 @@ def list_connections(*, family: str = "", connected_only: bool = True) -> dict:
                 "glyph": connector.mark,
                 "accent": connector.accent,
                 "verify_kind": connector.key if connector.verify else "",
+                # The ways in, and which one is in force. A connector with one
+                # way sends an empty list and no selector, so a surface that
+                # ignores these keys renders exactly as it did before.
+                "auth_env": connector.auth_env,
+                "auth_methods": [
+                    {
+                        "key": m.key,
+                        "label": m.label,
+                        "summary": m.summary,
+                        "recommended": m.recommended,
+                        "warning": m.warning,
+                        "setup_url": m.setup_url,
+                        "envs": list(m.envs),
+                    }
+                    for m in connector.auth_methods
+                ],
                 "fields": [
                     {
                         "env": f.env,
@@ -73,6 +89,7 @@ def list_connections(*, family: str = "", connected_only: bool = True) -> dict:
                         "hint": f.hint,
                         "help_url": f.help_url,
                         "help_scope": f.help_scope,
+                        "auth_method": f.auth_method,
                     }
                     for f in connector.fields
                 ],
