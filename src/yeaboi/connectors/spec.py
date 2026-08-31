@@ -143,6 +143,10 @@ class Connector:
     #: connector's own module, returning ``tuple[OpsEvent, ...]``. Empty when
     #: the connector can be verified but has nothing to gather yet.
     fetch: str = ""
+    #: Where that function lives, when it is not ``yeaboi.connectors.<key>`` —
+    #: user-defined connectors share one generic driver module rather than
+    #: shipping code, and this is the seam that reaches it.
+    fetch_module: str = ""
     docs_url: str = ""
     #: Envs that must ALL be set for the connector to count as connected.
     #: Empty means "every required field".

@@ -118,6 +118,45 @@ def connections_list(app, request: Request) -> Response:
     return json_response(list_connections(family=family, connected_only=not show_all, include_legacy=show_all))
 
 
+def custom_connection_create(app, request: Request) -> Response:
+    """``POST /api/connections/custom`` — save one user-created connection.
+
+    The body is descriptor JSON only, never a credential; values are typed
+    afterwards through ``/api/settings/set`` like any connector's. The runtime
+    validator is the gate — its problems come back as the 400 message.
+    """
+    payload = request.json()
+    from yeaboi.connectors.engine import create_custom_connection
+
+    try:
+        return json_response(create_custom_connection(payload))
+    except ValueError as exc:
+        raise HTTPError(400, str(exc)) from None
+
+
+def custom_connection_draft(app, request: Request) -> Response:
+    """``POST /api/connections/custom/draft`` — one LLM pass from description to draft.
+
+    Never saves: ``{ok, draft, problems}`` comes back for the user to review,
+    and a draft with problems pre-fills the manual form instead of dead-ending.
+    """
+    payload = request.json()
+    description = _required_str(payload, "description")
+    from yeaboi.connectors.engine import draft_custom_connection
+
+    return json_response(draft_custom_connection(description))
+
+
+def custom_connection_delete(app, request: Request) -> Response:
+    """``POST /api/connections/custom/{key}/delete`` — remove descriptor AND stored values."""
+    from yeaboi.connectors.engine import delete_custom_connection
+
+    try:
+        return json_response(delete_custom_connection(request.params["key"]))
+    except ValueError as exc:
+        raise HTTPError(404, str(exc)) from None
+
+
 def access_state(app, request: Request) -> Response:
     """``GET /api/settings/access/state`` — the Cloudflare Access doctor, offline.
 

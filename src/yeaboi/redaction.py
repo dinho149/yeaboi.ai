@@ -146,8 +146,19 @@ _cache_regex: re.Pattern[str] | None = None
 
 
 def _current_secret_values() -> tuple[str, ...]:
-    """Snapshot the env-var secret values worth matching, longest first."""
+    """Snapshot the env-var secret values worth matching, longest first.
+
+    Beyond the declared keys, every ``YEABOI_CUSTOM_*`` env is swept in whole:
+    user-created connections derive their envs under that prefix at runtime,
+    and over-redacting a custom base URL costs nothing (connectors never log
+    URLs) while under-redacting a token costs everything. The prefix scan also
+    self-heals for a connection created mid-process — the regex cache is keyed
+    on the value snapshot, and this path imports no registry.
+    """
     values = {v for key in SECRET_ENV_KEYS if (v := os.environ.get(key, "")) and len(v) >= _MIN_SECRET_LEN}
+    values |= {
+        v for key, v in os.environ.items() if key.startswith("YEABOI_CUSTOM_") and v and len(v) >= _MIN_SECRET_LEN
+    }
     return tuple(sorted(values, key=len, reverse=True))
 
 

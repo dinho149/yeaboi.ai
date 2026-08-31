@@ -343,6 +343,12 @@ CAPABILITIES: dict[str, dict] = {
         "engines": {
             ("yeaboi.connectors.engine", "list_connections"),
             ("yeaboi.connectors.engine", "fetch_ops_events"),
+            # The user-created half of the layer. No MCP write tools on
+            # purpose: an MCP server must not rewrite host credentials, and
+            # must not mint a descriptor that aims them either.
+            ("yeaboi.connectors.engine", "create_custom_connection"),
+            ("yeaboi.connectors.engine", "delete_custom_connection"),
+            ("yeaboi.connectors.engine", "draft_custom_connection"),
         },
         "mcp_tools": {"connections_list", "connections_fetch"},
         "tui_mode": Exempt(

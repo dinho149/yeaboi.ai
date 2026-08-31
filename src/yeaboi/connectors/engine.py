@@ -130,6 +130,89 @@ def _verify_kind(connector, is_legacy: bool) -> str:
     return connector.key if connector.verify else ""
 
 
+def create_custom_connection(spec: dict) -> dict:
+    """Validate and save one user-created connection; return its catalog row.
+
+    ``spec`` is descriptor JSON only — never a credential; the values are typed
+    into the ordinary settings write path afterwards. The validator is the
+    gate: any problem raises ValueError carrying every user-facing line.
+    """
+    from yeaboi.connectors.custom import save_custom, spec_from_dict
+
+    parsed = spec_from_dict(spec if isinstance(spec, dict) else {})
+    save_custom(parsed)  # raises ValueError with the problems
+    logger.info("connectors: custom connection %s created", parsed.key)
+    payload = list_connections(connected_only=False, include_legacy=False)
+    return next(row for row in payload["connectors"] if row["key"] == parsed.key)
+
+
+def delete_custom_connection(key: str) -> dict:
+    """Remove one user-created connection AND its stored credential values.
+
+    A definition-less credential is an orphan nothing can read or mask by
+    name, so the envs are cleared in the same act.
+    """
+    from yeaboi.config import apply_config_value
+    from yeaboi.connectors.custom import delete_custom, spec_by_key
+
+    spec = spec_by_key(str(key or ""))
+    if spec is None:
+        raise ValueError(f"no custom connection named {key!r}")
+    for env in spec.derived_envs():
+        apply_config_value(env, "")
+        os.environ.pop(env, None)
+    delete_custom(spec.key)
+    logger.info("connectors: custom connection %s deleted", spec.key)
+    return {"deleted": spec.key}
+
+
+def draft_custom_connection(description: str) -> dict:
+    """One LLM pass from a service description to a candidate descriptor.
+
+    The model proposes identity, look and HTTP shape — never env names or
+    verify wiring, which are derived. Nothing is saved here: the caller shows
+    the draft, the user edits or accepts, and ``create_custom_connection``
+    judges it. Returns ``{ok, draft, problems}`` — a draft with problems is a
+    pre-filled form, not a dead end.
+    """
+    import json as _json
+
+    from yeaboi.agent.llm import invoke_json  # See docs: "Agentic Blueprint Reference" — one-shot JSON calls
+    from yeaboi.connectors import registry
+    from yeaboi.connectors.custom import load_specs, spec_from_dict
+    from yeaboi.connectors.validation import descriptor_problems
+    from yeaboi.prompts.connector_builder import create_connector_builder_prompt
+
+    response = invoke_json(create_connector_builder_prompt(str(description or "")), temperature=0.0)
+    try:
+        raw = _json.loads(response.content)
+    except (TypeError, ValueError):
+        return {"ok": False, "draft": {}, "problems": ["the model did not return a usable draft — try rephrasing"]}
+    if not isinstance(raw, dict):
+        return {"ok": False, "draft": {}, "problems": ["the model did not return a usable draft — try rephrasing"]}
+
+    draft = spec_from_dict(raw)
+    others = load_specs()
+    existing_keys = (
+        {c.key for c in registry.builtin_connectors()}
+        | {c.key for c in registry.legacy_entries()}
+        | {s.key for s in others}
+    )
+    existing_envs = set(registry.all_envs()) | set(registry.legacy_envs())
+    for other in others:
+        existing_envs |= set(other.derived_envs())
+    existing_accents = {c.accent for c in registry.builtin_connectors()} | {c.accent for c in registry.legacy_entries()}
+    existing_accents |= {s.accent for s in others}
+    problems = descriptor_problems(
+        draft,
+        existing_keys=frozenset(existing_keys),
+        existing_envs=frozenset(existing_envs),
+        existing_accents=frozenset(existing_accents),
+    )
+    logger.info("connectors: drafted %s (%d problem(s))", draft.key or "<unnamed>", len(problems))
+    return {"ok": not problems, "draft": draft.to_dict(), "problems": problems}
+
+
 def fetch_ops_events(key: str = "", *, since: str = "14d", now: datetime | None = None) -> dict:
     """What production did over a window, as bounded events and rolled-up signals.
 

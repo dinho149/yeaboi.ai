@@ -32,8 +32,9 @@ from yeaboi.connectors.spec import FAMILY_ORDER, Connector
 
 logger = logging.getLogger(__name__)
 
-#: Every connector, in catalog order. New vendors are appended here and nowhere
-#: else — the settings fields, the verify table and the secret lists all derive.
+#: Every BUILT-IN connector, in catalog order. New vendors are appended here and
+#: nowhere else — the settings fields, the verify table and the secret lists all
+#: derive. User-created connections join through ``_combined()``, never here.
 _CONNECTORS: tuple[Connector, ...] = (
     datadog.CONNECTOR,
     grafana.CONNECTOR,
@@ -50,14 +51,31 @@ _CONNECTORS: tuple[Connector, ...] = (
 )
 
 
-def all_connectors() -> tuple[Connector, ...]:
-    """Every connector, ordered by family then label."""
+def builtin_connectors() -> tuple[Connector, ...]:
+    """The shipped connectors only, in catalog order.
+
+    What the vendored contracts are generated from — a contract must not change
+    with whatever custom connections this machine happens to hold.
+    """
     order = {family: i for i, family in enumerate(FAMILY_ORDER)}
     return tuple(sorted(_CONNECTORS, key=lambda c: (order.get(c.family, len(order)), c.label.lower())))
 
 
+def _combined() -> tuple[Connector, ...]:
+    """Built-ins plus the user-created connections, one roster."""
+    from yeaboi.connectors import custom
+
+    return _CONNECTORS + custom.load_custom()
+
+
+def all_connectors() -> tuple[Connector, ...]:
+    """Every connector — built-in and user-created — ordered by family then label."""
+    order = {family: i for i, family in enumerate(FAMILY_ORDER)}
+    return tuple(sorted(_combined(), key=lambda c: (order.get(c.family, len(order)), c.label.lower())))
+
+
 def by_key(key: str) -> Connector | None:
-    return next((c for c in _CONNECTORS if c.key == key), None)
+    return next((c for c in _combined() if c.key == key), None)
 
 
 def chosen_method(connector: Connector, values: Mapping[str, str] | None = None):
@@ -104,7 +122,7 @@ def any_fetchable() -> bool:
     user with no ops vendor must not watch a phase go by for work that is not
     happening. Costs one walk of the descriptors and no network.
     """
-    return any(c.fetch and is_connected(c) for c in _CONNECTORS)
+    return any(c.fetch and is_connected(c) for c in _combined())
 
 
 def by_family() -> dict[str, list[Connector]]:
@@ -117,7 +135,7 @@ def by_family() -> dict[str, list[Connector]]:
 
 def secret_envs() -> frozenset[str]:
     """Every secret env any connector declares — the masking source of truth."""
-    return frozenset(env for c in _CONNECTORS for env in c.secret_envs)
+    return frozenset(env for c in _combined() for env in c.secret_envs)
 
 
 def all_envs() -> tuple[str, ...]:
@@ -139,8 +157,12 @@ def connection_kinds() -> dict[str, tuple[tuple[str, str], ...]]:
 
 
 def accents() -> tuple[str, ...]:
-    """The connector keys the front end must own a ``[data-connector]`` block for."""
-    return tuple(c.key for c in all_connectors()) + tuple(c.key for c in legacy_entries())
+    """The connector keys the front end must own a ``[data-connector]`` block for.
+
+    Built-in and legacy only: a user-created connection carries its accent on
+    the wire and cannot have a block in a shipped stylesheet.
+    """
+    return tuple(c.key for c in builtin_connectors()) + tuple(c.key for c in legacy_entries())
 
 
 def legacy_entries() -> tuple[Connector, ...]:

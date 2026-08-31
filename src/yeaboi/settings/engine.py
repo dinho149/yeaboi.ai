@@ -271,6 +271,19 @@ def _fields() -> tuple[SettingField, ...]:
     return _FIELDS_CACHE
 
 
+def _invalidate_fields_cache() -> None:
+    """Rebuild the field registry on next read.
+
+    A user-created connection changes the write-allowlist and the masking
+    table at runtime — the one thing the import-time cache cannot see. The
+    custom store calls this after every save/delete. Underscored on purpose:
+    it is an infrastructure hook, not a settings capability, and the parity
+    suite force-registers every public name in this module.
+    """
+    global _FIELDS_CACHE
+    _FIELDS_CACHE = None
+
+
 #: section render order — mirrors the TUI's tab/section arrangement.
 SECTIONS: tuple[str, ...] = (
     "provider",
@@ -560,6 +573,10 @@ def _verify_via_descriptor(connector, resolved: dict[str, str]) -> tuple[bool, s
     probe = getattr(provider_verification, connector.verify)
     kwargs = {f.verify_arg: resolved[f.verify_arg] for f in connector.fields if f.verify_arg}
     kwargs.update({f.env_arg: os.environ.get(f.env, "").strip() for f in connector.fields if f.env_arg})
+    if connector.key.startswith("custom_"):
+        # The generic probe serves every custom connection — which one decides
+        # the auth scheme and probe path, so the key rides along.
+        kwargs["key"] = connector.key
     return probe(**kwargs)
 
 

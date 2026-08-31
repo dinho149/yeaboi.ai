@@ -158,9 +158,15 @@ def gather(
         if not registry.is_connected(connector):
             sources.append(SourceResult(**base, error=f"{connector.label} is not connected"))
             continue
-        module = importlib.import_module(f"yeaboi.connectors.{connector.key}")
+        module = importlib.import_module(connector.fetch_module or f"yeaboi.connectors.{connector.key}")
         try:
-            found = getattr(module, connector.fetch)(window_start, window_end)
+            fetcher = getattr(module, connector.fetch)
+            # The shared driver modules take the connector too — which one is
+            # being gathered is not in their name the way it is for a vendor.
+            if connector.fetch_module:
+                found = fetcher(connector, window_start, window_end)
+            else:
+                found = fetcher(window_start, window_end)
         except Exception as exc:
             # FetchError messages are already redacted; anything else is turned
             # into one rather than trusted to be free of a credential.

@@ -59,7 +59,9 @@ def render() -> str:
                 "managed_by": managed_by,
             }
             for connectors, managed_by in (
-                (registry.all_connectors(), "connections"),
+                # builtin_connectors, deliberately: a vendored contract must not
+                # change with whatever custom connections this machine holds.
+                (registry.builtin_connectors(), "connections"),
                 (registry.legacy_entries(), "credentials"),
             )
             for c in connectors

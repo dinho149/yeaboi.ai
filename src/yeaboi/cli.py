@@ -1112,6 +1112,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     conn_fetch.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    conn_create = connections_sub.add_parser(
+        "create", help="Create your own connection — a generic API the catalog then carries"
+    )
+    conn_create.add_argument(
+        "--from-json", dest="from_json", default="", metavar="FILE", help="A descriptor JSON file instead of prompts"
+    )
+
     conn_rm = connections_sub.add_parser("remove", help="Forget a connection's stored values")
     conn_rm.add_argument("name")
     conn_rm.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
@@ -2683,6 +2690,9 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
                 console.print("   [dim]set up via: yeaboi --setup (Settings ▸ Credentials)[/dim]")
         return 0
 
+    if command == "create":
+        return _connections_create(args, console)
+
     connector = registry.by_key(args.name) if getattr(args, "name", "") else None
     legacy_entry = legacy.by_key(args.name) if connector is None and getattr(args, "name", "") else None
     if getattr(args, "name", "") and connector is None and legacy_entry is None:
@@ -2861,11 +2871,19 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
     if command == "remove":
         from yeaboi.config import apply_config_value
 
+        is_custom = connector.key.startswith("custom_")
+        what = "definition and stored values" if is_custom else "stored values"
         if not args.yes:
-            reply = input(f"Forget the stored {connector.label} values? [y/N] ").strip().lower()
+            reply = input(f"Forget the {connector.label} {what}? [y/N] ").strip().lower()
             if reply not in ("y", "yes"):
                 console.print("[dim]Left alone.[/dim]")
                 return 0
+        if is_custom:
+            from yeaboi.connectors.engine import delete_custom_connection
+
+            delete_custom_connection(connector.key)
+            console.print(f"[green]{connector.label} removed — definition and values.[/green]")
+            return 0
         for field in connector.fields:
             apply_config_value(field.env, "")
             os.environ.pop(field.env, None)
@@ -2873,6 +2891,72 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
         return 0
 
     return 1
+
+
+def _connections_create(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi connections create` — a descriptor from prompts or a JSON file.
+
+    Descriptor only: credentials are entered afterwards with `connections add`,
+    so they take the masked path this command has no business owning.
+    """
+    import json
+
+    from rich.markup import escape
+
+    from yeaboi.connectors.custom import spec_from_dict
+    from yeaboi.connectors.engine import create_custom_connection
+    from yeaboi.connectors.spec import FAMILIES
+    from yeaboi.connectors.validation import AUTH_SCHEMES
+
+    if args.from_json:
+        try:
+            raw = json.loads(Path(args.from_json).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"Error: could not read {args.from_json}: {exc}", file=sys.stderr)
+            return 1
+    else:
+        console.print("[bold]Create a connection[/bold] — a read-only API the catalog then carries.")
+        label = input("Service name: ").strip()
+        if not label:
+            print("Error: a name is required", file=sys.stderr)
+            return 1
+        default_key = "custom_" + "".join(ch if ch.isalnum() else "_" for ch in label.lower()).strip("_")
+        key = input(f"Key [{default_key}]: ").strip() or default_key
+        families = ", ".join(FAMILIES)
+        family = input(f"Family ({families}) [observability]: ").strip() or "observability"
+        summary = input("One-line summary: ").strip()
+        glyph = input("Icon (one emoji) [🔌]: ").strip() or "\U0001f50c"
+        accent = input("Accent rgb(r,g,b) [rgb(120,160,200)]: ").strip() or "rgb(120,160,200)"
+        docs_url = input("Docs URL (https, optional): ").strip()
+        schemes = ", ".join(AUTH_SCHEMES)
+        auth_scheme = input(f"Auth scheme ({schemes}) [bearer]: ").strip() or "bearer"
+        header_name = ""
+        if auth_scheme == "header":
+            header_name = input("Header name: ").strip()
+        probe_path = input("Probe path (an authenticated GET, e.g. /v1/me) [/]: ").strip() or "/"
+        raw = {
+            "key": key,
+            "label": label,
+            "family": family,
+            "summary": summary,
+            "glyph": glyph,
+            "accent": accent,
+            "docs_url": docs_url,
+            "auth_scheme": auth_scheme,
+            "header_name": header_name,
+            "probe_path": probe_path,
+        }
+
+    try:
+        row = create_custom_connection(raw)
+    except ValueError as exc:
+        # The validator's lines are data — a hostname or an emoji must not
+        # become a Rich style tag.
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    console.print(f"[green]Created.[/green] {escape(str(row['label']))} is in the catalog.")
+    console.print(f"Enter its credentials with: yeaboi connections add {spec_from_dict(raw).key}")
+    return 0
 
 
 def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
