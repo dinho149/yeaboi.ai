@@ -5,24 +5,36 @@
       "version": "3.35.0",
       "date": "2026-08-31",
       "headline": "See your privacy settings and system health at a glance",
-      "summary": "Two new pages show what data yeaboi sends and check whether your system is ready to go. Both live in settings and work the same way on your desktop, terminal or CLI.",
+      "summary": "The new Privacy page discloses every way data can leave this machine and lets you flip each real off-switch in place. A System Check page diagnoses missing optional prerequisites without causing any network traffic.",
       "highlights": [
         {
-          "text": "See what data yeaboi sends, grouped by category, with live toggles for egress controls",
+          "text": "Every path data can take off this machine, disclosed and toggleable on the Privacy page",
           "areas": [
             "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
           ]
         },
         {
-          "text": "Run system checks to see if everything you need is installed and ready",
+          "text": "An offline System Check spots missing prerequisites before a feature trips over them",
           "areas": [
             "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
           ]
         },
         {
-          "text": "Both pages work identically in the terminal, desktop app and CLI",
+          "text": "One switch on the tunnel group turns all board-sharing egress off at once",
           "areas": [
-            "general"
+            "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
           ]
         }
       ]
