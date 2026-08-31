@@ -57,6 +57,20 @@
       "family": "cloud",
       "family_label": "Cloud",
       "accent": "rgb(0,120,212)"
+    },
+    {
+      "key": "bitbucket",
+      "label": "Bitbucket",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(0,82,204)"
+    },
+    {
+      "key": "gitlab",
+      "label": "GitLab",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(226,67,41)"
     }
   ]
 }

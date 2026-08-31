@@ -13,8 +13,10 @@
   "connector_accents": [
     "aws",
     "azure_cloud",
+    "bitbucket",
     "datadog",
     "gcp",
+    "gitlab",
     "grafana",
     "incidentio",
     "pagerduty",

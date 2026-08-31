@@ -11,11 +11,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from yeaboi.connectors.gitlab import DEFAULT_BASE_URL as GITLAB_DEFAULT
+from yeaboi.connectors.gitlab import api_base as gitlab_base
 from yeaboi.connectors.incidentio import API_BASE
 from yeaboi.connectors.sentry import DEFAULT_BASE_URL
 from yeaboi.connectors.sentry import api_base as sentry_base
 from yeaboi.provider_verification import (
     INVALID_KEY,
+    _verify_bitbucket,
+    _verify_gitlab,
     _verify_grafana,
     _verify_incidentio,
     _verify_pagerduty,
@@ -202,3 +206,72 @@ class TestSentry:
         ok, _ = _verify_sentry("tok", "acme", "https://127.0.0.1:9000")
         assert ok is False
         called.assert_not_called()
+
+
+class TestGitLab:
+    def test_it_defaults_to_gitlab_com(self):
+        assert gitlab_base("") == GITLAB_DEFAULT
+        assert gitlab_base("https://git.acme.dev/") == "https://git.acme.dev"
+
+    def test_it_asks_the_user_endpoint_with_the_private_token_header(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        ok, _ = _verify_gitlab("tok")
+        assert ok is True
+        assert capture.url == "https://gitlab.com/api/v4/user"
+        assert capture.headers == {"PRIVATE-TOKEN": "tok"}
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_rejected_token_is_the_invalid_key_message(self, monkeypatch, status):
+        monkeypatch.setattr("httpx.get", _Capture(status))
+        ok, msg = _verify_gitlab("tok")
+        assert (ok, msg) == (False, INVALID_KEY)
+
+    def test_a_404_blames_the_base_url_not_the_token(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(404))
+        ok, msg = _verify_gitlab("tok", "https://intranet.acme.dev")
+        assert ok is False
+        assert "base URL" in msg
+
+    def test_a_self_hosted_url_is_still_guarded(self, monkeypatch):
+        called = MagicMock()
+        monkeypatch.setattr("httpx.get", called)
+        ok, _ = _verify_gitlab("tok", "https://127.0.0.1:8443")
+        assert ok is False
+        called.assert_not_called()
+
+
+class TestBitbucket:
+    def test_it_scopes_the_call_to_the_workspace_with_basic_auth(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        ok, _ = _verify_bitbucket("dev@acme.test", "tok", "acme")
+        assert ok is True
+        assert capture.url == "https://api.bitbucket.org/2.0/workspaces/acme"
+        assert capture.headers["Authorization"].startswith("Basic ")
+
+    def test_a_workspace_cannot_escape_its_path_segment(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        _verify_bitbucket("dev@acme.test", "tok", "acme/../../evil")
+        assert capture.url == "https://api.bitbucket.org/2.0/workspaces/acme%2F..%2F..%2Fevil"
+
+    def test_an_empty_workspace_is_refused_before_the_request(self, monkeypatch):
+        called = MagicMock()
+        monkeypatch.setattr("httpx.get", called)
+        ok, msg = _verify_bitbucket("dev@acme.test", "tok", "   ")
+        assert ok is False
+        assert "workspace" in msg
+        called.assert_not_called()
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_rejected_credentials_are_the_invalid_key_message(self, monkeypatch, status):
+        monkeypatch.setattr("httpx.get", _Capture(status))
+        ok, msg = _verify_bitbucket("dev@acme.test", "tok", "acme")
+        assert (ok, msg) == (False, INVALID_KEY)
+
+    def test_a_404_blames_the_workspace_not_the_credentials(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(404))
+        ok, msg = _verify_bitbucket("dev@acme.test", "tok", "nope")
+        assert ok is False
+        assert "workspace" in msg

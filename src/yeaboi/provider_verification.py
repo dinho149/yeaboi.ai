@@ -1014,6 +1014,60 @@ def _verify_sentry(token: str, org: str, base_url: str = "") -> tuple[bool, str]
     return True, "Sentry verified"
 
 
+def _verify_gitlab(token: str, base_url: str = "") -> tuple[bool, str]:
+    """Verify a GitLab access token against GET /api/v4/user.
+
+    The host may be the user's own install, so the request goes through the
+    connector HTTP guard: https only, never an address on this machine or a
+    private range.
+    """
+    from yeaboi.connectors.gitlab import api_base
+    from yeaboi.connectors.http import probe_status
+
+    status, message = probe_status(
+        f"{api_base(base_url)}/api/v4/user",
+        headers={"PRIVATE-TOKEN": token},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, "Reached the host, but it does not look like a GitLab API — check the base URL"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "GitLab verified"
+
+
+def _verify_bitbucket(email: str, token: str, workspace: str) -> tuple[bool, str]:
+    """Verify an Atlassian API token can read one Bitbucket workspace.
+
+    The workspace is a user-supplied path segment, so it is quoted rather than
+    interpolated — an ID with a slash in it must not reach another endpoint.
+    """
+    from urllib.parse import quote
+
+    from yeaboi.connectors.bitbucket import basic_auth
+    from yeaboi.connectors.http import probe_status
+
+    slug = quote(workspace.strip().strip("/"), safe="")
+    if not slug:
+        return False, "Bitbucket needs a workspace ID"
+    status, message = probe_status(
+        f"https://api.bitbucket.org/2.0/workspaces/{slug}",
+        headers={"Authorization": f"Basic {basic_auth(email, token)}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Credentials accepted, but no workspace named {workspace!r} — check the ID, not the display name"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Bitbucket verified"
+
+
 def _verify_elevenlabs(token: str) -> tuple[bool, str]:
     """Verify an ElevenLabs API key against GET /v1/user — the cheapest authenticated endpoint."""
     try:

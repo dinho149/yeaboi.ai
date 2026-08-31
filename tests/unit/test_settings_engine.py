@@ -214,7 +214,7 @@ class TestProviderCatalog:
 class TestConnectionVerify:
     def test_unknown_kind_is_refused(self):
         with pytest.raises(ValueError, match="unknown connection kind"):
-            engine.verify_connection("gitlab", {})
+            engine.verify_connection("gopher", {})
 
     def test_missing_field_with_empty_env_is_refused(self, monkeypatch):
         monkeypatch.delenv("NOTION_TOKEN", raising=False)

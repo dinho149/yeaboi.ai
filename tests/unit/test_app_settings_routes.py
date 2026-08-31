@@ -101,7 +101,7 @@ class TestConnectionVerify:
         assert request(app, "POST", "/api/settings/connection/verify", {"token": "t"}).code == 400
 
     def test_unknown_kind_is_400(self, app):
-        resp = request(app, "POST", "/api/settings/connection/verify", {"kind": "gitlab"})
+        resp = request(app, "POST", "/api/settings/connection/verify", {"kind": "gopher"})
         assert resp.code == 400
         assert "unknown connection kind" in json.loads(resp.body)["error"]
 
