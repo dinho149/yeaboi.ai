@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from yeaboi.config import load_user_config  # noqa: E402
+from yeaboi.config import get_poker_server_port, load_user_config  # noqa: E402
 from yeaboi.poker.board import PokerBoard  # noqa: E402
 from yeaboi.poker.server import PokerServer  # noqa: E402
 
@@ -132,7 +132,7 @@ def main() -> int:
     # seeded table that is not re-announced empties while you are looking at it.
     threading.Thread(target=_keep_seated, args=(board,), daemon=True).start()
 
-    server = PokerServer(board)
+    server = PokerServer(board, port=get_poker_server_port())
     # Fixed credentials so a rebuild-and-restart does not invalidate the token
     # already open tabs are holding. Dev only: in-memory board, loopback socket.
     server.token = "dev-token"  # noqa: S105

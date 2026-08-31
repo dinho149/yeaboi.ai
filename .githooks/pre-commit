@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Committed on purpose, and reached through a RELATIVE `core.hooksPath`.
+#
+# All worktrees share one common gitdir, so `pre-commit install` wrote a single
+# .git/hooks/pre-commit with INSTALL_PYTHON pinned to whichever worktree ran it
+# last — and removing that worktree broke `git commit` in every other one. Git
+# chdirs to the working-tree root before running a hook (githooks(5)), so one
+# relative `core.hooksPath = .githooks` in the shared config gives every
+# worktree, and the main checkout, its own copy of this file against its own venv.
+#
+# Tracked rather than generated so a worktree that has not been provisioned yet
+# still runs gitleaks and ruff instead of silently running nothing.
+
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+
+# `hook-impl` is pre-commit's own generated-hook entry point — the same contract
+# the file it used to write into .git/hooks called.
+if [ -x "$root/.venv/bin/pre-commit" ]; then
+  exec "$root/.venv/bin/pre-commit" hook-impl \
+    --config=.pre-commit-config.yaml --hook-type=pre-commit \
+    --hook-dir "$root/.githooks" -- "$@"
+elif command -v pre-commit >/dev/null 2>&1; then
+  exec pre-commit hook-impl \
+    --config=.pre-commit-config.yaml --hook-type=pre-commit \
+    --hook-dir "$root/.githooks" -- "$@"
+fi
+
+echo "pre-commit is not installed in this worktree ($root)." >&2
+echo "Run: bash scripts/provision.sh   (or: make install && make pre-commit)" >&2
+exit 1

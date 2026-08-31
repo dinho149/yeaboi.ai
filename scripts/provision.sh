@@ -15,10 +15,19 @@ echo "[provision] creating venv + installing deps (uv)…"
 "$UV" venv >/dev/null
 "$UV" pip install -q -e ".[dev]"
 
-# pre-commit hooks land in the shared .git/hooks, so this is idempotent across
-# worktrees. A failure here is not worth losing the worktree over.
-if "$UV" run pre-commit install >/dev/null 2>&1; then
-  echo "[provision] pre-commit hooks installed"
-else
-  echo "[provision] note: pre-commit install failed — run \`make pre-commit\` in the worktree"
-fi
+# --- hooks: one per worktree, not one per .git -------------------------------
+# Every worktree shares a common gitdir, so `pre-commit install` wrote ONE
+# .git/hooks/pre-commit with INSTALL_PYTHON pinned to whichever worktree ran it
+# last, and deleting that worktree broke `git commit` in all the others. The
+# comment that used to sit here claimed it was idempotent; it was not.
+#
+# core.hooksPath is relative and git chdirs to the working-tree root before
+# running a hook, so this one shared setting gives every worktree its OWN
+# .githooks/ — including the main checkout and every worktree that already
+# exists, the moment any one of them runs this.
+git config core.hooksPath .githooks
+
+# The poisoned shared hook is inert once hooksPath is set, but a file naming a
+# venv that may not exist is a trap for whoever reads .git/hooks next.
+"$UV" run pre-commit uninstall >/dev/null 2>&1 || true
+echo "[provision] hooks: .githooks/ in this worktree"

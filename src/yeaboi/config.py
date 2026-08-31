@@ -834,6 +834,19 @@ def get_poker_server_port() -> int:
         return 5273
 
 
+def get_deck_server_port() -> int:
+    """Return the port for the Reporting deck dev server (default 5373).
+
+    5373 sits clear of retro's 5173..5193 and poker's 5273..5293 walk ranges.
+    Unlike those two this server does not walk: a busy port is a hard failure,
+    which is right once each worktree has its own block.
+    """
+    try:
+        return int(os.getenv("DECK_PORT", "5373"))
+    except ValueError:
+        return 5373
+
+
 def get_ship_server_port() -> int:
     """Return the base port for the Ship board server (default 5473).
 

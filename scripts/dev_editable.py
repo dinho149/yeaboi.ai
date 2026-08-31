@@ -28,10 +28,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport  # noqa: E402
+from yeaboi.config import get_ship_server_port  # noqa: E402
 from yeaboi.sharing.documents import editable_share, standup_document  # noqa: E402
 from yeaboi.sharing.server import OutputShareServer  # noqa: E402
 
-PORT = 5473
+PORT = get_ship_server_port()
 
 # Enough shape variety that the editing affordances get exercised properly: a
 # member with a blocker and one without, prose long enough to wrap, an outlook,

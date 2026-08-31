@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from yeaboi.agent.state import RetroCard  # noqa: E402
+from yeaboi.config import get_retro_server_port  # noqa: E402
 from yeaboi.retro.board import RetroBoard  # noqa: E402
 from yeaboi.retro.server import RetroServer  # noqa: E402
 
@@ -123,7 +124,7 @@ def main() -> int:
             "carried": [],
         }
 
-    server = RetroServer(board)
+    server = RetroServer(board, port=get_retro_server_port())
     server.history_list, server.history_report = _listing, _one
     # Fixed credentials, as the poker dev board does it: a rebuild-and-restart
     # must not invalidate the token the tab you are looking at is holding.

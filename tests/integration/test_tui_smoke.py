@@ -70,7 +70,10 @@ def _spawn_tui_in_pty(tmp_path: Path) -> tuple[subprocess.Popen, int]:
         # key from the developer environment leak into the subprocess.
         "ANTHROPIC_API_KEY": "test-key-dry-run-only",
     }
-    env.pop("YEABOI_HOME", None)
+    # Set, not popped: unset now falls through to the worktree's
+    # .worktree.env marker, which would land this run in the shared
+    # worktree tree instead of the temp HOME below it.
+    env["YEABOI_HOME"] = str(home / ".yeaboi")
 
     master_fd, slave_fd = os.openpty()
     # A generous size so no card/title is truncated by narrow-terminal fallbacks

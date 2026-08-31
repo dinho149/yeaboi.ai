@@ -1075,11 +1075,15 @@ class TestStandupReviewCommand:
         assert "no session found" in capsys.readouterr().err
 
     def test_list_gaps_reads_the_ledger(self, monkeypatch, tmp_path):
-        from yeaboi.paths import get_db_path
         from yeaboi.standup.store import StandupStore
 
+        # A tmp DB, like every sibling here: this wrote the developer's real
+        # ledger, and two worktrees running the suite at once corrupted each
+        # other's through it.
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
         monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
-        with StandupStore(get_db_path()) as store:
+        with StandupStore(db) as store:
             store.upsert_gap_issue("fp1", category="c", title="A tracked gap", issue_number=7, state="filed")
         buf = io.StringIO()
         assert _cmd_standup_review(self._args("--list-gaps"), _console(buf)) == 0

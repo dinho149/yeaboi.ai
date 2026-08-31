@@ -176,8 +176,10 @@ BASE ?= origin/main
 ship-gate: lint format-check test security preflight ## The full local gate /ship runs — everything CI will check
 	@echo "✓ ship gate passed"
 
-pre-commit: ## Install pre-commit hooks
-	$(UV) run pre-commit install
+pre-commit: ## Point git at this worktree's own .githooks/ (repairs a stale shared hook)
+	git config core.hooksPath .githooks
+	@$(UV) run pre-commit uninstall >/dev/null 2>&1 || true
+	@echo "hooks: .githooks/ per worktree (was one shared .git/hooks pinned to one venv)"
 
 run: ## Run the yeaboi CLI (use ARGS="--flag" to pass arguments)
 	$(UV) run yeaboi $(ARGS)
@@ -248,16 +250,16 @@ web-types: ## Regenerate the contracts the front end vendors (enums + ui)
 site-contract: ## Regenerate contracts/site.json from pyproject (the facts the website vendors)
 	$(UV) run python scripts/gen_site_contract.py
 
-dev-board: ## Seeded retro board on :5173 for front-end development (prints the URL)
+dev-board: ## Seeded retro board for front-end development (prints the URL; :5173 unless the worktree has its own block)
 	$(UV) run python scripts/dev_board.py
 
-dev-poker: ## Seeded planning-poker board on :5273 for front-end development
+dev-poker: ## Seeded planning-poker board for front-end development (:5273 unless the worktree has its own block)
 	$(UV) run python scripts/dev_poker.py
 
-dev-deck: ## Seeded reporting slide deck on :5373 for front-end development
+dev-deck: ## Seeded reporting slide deck for front-end development (:5373 unless the worktree has its own block)
 	$(UV) run python scripts/dev_deck.py
 
-dev-editable: ## Seeded correctable standup document on :5473 for front-end development
+dev-editable: ## Seeded correctable standup document for front-end development (:5473 unless the worktree has its own block)
 	$(UV) run python scripts/dev_editable.py
 
 build: ## Build sdist + wheel into dist/

@@ -35,6 +35,13 @@ ENV/
 # Git worktrees (make wt-new / wt-open)
 .claude/worktrees/
 
+# This worktree's generated ports + data home (written by the shared wt.sh).
+/.worktree.env
+
+# The suite's own data home — conftest pins YEABOI_HOME here so tests never
+# touch the developer's real ~/.yeaboi.
+/.pytest-home/
+
 # The shared tooling, cloned on demand at the sha in .tooling-rev. Gitignored
 # and not a submodule because `git worktree add` does not populate submodules,
 # and this workflow lives in worktrees.
