@@ -394,6 +394,9 @@ AREAS: tuple[Area, ...] = (
             # reason app/ does: it owns no mode, and every surface reads its
             # catalog through the settings engine it derives.
             "src/yeaboi/connectors/",
+            # The full-screen catalog browser over that layer (Settings ▸
+            # Connections ▸ Enter) — it renders nothing the engine did not say.
+            "src/yeaboi/ui/catalog/",
             # The shapes those connectors return. No mode owns them — they are
             # the vocabulary a mode reads production in — so they ride here with
             # the connectors that produce them.
@@ -451,6 +454,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_connectors_*.py",
             "tests/unit/test_ops_*.py",
             "tests/unit/test_connections_*.py",
+            "tests/unit/test_catalog_tui.py",
             "tests/unit/test_provider_verify_ops.py",
             "tests/unit/test_provider_verify_cloud.py",
             "tests/unit/test_feedback.py",

@@ -7655,7 +7655,9 @@ def _build_settings_screen(
                 else:
                     _row(f"  {_f.label}", config_data.get(_f.env, ""), masked=_f.secret, env=_f.env)
         add = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
-        add.append("\u21b3 add: ", style=theme.muted)
+        add.append("\u21b3 ", style=theme.muted)
+        add.append("\u23ce browse the catalog", style=theme.value)
+        add.append("  \u00b7  add: ", style=theme.muted)
         add.append("yeaboi connections add <name>", style=theme.dim)
         _cur.append(add)
 

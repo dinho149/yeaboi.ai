@@ -15246,10 +15246,17 @@ def select_mode(
                             _settings_data = _collect_settings_data()
                             logger.info("Settings: log level cycled to %s", _new_level)
                         elif _act == "connections":
-                            # No tab-level action: the section already names the
-                            # command that adds one, and the hint offers no Enter
-                            # here. Falling through would open the setup wizard.
-                            logger.info("Settings: Enter on the Connections tab — no tab action")
+                            # The catalog browser: the whole roster, behind this
+                            # explicit gesture. The tab itself keeps rendering
+                            # connected-only — falling through here would open
+                            # the setup wizard.
+                            logger.info("Settings: opening the integrations catalog from the Connections tab")
+                            from yeaboi.ui.catalog import run_catalog_browser
+
+                            _result = run_catalog_browser(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                            _settings_data = _collect_settings_data()
+                            if _result:
+                                _settings_data["_message"] = _result
                         elif _act == "sharing":
                             logger.info("Settings: launching Cloudflare Access setup from the Sharing tab")
                             _result = _run_access_setup(console, live, read_key, _FRAME_TIME, _supports_timeout)
