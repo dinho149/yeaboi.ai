@@ -100,6 +100,39 @@ def connection_verify(app, request: Request) -> Response:
     return json_response(engine.verify_connection(kind, fields))
 
 
+def access_state(app, request: Request) -> Response:
+    """``GET /api/settings/access/state`` — the Cloudflare Access doctor, offline.
+
+    Deliberately *not* ``access_setup.read_state()``: that resolves the
+    cloudflared binary, which downloads ~38 MB on first use. The binary is left
+    to the share itself, which reports a missing one by name.
+    """
+    from yeaboi.sharing import access_setup
+
+    cert = access_setup.find_cert()
+    return json_response(
+        {
+            "logged_in": bool(cert),
+            "cert_path": cert,
+            "jwt_installed": access_setup.jwt_installed(),
+            "missing_keys": list(access_setup.missing_config_keys()),
+        }
+    )
+
+
+def access_verify(app, request: Request) -> Response:
+    """``POST /api/settings/access/verify`` — does the tier actually come up?
+
+    The same check the board runs before publishing, so "verified" here and
+    "will this publish" cannot disagree. ``assume_mode`` checks everything but
+    the switch, so the answer is useful before the mode is turned on.
+    """
+    from yeaboi.sharing import access_setup
+
+    outcome = access_setup.verify(assume_mode=True)
+    return json_response({"ok": outcome.ok, "message": outcome.message})
+
+
 def _required_str(payload: dict, key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value:

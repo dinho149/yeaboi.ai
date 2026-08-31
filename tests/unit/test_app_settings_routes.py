@@ -211,3 +211,73 @@ class TestSignIn:
         old = self.session
         request(app, "POST", "/api/settings/signin/start")
         assert old.cancelled
+
+
+class TestAccessDoctor:
+    """The Cloudflare Access status + probe routes."""
+
+    def test_requires_auth(self, app):
+        assert request(app, "GET", "/api/settings/access/state", authed=False).code == 401
+        assert request(app, "POST", "/api/settings/access/verify", authed=False).code == 401
+
+    def test_state_shape(self, app):
+        payload = json.loads(request(app, "GET", "/api/settings/access/state").body)
+        assert {"logged_in", "cert_path", "jwt_installed", "missing_keys"} == set(payload)
+        assert isinstance(payload["missing_keys"], list)
+
+    def test_state_names_the_unset_keys(self, app, monkeypatch):
+        for key in (
+            "CLOUDFLARE_TUNNEL_ID",
+            "CLOUDFLARE_TUNNEL_CREDENTIALS",
+            "CLOUDFLARE_ACCESS_HOSTNAME",
+            "CLOUDFLARE_ACCESS_TEAM",
+            "CLOUDFLARE_ACCESS_AUD",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        payload = json.loads(request(app, "GET", "/api/settings/access/state").body)
+        assert payload["missing_keys"] == [
+            "CLOUDFLARE_TUNNEL_ID",
+            "CLOUDFLARE_TUNNEL_CREDENTIALS",
+            "CLOUDFLARE_ACCESS_HOSTNAME",
+            "CLOUDFLARE_ACCESS_TEAM",
+            "CLOUDFLARE_ACCESS_AUD",
+        ]
+
+    def test_state_never_resolves_the_binary(self, app, monkeypatch):
+        """A settings page opening must not trigger cloudflared's ~38 MB download."""
+
+        def _boom() -> None:
+            raise AssertionError("access/state resolved the cloudflared binary")
+
+        monkeypatch.setattr("yeaboi.retro.tunnel.ensure_cloudflared", _boom)
+        assert request(app, "GET", "/api/settings/access/state").code == 200
+
+    def test_state_reports_the_cert(self, app, monkeypatch):
+        monkeypatch.setattr("yeaboi.sharing.access_setup.find_cert", lambda: "")
+        payload = json.loads(request(app, "GET", "/api/settings/access/state").body)
+        assert payload["logged_in"] is False and payload["cert_path"] == ""
+
+        monkeypatch.setattr("yeaboi.sharing.access_setup.find_cert", lambda: "/x/cert.pem")
+        payload = json.loads(request(app, "GET", "/api/settings/access/state").body)
+        assert payload["logged_in"] is True and payload["cert_path"] == "/x/cert.pem"
+
+    def test_verify_reports_the_preflight_verdict(self, app, monkeypatch):
+        seen: list[bool] = []
+
+        def _preflight(gate, verdict):
+            def _run(surface, *, assume_mode=False):
+                seen.append(assume_mode)
+                return gate, verdict
+
+            return _run
+
+        monkeypatch.setattr("yeaboi.sharing.identity.preflight", _preflight(None, "nope"))
+        payload = json.loads(request(app, "POST", "/api/settings/access/verify").body)
+        assert payload == {"ok": False, "message": "nope"}
+
+        monkeypatch.setattr("yeaboi.sharing.identity.preflight", _preflight(object(), ""))
+        payload = json.loads(request(app, "POST", "/api/settings/access/verify").body)
+        assert payload["ok"] is True and payload["message"]
+
+        # The point of the route: it answers before Share Mode is switched on.
+        assert seen == [True, True]
