@@ -273,6 +273,18 @@ class TestAnalysisSteps:
         assert plan["run"]["depth"] == "deep"
         assert plan["run"]["members_map"] == {"jira": ["Ana"]}
 
+    def test_a_solo_wizard_never_asks_for_members(self, app):
+        plan = self._plan(
+            app,
+            features=["delivery"],
+            components={"delivery": ["jira"]},
+            members=["Ana"],
+            solo=True,
+        )
+        assert "members" not in plan["steps"]
+        # And a stale pick coerces out of the payload the answers would run.
+        assert plan["run"]["members"] is None and plan["run"]["members_map"] is None
+
 
 class TestAnalysisResult:
     def test_an_unknown_analysis_is_a_404(self, app, monkeypatch, tmp_path):

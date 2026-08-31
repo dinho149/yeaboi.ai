@@ -8544,6 +8544,7 @@ def _run_analysis_setup_wizard(
     roster_fallback: list[str],
     project_key: str = "",
     db_path=None,
+    solo: bool = False,
 ) -> dict | None:
     """Walk the Analysis setup steps with Esc-back navigation and state carry-over.
 
@@ -8602,10 +8603,13 @@ def _run_analysis_setup_wizard(
             components=state["components"],
             depth=state["depth"],
             model_offered=_model_offered(),
+            solo=solo,
         )
 
     def _config() -> dict:
-        return analysis_setup.run_config(state, roster_fallback=roster_fallback, model_offered=_model_offered())
+        return analysis_setup.run_config(
+            state, roster_fallback=roster_fallback, model_offered=_model_offered(), solo=solo
+        )
 
     def _members_step(direction: int) -> str:
         sources = (state["components"] or {}).get("delivery") or roster_fallback
@@ -8893,12 +8897,15 @@ def _run_team_analysis_results(
             examples=examples,
             analysis_features=analysis_features,
         )
+        from yeaboi.projects.active import is_solo_mode
+
         order = visible_card_order(
             profile,
             present["code"],
             present["docs"],
             has_code_health=present["code_health"],
             analysis_features=analysis_features,
+            solo=is_solo_mode(),
         )
 
         # When anonymized, render from a masked copy of the profile (and its sample
@@ -13264,6 +13271,23 @@ _CATEGORY_MENUS: dict[str, tuple[list[dict], str]] = {
 }
 
 
+def _tip_jump_target(mode_key: str, cards: list[dict]) -> tuple[str, int] | None:
+    """Where a cross-category tip jump lands: ``(category, card index)`` or None.
+
+    Team is searched first: Solo's keys are a subset of Team's, so a shared key
+    jumped from any other menu lands on the Team menu — and a retro/poker tip
+    fired while browsing Solo correctly jumps to the world that has the card.
+    """
+    for cat in ("team", "agents", "solo"):
+        other, _mascot = _CATEGORY_MENUS[cat]
+        if other is cards:
+            continue
+        j = next((i for i, m in enumerate(other) if m["key"] == mode_key), None)
+        if j is not None and other[j]["available"]:
+            return cat, j
+    return None
+
+
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
 ) -> tuple[str, str | None, str | None] | None:
@@ -13285,8 +13309,10 @@ def select_mode(
     # shows; the last choice is persisted and *preselected* on the next launch
     # (never auto-skipped). Esc from a menu returns here; q quits.
     from yeaboi.config import get_last_category, set_last_category
+    from yeaboi.projects.active import set_solo_mode
 
     category = get_last_category()
+    set_solo_mode(category == "solo")
     cards, mascot = _CATEGORY_MENUS[category]
     _category_pending = True  # show the split on the first pass through the loop
     _back_to_category = False
@@ -13364,6 +13390,7 @@ def select_mode(
                 if _pick != category:
                     set_last_category(_pick)
                 category = _pick
+                set_solo_mode(category == "solo")
                 cards, mascot = _CATEGORY_MENUS[category]
                 n = len(cards)
                 selected = 0
@@ -13519,25 +13546,15 @@ def select_mode(
                             logger.info("tip jump to mode: %s", _tip.mode_key)
                             selected = _j
                             break
-                        # Team first: Solo's keys are a subset of Team's, so a
-                        # shared key jumped from elsewhere lands on the Team menu.
-                        _jumped = False
-                        for _cat in ("team", "agents", "solo"):
-                            _other, _other_mascot = _CATEGORY_MENUS[_cat]
-                            if _other is cards:
-                                continue
-                            _j = next((i for i, m in enumerate(_other) if m["key"] == _tip.mode_key), None)
-                            if _j is not None and _other[_j]["available"]:
-                                category = _cat
-                                logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
-                                set_last_category(category)
-                                cards = _other
-                                mascot = _other_mascot
-                                n = len(cards)
-                                selected = _j
-                                _jumped = True
-                                break
-                        if _jumped:
+                        _target = _tip_jump_target(_tip.mode_key, cards)
+                        if _target is not None:
+                            category, _j = _target
+                            set_solo_mode(category == "solo")
+                            logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
+                            set_last_category(category)
+                            cards, mascot = _CATEGORY_MENUS[category]
+                            n = len(cards)
+                            selected = _j
                             break
                 elif key == "c":
                     # Open the Changelog page (bottom-left hint). Handled inline
@@ -14330,6 +14347,7 @@ def select_mode(
                             roster_fallback=available_trackers(),
                             project_key="",
                             db_path=_ana_dbp,
+                            solo=(category == "solo"),
                         )
                         if _ta_setup is None:
                             _ana_restart = True
@@ -16045,6 +16063,7 @@ def select_mode(
                         roster_fallback=_delivery_grid,
                         project_key=_ta_project_key,
                         db_path=_ana_dbp,
+                        solo=(category == "solo"),
                     )
                     if _ta_setup is None:
                         _restart_project_list = True

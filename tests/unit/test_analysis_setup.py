@@ -69,6 +69,13 @@ class TestStepApplies:
     def test_an_unknown_step_never_applies(self):
         assert not setup.step_applies("astrology", features=["delivery"])
 
+    def test_a_solo_run_never_asks_for_members(self):
+        # The Solo world has no roster to narrow; every other step is untouched.
+        assert not setup.step_applies("members", features=["delivery"], solo=True)
+        assert not setup.step_applies("members", features=["ai_footprint"], solo=True)
+        assert setup.step_applies("features", features=["delivery"], solo=True)
+        assert setup.step_applies("window", features=["documentation"], solo=True)
+
 
 class TestRunConfig:
     def _state(self, **kw):
@@ -104,6 +111,12 @@ class TestRunConfig:
         config = setup.run_config(state, roster_fallback=["jira"])
         assert config["depth"] == "quick"
         assert config["members"] is None and config["members_map"] is None
+
+    def test_a_solo_run_coerces_a_stale_member_pick_out(self):
+        # A pick made before flipping to Solo must not narrow the run.
+        config = setup.run_config(self._state(), roster_fallback=["jira"], model_offered=True, solo=True)
+        assert config["members"] is None and config["members_map"] is None
+        assert config["depth"] == "deep"  # everything else is untouched
 
     def test_the_window_falls_back_when_nothing_scans(self):
         state = self._state(features=["delivery"], components={"delivery": ["jira"]})

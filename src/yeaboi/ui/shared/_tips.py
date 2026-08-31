@@ -178,7 +178,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     # No desktop route (CAPABILITIES marks it exempt there), so no desktop tip.
     FeatureTip(
         "team-learning",
-        "\U0001f9e0 Tip: yeaboi learns your team's velocity & estimation patterns over time",
+        "\U0001f9e0 Tip: yeaboi learns your velocity & estimation patterns over time",
         surfaces=("tui",),
     ),
     FeatureTip(

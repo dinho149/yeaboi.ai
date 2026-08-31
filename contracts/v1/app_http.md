@@ -246,9 +246,9 @@ The two run-and-read modes. Their read-only pieces are MCP tools already
 | GET | `/api/standup/schedule` | query `session_id` → the saved schedule plus the installed reminder offset |
 | POST | `/api/standup/schedule` | body `{session_id, enabled, time, weekdays, lead_minutes, delivery_channels, remind_after}` → `{message, schedule}`; saves the config **and** installs or removes the OS jobs |
 | GET | `/api/analysis/options` | what a setup wizard may offer on this machine |
-| POST | `/api/analysis/steps` | a partial selection → `{steps, grid, run}`: which steps still apply, the component rows they may offer, and the payload the answers would run |
+| POST | `/api/analysis/steps` | a partial selection → `{steps, grid, run}`: which steps still apply, the component rows they may offer, and the payload the answers would run. `solo: true` in the answers marks a Solo-world wizard: the `members` step never applies and stale member picks coerce out of `run` |
 | GET | `/api/analysis/profiles` | the saved team profiles |
-| GET | `/api/analysis/result/{team_id}` | one stored profile plus the cards it earned; 404 when unknown |
+| GET | `/api/analysis/result/{team_id}` | one stored profile plus the cards it earned; 404 when unknown. `?solo=1` drops the Team Members card from `cards` |
 | POST | `/api/analysis/run` | the setup wizard's payload → a chunked NDJSON run |
 
 The **standup dashboard** is

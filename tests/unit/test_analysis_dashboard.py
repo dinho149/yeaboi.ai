@@ -46,6 +46,17 @@ class TestVisibleCardOrder:
         # A blank results page would be worse than a card explaining itself.
         assert dashboard.visible_card_order(None, False, False) == ("ai-adoption",)
 
+    def test_a_solo_run_drops_the_team_members_card_and_nothing_else(self):
+        order = dashboard.visible_card_order(PROFILE, True, True, has_code_health=True, solo=True)
+        team_order = dashboard.visible_card_order(PROFILE, True, True, has_code_health=True)
+        assert "team" not in order
+        assert tuple(k for k in team_order if k != "team") == order
+
+    def test_solo_reaches_the_desktop_card_list(self):
+        keys = {card["key"] for card in dashboard.cards(PROFILE, solo=True)}
+        assert "team" not in keys
+        assert "velocity" in keys
+
 
 class TestComponentPresence:
     def test_a_fresh_run_reads_the_top_level_signals(self):

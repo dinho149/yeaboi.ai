@@ -165,13 +165,20 @@ def effective_depth(depth: str, features) -> str:
 
 
 def step_applies(
-    step: str, *, features, components=None, depth: str = DEFAULT_DEPTH, model_offered: bool = False
+    step: str,
+    *,
+    features,
+    components=None,
+    depth: str = DEFAULT_DEPTH,
+    model_offered: bool = False,
+    solo: bool = False,
 ) -> bool:
     """Does ``step`` apply, given what has been selected so far?
 
     A choice made for a step that later becomes inapplicable stays in the
     wizard's own state (so re-enabling a feature restores it) — it is here that
-    it is kept out of the run.
+    it is kept out of the run. ``solo`` is the Solo world: a run over your own
+    history has no roster to narrow, so the members step never applies.
     """
     chosen = set(features or ())
     comps = components or {}
@@ -187,23 +194,26 @@ def step_applies(
     if step == "window":
         return bool(chosen & (CODE_FEATURES | {"documentation"}))
     if step == "members":
-        return bool(chosen & (CODE_FEATURES | {"delivery"}))
+        return not solo and bool(chosen & (CODE_FEATURES | {"delivery"}))
     return False
 
 
-def run_config(state: dict, *, roster_fallback, model_offered: bool = False) -> dict:
+def run_config(state: dict, *, roster_fallback, model_offered: bool = False, solo: bool = False) -> dict:
     """Turn a completed wizard's answers into the run payload.
 
     Every host's scope is gated on its OWN applicability, so de-selecting a code
     host coerces its stale picks out of the payload — the same discipline that
-    keeps a stale ``deep`` out of a docs-only run.
+    keeps a stale ``deep`` out of a docs-only run (and, on a solo run, keeps a
+    stale member pick out of the payload entirely).
     """
     features = state.get("features")
     comps = state.get("components") or {}
     depth = state.get("depth") or DEFAULT_DEPTH
 
     def applies(step: str) -> bool:
-        return step_applies(step, features=features, components=comps, depth=depth, model_offered=model_offered)
+        return step_applies(
+            step, features=features, components=comps, depth=depth, model_offered=model_offered, solo=solo
+        )
 
     members = state.get("members") if applies("members") else None
     trackers = comps.get("delivery") or roster_fallback

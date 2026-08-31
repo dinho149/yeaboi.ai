@@ -431,3 +431,33 @@ class TestFlock:
         from yeaboi.ui.shared._mascot import flock_head_cells
 
         assert flock_head_cells(0) != flock_head_cells(2)
+
+
+class TestTipJumpTarget:
+    """The cross-category jump rule: shared keys land on Team, never Solo."""
+
+    def test_a_retro_tip_from_solo_lands_on_team(self):
+        from yeaboi.ui.mode_select import _MODE_CARDS, _SOLO_CARDS, _tip_jump_target
+
+        cat, j = _tip_jump_target("retro", _SOLO_CARDS)
+        assert cat == "team"
+        assert _MODE_CARDS[j]["key"] == "retro"
+
+    def test_a_shared_key_from_agents_lands_on_team(self):
+        from yeaboi.ui.mode_select import _AGENT_CARDS, _MODE_CARDS, _tip_jump_target
+
+        cat, j = _tip_jump_target("daily-standup", _AGENT_CARDS)
+        assert cat == "team"
+        assert _MODE_CARDS[j]["key"] == "daily-standup"
+
+    def test_an_agent_tip_from_team_lands_on_agents(self):
+        from yeaboi.ui.mode_select import _AGENT_CARDS, _MODE_CARDS, _tip_jump_target
+
+        cat, j = _tip_jump_target("agent-security", _MODE_CARDS)
+        assert cat == "agents"
+        assert _AGENT_CARDS[j]["key"] == "agent-security"
+
+    def test_an_unknown_key_jumps_nowhere(self):
+        from yeaboi.ui.mode_select import _MODE_CARDS, _tip_jump_target
+
+        assert _tip_jump_target("astrology", _MODE_CARDS) is None

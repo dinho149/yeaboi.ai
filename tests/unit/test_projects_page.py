@@ -42,9 +42,11 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
     active.set_active_project("")
     active.set_context_deps(None)
+    active.set_solo_mode(False)
     yield {"db": db}
     active.set_active_project("")
     active.set_context_deps(None)
+    active.set_solo_mode(False)
 
 
 def _run(keys) -> _Live:
@@ -113,6 +115,32 @@ class TestContextPage:
         active.set_context_deps(())
         _run(_keys("right", "enter", "enter", "esc", "esc"))
         assert active.get_context_deps() is None
+
+
+class TestSoloMode:
+    """The Solo world's ambient session flag and its context-dep default."""
+
+    def test_solo_defaults_drop_the_retro_feed(self, env):
+        from yeaboi.projects.scope import CONTEXT_DEP_TOKENS
+
+        active.set_solo_mode(True)
+        deps = active.get_context_deps()
+        assert deps is not None and "retro" not in deps
+        assert set(deps) == set(CONTEXT_DEP_TOKENS) - {"retro"}
+
+    def test_an_explicit_choice_still_wins(self, env):
+        active.set_solo_mode(True)
+        active.set_context_deps(("retro", "plan"))
+        assert active.get_context_deps() == ("retro", "plan")
+        active.set_context_deps(())  # incognito is explicit too
+        assert active.get_context_deps() == ()
+
+    def test_leaving_the_solo_world_restores_inherit(self, env):
+        active.set_solo_mode(True)
+        assert active.get_context_deps() is not None
+        active.set_solo_mode(False)
+        assert active.get_context_deps() is None
+        assert active.is_solo_mode() is False
 
     def test_incognito_renders_its_own_state_line(self, env):
         live = _run(_keys("right", "enter", "right", "enter", "esc", "esc"))
