@@ -21,6 +21,7 @@ JSON schema — a ``deck_style`` envelope (a flat dict is also accepted)::
         "max_bullets": 6,
         "include_items_table": true,    ← .pptx delivered-items appendix
         "include_signals": true,        ← supporting-signals corroboration footnote
+        "include_production": true,     ← the Production slide (only when an ops vendor is connected)
         "include_highlights": true,
         "include_thanks": true,
         "slide_numbers": false,
@@ -120,6 +121,7 @@ class DeckStyle:
     max_bullets: int = 6  # per slide (detailed) / per card (compact); page size when expanding
     include_items_table: bool = True  # .pptx delivered-items appendix
     include_signals: bool = True  # supporting-signals corroboration footnote
+    include_production: bool = True  # the Production slide, when any ops vendor is connected
     include_highlights: bool = True
     include_thanks: bool = True
     slide_numbers: bool = False
@@ -140,6 +142,7 @@ STYLE_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("max_bullets", "Max bullets", "int"),
     ("include_items_table", "Delivered-items appendix", "bool"),
     ("include_signals", "Supporting-signals footnote", "bool"),
+    ("include_production", "Production slide", "bool"),
     ("include_highlights", "Highlights slide", "bool"),
     ("include_thanks", "Thank-you slide", "bool"),
     ("slide_numbers", "Slide numbers", "bool"),
@@ -189,6 +192,7 @@ def style_from_dict(raw: object) -> DeckStyle:
         max_bullets=max(_BULLETS_MIN, min(_BULLETS_MAX, bullets)),
         include_items_table=bool(raw.get("include_items_table", d.include_items_table)),
         include_signals=bool(raw.get("include_signals", d.include_signals)),
+        include_production=bool(raw.get("include_production", d.include_production)),
         include_highlights=bool(raw.get("include_highlights", d.include_highlights)),
         include_thanks=bool(raw.get("include_thanks", d.include_thanks)),
         slide_numbers=bool(raw.get("slide_numbers", d.slide_numbers)),
@@ -293,6 +297,8 @@ def style_summary(style: DeckStyle) -> str:
         parts.append("no appendix")
     if not style.include_signals:
         parts.append("no signals")
+    if not style.include_production:
+        parts.append("no production")
     if not style.include_highlights:
         parts.append("no highlights")
     if not style.include_thanks:

@@ -1547,7 +1547,11 @@ def _collect_settings_data() -> dict:
         "STANDUP_SMTP_PASSWORD",
         "STANDUP_EMAIL_RECIPIENTS",
     ]
-    for k in _keys:
+    # Connector envs are derived, not listed: a descriptor is the only place a
+    # connector's fields are named, so the page cannot fall behind the registry.
+    from yeaboi.connectors import registry as _connector_registry
+
+    for k in (*_keys, *_connector_registry.all_envs()):
         data[k] = os.environ.get(k, "")
     data["_config_path"] = str(get_config_file())
     return data
@@ -8652,6 +8656,7 @@ def _run_analysis_setup_wizard(
                     "ai_footprint": bool(grid["code"]),
                     "code_health": bool(grid["code"]),
                     "documentation": bool(grid["docs"]),
+                    "operational": bool(grid.get("ops")),
                 },
                 initial_features=state["features"],
             )
@@ -15240,6 +15245,11 @@ def select_mode(
                             apply_level(_new_level)
                             _settings_data = _collect_settings_data()
                             logger.info("Settings: log level cycled to %s", _new_level)
+                        elif _act == "connections":
+                            # No tab-level action: the section already names the
+                            # command that adds one, and the hint offers no Enter
+                            # here. Falling through would open the setup wizard.
+                            logger.info("Settings: Enter on the Connections tab — no tab action")
                         elif _act == "sharing":
                             logger.info("Settings: launching Cloudflare Access setup from the Sharing tab")
                             _result = _run_access_setup(console, live, read_key, _FRAME_TIME, _supports_timeout)

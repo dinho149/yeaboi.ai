@@ -1,5 +1,5 @@
 {
-  "$schema_version": 1,
+  "$schema_version": 2,
   "$generated_by": "scripts/gen_web_ui_contract.py",
   "accent_modes": [
     "analysis",
@@ -9,6 +9,13 @@
     "reporting",
     "retro",
     "standup"
+  ],
+  "connector_accents": [
+    "datadog",
+    "grafana",
+    "incidentio",
+    "pagerduty",
+    "sentry"
   ],
   "timing": {
     "refused_hold_sleep_ms": 1500

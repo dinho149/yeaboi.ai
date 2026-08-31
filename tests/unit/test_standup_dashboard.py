@@ -1,6 +1,6 @@
 """The standup dashboard's card vocabulary — shared by the TUI and the desktop."""
 
-from yeaboi.agent.state import MemberUpdate, StandupReport
+from yeaboi.agent.state import MemberUpdate, OpsSignal, StandupReport
 from yeaboi.standup import dashboard
 
 
@@ -102,3 +102,39 @@ class TestTuiParity:
         for key in dashboard.card_order(data):
             # The terminal may decorate a title with a glyph, but never rename it.
             assert dashboard.CARD_TITLES[key] in sections.standup_card_title(key, data)
+
+
+_OPS = (
+    OpsSignal(
+        kind="incident",
+        source="pagerduty",
+        count=2,
+        resolved=1,
+        severity="high",
+        window_start="2026-06-26T00:00:00+00:00",
+    ),
+)
+
+
+class TestProductionCard:
+    def test_unearned_when_no_ops_vendor_is_connected(self):
+        # The §0 invariant on this surface: with nothing connected the card
+        # list is exactly what it was before ops existed.
+        assert "production" not in dashboard.card_order({"report": _report()})
+
+    def test_earned_when_a_signal_exists(self):
+        order = dashboard.card_order({"report": _report(ops_signals=_OPS)})
+        assert "production" in order
+
+    def test_it_sits_between_the_disagreements_and_the_activity(self):
+        order = dashboard.card_order({"report": _report(ops_signals=_OPS)})
+        assert order.index("team") < order.index("production") < order.index("activity")
+
+    def test_it_is_titled_production_not_unplanned_work(self):
+        # "Unplanned" is a judgement about whether the team expected an
+        # incident, which nothing in the data can support.
+        assert dashboard.card_title("production") == "Production"
+
+    def test_the_desktop_gets_the_same_card(self):
+        keys = [c["key"] for c in dashboard.cards({"report": _report(ops_signals=_OPS)})]
+        assert "production" in keys

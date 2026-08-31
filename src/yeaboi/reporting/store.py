@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import DeliveredItem, DeliveryReport, SupportingSignal, annotations_from
+from yeaboi.ops.signals import OpsSignal
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,21 @@ def _dict_to_report(d: dict) -> DeliveryReport:
         )
         for s in d.get("supporting_signals", ())
     )
+    ops_signals = tuple(
+        OpsSignal(
+            kind=s.get("kind", ""),
+            family=s.get("family", ""),
+            source=s.get("source", ""),
+            count=int(s.get("count", 0) or 0),
+            resolved=int(s.get("resolved", 0) or 0),
+            severity=s.get("severity", ""),
+            services=tuple(str(x) for x in s.get("services", ())),
+            window_start=s.get("window_start", ""),
+            window_end=s.get("window_end", ""),
+            samples=tuple(str(x) for x in s.get("samples", ())),
+        )
+        for s in d.get("ops_signals", ())
+    )
     return DeliveryReport(
         period_label=d.get("period_label", ""),
         period_start=d.get("period_start", ""),
@@ -100,6 +116,7 @@ def _dict_to_report(d: dict) -> DeliveryReport:
         delivered_items=items,
         emoji_theme=emoji_theme,
         supporting_signals=signals,
+        ops_signals=ops_signals,
         warnings=tuple(d.get("warnings", ())),
         generated_at=d.get("generated_at", ""),
         annotations=annotations_from(d.get("annotations")),

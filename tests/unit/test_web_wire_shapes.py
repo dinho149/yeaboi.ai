@@ -40,7 +40,7 @@ from pathlib import Path
 
 import pytest
 
-from yeaboi.agent.state import DeliveredItem, DeliveryReport, SupportingSignal
+from yeaboi.agent.state import DeliveredItem, DeliveryReport, OpsSignal, SupportingSignal
 from yeaboi.poker.board import PokerBoard
 from yeaboi.reporting.presentation import deck_payload
 from yeaboi.reporting.style import DeckStyle
@@ -156,6 +156,22 @@ def _delivery_report() -> DeliveryReport:
             DeliveredItem(key="A-2", title="Cache the ticket peek", status="Done"),
         ),
         supporting_signals=(SupportingSignal(kind="pull_requests", source="github", count=24),),
+        # A real signal rather than an empty list, so the front end has an
+        # element shape to type against instead of never[].
+        ops_signals=(
+            OpsSignal(
+                kind="incident",
+                family="incidents",
+                source="pagerduty",
+                count=2,
+                resolved=1,
+                severity="high",
+                services=("checkout",),
+                window_start="2026-06-15T00:00:00+00:00",
+                window_end="2026-07-13T23:59:59+00:00",
+                samples=("Checkout latency", "Payments timeout"),
+            ),
+        ),
         emoji_theme=(("headline", "🚀"), ("summary", "📋"), ("metrics", "📊"), ("themes", "🧩")),
         warnings=("Jira was reachable for 12 of 14 days.",),
     )
@@ -530,6 +546,23 @@ def _export_snapshots() -> dict[str, dict]:
         skipped_sources=(("notion", "NOTION_ROOT_PAGE_ID not set"),),
         warnings=("Jira was reachable for 12 of 14 days.",),
         practice_rollup=(("untracked-work", 1), ("wip-sprawl", 1), ("commit-messages", 1)),
+        # One real signal rather than an empty list: an empty array types as
+        # `never[]` and tells the front end nothing about the element it must
+        # render. Its window is deliberately WIDER than the report's own.
+        ops_signals=(
+            OpsSignal(
+                kind="incident",
+                family="incidents",
+                source="pagerduty",
+                count=3,
+                resolved=2,
+                severity="high",
+                services=("checkout", "payments"),
+                window_start="2026-06-29T00:00:00+00:00",
+                window_end="2026-07-13T00:00:00+00:00",
+                samples=("Checkout latency above SLO", "Payments 5xx rate"),
+            ),
+        ),
     )
     standup_history = [
         {"standup_date": "2026-07-13", "confidence_pct": 68, "status": "success"},

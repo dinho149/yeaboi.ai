@@ -1077,6 +1077,43 @@ def build_parser() -> argparse.ArgumentParser:
     cer_modes = ceremonies_sub.add_parser("modes", help="Which modes can run on a cadence, and which cannot")
     cer_modes.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    connections_p = subparsers.add_parser(
+        "connections",
+        help="Read-only integrations: what is connected, and what it can see",
+    )
+    connections_sub = connections_p.add_subparsers(dest="connections_command", required=True)
+
+    conn_list = connections_sub.add_parser("list", help="What is connected (--all for the whole catalog)")
+    conn_list.add_argument("--family", default="", help="Only this family (e.g. observability)")
+    conn_list.add_argument("--all", action="store_true", help="Include connectors you have not set up")
+    conn_list.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    conn_show = connections_sub.add_parser("show", help="One connector: its fields and whether each is set")
+    conn_show.add_argument("name", help="Connector name (see `connections list --all`)")
+    conn_show.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    conn_verify = connections_sub.add_parser("verify", help="Live-check a connection (omit the name for all of them)")
+    conn_verify.add_argument("name", nargs="?", default="", help="Connector name; default: every connected one")
+    conn_verify.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    # No --token flag anywhere: a credential on argv lands in shell history and
+    # the process table. Values are prompted for, exactly as `--setup` does.
+    conn_add = connections_sub.add_parser("add", help="Connect one, prompting for each value")
+    conn_add.add_argument("name", help="Connector name (see `connections list --all`)")
+
+    conn_fetch = connections_sub.add_parser(
+        "fetch", help="What a connection saw over a window — read-only, nothing is stored"
+    )
+    conn_fetch.add_argument("name", nargs="?", default="", help="Connector name; default: every connected one")
+    conn_fetch.add_argument(
+        "--since", default="14d", metavar="WINDOW", help="How far back to look: 14d, 48h, 2w (default 14d)"
+    )
+    conn_fetch.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    conn_rm = connections_sub.add_parser("remove", help="Forget a connection's stored values")
+    conn_rm.add_argument("name")
+    conn_rm.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+
     slack_p = subparsers.add_parser(
         "slack",
         help="Two-way Slack — read reactions and replies on what yeaboi posted",
@@ -1337,7 +1374,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_p.add_argument(
         "--features",
         nargs="+",
-        choices=["delivery", "ai_footprint", "code_health", "documentation"],
+        choices=["delivery", "ai_footprint", "code_health", "documentation", "operational"],
         default=None,
         metavar="FEATURE",
         help="Analysis areas to run (default: all supported by the selected integrations)",
@@ -1389,6 +1426,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PLATFORM",
         help="Doc platforms for the clarity/usefulness read. e.g. --docs confluence",
+    )
+    analyze_p.add_argument(
+        "--ops",
+        nargs="+",
+        default=None,
+        metavar="CONNECTOR",
+        help=(
+            "Monitoring connectors for the Operations rate. Validated against what is "
+            "actually connected. e.g. --ops pagerduty sentry"
+        ),
     )
     analyze_p.add_argument(
         "--members",
@@ -2059,6 +2106,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "ship": _cmd_ship,
         "ceremonies": _cmd_ceremonies,
         "slack": _cmd_slack,
+        "connections": _cmd_connections,
         "app": _cmd_app,
         "ask": _cmd_ask,
     }
@@ -2598,6 +2646,158 @@ def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
     else:
         console.print(format_trace_rich(trace))
     return 0 if trace.found else 1
+
+
+def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi connections …` — the read-only integration catalog."""
+    import json
+    import os
+
+    from yeaboi.connectors import registry
+    from yeaboi.connectors.engine import list_connections
+
+    to_json = getattr(args, "format", "text") == "json"
+    command = args.connections_command
+
+    if command == "list":
+        payload = list_connections(family=args.family, connected_only=not args.all)
+        if to_json:
+            print(json.dumps(payload, indent=2))
+            return 0
+        rows = payload["connectors"]
+        if not rows:
+            console.print("[dim]Nothing connected yet. `yeaboi connections list --all` shows what you can add.[/dim]")
+            return 0
+        for row in rows:
+            mark = "[green]connected[/green]" if row["connected"] else "[dim]not connected[/dim]"
+            console.print(f"{row['glyph']} [bold]{row['label']}[/bold]  [dim]{row['family_label']}[/dim]  {mark}")
+            # A list of vendor names is a list of things to go look up. Say what
+            # each one is for, on the line under it.
+            if row["summary"]:
+                console.print(f"   [dim]{row['summary']}[/dim]")
+        return 0
+
+    connector = registry.by_key(args.name) if getattr(args, "name", "") else None
+    if getattr(args, "name", "") and connector is None:
+        known = ", ".join(c.key for c in registry.all_connectors())
+        print(f"Error: unknown connector {args.name!r}. Known: {known}", file=sys.stderr)
+        return 1
+
+    if command == "show":
+        payload = list_connections(connected_only=False)
+        row = next(r for r in payload["connectors"] if r["key"] == connector.key)
+        if to_json:
+            print(json.dumps(row, indent=2))
+            return 0
+        console.print(f"{row['glyph']} [bold]{row['label']}[/bold]  [dim]{row['family_label']}[/dim]")
+        if row["detail"]:
+            from rich.padding import Padding
+
+            # Padding, not a literal indent: the detail wraps, and only the first
+            # wrapped line would carry a leading-space indent.
+            console.print(Padding(f"[dim]{row['detail']}[/dim]", (0, 0, 1, 2)))
+        for field in row["fields"]:
+            state = "[green]set[/green]" if field["is_set"] else "[dim]not set[/dim]"
+            need = "" if field["required"] else " [dim](optional)[/dim]"
+            console.print(f"  {field['label']}: {state}{need}  [dim]{field['env']}[/dim]")
+        if row["docs_url"]:
+            console.print(f"  [dim]docs: {row['docs_url']}[/dim]")
+        return 0
+
+    if command == "verify":
+        from yeaboi.settings.engine import verify_connection
+
+        targets = [connector.key] if connector else registry.connected()
+        if not targets:
+            console.print("[dim]Nothing connected to verify.[/dim]")
+            return 0
+        results = []
+        for key in targets:
+            try:
+                outcome = verify_connection(key, {})
+            except ValueError as exc:
+                outcome = {"ok": False, "message": str(exc)}
+            results.append({"connector": key, **outcome})
+        if to_json:
+            print(json.dumps(results, indent=2))
+        else:
+            for result in results:
+                tick = "[green]ok[/green]" if result["ok"] else "[red]failed[/red]"
+                console.print(f"{result['connector']}: {tick} — {result['message']}")
+        return 0 if all(r["ok"] for r in results) else 1
+
+    if command == "fetch":
+        from yeaboi.connectors.engine import fetch_ops_events
+
+        try:
+            payload = fetch_ops_events(connector.key if connector else "", since=args.since)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        if to_json:
+            print(json.dumps(payload, indent=2))
+            return 0
+        if not payload["sources"]:
+            console.print("[dim]Nothing connected has anything to gather yet.[/dim]")
+            return 0
+        window = payload["window"]
+        console.print(f"[dim]{window['start'][:10]} → {window['end'][:10]}[/dim]")
+        for source in payload["sources"]:
+            if source["ok"]:
+                console.print(f"  [green]{source['label']}[/green]: {source['count']} event(s)")
+            else:
+                console.print(f"  [red]{source['label']}[/red]: {source['error']}")
+        for signal in payload["signals"]:
+            worst = f" [dim]worst: {signal['severity']}[/dim]" if signal["severity"] else ""
+            console.print(
+                f"{signal['kind']} via {signal['source']}: [bold]{signal['count']}[/bold] "
+                f"({signal['resolved']} resolved){worst}"
+            )
+            for sample in signal["samples"]:
+                console.print(f"   [dim]{sample}[/dim]")
+        return 0 if all(s["ok"] for s in payload["sources"]) else 1
+
+    if command == "add":
+        from getpass import getpass
+
+        from yeaboi.config import apply_config_value
+
+        console.print(f"{connector.mark} [bold]{connector.label}[/bold]")
+        if connector.docs_url:
+            console.print(f"[dim]{connector.docs_url}[/dim]")
+        for field in connector.fields:
+            hint = f" [{field.default}]" if field.default else ""
+            label = f"{field.label}{'' if field.required else ' (optional)'}{hint}: "
+            if field.help_scope:
+                console.print(f"[dim]{field.help_scope}[/dim]")
+            # Secrets are never echoed, and never reach argv.
+            value = (getpass(label) if field.secret else input(label)).strip()
+            if not value and field.default:
+                value = field.default
+            if not value:
+                if field.required:
+                    print(f"Error: {connector.label} needs {field.label}", file=sys.stderr)
+                    return 1
+                continue
+            apply_config_value(field.env, value)
+        console.print(f"[green]Saved.[/green] Verify it with: yeaboi connections verify {connector.key}")
+        return 0
+
+    if command == "remove":
+        from yeaboi.config import apply_config_value
+
+        if not args.yes:
+            reply = input(f"Forget the stored {connector.label} values? [y/N] ").strip().lower()
+            if reply not in ("y", "yes"):
+                console.print("[dim]Left alone.[/dim]")
+                return 0
+        for field in connector.fields:
+            apply_config_value(field.env, "")
+            os.environ.pop(field.env, None)
+        console.print(f"[green]{connector.label} disconnected.[/green]")
+        return 0
+
+    return 1
 
 
 def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
@@ -3448,6 +3648,8 @@ def _cmd_analyze(args: argparse.Namespace, console: Console) -> int:
         components["code"] = args.code
     if args.docs:
         components["docs"] = args.docs
+    if args.ops:
+        components["ops"] = args.ops
     members = {"jira": args.members, "azdevops": args.members} if args.members else None
     analysis_scope = {
         provider: values

@@ -272,6 +272,14 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         mode_key="ship",
         is_beta=True,
     ),
+    # ONE tip for the whole connector layer, not one per vendor: twelve vendor
+    # tips would recreate in the welcome rotation exactly the crowding the
+    # catalog exists to remove.
+    FeatureTip(
+        "connections",
+        "\U0001f50c Tip: Connect Datadog and other read-only tools so standups see production too",
+        is_new=True,
+    ),
 )
 
 # Ambient tips — not tied to a capability, so exempt from parity. The generic

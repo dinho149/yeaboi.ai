@@ -210,6 +210,7 @@ def _fallback_report(
     warnings: list[str],
     generated_at: str,
     supporting_signals: tuple = (),
+    ops_signals: tuple = (),
 ) -> DeliveryReport:
     """Deterministic delivery report when the LLM is unavailable — counts + evidence."""
     n = len(items)
@@ -241,6 +242,7 @@ def _fallback_report(
         delivered_items=tuple(items),
         emoji_theme=tuple(_DEFAULT_EMOJI.items()),
         supporting_signals=tuple(supporting_signals),
+        ops_signals=tuple(ops_signals),
         warnings=tuple(warnings),
         generated_at=generated_at,
     )
@@ -420,6 +422,21 @@ def run_delivery_report(
         warnings = warnings + signal_warnings
         _check_cancel(cancel_event)
 
+    # What production did over the SAME window. Its own gather, its own field
+    # and its own heading below: corroboration and consequence are different
+    # claims, and joining them into one sentence would make an incident read as
+    # evidence that the work landed. Nothing connected costs no network and
+    # leaves every surface exactly as it was.
+    from yeaboi.reporting.context import gather_ops_signals
+
+    ops_signals, ops_warnings = gather_ops_signals(
+        period_start=period_start,
+        period_end=period_end,
+        on_progress=on_progress,
+    )
+    warnings = warnings + ops_warnings
+    _check_cancel(cancel_event)
+
     metrics = _compute_metrics(items)
 
     # No delivered work → skip the LLM entirely; the deterministic report is correct.
@@ -435,6 +452,7 @@ def run_delivery_report(
             warnings=warnings,
             generated_at=period_end,
             supporting_signals=supporting_signals,
+            ops_signals=ops_signals,
         )
     else:
         from yeaboi.prompts.reporting import get_delivery_report_prompt
@@ -463,6 +481,7 @@ def run_delivery_report(
                 warnings=warnings,
                 generated_at=period_end,
                 supporting_signals=supporting_signals,
+                ops_signals=ops_signals,
             )
         else:
             report = DeliveryReport(
@@ -479,6 +498,7 @@ def run_delivery_report(
                 delivered_items=tuple(items),
                 emoji_theme=_parse_emoji(parsed.get("emoji_theme")),
                 supporting_signals=supporting_signals,
+                ops_signals=ops_signals,
                 warnings=tuple(warnings),
                 generated_at=period_end,
             )

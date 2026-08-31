@@ -35,6 +35,7 @@ from yeaboi.agent.state import (
     ActivityEvidence,
     ConflictCard,
     MemberUpdate,
+    OpsSignal,
     PracticeSignal,
     StandupGap,
     StandupReport,
@@ -260,6 +261,28 @@ def _dict_to_conflicts(items: object) -> tuple[ConflictCard, ...]:
     )
 
 
+def _dict_to_ops_signals(items: object) -> tuple[OpsSignal, ...]:
+    """Rebuild ops signals from JSON-parsed dicts (missing → empty)."""
+    if not isinstance(items, list):
+        return ()
+    return tuple(
+        OpsSignal(
+            kind=str(s.get("kind", "")),
+            family=str(s.get("family", "")),
+            source=str(s.get("source", "")),
+            count=int(s.get("count", 0)),
+            resolved=int(s.get("resolved", 0)),
+            severity=str(s.get("severity", "")),
+            services=tuple(str(x) for x in (s.get("services") or ()) if str(x)),
+            window_start=str(s.get("window_start", "")),
+            window_end=str(s.get("window_end", "")),
+            samples=tuple(str(x) for x in (s.get("samples") or ()) if str(x)),
+        )
+        for s in items
+        if isinstance(s, dict)
+    )
+
+
 def _dict_to_standup_report(d: dict) -> StandupReport:
     """Reconstruct a StandupReport from a JSON-parsed dict.
 
@@ -327,6 +350,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         annotations=annotations_from(d.get("annotations")),
         practice_rollup=tuple((str(p[0]), int(p[1])) for p in d.get("practice_rollup", ()) if len(p) == 2),
         conflicts=_dict_to_conflicts(d.get("conflicts")),
+        ops_signals=_dict_to_ops_signals(d.get("ops_signals")),
     )
 
 

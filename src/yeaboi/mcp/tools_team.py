@@ -59,15 +59,24 @@ def _team_analyze(
         raise ValueError(f"source must be 'jira', 'azdevops', or 'both' (blank auto-detects) — got {source!r}")
     if analysis_depth not in ("quick", "deep"):
         raise ValueError(f"analysis_depth must be 'quick' or 'deep' — got {analysis_depth!r}")
-    allowed = {"delivery": ("jira", "azdevops"), "code": ("github", "azdo"), "docs": ("confluence", "notion")}
+    from yeaboi.analysis.setup import FEATURES, available_ops_sources
+
+    # Ops sub-sources come from the connector registry, not a literal: a vendor
+    # added later must be selectable without an edit here.
+    allowed = {
+        "delivery": ("jira", "azdevops"),
+        "code": ("github", "azdo"),
+        "docs": ("confluence", "notion"),
+        "ops": tuple(available_ops_sources()),
+    }
     if components:
         for comp, subs in components.items():
             if comp not in allowed:
-                raise ValueError(f"components keys must be 'delivery'/'code'/'docs' — got {comp!r}")
+                raise ValueError(f"components keys must be one of {tuple(allowed)} — got {comp!r}")
             bad = [s for s in (subs or []) if s not in allowed[comp]]
             if bad:
                 raise ValueError(f"{comp} sub-sources must be a subset of {allowed[comp]} — got {bad!r}")
-    allowed_features = {"delivery", "ai_footprint", "code_health", "documentation"}
+    allowed_features = set(FEATURES)
     bad_features = [feature for feature in (analysis_features or []) if feature not in allowed_features]
     if bad_features:
         raise ValueError(f"analysis_features contains unsupported values: {bad_features!r}")
@@ -163,13 +172,16 @@ def register(app) -> None:
         analysis_depth is "deep" (default, exhaustive AI enrichment) or "quick"
         (deterministic metrics only). analysis_window_days defaults to 120.
         components selects which parts run, each over its OWN sub-sources:
-        {"delivery": ["jira","azdevops"], "code": ["github","azdo"], "docs": ["confluence","notion"]}.
+        {"delivery": ["jira","azdevops"], "code": ["github","azdo"], "docs": ["confluence","notion"],
+        "ops": [connected ops connector keys]}.
         analysis_features independently selects result areas from delivery, ai_footprint,
-        code_health, and documentation; None runs every area supported by components.
+        code_health, documentation, and operational; None runs every area supported by components.
+        operational reports the incident/alert rate over the window from the connected monitoring
+        tools — team-wide counts only, never per person, and absent unless one is connected.
         Delivery runs one velocity profile PER selected tracker; code and docs are each ONE global
         scan over their selected hosts. An absent/empty component is skipped; None falls back to the
         include_* booleans. Result: {delivery:{tracker:{profile,...}}, code:{signal,examples}|null,
-        docs:{signal,examples}|null, comparison, warnings}.
+        docs:{signal,examples}|null, ops:{signal,examples}|null, comparison, warnings}.
         members re-scopes each delivery tracker's velocity/contributors and is mandatory scope
         for code analysis, e.g. {"jira": ["Alice","Bob"]}. Code results contain only matched
         selected-user commits, authored PRs, activity, and changed files; a blank or unmatched

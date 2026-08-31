@@ -4,7 +4,7 @@ import json
 from dataclasses import replace
 
 from tests._pages import assert_self_contained, island
-from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
+from yeaboi.agent.state import ActivityEvidence, MemberUpdate, OpsSignal, StandupReport
 from yeaboi.standup import export
 from yeaboi.standup.export import (
     _leftover_links,
@@ -1474,3 +1474,52 @@ class TestConflictCards:
         assert "[click](https://evil.example)" not in md
         assert "[YEA-12](https://evil.example)" not in md
         assert "\\[Approve access\\]" in md
+
+
+_OPS = (
+    OpsSignal(
+        kind="incident",
+        family="incidents",
+        source="pagerduty",
+        count=2,
+        resolved=1,
+        severity="high",
+        services=("checkout",),
+        window_start="2026-06-26T00:00:00+00:00",
+        window_end="2026-07-10T00:00:00+00:00",
+        samples=("Checkout latency [above SLO](javascript:alert(1))",),
+    ),
+)
+
+
+class TestProductionExport:
+    def test_no_section_at_all_when_nothing_is_connected(self):
+        assert "Production" not in build_standup_markdown(_report())
+
+    def test_the_markdown_section_names_counts_and_its_own_window(self):
+        md = build_standup_markdown(_report(ops_signals=_OPS))
+        assert "## Production (since 2026-06-26)" in md
+        assert "2 incidents via pagerduty" in md
+        assert "Team-wide; not attributed to anyone." in md
+
+    def test_a_monitor_name_cannot_mint_a_link(self):
+        # Samples are vendor text an outsider can author, and this Markdown
+        # lands on Notion/Confluence/Slack where `[x](url)` goes live. The
+        # brackets come back escaped, so the label never closes a link.
+        md = build_standup_markdown(_report(ops_signals=_OPS))
+        assert "Checkout latency \\[above SLO\\](javascript:alert(1))" in md
+
+    def test_the_html_payload_carries_words_and_numbers_only(self):
+        production = island(build_standup_html(_report(ops_signals=_OPS)))["report"]["production"]
+        assert production[0]["count"] == 2 and production[0]["severity"] == "high"
+        assert production[0]["window"]["start"] == "2026-06-26T00:00:00+00:00"
+        # No colour, no markup, and no field a person could ride in.
+        assert not {"accent", "colour", "color", "html", "author", "member"} & set(production[0])
+
+    def test_the_nav_earns_its_entry(self):
+        # The nav is drawn by the bundle, so the claim is about the payload.
+        def nav_keys(report):
+            return [key for key, _ in island(build_standup_html(report))["chrome"]["nav"]]
+
+        assert "production" not in nav_keys(_report())
+        assert "production" in nav_keys(_report(ops_signals=_OPS))

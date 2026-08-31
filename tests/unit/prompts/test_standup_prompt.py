@@ -139,3 +139,53 @@ class TestDayOverDayPrompt:
 
     def test_team_summary_names_blocked_members(self):
         assert "name members with blockers explicitly" in _prompt()
+
+
+_PRODUCTION = [
+    {
+        "kind": "incident",
+        "source": "pagerduty",
+        "count": 2,
+        "resolved": 1,
+        "worst_severity": "high",
+        "services": ["checkout"],
+        "examples": ["Checkout latency above SLO"],
+    }
+]
+
+
+class TestProduction:
+    def test_no_ops_vendor_leaves_the_prompt_byte_identical(self):
+        # The §0 invariant, on the surface that costs the most to get wrong: a
+        # model told about an empty section reliably narrates its emptiness.
+        assert _prompt(production=None) == _prompt()
+        assert _prompt(production=[]) == _prompt()
+
+    def test_the_signals_reach_the_model_with_their_window(self):
+        text = _prompt(production=_PRODUCTION, production_window="the last 14 days")
+        assert "PRODUCTION over the last 14 days" in text
+        assert "Checkout latency above SLO" in text
+
+    def test_it_is_top_level_and_never_inside_a_member(self):
+        # Ops in `member_payload` is how an alert becomes someone's blocker.
+        # It reaches the model as its own block, above the member list.
+        text = _prompt(production=_PRODUCTION)
+        assert text.index("PRODUCTION over") < text.index("MEMBERS (one summary each)")
+        members_json = text[text.index("MEMBERS (one summary each)") :]
+        assert "pagerduty" not in members_json and "incident" not in members_json
+
+    def test_the_model_is_told_not_to_attribute_it_to_anyone(self):
+        text = _prompt(production=_PRODUCTION)
+        assert "never attribute any of it to a person" in text
+        assert "never put it in anyone's 'summary', 'blockers' or 'outlook'" in text
+
+    def test_the_model_is_told_silence_is_correct(self):
+        # Without this models write "production was stable", which is the nag
+        # by another route — and a claim the data does not support.
+        text = _prompt(production=_PRODUCTION)
+        assert "silence is the correct output" in text
+        assert "quiet, calm or incident-free" in text
+
+    def test_the_model_is_told_the_window_is_wider(self):
+        text = _prompt(production=_PRODUCTION, production_window="the last 14 days")
+        assert "a WIDER window than this standup covers" in text

@@ -1,0 +1,41 @@
+{
+  "$schema_version": 1,
+  "$generated_by": "scripts/gen_connectors_contract.py",
+  "connectors": [
+    {
+      "key": "datadog",
+      "label": "Datadog",
+      "family": "observability",
+      "family_label": "Observability",
+      "accent": "rgb(147,111,218)"
+    },
+    {
+      "key": "grafana",
+      "label": "Grafana",
+      "family": "observability",
+      "family_label": "Observability",
+      "accent": "rgb(242,131,32)"
+    },
+    {
+      "key": "incidentio",
+      "label": "incident.io",
+      "family": "incidents",
+      "family_label": "Incidents & on-call",
+      "accent": "rgb(242,85,51)"
+    },
+    {
+      "key": "pagerduty",
+      "label": "PagerDuty",
+      "family": "incidents",
+      "family_label": "Incidents & on-call",
+      "accent": "rgb(6,172,105)"
+    },
+    {
+      "key": "sentry",
+      "label": "Sentry",
+      "family": "errors",
+      "family_label": "Error tracking",
+      "accent": "rgb(106,84,164)"
+    }
+  ]
+}

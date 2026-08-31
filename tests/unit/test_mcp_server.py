@@ -22,6 +22,8 @@ from yeaboi.mcp.runtime import LLM_HINT, envelope, error_envelope, to_jsonable  
 from yeaboi.mcp.server import create_app  # noqa: E402
 
 EXPECTED_TOOLS = {
+    "connections_list",
+    "connections_fetch",
     "artifact_edit_apply",
     "niko_ask",
     "project_create",

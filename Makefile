@@ -232,10 +232,12 @@ bump-major: ## Bump the major version in pyproject.toml (X.Y.Z -> X+1.0.0)
 # from yeaboi-frontend as the yeaboi-web-assets wheel, which is an ordinary
 # dependency; what stays is the generation of the contracts that repo vendors.
 
-web-types: ## Regenerate the contracts the front end vendors (enums + ui)
+web-types: ## Regenerate the contracts the front end and desktop vendor (enums + ui + connectors)
 	uv run python scripts/gen_web_types.py
 	uv run python scripts/gen_web_ui_contract.py
+	uv run python scripts/gen_connectors_contract.py
 	@echo "✓ commit contracts/web/ — yeaboi-frontend picks it up with 'make contracts-sync'"
+	@echo "✓ commit contracts/v1/connectors.json — yeaboi-desktop picks it up the same way"
 
 # The desktop app lives in yeaboi-desktop and installs a RELEASED wheel from
 # PyPI; nothing about it is built here any more. What stays is one artefact it

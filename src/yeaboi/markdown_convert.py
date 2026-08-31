@@ -62,6 +62,15 @@ def md_table_cell(text: str) -> str:
     return " ".join(str(text).replace("|", "\\").split())
 
 
+def md_label(text: str) -> str:
+    """Neutralise link-label syntax in free text.
+
+    A bracket left intact lets a tracker title, a monitor name or an incident
+    name close the label it is sitting in and open a link of its own choosing.
+    """
+    return str(text).replace("[", "\\[").replace("]", "\\]").replace("\n", " ")
+
+
 def extract_image_paths(md: str) -> list[str]:
     """Return the ordered, de-duplicated local paths of standalone image lines."""
     seen: list[str] = []

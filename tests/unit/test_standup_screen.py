@@ -20,6 +20,23 @@ from yeaboi.ui.mode_select.screens._screens_secondary import (
 from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
 
+def _tab(title: str) -> int:
+    """A settings tab's index, by name.
+
+    Resolved rather than hardcoded: inserting a tab shifts every index after it,
+    and a screen test asserting against the wrong tab then fails in a way that
+    reads like a rendering bug.
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS
+
+    return _SETTINGS_TABS.index(title)
+
+
+CREDENTIALS_TAB = _tab("Credentials")
+SHARING_TAB = _tab("Sharing")
+SYSTEM_TAB = _tab("System")
+
+
 def _render(panel: Panel, width: int) -> str:
     """Render a panel to plain text at an exact width, as a terminal would."""
     console = Console(width=width)
@@ -744,7 +761,7 @@ class TestSettingsMasksStandupSecrets:
             "STANDUP_SMTP_HOST": "smtp.example.com",
             "_config_path": "/tmp/.env",
         }
-        panel = _build_settings_screen(data, width=100, height=40, active_tab=2)  # System tab (Standup)
+        panel = _build_settings_screen(data, width=100, height=40, active_tab=SYSTEM_TAB)  # System tab (Standup)
         # Render to text and confirm the raw secret does not appear.
 
         console = Console(width=120, file=open("/dev/null", "w"))
@@ -2000,3 +2017,55 @@ class TestConflictsCard:
         assert "jira: Done" in out
         assert "github: open" in out
         assert "Reopen YEA-12" in out
+
+
+class TestProductionCard:
+    def _data(self, signals=None):
+        from yeaboi.agent.state import OpsSignal
+
+        signal = OpsSignal(
+            kind="incident",
+            family="incidents",
+            source="pagerduty",
+            count=2,
+            resolved=1,
+            severity="high",
+            services=("checkout",),
+            window_start="2026-06-26T00:00:00+00:00",
+            window_end="2026-07-10T00:00:00+00:00",
+            samples=("Checkout latency above SLO",),
+        )
+        rep = StandupReport(
+            date="2026-07-10",
+            member_updates=_report().member_updates,
+            ops_signals=(signal,) if signals is None else signals,
+        )
+        return {"report": rep, "my_name": "Bob", "schedule": {}, "config": {}}
+
+    def test_card_appears_only_when_a_signal_exists(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        order = standup_card_order(self._data())
+        assert "production" in order
+        # Team-level state renders before the activity rollup.
+        assert order.index("production") < order.index("activity")
+        assert "production" not in standup_card_order(self._data(signals=()))
+
+    def test_teaser_counts_events_and_names_the_worst(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
+
+        assert standup_card_teaser("production", self._data()) == "2 events across 1 signal · worst high"
+
+    def test_detail_states_the_window_the_counts_and_no_names(self):
+        panel = _build_standup_screen(self._data(), width=100, height=40, view="production")
+        assert isinstance(panel, Panel)
+        console = Console(width=110, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "Production — since 2026-06-26" in out
+        assert "2 incidents via pagerduty" in out
+        assert "1 resolved" in out
+        assert "Checkout latency above SLO" in out
+        assert "attributed to nobody" in out
+        assert "Bob" not in out.split("Production")[1]

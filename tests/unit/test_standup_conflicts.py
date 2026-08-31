@@ -1,5 +1,7 @@
 """Tests for src/yeaboi/standup/conflicts.py — cross-source conflict cards."""
 
+from yeaboi.agent.state import ConflictCard
+from yeaboi.ops.events import OpsEvent
 from yeaboi.standup import conflicts
 
 PREFIXES = frozenset({"YEA"})
@@ -136,3 +138,99 @@ class TestCap:
         assert len(cards) == conflicts._MAX_CARDS
         assert len(warnings) == 1
         assert "4 more" in warnings[0]
+
+
+def _event(**fields):
+    base = {
+        "kind": "incident",
+        "source": "pagerduty",
+        "ref": "PD-1",
+        "title": "",
+        "status": "triggered",
+    }
+    base.update(fields)
+    return OpsEvent(**base)
+
+
+class TestProductionDetection:
+    def test_done_ticket_with_a_live_incident_naming_it_is_a_card(self):
+        grouped = {"alice": [_item("issue", key="YEA-9", status="Done", source="jira")]}
+        cards = conflicts.detect_ops_conflicts(
+            grouped, [_event(title="YEA-9 checkout is down", service="checkout")], prefixes=PREFIXES
+        )
+        assert len(cards) == 1
+        card = cards[0]
+        assert card.entity_id == "YEA-9"
+        assert "still triggered" in card.title
+        assert "checkout" in card.detail
+        assert card.fingerprint.endswith(":ops_conflict")
+
+    def test_nobody_is_named(self):
+        # Attributing an incident to whoever merged the PR would reintroduce
+        # blame by the back door — an alert firing is nobody's work.
+        grouped = {"alice": [_item("issue", key="YEA-9", status="Done", source="jira")]}
+        cards = conflicts.detect_ops_conflicts(grouped, [_event(title="YEA-9 down")], prefixes=PREFIXES)
+        assert cards[0].members == ()
+
+    def test_a_resolved_incident_is_agreement_not_a_conflict(self):
+        grouped = {"alice": [_item("issue", key="YEA-9", status="Done", source="jira")]}
+        assert (
+            conflicts.detect_ops_conflicts(grouped, [_event(title="YEA-9 down", status="resolved")], prefixes=PREFIXES)
+            == ()
+        )
+
+    def test_an_event_with_no_status_asserts_nothing(self):
+        grouped = {"alice": [_item("issue", key="YEA-9", status="Done", source="jira")]}
+        assert conflicts.detect_ops_conflicts(grouped, [_event(title="YEA-9 down", status="")], prefixes=PREFIXES) == ()
+
+    def test_an_open_ticket_is_not_a_conflict(self):
+        grouped = {"alice": [_item("issue", key="YEA-9", status="In Progress", source="jira")]}
+        assert conflicts.detect_ops_conflicts(grouped, [_event(title="YEA-9 down")], prefixes=PREFIXES) == ()
+
+    def test_the_prefix_gate_applies_to_monitor_names_too(self):
+        # "SHA-256 latency" is a monitor name, not a ticket, and OTHER-1 is a
+        # prefix no tracker emitted in this run.
+        grouped = {"alice": [_item("issue", key="OTHER-1", status="Done", source="jira")]}
+        assert conflicts.detect_ops_conflicts(grouped, [_event(title="OTHER-1 down")], prefixes=PREFIXES) == ()
+
+    def test_an_azdo_reference_in_an_alert_cannot_invent_a_work_item(self):
+        # AB#42 is ungated on a pull request because the tracker itself spells
+        # it that way. A monitor named "AB#42 latency" is a monitor name.
+        grouped = {"alice": [_item("issue", key="42", status="Done", source="azure_devops")]}
+        assert conflicts.detect_ops_conflicts(grouped, [_event(title="AB#42 latency")], prefixes=PREFIXES) == ()
+
+    def test_a_second_incident_on_the_same_ticket_is_counted_not_dropped(self):
+        grouped = {"alice": [_item("issue", key="YEA-9", status="Done", source="jira")]}
+        cards = conflicts.detect_ops_conflicts(
+            grouped,
+            [_event(title="YEA-9 down", ref="PD-1"), _event(title="YEA-9 flapping", ref="PD-2")],
+            prefixes=PREFIXES,
+        )
+        assert len(cards) == 1
+        assert "(+1 more)" in cards[0].detail
+
+    def test_the_action_names_the_incident_so_it_can_be_settled(self):
+        grouped = {"alice": [_item("issue", key="YEA-9", status="Done", source="jira")]}
+        cards = conflicts.detect_ops_conflicts(grouped, [_event(title="YEA-9 down")], prefixes=PREFIXES)
+        assert "PD-1" in cards[0].recommended_action and "pagerduty" in cards[0].recommended_action
+
+    def test_a_quiet_production_produces_nothing(self):
+        grouped = {"alice": [_item("issue", key="YEA-9", status="Done", source="jira")]}
+        assert conflicts.detect_ops_conflicts(grouped, [], prefixes=PREFIXES) == ()
+
+
+class TestMerge:
+    def test_board_cards_are_never_evicted(self):
+        board = tuple(ConflictCard(fingerprint=f"b{n}") for n in range(8))
+        ops_cards = tuple(ConflictCard(fingerprint=f"o{n}") for n in range(10))
+        merged, warnings = conflicts.merge_cards(board, ops_cards)
+        assert merged[:8] == board
+        assert len(merged) == 8 + conflicts._MAX_OPS_CARDS
+        assert "7 more" in warnings[0]
+
+    def test_neither_list_is_resorted(self):
+        board = (ConflictCard(fingerprint="b1"), ConflictCard(fingerprint="b0"))
+        ops_cards = (ConflictCard(fingerprint="o1"), ConflictCard(fingerprint="o0"))
+        merged, warnings = conflicts.merge_cards(board, ops_cards)
+        assert [c.fingerprint for c in merged] == ["b1", "b0", "o1", "o0"]
+        assert warnings == ()

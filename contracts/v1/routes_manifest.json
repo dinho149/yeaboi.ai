@@ -192,6 +192,11 @@
       "title": "Settings · Credentials"
     },
     {
+      "path": "/settings/connections",
+      "capability": "connections",
+      "title": "Settings · Connections"
+    },
+    {
       "path": "/settings/sharing",
       "capability": "settings",
       "title": "Settings · Sharing"
@@ -333,6 +338,13 @@
         "github",
         "notion",
         "slack"
+      ]
+    },
+    {
+      "route": "/settings/connections",
+      "title": "Connections",
+      "sections": [
+        "connections"
       ]
     },
     {

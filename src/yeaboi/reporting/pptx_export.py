@@ -405,6 +405,31 @@ def build_report_pptx(
                 )
                 add_bullets(slide, page_items, top=2.0, fit=fit_mode == "tight")
 
+    # -- Production ----------------------------------------------------------
+    # Its own slide rather than a second footnote on "By the numbers": that line
+    # already claims corroboration, and an incident is not corroboration.
+    if getattr(report, "ops_signals", ()) and style.include_production:
+        from yeaboi.ops.signals import describe
+        from yeaboi.reporting.context import OPS_EMOJI, ops_sentence
+
+        slide = new_slide()
+        add_text(slide, f"{OPS_EMOJI}  Production", top=0.8, size=32, color=heading_rgb, bold=True)
+        add_bullets(
+            slide,
+            [describe(sig) for sig in report.ops_signals][: style.max_bullets],
+            top=2.0,
+            fit=fit_mode == "tight",
+        )
+        sentence = ops_sentence(report.ops_signals)
+        if sentence:
+            add_text(
+                slide,
+                f"{sentence}. Team-wide, and not attributed to anyone.",
+                top=_SLIDE_H_IN - 1.0,
+                size=12,
+                color=colors["muted"],
+            )
+
     # -- Highlights ----------------------------------------------------------
     if report.highlights and style.include_highlights:
         if fit_mode == "tight":

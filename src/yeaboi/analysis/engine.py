@@ -46,7 +46,7 @@ _SOURCE_NAMES = {"jira": "Jira", "azdevops": "Azure DevOps"}
 # and Docs (doc-quality read) are each ONE global scan over their selected hosts.
 # Note: the code Azure-Repos tag is "azdo", distinct from the delivery tracker key
 # "azdevops" — they are different systems.
-_COMPONENTS = ("delivery", "code", "docs")
+_COMPONENTS = ("delivery", "code", "docs", "ops")
 _DELIVERY_SOURCES = ("jira", "azdevops")
 _CODE_SOURCES = ("github", "azdo")
 _DOC_SOURCES = ("confluence", "notion")
@@ -55,8 +55,25 @@ _COMPONENT_SOURCES: dict[str, tuple[str, ...]] = {
     "code": _CODE_SOURCES,
     "docs": _DOC_SOURCES,
 }
-_ANALYSIS_FEATURES = ("delivery", "ai_footprint", "code_health", "documentation")
+_ANALYSIS_FEATURES = ("delivery", "ai_footprint", "code_health", "documentation", "operational")
 _CODE_FEATURES = ("ai_footprint", "code_health")
+#: Which component each feature reads. Ops is the one component whose known
+#: sub-sources are a registry rather than a literal — a connector added later
+#: must not need an edit here to be selectable.
+_FEATURE_COMPONENT = {
+    "delivery": "delivery",
+    "ai_footprint": "code",
+    "code_health": "code",
+    "documentation": "docs",
+    "operational": "ops",
+}
+
+
+def _ops_sources() -> tuple[str, ...]:
+    """The connector keys an Operations run may read, from the live registry."""
+    from yeaboi.analysis.setup import available_ops_sources
+
+    return tuple(available_ops_sources())
 
 
 def _resolve_analysis_features(
@@ -72,7 +89,7 @@ def _resolve_analysis_features(
     for feature in _ANALYSIS_FEATURES:
         if feature not in requested:
             continue
-        component = "delivery" if feature == "delivery" else "docs" if feature == "documentation" else "code"
+        component = _FEATURE_COMPONENT[feature]
         if comps[component]:
             selected.append(feature)
     if not selected:
@@ -97,10 +114,10 @@ def _resolve_components(
     if components is not None:
 
         def _pick(comp: str) -> list[str]:
-            allowed = _COMPONENT_SOURCES[comp]
+            allowed = _COMPONENT_SOURCES[comp] if comp in _COMPONENT_SOURCES else _ops_sources()
             return [v for v in (components.get(comp) or []) if v in allowed]
 
-        return {"delivery": _pick("delivery"), "code": _pick("code"), "docs": _pick("docs")}
+        return {comp: _pick(comp) for comp in _COMPONENTS}
 
     if source == "both":
         delivery = available_trackers()
@@ -115,6 +132,10 @@ def _resolve_components(
         "delivery": delivery,
         "code": scannable_code_sources() if include_ai_usage else [],
         "docs": available_doc_sources() if include_doc_quality else [],
+        # No legacy boolean turns Operations on: it is opt-in through the
+        # feature list only, so no existing caller starts reading a vendor it
+        # never asked about.
+        "ops": [],
     }
     return result
 
@@ -354,15 +375,17 @@ def run_team_analysis(
         "delivery": comps["delivery"] if "delivery" in feature_set else [],
         "code": comps["code"] if feature_set & set(_CODE_FEATURES) else [],
         "docs": comps["docs"] if "documentation" in feature_set else [],
+        "ops": comps["ops"] if "operational" in feature_set else [],
     }
     members = members or {}
     warnings: list[str] = []
     progress_list = progress if progress is not None else []
     logger.info(
-        "Team analysis starting: delivery=%s code=%s docs=%s members=%s",
+        "Team analysis starting: delivery=%s code=%s docs=%s ops=%s members=%s",
         comps["delivery"],
         comps["code"],
         comps["docs"],
+        comps["ops"],
         members or "all",
     )
 
@@ -433,8 +456,21 @@ def run_team_analysis(
             )
         )
 
+    if comps["ops"] and "operational" in feature_set:
+        from yeaboi.analysis.operational import run_operational
+
+        jobs.append(
+            (
+                "ops",
+                "ops",
+                (analysis_window_days,),
+                {"sub_sources": comps["ops"], "progress": progress_list},
+            )
+        )
+
     code = None
     docs = None
+    ops = None
     if jobs:
         from yeaboi.analysis.progress import append_component_progress
 
@@ -448,6 +484,8 @@ def run_team_analysis(
                     "code_health": "Analysing selected-user code-change health",
                 }
                 return [(f"code:{feature}", labels[feature]) for feature in selected_code_features]
+            elif kind == "ops":
+                return [("ops:operational", "Reading production")]
             else:
                 label = "Assessing documentation quality"
                 return [("docs:documentation", label)]
@@ -481,6 +519,8 @@ def run_team_analysis(
                     future = executor.submit(_guarded(_run_delivery, *args, **kwargs))
                 elif kind == "code":
                     future = executor.submit(_guarded(_run_ai_usage_component, *args, **kwargs))
+                elif kind == "ops":
+                    future = executor.submit(_guarded(run_operational, *args, **kwargs))
                 else:
                     future = executor.submit(_guarded(_run_doc_quality_component, *args, **kwargs))
                 futures[future] = (kind, key)
@@ -514,7 +554,7 @@ def run_team_analysis(
                         logger.warning("Delivery analysis failed for %s: %s", key, exc)
                         warnings.append(f"{_SOURCE_NAMES.get(key, key)} delivery analysis failed: {exc}")
                     else:
-                        label = "Code" if kind == "code" else "Docs"
+                        label = {"code": "Code", "ops": "Operations"}.get(kind, "Docs")
                         logger.warning("%s analysis failed: %s", label, exc)
                         warnings.append(f"{label} analysis failed: {exc}")
                     continue
@@ -525,6 +565,10 @@ def run_team_analysis(
                     signal, blob = result
                     if blob is not None:
                         code = {"signal": signal, "examples": blob}
+                elif kind == "ops":
+                    signal, blob = result
+                    if blob is not None:
+                        ops = {"signal": signal, "examples": blob}
                 else:
                     signal, blob = result
                     if signal is not None:
@@ -533,7 +577,7 @@ def run_team_analysis(
                 for component_id, label in _job_progress(kind, key):
                     lifecycle_status = "completed"
                     detail = ""
-                    if kind in {"code", "docs"}:
+                    if kind in {"code", "docs", "ops"}:
                         blob = result[1]
                         if blob is None:
                             lifecycle_status = "failed"
@@ -600,10 +644,10 @@ def run_team_analysis(
     for sub in delivery.values():
         warnings.extend(sub.get("warnings", []))
 
-    if not delivery and code is None and docs is None:
+    if not delivery and code is None and docs is None and ops is None:
         # Nothing produced a result. If literally nothing is selected/available,
         # raise the canonical "no tracker configured" error; else a softer message.
-        if not comps["delivery"] and not comps["code"] and not comps["docs"]:
+        if not any(comps.values()):
             _resolve_source("")  # raises
         raise ValueError("Nothing to analyse — no component produced a result (see warnings).")
 
@@ -618,6 +662,8 @@ def run_team_analysis(
             component_coverages["code_health"] = code_examples.get("coverage_report", {})
     if docs:
         component_coverages["documentation"] = docs.get("examples", {}).get("coverage_report", {})
+    if ops:
+        component_coverages["operational"] = ops.get("examples", {}).get("coverage_report", {})
     incomplete = any(report.get("status") in {"partial", "failed"} for report in component_coverages.values())
     for name, report in component_coverages.items():
         if report.get("status") in {"partial", "failed"}:
@@ -627,13 +673,14 @@ def run_team_analysis(
                 f"{report.get('inaccessible', 0)} inaccessible, {report.get('truncated', 0)} truncated."
             )
     all_actions: list[dict] = []
-    for payload in (code, docs):
+    for payload in (code, docs, ops):
         if payload:
             all_actions.extend(payload.get("examples", {}).get("action_plan", []))
     result = {
         "delivery": delivery,
         "code": code,
         "docs": docs,
+        "ops": ops,
         "comparison": _build_comparison(delivery) if len(ran) >= 2 else [],
         "components": comps,
         "analysis_features": features,

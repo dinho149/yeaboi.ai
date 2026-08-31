@@ -758,6 +758,144 @@ def _verify_notion(token: str) -> tuple[bool, str]:
         return False, _connection_error(e)
 
 
+def _verify_datadog(token: str, app_key: str, site: str = "") -> tuple[bool, str]:
+    """Verify a Datadog API key and application key against their site.
+
+    Two calls, because the two credentials fail in different places: the API key
+    is rejected by /v1/validate, while a bad *application* key only shows up on
+    a call that authorises something. Reporting either as "invalid Datadog
+    credentials" would send the user to re-cut the wrong one.
+    """
+    from yeaboi.connectors.datadog import api_base
+    from yeaboi.connectors.http import probe_status
+
+    base = api_base(site)
+    status, message = probe_status(
+        f"{base}/api/v1/validate",
+        headers={"DD-API-KEY": token},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+
+    # The API key is good. Now the application key, on the cheapest endpoint
+    # that actually requires one.
+    status, message = probe_status(
+        f"{base}/api/v1/monitor?page_size=1",
+        headers={"DD-API-KEY": token, "DD-APPLICATION-KEY": app_key},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, "API key verified, but the application key was rejected — check it has monitors_read"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Datadog verified"
+
+
+def _verify_grafana(base_url: str, token: str) -> tuple[bool, str]:
+    """Verify a Grafana service-account token against GET /api/org.
+
+    The host is the user's, so the request goes through the connector HTTP
+    guard: https only, and never an address on this machine or a private range.
+    """
+    from yeaboi.connectors.http import probe_status
+
+    status, message = probe_status(
+        f"{base_url.rstrip('/')}/api/org",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, "Reached the host, but it does not look like a Grafana API — check the base URL"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Grafana verified"
+
+
+def _verify_pagerduty(token: str) -> tuple[bool, str]:
+    """Verify a PagerDuty REST API key against GET /abilities — no scope needed."""
+    from yeaboi.connectors.http import probe_status
+
+    status, message = probe_status(
+        "https://api.pagerduty.com/abilities",
+        headers={
+            "Authorization": f"Token token={token}",
+            "Accept": "application/vnd.pagerduty+json;version=2",
+        },
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "PagerDuty verified"
+
+
+def _verify_incidentio(token: str) -> tuple[bool, str]:
+    """Verify an incident.io API key, and report the roles it carries.
+
+    ``/v1/identity`` names the key's roles, so the result can say what the key
+    may do rather than only that it authenticated — a key holding a write role
+    still verifies, but the user is told before they trust it.
+    """
+    from yeaboi.connectors.http import UnsafeUrlError, get_json
+    from yeaboi.connectors.incidentio import API_BASE
+
+    try:
+        resp = get_json(f"{API_BASE}/v1/identity", headers={"Authorization": f"Bearer {token}"})
+    except UnsafeUrlError as exc:
+        return False, str(exc)
+    except Exception as exc:
+        return False, _connection_error(exc)
+    if resp.status_code in (401, 403):
+        return False, INVALID_KEY
+    if resp.status_code != 200:
+        return False, f"Unexpected response: {resp.status_code}"
+    try:
+        roles = (resp.json() or {}).get("identity", {}).get("roles") or []
+    except Exception:
+        roles = []
+    named = ", ".join(str(r) for r in roles if r)
+    return True, f"incident.io verified \u2014 key roles: {named}" if named else "incident.io verified"
+
+
+def _verify_sentry(token: str, org: str, base_url: str = "") -> tuple[bool, str]:
+    """Verify a Sentry auth token against its organisation.
+
+    The org is a user-supplied path segment, so it is quoted rather than
+    interpolated — a slug with a slash in it must not reach another endpoint.
+    """
+    from urllib.parse import quote
+
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.sentry import api_base
+
+    slug = quote(org.strip().strip("/"), safe="")
+    if not slug:
+        return False, "Sentry needs an organisation slug"
+    status, message = probe_status(
+        f"{api_base(base_url)}/api/0/organizations/{slug}/",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Token accepted, but no organisation named {org!r} — check the slug, not the display name"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Sentry verified"
+
+
 def _verify_elevenlabs(token: str) -> tuple[bool, str]:
     """Verify an ElevenLabs API key against GET /v1/user — the cheapest authenticated endpoint."""
     try:

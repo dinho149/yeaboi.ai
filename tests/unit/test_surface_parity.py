@@ -336,6 +336,26 @@ CAPABILITIES: dict[str, dict] = {
         "skill": Exempt("TUI utility page"),
         "desktop": {"/settings/credentials", "/settings/sharing", "/settings/system", "/setup"},
     },
+    # The read-only connector layer. ONE row for the whole layer, not one per
+    # vendor: twelve rows would mean twelve tips, which is the crowding the
+    # layer exists to remove.
+    "connections": {
+        "engines": {
+            ("yeaboi.connectors.engine", "list_connections"),
+            ("yeaboi.connectors.engine", "fetch_ops_events"),
+        },
+        "mcp_tools": {"connections_list", "connections_fetch"},
+        "tui_mode": Exempt(
+            "a Settings tab, not a mode card — connecting a vendor is configuration, "
+            "and an eleventh card costs the welcome screen a row it does not have"
+        ),
+        "cli": {"connections"},
+        "skill": Exempt(
+            "connecting a vendor is a credential write at the user's own machine; an agent "
+            "reads the catalog with connections_list and cannot add one"
+        ),
+        "desktop": {"/settings/connections"},
+    },
     # Ceremonies are the clock other modes run on, not a mode of their own: the
     # engine fires a catalogued mode and delivers its output.
     "ceremonies": {
@@ -498,6 +518,8 @@ EXTRA_ENGINE_MODULES = {
 # Which engine entry point each engine-backed MCP tool wraps. Store-read tools
 # (standup_history, retro_history, sessions_*, team_*) have no pipeline pair.
 PARAM_PAIRS: dict[str, tuple[str, str]] = {
+    "connections_list": ("yeaboi.connectors.engine", "list_connections"),
+    "connections_fetch": ("yeaboi.connectors.engine", "fetch_ops_events"),
     "plan_generate": ("yeaboi.agent.headless", "run_planning_pipeline"),
     "standup_run": ("yeaboi.standup.engine", "run_standup"),
     "standup_review": ("yeaboi.standup.engine", "run_transcript_review"),
@@ -532,6 +554,9 @@ HIDDEN_ALWAYS = {"db_path", "today", "on_progress", "on_run_id", "on_agent_line"
 # Per-tool engine params deliberately not exposed on the MCP tool. Every entry
 # needs a reason; a stale entry (param gone from the engine) fails the tests.
 HIDDEN_PARAMS: dict[str, dict[str, str]] = {
+    "connections_fetch": {
+        "now": "clock injection seam for deterministic window tests — the same shape as `today`",
+    },
     "niko_ask": {
         "on_event": "caller-side stream callback — same shape as on_progress, meaningless on a wire",
         "cancel": "a threading.Event only a surface that owns the process can set",
@@ -663,7 +688,7 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "project link": set(),
     # --analysis-profile and --context are each one key of the engine's `defaults` dict.
     "project set-defaults": {"analysis_profile", "context"},
-    # delivery/code/docs are assembled into the engine's `components` dict (component
+    # delivery/code/docs/ops are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
         "format",
@@ -671,6 +696,7 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
         "delivery",
         "code",
         "docs",
+        "ops",
         "github_owner",
         "azdo_code_project",
         "confluence_space",

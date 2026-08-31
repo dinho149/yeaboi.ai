@@ -96,8 +96,26 @@ def connection_verify(app, request: Request) -> Response:
     from yeaboi.settings import engine
 
     kind = _required_str(payload, "kind")
-    fields = {k: "" if payload.get(k) is None else str(payload[k]) for k in ("token", "base_url", "email", "space_key")}
+    # The union of every kind's verify fields. A field a kind does not use is
+    # ignored by the engine, and one it needs but the caller omitted falls back
+    # to the stored value there.
+    accepted = ("token", "app_key", "base_url", "email", "space_key")
+    fields = {k: "" if payload.get(k) is None else str(payload[k]) for k in accepted}
     return json_response(engine.verify_connection(kind, fields))
+
+
+def connections_list(app, request: Request) -> Response:
+    """``GET /api/connections`` — the read-only integration catalog.
+
+    ``?all=1`` includes connectors that are not set up (the "add one" picker);
+    the default lists only what is connected. Never carries a field value —
+    each field reports whether it is set and nothing more.
+    """
+    from yeaboi.connectors.engine import list_connections
+
+    show_all = str(request.query.get("all", "")).strip().lower() in ("1", "true", "yes")
+    family = str(request.query.get("family", "") or "")
+    return json_response(list_connections(family=family, connected_only=not show_all))
 
 
 def access_state(app, request: Request) -> Response:

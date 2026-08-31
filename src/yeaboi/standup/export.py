@@ -259,7 +259,9 @@ def _runs(
 def _md_label(text: str) -> str:
     """Neutralise link-label syntax — tracker titles now travel inside ``[…]``,
     and an unescaped bracket or newline would corrupt the link."""
-    return text.replace("[", "\\[").replace("]", "\\]").replace("\n", " ")
+    from yeaboi.markdown_convert import md_label
+
+    return md_label(text)
 
 
 def _md_runs(runs: Sequence[Mapping]) -> str:
@@ -504,6 +506,25 @@ def build_standup_markdown(report: StandupReport) -> str:
                 lines.append(f"  - {claim_bits}")
             if card.recommended_action:
                 lines.append(f"  - _{_md_label(card.recommended_action)}_")
+
+    # Production after the conflicts, before the people: team-level state, and
+    # over a wider window than the rest of this document — which the heading
+    # says, so nobody reads a fortnight's incidents as today's.
+    ops_signals = getattr(report, "ops_signals", ()) or ()
+    if ops_signals:
+        from yeaboi.standup import ops as standup_ops
+
+        window = ops_signals[0].window_start[:10]
+        lines += ["", f"## Production (since {window})" if window else "## Production", ""]
+        for signal in ops_signals:
+            # Every string here is vendor text an outsider can author (a monitor
+            # name travels in `samples`), and this Markdown lands on
+            # Notion/Confluence/Slack where `[x](url)` becomes a live link.
+            lines.append(f"- {_md_label(standup_ops.signal_line(signal))}")
+            for sample in signal.samples[:3]:
+                lines.append(f"  - {_md_label(sample)}")
+        lines.append("")
+        lines.append("_Team-wide; not attributed to anyone._")
 
     # Zero-activity members compress to one shared line after the sections: a
     # full section per quiet member said "No activity detected" three ways each.
@@ -907,6 +928,8 @@ def standup_export_args(
         nav.append(("summary", "Team Summary"))
     if getattr(report, "conflicts", ()):
         nav.append(("conflicts", "Conflicts"))
+    if getattr(report, "ops_signals", ()):
+        nav.append(("production", "Production"))
     nav.append(("updates", "Updates"))
     if images:
         nav.append(("screenshots", "Screenshots"))
@@ -987,6 +1010,24 @@ def standup_export_args(
                     "members": list(card.members),
                 }
                 for card in getattr(report, "conflicts", ()) or ()
+            ],
+            # What production did, over its own wider window. Counts, words and
+            # bounded titles — no body, no metric series, and no person: an
+            # OpsSignal has no field one could ride in. `window` is carried per
+            # signal so the page can say what the numbers measured.
+            "production": [
+                {
+                    "kind": signal.kind,
+                    "source": signal.source,
+                    "family": signal.family,
+                    "count": signal.count,
+                    "resolved": signal.resolved,
+                    "severity": signal.severity,
+                    "services": list(signal.services),
+                    "samples": list(signal.samples),
+                    "window": {"start": signal.window_start, "end": signal.window_end},
+                }
+                for signal in getattr(report, "ops_signals", ()) or ()
             ],
             "images": images,
             "trend": trend(

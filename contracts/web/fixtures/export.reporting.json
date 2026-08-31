@@ -66,6 +66,27 @@
         "48"
       ]
     ],
+    "production": [
+      {
+        "count": 2,
+        "family": "incidents",
+        "kind": "incident",
+        "resolved": 1,
+        "samples": [
+          "Checkout latency",
+          "Payments timeout"
+        ],
+        "services": [
+          "checkout"
+        ],
+        "severity": "high",
+        "source": "pagerduty",
+        "window": {
+          "end": "2026-07-13T23:59:59+00:00",
+          "start": "2026-06-15T00:00:00+00:00"
+        }
+      }
+    ],
     "summary": "We shipped SSO. Checkout got materially faster for everyone.",
     "themes": [
       {

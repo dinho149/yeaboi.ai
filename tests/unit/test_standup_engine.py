@@ -6,6 +6,7 @@ from datetime import date, datetime
 import pytest
 
 from yeaboi.agent.state import MemberUpdate, StandupGap, TranscriptClaim, TranscriptReview
+from yeaboi.ops.events import OpsEvent
 from yeaboi.sessions import SessionStore
 from yeaboi.standup import engine
 from yeaboi.standup.collector import ActivityBundle
@@ -2937,3 +2938,164 @@ class TestStandupContextDeps:
             )
         state = self._run(monkeypatch, db_path, context_deps=["plan"])
         assert state.get("sprint_length_weeks") == 3
+
+
+class TestProductionReachesTheRun:
+    """Ops in the standup, and — the load-bearing half — ops absent from it."""
+
+    ITEMS = [
+        {
+            "author": "Alice",
+            "kind": "issue",
+            "key": "YEA-12",
+            "status": "Done",
+            "title": "auth epic",
+            "source": "jira",
+            "url": "https://j/12",
+        },
+    ]
+
+    EVENT = OpsEvent(
+        kind="incident",
+        source="pagerduty",
+        ref="PD-4821",
+        title="YEA-12 checkout is down",
+        service="checkout",
+        severity="high",
+        status="triggered",
+        started_at="2026-07-09T09:00:00Z",
+        url="https://pd/4821",
+    )
+
+    def _connect(self, monkeypatch, *, events=(), errors=()):
+        from yeaboi.connectors.fetching import Gathered, SourceResult
+        from yeaboi.ops.signals import roll_up
+
+        sources = [SourceResult(key="pagerduty", label="PagerDuty", family="incidents", ok=True, count=len(events))]
+        sources += [SourceResult(key=k, label=k.title(), error=msg) for k, msg in errors]
+        gathered = Gathered(
+            since="14d",
+            window_start="2026-06-26T00:00:00+00:00",
+            window_end="2026-07-10T00:00:00+00:00",
+            sources=tuple(sources),
+            events=tuple(events),
+            signals=roll_up(
+                tuple(events),
+                window_start="2026-06-26T00:00:00+00:00",
+                window_end="2026-07-10T00:00:00+00:00",
+            ),
+        )
+        monkeypatch.setattr("yeaboi.standup.ops.connected", lambda: True)
+        monkeypatch.setattr("yeaboi.connectors.fetching.gather", lambda **kw: gathered)
+
+    def test_nothing_connected_never_reaches_a_vendor(self, monkeypatch, db_path, seeded_session):
+        # The §0 invariant at the engine: with no ops vendor connected there is
+        # no fetch, no signal, and no phase announced for work not happening.
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        monkeypatch.setattr("yeaboi.standup.ops.connected", lambda: False)
+
+        def _never(**kwargs):
+            raise AssertionError("a vendor was contacted with nothing connected")
+
+        monkeypatch.setattr("yeaboi.connectors.fetching.gather", _never)
+        phases: list[str] = []
+        report = engine.run_standup(
+            seeded_session,
+            deliver=False,
+            db_path=db_path,
+            today=date(2026, 7, 10),
+            on_progress=phases.append,
+        )
+        assert report.ops_signals == ()
+        assert not any("Production" in p for p in phases)
+
+    def test_signals_land_on_the_report(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        self._connect(monkeypatch, events=(self.EVENT,))
+
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        (signal,) = report.ops_signals
+        assert (signal.kind, signal.source, signal.count) == ("incident", "pagerduty", 1)
+        assert signal.window_start == "2026-06-26T00:00:00+00:00"
+
+    def test_a_live_incident_on_a_done_ticket_earns_a_card(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        self._connect(monkeypatch, events=(self.EVENT,))
+
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        (card,) = report.conflicts
+        assert card.entity_id == "YEA-12"
+        assert card.fingerprint.endswith(":ops_conflict")
+        # Nobody is on the hook for an alert firing.
+        assert card.members == ()
+
+    def test_the_roll_up_is_chained_with_its_handles(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        self._connect(monkeypatch, events=(self.EVENT,))
+
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        from yeaboi.provenance import ProvenanceChain
+
+        with ProvenanceChain(db_path) as chain:
+            assert chain.verify().valid is True
+            record = chain.get("standup:2026-07-10:production:pagerduty:incident")
+            assert record is not None
+            assert record.inputs == ("pagerduty:PD-4821",)
+
+    def test_a_connected_vendor_that_failed_is_a_notice(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        self._connect(monkeypatch, events=(), errors=[("datadog", "rate limited — try a shorter window")])
+
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert any("Datadog: rate limited" in w for w in report.warnings)
+
+    def test_an_ops_failure_never_costs_the_standup(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("jira", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        monkeypatch.setattr("yeaboi.standup.ops.connected", lambda: True)
+
+        def _boom(**kwargs):
+            raise RuntimeError("network is down")
+
+        monkeypatch.setattr("yeaboi.connectors.fetching.gather", _boom)
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert report.ops_signals == ()
+        assert report.member_updates
+
+    def test_production_never_enters_the_member_payload(self, monkeypatch, db_path, seeded_session):
+        # _for_llm is the member evidence path; an ops event has no author to
+        # belong to, so it must reach the model only as its own top-level block.
+        _patch_common(monkeypatch, items=self.ITEMS, counts=[("jira", 1)])
+        self._connect(monkeypatch, events=(self.EVENT,))
+        captured: dict = {}
+
+        def _fake_prompt(**kwargs):
+            captured.update(kwargs)
+            return "prompt"
+
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (True, ""))
+        monkeypatch.setattr("yeaboi.prompts.standup.get_standup_summary_prompt", _fake_prompt)
+        monkeypatch.setattr(
+            "yeaboi.agent.llm.invoke_json",
+            lambda *a, **k: type("R", (), {"content": '{"members": [], "team_summary": "ok"}'})(),
+        )
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+
+        assert captured["production"] == [
+            {
+                "kind": "incident",
+                "source": "pagerduty",
+                "count": 1,
+                "resolved": 0,
+                "worst_severity": "high",
+                "services": ["checkout"],
+                "examples": ["YEA-12 checkout is down"],
+            }
+        ]
+        assert captured["production_window"] == "the last 14 days"
+        assert "pagerduty" not in json.dumps(captured["members"])

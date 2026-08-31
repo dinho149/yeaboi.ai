@@ -569,12 +569,13 @@ def _build_team_analysis_screen(
 # Component picker — order + friendly labels. Each component runs over its OWN
 # sub-sources (a ragged grid: different columns per row). ``_COMPONENT_LABELS`` keeps
 # the "Name — description" form for back-compat; the picker splits it on the em dash.
-_COMPONENT_KEYS: tuple[str, ...] = ("delivery", "code", "docs")
-_COMPONENT_NAMES: dict[str, str] = {"delivery": "Delivery", "code": "Code", "docs": "Docs"}
+_COMPONENT_KEYS: tuple[str, ...] = ("delivery", "code", "docs", "ops")
+_COMPONENT_NAMES: dict[str, str] = {"delivery": "Delivery", "code": "Code", "docs": "Docs", "ops": "Operations"}
 _COMPONENT_DESCS: dict[str, str] = {
     "delivery": "velocity, calibration, contributors",
     "code": "AI footprint + repository health",
     "docs": "clarity + usefulness + ownership",
+    "ops": "incident and alert rate, team-wide",
 }
 _COMPONENT_LABELS: dict[str, str] = {k: f"{_COMPONENT_NAMES[k]} — {_COMPONENT_DESCS[k]}" for k in _COMPONENT_KEYS}
 _SUBSOURCE_TITLES: dict[str, str] = {
@@ -586,17 +587,40 @@ _SUBSOURCE_TITLES: dict[str, str] = {
     "confluence": "Confluence",
     "notion": "Notion",
 }
+
+
+def _subsource_title(key: str) -> str:
+    """The display name for one sub-source, ops connectors included.
+
+    Ops labels come from the connector registry rather than a second table here,
+    so a connector added later is named correctly without an edit in this file.
+    """
+    if key in _SUBSOURCE_TITLES:
+        return _SUBSOURCE_TITLES[key]
+    try:
+        from yeaboi.connectors import registry
+
+        connector = registry.by_key(key)
+        if connector is not None:
+            return connector.label
+    except Exception:
+        pass
+    return key
+
+
 _ANALYSIS_FEATURE_KEYS: tuple[str, ...] = (
     "delivery",
     "ai_footprint",
     "code_health",
     "documentation",
+    "operational",
 )
 _ANALYSIS_FEATURE_LABELS: dict[str, tuple[str, str]] = {
     "delivery": ("Delivery", "velocity, estimation, workflow, and team patterns"),
     "ai_footprint": ("AI footprint", "detectable AI markers in selected-user commits and PRs"),
     "code_health": ("Code health", "health of files changed by the selected users"),
     "documentation": ("Documentation", "clarity, usefulness, structure, and ownership"),
+    "operational": ("Operations", "incident and alert rate over the window — team-wide, never per person"),
 }
 
 # Elevated-surface background for the analysis setup/review cards and the whole
@@ -817,7 +841,7 @@ def _build_component_select_screen(
             if is_checked:
                 n_checked += 1
                 total_selected += 1
-            name = _SUBSOURCE_TITLES.get(s, s)
+            name = _subsource_title(s)
             source_rows.append(
                 _analysis_toggle_row(
                     name,
@@ -1107,7 +1131,7 @@ def _build_analysis_setup_review_screen(
 
     feature_names = [_ANALYSIS_FEATURE_LABELS[key][0] for key in features]
     source_names = [
-        _SUBSOURCE_TITLES.get(source, source)
+        _subsource_title(source)
         for component in ("delivery", "code", "docs")
         for source in components.get(component, [])
     ]
@@ -6674,12 +6698,16 @@ class _EditableRow(Text):
 
 # Settings is a tabbed view. A few broad tabs group the config; this order drives
 # both the tab bar and the loop's Enter action (see settings_tab_action).
-_SETTINGS_TABS: list[str] = ["Credentials", "Sharing", "System"]
+_SETTINGS_TABS: list[str] = ["Credentials", "Connections", "Sharing", "System"]
 
 # The heading sections each tab renders, in order. Storage is one row, so it
 # lives under System rather than owning a tab of its own.
 _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
     "Credentials": ["provider", "jira", "azure", "github", "notion", "slack"],
+    # Connections is its own tab: the catalog is what a user scans to answer
+    # "what does yeaboi already see", and burying it under Credentials would put
+    # it behind the one thing that is not optional.
+    "Connections": ["connections"],
     # AWS credentials used to live here; they moved beside the provider that uses
     # them, so Bedrock has no section of its own any more.
     # Sharing is its own tab, not a System section: who can open a shared
@@ -6693,7 +6721,7 @@ _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
 # These carry token-help sub-lines (a creation URL + a scope sentence) that a
 # half-width column would ellipsize away — same reasoning as the Usage dashboard's
 # ``wide`` sections (see _build_usage_screen).
-_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion", "slack"}
+_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion", "slack", "connections"}
 
 # Absolute rows the tab bar occupies (labels + underline), for click hit-testing.
 # The header above it is fixed height: top border + top pad + blank + title (2
@@ -6754,6 +6782,22 @@ ANTHROPIC_OAUTH_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 # The subscription row hands the terminal to `claude setup-token` and writes back
 # whatever token it prints (see _s_begin_edit).
 SETTINGS_ACTION_ENVS: frozenset[str] = frozenset({ANTHROPIC_OAUTH_ENV})
+
+
+def _connector_choices() -> dict[str, tuple[str, ...]]:
+    """``env -> options`` for every connector field that offers a choice."""
+    from yeaboi.connectors import registry
+
+    return {f.env: f.choices for c in registry.all_connectors() for f in c.fields if f.choices}
+
+
+def _connector_choice_defaults() -> dict[str, str]:
+    """``env -> the option an unset connector field behaves as``."""
+    from yeaboi.connectors import registry
+
+    return {f.env: f.default for c in registry.all_connectors() for f in c.fields if f.choices}
+
+
 SETTINGS_CHOICES: dict[str, tuple[str, ...]] = {
     "TIPS_ENABLED": ("true", "false"),
     "DUCK_ENABLED": ("true", "false"),
@@ -6768,6 +6812,9 @@ SETTINGS_CHOICES: dict[str, tuple[str, ...]] = {
     "LOG_LEVEL": VALID_LOG_LEVELS,
     "LLM_PROVIDER": LLM_PROVIDERS,
     "ANTHROPIC_AUTH_MODE": ANTHROPIC_AUTH_MODES,
+    # Connector choice fields, derived: a descriptor is the only place a
+    # connector's options are named, so a new one cycles here without an edit.
+    **_connector_choices(),
 }
 
 # How a stored choice is spelled on the row, where the two differ. Nobody wants to
@@ -6800,6 +6847,7 @@ SETTINGS_CHOICE_DEFAULTS: dict[str, str] = {
     # Matches agent/llm.py's own default when LLM_PROVIDER is unset.
     "LLM_PROVIDER": "anthropic",
     "ANTHROPIC_AUTH_MODE": "api_key",
+    **_connector_choice_defaults(),
 }
 
 
@@ -6841,14 +6889,21 @@ _TAB_GAP = 3  # spaces between tab labels
 
 def settings_tab_action(active_tab: int) -> str:
     """Return what Enter does on a settings tab: 'loglevel' (System → cycles the log
-    level), 'sharing' (Sharing → the Cloudflare Access wizard) or 'setup'
-    (Credentials → wizard). The data directory is no longer a tab action — it's
-    the Storage box's row, opened like any other value."""
+    level), 'sharing' (Sharing → the Cloudflare Access wizard), 'connections'
+    (Connections → names the command that adds one) or 'setup' (Credentials →
+    wizard). The data directory is no longer a tab action — it's the Storage
+    box's row, opened like any other value.
+
+    Every tab names itself here. The fallthrough is Credentials' wizard, and a
+    tab that forgets to answer would silently inherit it — which is the wrong
+    flow everywhere except the tab that asked for it."""
     label = _SETTINGS_TABS[active_tab] if 0 <= active_tab < len(_SETTINGS_TABS) else ""
     if label == "System":
         return "loglevel"
     if label == "Sharing":
         return "sharing"
+    if label == "Connections":
+        return "connections"
     return "setup"
 
 
@@ -7549,6 +7604,46 @@ def _build_settings_screen(
                 env="CLOUDFLARE_ACCESS_ADMIN_EMAILS",
             )
 
+    def _sec_connections() -> None:
+        """The connector catalog: what is connected, and one way to add more.
+
+        Derived from the connector registry, so a new vendor needs no builder of
+        its own. A connector the user has not set up contributes NO rows — that
+        is "hidden until connected", and it is why this section can legitimately
+        render empty.
+        """
+        from yeaboi.connectors import registry as _creg
+        from yeaboi.connectors.spec import FAMILY_LABELS
+
+        _linked = [c for c in _creg.all_connectors() if all(config_data.get(e, "") for e in c.required_envs)]
+        _heading("Connections", wide=True)
+        if not _linked:
+            hint = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+            hint.append("Nothing connected yet", style=theme.muted)
+            _cur.append(hint)
+        for _c in _linked:
+            head = Text(justify="left", no_wrap=True, overflow="ellipsis")
+            # Each connector wears its own accent, so a catalog of several reads
+            # as several things rather than one wall of rows. Falls back to the
+            # theme when a descriptor names no accent.
+            head.append(f"{_c.mark} {_c.label}", style=f"bold {_c.accent or theme.value}")
+            head.append(f"  {FAMILY_LABELS.get(_c.family, _c.family)}", style=theme.dim)
+            if _c.read_only:
+                head.append("  read-only", style=theme.muted)
+            _cur.append(head)
+            if _c.summary:
+                # What it does, not just what it is called — a catalog of names
+                # is a list of things to look up elsewhere.
+                _sum = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+                _sum.append(_c.summary, style=theme.muted)
+                _cur.append(_sum)
+            for _f in _c.fields:
+                _row(f"  {_f.label}", config_data.get(_f.env, ""), masked=_f.secret, env=_f.env)
+        add = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+        add.append("\u21b3 add: ", style=theme.muted)
+        add.append("yeaboi connections add <name>", style=theme.dim)
+        _cur.append(add)
+
     _builders = {
         "provider": _sec_provider,
         "jira": _sec_jira,
@@ -7556,6 +7651,7 @@ def _build_settings_screen(
         "github": _sec_github,
         "notion": _sec_notion,
         "slack": _sec_slack,
+        "connections": _sec_connections,
         "storage": _sec_storage,
         "standup": _sec_standup,
         "voice": _sec_voice,
@@ -7744,9 +7840,13 @@ def _build_settings_screen(
         viewport_renderable = Group(*padded_lines)
 
     # Context hint replaces the old button row: the tab bar is the navigation now.
-    _enter_label = {"loglevel": "cycle log level", "sharing": "set up sharing"}.get(
-        settings_tab_action(active_tab), "configure"
-    )
+    # An empty label means the tab has no tab-level action, so the hint does not
+    # offer Enter at all — better than naming a key that does nothing.
+    _enter_label = {
+        "loglevel": "cycle log level",
+        "sharing": "set up sharing",
+        "connections": "",
+    }.get(settings_tab_action(active_tab), "configure")
     hint = Text(justify="left", no_wrap=True)  # drawn inside a chrome tab, so no body pad
     if editing is not None:
         # In-place edit mode: keys go to the field being edited.
@@ -7774,9 +7874,11 @@ def _build_settings_screen(
         hint.append("←/→", style=theme.accent)
         hint.append("  switch tab  ·  ", style=theme.muted)
         hint.append("↓", style=theme.accent)
-        hint.append("  sections  ·  ", style=theme.muted)
-        hint.append("Enter", style=theme.accent)
-        hint.append(f"  {_enter_label}", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
+        hint.append("  sections", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
+        if _enter_label:
+            hint.append("  ·  ", style=theme.muted)
+            hint.append("Enter", style=theme.accent)
+            hint.append(f"  {_enter_label}", style=theme.muted)
 
     content = Group(
         Text(""),

@@ -106,6 +106,16 @@ def format_report_rich(report: DeliveryReport, *, accent: str = _ACCENT) -> Grou
         if sentence:
             body.append(Text(f"🧾 {sentence} (reference only)", style="dim"))
             body.append(Text(""))
+    # Its own line, never appended to the corroboration one above: the two make
+    # different claims and a reader who runs them together learns the wrong thing.
+    if getattr(report, "ops_signals", ()):
+        from yeaboi.reporting.context import OPS_EMOJI, ops_sentence
+
+        sentence = ops_sentence(report.ops_signals)
+        if sentence:
+            body.append(Text(f"{OPS_EMOJI} Production", style=f"bold {accent}"))
+            body.append(Text(f"  {sentence}."))
+            body.append(Text(""))
     if report.executive_summary:
         body.append(Text(f"{_emoji(report, 'summary')}Executive summary", style=f"bold {accent}"))
         body.append(Text(f"  {report.executive_summary}"))

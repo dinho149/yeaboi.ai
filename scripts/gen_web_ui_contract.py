@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 OUTPUT = Path(__file__).resolve().parent.parent / "contracts" / "web" / "ui.json"
 
 #: Bumped when a *key* is added or changes meaning — not when a value moves.
-SCHEMA = 1
+SCHEMA = 2
 
 
 def _accents() -> list[str]:
@@ -64,6 +64,19 @@ def _accents() -> list[str]:
     return sorted(accents)
 
 
+def _connector_accents() -> list[str]:
+    """Every connector key the front end must own an identity for.
+
+    Identifiers, never colours: the page's mark and accent live in the front
+    end's own files, and this list is what its tests assert against — so a
+    connector cannot reach the browser unstyled, and a removed one cannot leave
+    a rule behind.
+    """
+    from yeaboi.connectors import registry
+
+    return sorted(registry.accents())
+
+
 def render() -> str:
     """Build the full contents of ``contracts/web/ui.json``."""
     document = {
@@ -71,6 +84,9 @@ def render() -> str:
         "$generated_by": "scripts/gen_web_ui_contract.py",
         # Each needs a `[data-mode="<accent>"]` block in design/tokens.css.
         "accent_modes": _accents(),
+        # Each needs a `[data-connector="<key>"]` block and an icon in the
+        # front end's connector set.
+        "connector_accents": _connector_accents(),
         "timing": {
             # The server already delays a refused poll this long, so the
             # browser's parked-request threshold must exceed it.

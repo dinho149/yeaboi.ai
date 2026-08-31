@@ -90,7 +90,8 @@ over this wire. Writes are allowlisted to the engine's field registry
 | POST | `/api/settings/data-dir` | body `{value, move?: bool}` → same write shape with `restart_required: true` |
 | POST | `/api/settings/provider/verify` | body `{provider, credential, model?}` → `{ok, message}` (network, up to ~8s) |
 | POST | `/api/settings/provider/models` | body `{provider, credential}` → `{models, default, hints}` (discovered-first merge) |
-| POST | `/api/settings/connection/verify` | body `{kind: github\|jira\|confluence\|notion\|elevenlabs\|tavus, token?, base_url?, email?, space_key?}` → `{ok, message}`; omitted fields fall back to saved values, so a stored credential can be re-checked without echoing it — but a stored token only travels to the stored host: a caller-supplied `base_url`/`email` requires `token` in the same request, and a supplied `base_url` must be https (400 otherwise; network, up to ~10s) |
+| POST | `/api/settings/connection/verify` | body `{kind: github\|jira\|confluence\|notion\|elevenlabs\|tavus\|datadog, token?, app_key?, base_url?, email?, space_key?}` → `{ok, message}`; omitted fields fall back to saved values, so a stored credential can be re-checked without echoing it — but a stored token only travels to the stored host: a caller-supplied `base_url`/`email` requires `token` in the same request, and a supplied `base_url` must be https (400 otherwise; network, up to ~10s) |
+| GET | `/api/connections` | the read-only integration catalog: `{connectors: [{key, label, summary, detail, family, family_label, section, connected, read_only, docs_url, glyph, accent, verify_kind, fields: [{env, label, secret, required, is_set, choices, default, placeholder, hint, help_url, help_scope}]}], families, connected}`. `?all=1` includes connectors that are not set up (the "add one" picker); the default lists only what is connected. **Never carries a field value** — a field reports only whether it is set |
 | GET | `/api/settings/access/state` | the Cloudflare Access doctor, offline: `{logged_in, cert_path, jwt_installed, missing_keys}`. Cheap by construction — it does **not** resolve the cloudflared binary, because doing so downloads ~38 MB on first use and re-hashes the cached copy every call; a missing binary surfaces from the share itself |
 | POST | `/api/settings/access/verify` | no body → `{ok, message}`. Runs the same preflight a board runs before publishing (`assume_mode`, so it answers before Share Mode is switched on); fetches the team's JWKS, so up to a few seconds of network |
 | POST | `/api/settings/signin/start` | spawn `claude setup-token` → `{started, message}` |
@@ -255,9 +256,12 @@ The **standup dashboard** is
 `{session_id, session_name, my_name, run_id, history, cards: [{key, title, member}], report, config, schedule, review, nudge, gap_issues, active: [name]}`.
 `history` is the saved-runs hub — every run this session has done, newest first.
 `cards` is the card vocabulary both surfaces share: `summary`, `my_update`,
-`team`, `member:<name>`, `conflicts`, `activity`, `gaps`, `schedule`,
-`notices` — computed per report, because a card with nothing in it would
-advertise a feature rather than report a result. `active` names the members
+`team`, `member:<name>`, `conflicts`, `production`, `activity`, `gaps`,
+`schedule`, `notices` — computed per report, because a card with nothing in it
+would advertise a feature rather than report a result. `production` carries
+`report.ops_signals`: bounded per-source counts over a WIDER window than the
+rest of the report, each signal stating its own `window_start`/`window_end`,
+and attributable to nobody — an ops signal has no author field to carry one. `active` names the members
 with attributed activity; a report saved before activity counts existed falls
 back to its summary text rather than reading as all-quiet.
 
@@ -273,8 +277,12 @@ second thing to drift. It carries the answers so far plus `model_offered`
 (whether a local model can be picked — the caller owns that probe).
 
 **Analysis options** is
-`{grid: {delivery, code, docs}, features: [{key, label}], features_available,
+`{grid: {delivery, code, docs, ops}, features: [{key, label}], features_available,
 steps, depths, default_depth, window_presets, default_window_days}`.
+The `ops` row is the connected monitoring connectors, so it is empty on every
+machine that has never connected one — which is what makes the `operational`
+feature unselectable rather than merely disappointing. Its result is team-wide
+counts and a per-30-day rate, never anything attributable to a person.
 The run body is the wizard's answers:
 `{source?, project_key?, team_name?, sprint_count?, features?, components?,
 members_map?, analysis_scope?, depth?, window_days?, model?}`.
@@ -431,6 +439,14 @@ context). The standup run needs neither field — its session is the scope (an
 unlinked session runs team-wide, exactly as before projects existed), and its
 toggles live in the session's saved standup config (`standup_config_set`'s
 `context_deps`).
+
+A delivery report carries `production`: one row per ops roll-up over the
+report's **own** period (`kind`, `source`, `family`, `count`, `resolved`,
+`severity`, `services`, `samples`, `window`) — the same row shape the standup
+payload uses, so one component draws both. Empty unless an ops vendor is
+connected, and never folded into the supporting-signals corroboration sentence:
+an incident qualifies delivery rather than supporting it. The deck's Production
+slide is an ordinary `list` slide, dropped by `include_production: false`.
 
 `/api/reporting/fit` answers `{extra_slides, style}`. `extra_slides: 0` means
 there is nothing to ask — the style that comes back is the one to export with.

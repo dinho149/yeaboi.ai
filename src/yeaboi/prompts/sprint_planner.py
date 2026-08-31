@@ -50,6 +50,7 @@ def get_sprint_planner_prompt(
     team_calibration: str = "",
     ceremony_history: str = "",
     performance_context: str = "",
+    production_context: str = "",
     review_feedback: str | None = None,
     review_mode: str | None = None,
     previous_output: str | None = None,
@@ -79,6 +80,10 @@ def get_sprint_planner_prompt(
         enforce_target: When True, the user explicitly chose to keep their target despite
             a capacity overflow warning. The prompt treats the target as a hard deadline
             constraint — sprints may exceed velocity to fit all stories.
+        production_context: Recent incident/alert load as prose (planner only —
+            the analyzer's output feeds feature generation, and a feature invented
+            from an incident is a story nobody asked for). Never an input to
+            capacity arithmetic; "" when no ops vendor is connected.
         review_feedback: User feedback from a previous review (reject/edit).
         review_mode: "reject" or "edit" — controls how feedback is framed.
         previous_output: Previous output text for edit mode reference.
@@ -195,6 +200,25 @@ def get_sprint_planner_prompt(
         else ""
     )
 
+    # Production load — prose, and prose the model may not compute with. Present
+    # or absent, never empty: a model told about an empty section narrates the
+    # emptiness, and "production has been stable" is a claim about a baseline
+    # this tool does not have.
+    production_section = (
+        (
+            "## Production Load\n\n"
+            "What the connected monitoring tools saw recently, team-wide and attributable to "
+            "nobody. Treat it as a REASON TO LEAVE HEADROOM, never as an input to arithmetic: "
+            "do not change the velocity, do not reduce any sprint's capacity_points because of "
+            "it, and do not create, rename or re-scope stories from it — a monitor firing is not "
+            "a backlog item. It may inform the sprint GOAL wording only where a service named "
+            "below is one this plan touches. Say nothing about production being quiet or stable.\n\n"
+            f"{production_context}\n\n"
+        )
+        if production_context
+        else ""
+    )
+
     base = (
         "You are a Senior Scrum Master with expertise in sprint planning and capacity allocation.\n\n"
         "## Project Context\n\n"
@@ -206,6 +230,7 @@ def get_sprint_planner_prompt(
         f"{stories_block}\n\n"
         + ceremony_section
         + performance_section
+        + production_section
         + (team_calibration + "\n" if team_calibration else "")
         + "## Task\n\n"
         "Allocate ALL stories above into sprints. Return a JSON array matching this exact schema:\n\n"

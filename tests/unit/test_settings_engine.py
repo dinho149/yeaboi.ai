@@ -319,16 +319,27 @@ class TestTuiParity:
                 return {elt.value for elt in node.value.elts if isinstance(elt, ast.Constant)}
         pytest.fail("_collect_settings_data no longer assigns _keys — update this parser")
 
+    def _tui_env_inventory(self) -> set[str]:
+        """Every env the page collects: the literal `_keys` plus the registry's.
+
+        Connector envs are derived at the call site rather than listed, so the
+        AST parser above cannot see them — they are added here from the same
+        source the page reads.
+        """
+        from yeaboi.connectors import registry
+
+        return self._tui_collected_keys() | set(registry.all_envs())
+
     def test_every_tui_collected_env_is_an_engine_field(self):
         engine_envs = {f.env for f in engine._fields()}
-        missing = self._tui_collected_keys() - engine_envs
+        missing = self._tui_env_inventory() - engine_envs
         assert not missing, f"TUI settings page collects envs the engine registry lacks: {sorted(missing)}"
 
     def test_engine_only_fields_are_the_known_extras(self):
         # VOICE_INSTALL_OFFER is rendered by the TUI from config rather than the
         # collected env list; anything else engine-only is drift.
         engine_envs = {f.env for f in engine._fields()}
-        extras = engine_envs - self._tui_collected_keys()
+        extras = engine_envs - self._tui_env_inventory()
         assert extras == {"VOICE_INSTALL_OFFER"}, (
             f"engine registry grew envs the TUI page never shows: {sorted(extras)}"
         )

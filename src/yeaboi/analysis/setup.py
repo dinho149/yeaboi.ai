@@ -18,10 +18,16 @@ FEATURES: dict[str, str] = {
     "ai_footprint": "AI footprint",
     "code_health": "Code health",
     "documentation": "Documentation",
+    "operational": "Operations",
 }
 
 #: Features that read code, and so need a Code component and a change window.
 CODE_FEATURES: frozenset[str] = frozenset({"ai_footprint", "code_health"})
+
+#: Features that read a window rather than a board. Analysis is the only mode
+#: whose window is wide enough for ops to support a rate rather than an
+#: anecdote, which is why the feature exists here and nowhere else.
+WINDOW_FEATURES: frozenset[str] = CODE_FEATURES | {"documentation", "operational"}
 
 #: The steps a wizard walks, in order.
 STEPS: tuple[str, ...] = (
@@ -135,12 +141,27 @@ def available_doc_sources() -> list[str]:
     return out
 
 
+def available_ops_sources() -> list[str]:
+    """Which ops connectors are connected AND have something to gather.
+
+    Empty on every machine that has never connected one, which is what keeps
+    the Operations feature unselectable rather than merely disappointing.
+    """
+    try:
+        from yeaboi.connectors import registry
+
+        return [c.key for c in registry.all_connectors() if c.fetch and registry.is_connected(c)]
+    except Exception:
+        return []
+
+
 def available_grid() -> dict[str, list[str]]:
     """Component → the sub-sources this machine is configured to offer."""
     return {
         "delivery": available_trackers(),
         "code": offerable_code_sources(),
         "docs": available_doc_sources(),
+        "ops": available_ops_sources(),
     }
 
 
@@ -151,6 +172,7 @@ def filtered_grid(grid: dict[str, list[str]], features) -> dict[str, list[str]]:
         "delivery": grid.get("delivery", []) if "delivery" in chosen else [],
         "code": grid.get("code", []) if chosen & CODE_FEATURES else [],
         "docs": grid.get("docs", []) if "documentation" in chosen else [],
+        "ops": grid.get("ops", []) if "operational" in chosen else [],
     }
 
 
@@ -192,7 +214,7 @@ def step_applies(
     if step == "model":
         return effective_depth(depth, features) == "deep" and model_offered
     if step == "window":
-        return bool(chosen & (CODE_FEATURES | {"documentation"}))
+        return bool(chosen & WINDOW_FEATURES)
     if step == "members":
         return not solo and bool(chosen & (CODE_FEATURES | {"delivery"}))
     return False

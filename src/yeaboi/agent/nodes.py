@@ -6639,6 +6639,39 @@ def _effective_analysis_profile_id(state) -> str:
     return pid
 
 
+#: How far back the planner's production note looks. Wider than a sprint on
+#: purpose: an incident rate is the thing that bears on capacity, and one
+#: sprint's worth of incidents is a mood, not a rate.
+_OPS_PLANNING_WINDOW_DAYS = 30
+
+
+def _gather_ops_summary() -> str:
+    """Production over the last month as a markdown block ('' when unused).
+
+    Prose only, and prose the planner is told to treat as a constraint it may
+    not compute with. Nothing here touches velocity, capacity or confidence:
+    silently haircutting a sprint because Datadog was chatty is exactly the
+    behaviour the conflicts vocabulary was written to replace.
+    """
+    try:
+        from yeaboi.connectors import registry
+
+        if not registry.any_fetchable():
+            return ""
+        from yeaboi.connectors.fetching import gather
+        from yeaboi.ops.signals import describe
+
+        result = gather(since=f"{_OPS_PLANNING_WINDOW_DAYS}d")
+        if not result.signals:
+            return ""
+        lines = [f"Over the last {_OPS_PLANNING_WINDOW_DAYS} days, the connected monitoring tools saw:"]
+        lines += [f"- {describe(sig)}" for sig in result.signals]
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001 — production context is best-effort
+        logger.debug("_gather_ops_summary failed (non-fatal)", exc_info=True)
+        return ""
+
+
 def project_analyzer(state: ScrumState) -> dict:
     """LangGraph node: synthesize intake answers into a structured ProjectAnalysis.
 
@@ -9976,6 +10009,9 @@ def sprint_planner(state: ScrumState) -> dict:
         team_calibration=team_calibration_text,
         ceremony_history=state.get("_ceremony_history", "") or "",
         performance_context=state.get("_performance_context", "") or _gather_performance_summary(_state_scope(state)),
+        # Planner only. The analyzer's output feeds feature generation, and a
+        # feature invented from an incident is a story nobody asked for.
+        production_context=_gather_ops_summary(),
         review_feedback=review_feedback if review_mode else None,
         review_mode=review_mode,
         previous_output=previous_output,

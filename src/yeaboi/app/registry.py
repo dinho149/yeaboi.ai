@@ -78,6 +78,7 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/settings/provider/verify", routes_settings.provider_verify, "settings"),
     AppRoute("POST", "/api/settings/provider/models", routes_settings.provider_models, "settings"),
     AppRoute("POST", "/api/settings/connection/verify", routes_settings.connection_verify, "settings"),
+    AppRoute("GET", "/api/connections", routes_settings.connections_list, "connections"),
     AppRoute("GET", "/api/settings/access/state", routes_settings.access_state, "settings"),
     AppRoute("POST", "/api/settings/access/verify", routes_settings.access_verify, "settings"),
     AppRoute("POST", "/api/settings/signin/start", routes_settings.signin_start, "settings"),

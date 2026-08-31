@@ -4,9 +4,11 @@ Split out of the old test_standup_delivery.py when the delivery channels were
 promoted to ceremonies/: these exercise standup/render.py, which stayed put.
 """
 
+import dataclasses
+
 from rich.console import Group
 
-from yeaboi.agent.state import MemberUpdate, StandupReport
+from yeaboi.agent.state import MemberUpdate, OpsSignal, StandupReport
 from yeaboi.standup import render
 
 
@@ -277,3 +279,48 @@ class TestRenderPractices:
         # but a hand-built object may not have the attribute at all.
         legacy = StandupReport(date="2026-07-10", member_updates=(MemberUpdate(name="Alice", summary="x"),))
         assert "Alice" in render.format_standup_plaintext(legacy)
+
+
+_OPS = (
+    OpsSignal(
+        kind="incident",
+        source="pagerduty",
+        count=2,
+        resolved=1,
+        severity="high",
+        services=("checkout",),
+        window_start="2026-06-26T00:00:00+00:00",
+        window_end="2026-07-10T00:00:00+00:00",
+        samples=("Checkout latency above SLO",),
+    ),
+)
+
+
+class TestProduction:
+    def test_nothing_at_all_when_no_ops_vendor_is_connected(self):
+        # Not a quieter section — no section. A broadcast surface must not
+        # carry a heading announcing that a feature exists.
+        text = render.format_standup_plaintext(_report())
+        assert "Production" not in text
+
+    def test_the_block_names_counts_and_the_window(self):
+        report = dataclasses.replace(_report(), ops_signals=_OPS)
+        text = render.format_standup_plaintext(report)
+        assert "Production (since 2026-06-26)" in text
+        assert "2 incidents via pagerduty" in text
+        assert "1 resolved" in text
+        assert "Checkout latency above SLO" in text
+
+    def test_it_reads_before_the_per_person_updates(self):
+        text = render.format_standup_plaintext(dataclasses.replace(_report(), ops_signals=_OPS))
+        assert text.index("Production") < text.index("Updates:")
+
+    def test_nobody_is_named_in_it(self):
+        lines = render._production_lines(dataclasses.replace(_report(), ops_signals=_OPS))
+        assert not any("Alice" in line or "Bob" in line for line in lines)
+
+    def test_the_rich_form_carries_it_too(self):
+        group = render.format_standup_rich(dataclasses.replace(_report(), ops_signals=_OPS))
+        text = "\n".join(t.plain for t in group.renderables)
+        assert "Production (since 2026-06-26)" in text
+        assert "2 incidents via pagerduty" in text

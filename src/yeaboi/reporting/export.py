@@ -125,6 +125,24 @@ def build_report_markdown(report: DeliveryReport, *, charts_dir: Path | None = N
             lines.append(f"- **{kind} · {source}:** {sig.count}")
             lines += [f"  - {s}" for s in sig.samples[:3]]
         lines += [""]
+    if getattr(report, "ops_signals", ()):
+        from yeaboi.markdown_convert import md_label as _label
+        from yeaboi.reporting.context import OPS_EMOJI, OPS_KIND_LABELS, ops_sentence
+
+        lines += [f"## {OPS_EMOJI} Production", ""]
+        sentence = ops_sentence(report.ops_signals)
+        if sentence:
+            lines += [f"{sentence}.", ""]
+        for sig in report.ops_signals:
+            noun = OPS_KIND_LABELS.get(sig.kind, sig.kind.replace("_", " "))
+            row = f"- **{_label(noun.title())} · {_label(sig.source)}:** {sig.count}"
+            if sig.resolved:
+                row += f" ({sig.resolved} resolved)"
+            if sig.severity:
+                row += f" · worst {_label(sig.severity)}"
+            lines.append(row)
+            lines += [f"  - {_label(x)}" for x in sig.samples[:3]]
+        lines += ["", "_Team-wide, and not attributed to anyone._", ""]
     if report.executive_summary:
         lines += [f"## {_emoji(report, 'summary')}Executive summary", "", report.executive_summary, ""]
     for ttitle, outcomes in report.themes:
@@ -221,6 +239,23 @@ def reporting_export_args(
                 cutoff_date=report.period_end,
                 current=(report.period_end, len(report.delivered_items)),
             ),
+            # Same row shape the standup payload uses, so one component draws
+            # production on both surfaces. Empty whenever no ops vendor is
+            # connected, which is what keeps the section unearned.
+            "production": [
+                {
+                    "kind": signal.kind,
+                    "source": signal.source,
+                    "family": signal.family,
+                    "count": signal.count,
+                    "resolved": signal.resolved,
+                    "severity": signal.severity,
+                    "services": list(signal.services),
+                    "samples": list(signal.samples),
+                    "window": {"start": signal.window_start, "end": signal.window_end},
+                }
+                for signal in getattr(report, "ops_signals", ()) or ()
+            ],
             "warnings": list(report.warnings or []),
             **({"edit": edit_map("", report, ("headline", "executive_summary"))} if editable else {}),
         },

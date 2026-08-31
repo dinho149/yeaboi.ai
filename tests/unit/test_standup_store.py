@@ -7,6 +7,7 @@ import pytest
 from yeaboi.agent.state import (
     ConflictCard,
     MemberUpdate,
+    OpsSignal,
     StandupGap,
     StandupReport,
     TranscriptClaim,
@@ -1340,3 +1341,43 @@ class TestContextDepsColumn:
         with StandupStore(db) as store:
             loaded = store.load_config("s1") or {}
         assert loaded["context_deps"] is None
+
+
+class TestOpsSignalsRoundTrip:
+    def test_a_signal_comes_back_as_a_dataclass_with_its_window(self, db_path):
+        report = _make_report(
+            ops_signals=(
+                OpsSignal(
+                    kind="incident",
+                    family="incidents",
+                    source="pagerduty",
+                    count=2,
+                    resolved=1,
+                    severity="high",
+                    services=("checkout", "payments"),
+                    window_start="2026-06-26T00:00:00+00:00",
+                    window_end="2026-07-10T00:00:00+00:00",
+                    samples=("Checkout latency",),
+                ),
+            )
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        (signal,) = latest.ops_signals
+        assert isinstance(signal, OpsSignal)
+        assert (signal.count, signal.resolved, signal.severity) == (2, 1, "high")
+        assert signal.services == ("checkout", "payments")
+        assert signal.window_start == "2026-06-26T00:00:00+00:00"
+
+    def test_a_report_saved_before_ops_existed_still_deserializes(self, db_path):
+        import json
+
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report())
+            row = store._conn.execute("SELECT report_json FROM standup_history").fetchone()
+            d = json.loads(row[0])
+            d.pop("ops_signals", None)
+            store._conn.execute("UPDATE standup_history SET report_json = ?", (json.dumps(d),))
+            latest = store.get_latest_report("s1")
+        assert latest is not None and latest.ops_signals == ()

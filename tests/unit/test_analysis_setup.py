@@ -2,7 +2,12 @@
 
 from yeaboi.analysis import setup
 
-GRID = {"delivery": ["jira", "azdevops"], "code": ["github"], "docs": ["confluence", "notion"]}
+GRID = {
+    "delivery": ["jira", "azdevops"],
+    "code": ["github"],
+    "docs": ["confluence", "notion"],
+    "ops": ["pagerduty"],
+}
 
 
 class TestFilteredGrid:
@@ -11,6 +16,7 @@ class TestFilteredGrid:
             "delivery": [],
             "code": [],
             "docs": ["confluence", "notion"],
+            "ops": [],
         }
 
     def test_either_code_feature_opens_the_code_row(self):
@@ -18,7 +24,7 @@ class TestFilteredGrid:
             assert setup.filtered_grid(GRID, [feature])["code"] == ["github"]
 
     def test_no_features_leaves_nothing_selectable(self):
-        assert setup.filtered_grid(GRID, []) == {"delivery": [], "code": [], "docs": []}
+        assert setup.filtered_grid(GRID, []) == {"delivery": [], "code": [], "docs": [], "ops": []}
 
 
 class TestDepth:
@@ -132,7 +138,19 @@ class TestAvailableGrid:
         monkeypatch.setattr(setup, "available_trackers", lambda: ["jira"])
         monkeypatch.setattr(setup, "offerable_code_sources", lambda: ["github"])
         monkeypatch.setattr(setup, "available_doc_sources", lambda: [])
-        assert setup.available_grid() == {"delivery": ["jira"], "code": ["github"], "docs": []}
+        monkeypatch.setattr(setup, "available_ops_sources", lambda: ["pagerduty"])
+        assert setup.available_grid() == {
+            "delivery": ["jira"],
+            "code": ["github"],
+            "docs": [],
+            "ops": ["pagerduty"],
+        }
 
     def test_a_feature_exists_for_every_component_row(self):
-        assert set(setup.FEATURES) == {"delivery", "ai_footprint", "code_health", "documentation"}
+        assert set(setup.FEATURES) == {
+            "delivery",
+            "ai_footprint",
+            "code_health",
+            "documentation",
+            "operational",
+        }

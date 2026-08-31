@@ -24,6 +24,7 @@ CARD_TITLES: dict[str, str] = {
     "my_update": "My Update",
     "team": "Team",
     "conflicts": "Conflicts",
+    "production": "Production",
     "activity": "Activity",
     "gaps": "Transcript Review",
     "schedule": "Schedule",
@@ -73,6 +74,10 @@ def card_order(data: dict) -> list[str]:
     # as "gaps" below.
     if getattr(report, "conflicts", ()):
         order.append("conflicts")
+    # Earned the same way, and named "Production" rather than "Unplanned work":
+    # whether an incident was planned for is a judgement this tool cannot make.
+    if getattr(report, "ops_signals", ()):
+        order.append("production")
     order += ["activity"]
     # A nudge IS a result ("3 standups went unchecked"), so it earns the card on
     # the same terms as an actual review rather than being an exception to them.

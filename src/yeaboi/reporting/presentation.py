@@ -188,6 +188,26 @@ def _build_slides(report: DeliveryReport, style: DeckStyle) -> list[dict]:
                         "items": cap_items(page_items, style.max_bullets) if fit_mode == "tight" else list(page_items),
                     }
                 )
+    # Production gets a slide, never the metrics footnote: that footnote already
+    # carries the corroboration sentence, and one line cannot make two claims.
+    if getattr(report, "ops_signals", ()) and style.include_production:
+        from yeaboi.ops.signals import describe
+        from yeaboi.reporting.context import OPS_EMOJI
+
+        # An existing slide type, so no new key crosses to the front end. One
+        # bullet per roll-up and no name anywhere on it: the slide cannot
+        # attribute an incident to a person because it holds nobody to attribute
+        # it to.
+        slides.append(
+            {
+                "type": "list",
+                "emoji": OPS_EMOJI,
+                "section": _DELIVERY,
+                "title": "Production",
+                "page": [1, 1],
+                "items": cap_items([describe(sig) for sig in report.ops_signals], style.max_bullets),
+            }
+        )
     if report.highlights and style.include_highlights:
         if fit_mode == "tight":
             pages = [("Highlights", tuple(report.highlights))]
