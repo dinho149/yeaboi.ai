@@ -273,7 +273,7 @@ def format_poker_context_md(ctx: PokerEstimationContext) -> str:
 # ---------------------------------------------------------------------------
 
 
-def gather_poker_context(ticket: dict, *, project_name: str = "") -> PokerEstimationContext:
+def gather_poker_context(ticket: dict, *, project_name: str = "", scope=None) -> PokerEstimationContext:
     """Read the other modes' history relevant to one poker ticket. Never raises.
 
     Each source sits in its own try/except so one broken store doesn't cost the
@@ -281,8 +281,14 @@ def gather_poker_context(ticket: dict, *, project_name: str = "") -> PokerEstima
     behaves exactly as before. Demo tickets skip gathering entirely — their
     fake assignees would only produce noise against real history.
 
+    ``scope`` applies the run's context toggles: each tokened source is gated
+    by its dep, the untokened delivery read goes silent only under full
+    incognito, and a session-scoped run narrows the standup/planning reads.
+
     # See docs: "Session Management" — SQLite persistence
     """
+    from yeaboi.projects.scope import incognito, wants
+
     ticket = ticket or {}
     source = str(ticket.get("source", ""))
     key = str(ticket.get("key", ""))
@@ -310,7 +316,7 @@ def gather_poker_context(ticket: dict, *, project_name: str = "") -> PokerEstima
 
     # Analysis mode: the team calibration profile for this tracker project.
     try:
-        project_key = _project_key_for(source, key)
+        project_key = _project_key_for(source, key) if wants(scope, "analysis") else ""
         if project_key:
             from yeaboi.team_profile import TeamProfileStore
 
@@ -326,7 +332,7 @@ def gather_poker_context(ticket: dict, *, project_name: str = "") -> PokerEstima
     try:
         from yeaboi.agent.ceremony_history import gather_ceremony_context
 
-        ceremony = gather_ceremony_context(project_name)
+        ceremony = gather_ceremony_context(project_name, scope=scope)
         if ceremony.confidence_trend:
             team_lines.append(f"Recent standup sprint confidence: {ceremony.confidence_trend}.")
         retro_lines = tuple(
@@ -338,35 +344,44 @@ def gather_poker_context(ticket: dict, *, project_name: str = "") -> PokerEstima
 
     # Standup: the ticket assignee's latest blockers + progress.
     try:
-        from yeaboi.standup.store import StandupStore
+        if wants(scope, "standup"):
+            from yeaboi.standup.store import StandupStore
 
-        with StandupStore(db_path) as sstore:
-            recent = sstore.get_recent_reports(1)
-        assignee_lines = _assignee_lines(recent[0] if recent else None, assignee)
+            session_ids = scope.session_ids if scope is not None else None
+            with StandupStore(db_path) as sstore:
+                recent = sstore.get_recent_reports(1, session_ids=session_ids)
+            assignee_lines = _assignee_lines(recent[0] if recent else None, assignee)
     except Exception:  # noqa: BLE001
         logger.debug("gather_poker_context: standup read failed (non-fatal)", exc_info=True)
 
     # Reporting: recently delivered tickets (real keys) for citable comparisons.
+    # No dep token of its own — silenced only by a full-incognito run.
     try:
-        from yeaboi.reporting.store import ReportingStore
+        if not incognito(scope):
+            from yeaboi.reporting.store import ReportingStore
 
-        with ReportingStore(db_path) as rstore:
-            delivery = rstore.get_latest_report()
-        if delivery is not None:
-            delivery_lines = _delivery_lines(delivery.delivered_items, assignee, summary, key)
+            with ReportingStore(db_path) as rstore:
+                delivery = rstore.get_latest_report()
+            if delivery is not None:
+                delivery_lines = _delivery_lines(delivery.delivered_items, assignee, summary, key)
     except Exception:  # noqa: BLE001
         logger.debug("gather_poker_context: reporting read failed (non-fatal)", exc_info=True)
 
     # Planning: similar stories this team already sized, with confidence.
     try:
-        from yeaboi.sessions import SessionStore
+        if wants(scope, "plan"):
+            from yeaboi.sessions import SessionStore
 
-        stories: list = []
-        with SessionStore(db_path) as sessions:
-            for meta in sessions.list_sessions()[:_MAX_SESSIONS_SCANNED]:
-                state = sessions.load_state(meta["session_id"]) or {}
-                stories.extend(state.get("stories") or [])
-        planning_lines = _planning_lines(stories, summary)
+            stories: list = []
+            with SessionStore(db_path) as sessions:
+                metas = sessions.list_sessions()
+                if scope is not None and scope.session_ids is not None:
+                    allowed = set(scope.session_ids)
+                    metas = [m for m in metas if m.get("session_id") in allowed]
+                for meta in metas[:_MAX_SESSIONS_SCANNED]:
+                    state = sessions.load_state(meta["session_id"]) or {}
+                    stories.extend(state.get("stories") or [])
+            planning_lines = _planning_lines(stories, summary)
     except Exception:  # noqa: BLE001
         logger.debug("gather_poker_context: planning read failed (non-fatal)", exc_info=True)
 

@@ -12157,13 +12157,19 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     from yeaboi.poker.board import PokerBoard, board_to_report
     from yeaboi.poker.server import PokerServer
     from yeaboi.poker.store import PokerStore
+    from yeaboi.projects.active import get_active_project, get_context_deps
+    from yeaboi.projects.scope import resolve_scope
 
+    # The AI perspective's cross-mode gather honors the active project and the
+    # Context toggles, like the retro board's carry-forward above.
+    _poker_scope = resolve_scope(get_active_project(), session_id, context_deps=get_context_deps())
     board = PokerBoard(
         session_id,
         project_name=project_name,
         source=setup["source"],
         scope_label=setup["scope_label"],
         tickets=setup["tickets"],
+        scope=_poker_scope,
     )
     server = PokerServer(board, port=get_poker_server_port())
     try:

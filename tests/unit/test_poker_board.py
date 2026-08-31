@@ -636,3 +636,17 @@ class TestBoardToReport:
 class TestDeckConstant:
     def test_deck_shape(self):
         assert POKER_DECK == ("0", "1", "2", "3", "5", "8", "13", "21", "?", "☕")
+
+
+class TestScopeAttribute:
+    def test_scope_defaults_to_none_and_stays_out_of_the_snapshot(self):
+        b = _board()
+        assert b.scope is None
+        assert "scope" not in b.state_snapshot()
+
+    def test_scope_is_held_for_the_ai_worker(self):
+        from yeaboi.projects.scope import ProjectScope
+
+        scope = ProjectScope("proj-11112222", ("s",), frozenset({"retro"}))
+        b = PokerBoard("s", "Proj", source="demo", scope_label="Backlog", tickets=None, scope=scope)
+        assert b.scope is scope

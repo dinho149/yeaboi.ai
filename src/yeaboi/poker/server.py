@@ -229,6 +229,7 @@ def _run_ai(board: PokerBoard) -> None:
             votes,
             project_name=board.project_name,
             debate_transcript=board.current_duel_transcript(),
+            scope=board.scope,
         )
         # A fallback's note is the vote median in a sentence, and the decision
         # row already shows the median — so only the reason it fell back is

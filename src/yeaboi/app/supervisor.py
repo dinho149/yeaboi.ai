@@ -276,6 +276,7 @@ class BoardSupervisor:
         from yeaboi.config import get_poker_server_port
         from yeaboi.poker.board import PokerBoard
         from yeaboi.poker.server import PokerServer
+        from yeaboi.projects.scope import resolve_scope
         from yeaboi.retro.setup import resolve_session
 
         if not tickets:
@@ -284,12 +285,16 @@ class BoardSupervisor:
         # A poker session does not need a planning session to exist — fall back
         # to a stable quick-session id so history still records and groups.
         session_id = target.session_id or "quick-poker"
+        # Same scope the retro board resolves above: a project-linked session
+        # narrows the AI perspective's cross-mode gather.
+        scope = resolve_scope(session_id=target.session_id, db_path=self.db_path)
         board = PokerBoard(
             session_id,
             project_name=target.project_name if target else "",
             source=source,
             scope_label=scope_label,
             tickets=tickets,
+            scope=scope,
         )
         server = PokerServer(board, port=get_poker_server_port())
         server.start()
