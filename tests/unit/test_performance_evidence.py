@@ -652,3 +652,132 @@ class TestProgressReporting:
 
     def test_no_callback_is_the_default(self, db_path):
         assert evidence.gather_engineer_evidence(ENGINEER, db_path=db_path, **PERIOD).engineer == ENGINEER
+
+
+class TestContextScope:
+    """The run's context toggles on the evidence gather: tokened sources obey
+    their dep and settle a 'switched off' coverage row; the untokened poker and
+    delivery reads go quiet only under full incognito."""
+
+    def _seed_everything(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_standup("2026-08-10", summary="Shipped it.", code_summary="3 commits."))
+        with RetroStore(db_path) as store:
+            store.record_run(
+                RetroReport(
+                    date="2026-08-12",
+                    session_id="perf-demo",
+                    participants=(ENGINEER,),
+                    cards=(RetroCard(id="1", grid="didnt_go_well", text="CI is flaky", author=ENGINEER, origin="web"),),
+                )
+            )
+        with PokerStore(db_path) as store:
+            store.record_run(
+                PokerReport(
+                    date="2026-08-13",
+                    session_id="perf-demo",
+                    tickets=(
+                        PokerTicketResult(
+                            key="PROJ-1",
+                            final_points=3.0,
+                            estimated=True,
+                            votes=(PokerVote(voter=ENGINEER, value="3"),),
+                        ),
+                    ),
+                )
+            )
+        with ReportingStore(db_path) as store:
+            store.record_run(
+                DeliveryReport(
+                    delivered_items=(DeliveredItem(key="P-9", title="Auth fix", status="Done", assignee=ENGINEER),)
+                )
+            )
+        with TeamProfileStore(db_path) as store:
+            store.save(
+                TeamProfile(team_id="jira-DEMO-1", source="jira", project_key="DEMO"),
+                examples={
+                    "contributor_stats": [
+                        {"name": ENGINEER, "stories_completed": 14, "stories_total": 16, "delivery_pts": 34}
+                    ]
+                },
+            )
+
+    def _scope(self, deps):
+        from yeaboi.projects.scope import ProjectScope
+
+        return ProjectScope("", None, None if deps is None else frozenset(deps))
+
+    def test_no_scope_and_all_on_are_identical(self, db_path):
+        self._seed_everything(db_path)
+        bare = _gather(db_path)
+        with_none = _gather(db_path, scope=None)
+        all_on = _gather(db_path, scope=self._scope(None))
+        assert bare == with_none == all_on
+        assert bare.standup_lines and bare.retro_lines and bare.poker_lines and bare.delivery_lines
+
+    def test_standup_off_silences_the_source_and_says_why(self, db_path):
+        self._seed_everything(db_path)
+        ev = _gather(db_path, scope=self._scope({"retro", "plan", "performance", "analysis"}))
+        assert ev.standup_lines == () and ev.code_lines == ()
+        for source in (evidence.SOURCE_STANDUP, evidence.SOURCE_CODE, evidence.SOURCE_DOCUMENTATION):
+            row = _coverage(ev, source)
+            assert row.state == evidence.NOT_CONFIGURED and "context toggles" in row.detail
+        assert ev.retro_lines and ev.poker_lines  # the others untouched
+
+    def test_analysis_off_silences_the_profile(self, db_path):
+        self._seed_everything(db_path)
+        ev = _gather(db_path, scope=self._scope({"retro", "standup", "plan", "performance"}))
+        assert ev.analysis_lines == ()
+        row = _coverage(ev, evidence.SOURCE_ANALYSIS)
+        assert row.state == evidence.NOT_CONFIGURED and "context toggles" in row.detail
+
+    def test_retro_off_silences_the_retro_read(self, db_path):
+        self._seed_everything(db_path)
+        ev = _gather(db_path, scope=self._scope({"standup", "plan", "performance", "analysis"}))
+        assert ev.retro_lines == ()
+        row = _coverage(ev, evidence.SOURCE_RETRO)
+        assert row.state == evidence.NOT_CONFIGURED and "context toggles" in row.detail
+
+    def test_incognito_silences_the_untokened_sources_too(self, db_path):
+        self._seed_everything(db_path)
+        ev = _gather(db_path, scope=self._scope(()))
+        assert ev.poker_lines == () and ev.delivery_lines == ()
+        for source in (evidence.SOURCE_POKER, evidence.SOURCE_DELIVERY):
+            row = _coverage(ev, source)
+            assert row.state == evidence.NOT_CONFIGURED and "context toggles" in row.detail
+        assert ev.standup_lines == () and ev.retro_lines == () and ev.analysis_lines == ()
+
+    def test_a_partial_toggle_set_keeps_poker_and_delivery(self, db_path):
+        self._seed_everything(db_path)
+        ev = _gather(db_path, scope=self._scope({"retro"}))
+        assert ev.poker_lines and ev.delivery_lines
+
+    def test_session_scope_narrows_standup_and_retro(self, db_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        self._seed_everything(db_path)
+        ev = _gather(db_path, scope=ProjectScope("proj-11112222", ("some-other-session",), None))
+        assert ev.standup_lines == () and ev.retro_lines == ()
+        assert ev.poker_lines  # untokened sources are not session-narrowed today
+
+    def test_standup_off_skips_the_live_gap_fill(self, db_path, monkeypatch):
+        self._seed_everything(db_path)
+
+        def _boom(*a, **k):
+            raise AssertionError("the live gap-fill must not run with the standup toggle off")
+
+        monkeypatch.setattr(evidence, "_gap_fill", _boom)
+        ev = _gather(db_path, deep_scan=True, scope=self._scope({"retro"}))
+        assert ev.standup_lines == ()
+
+    def test_the_gap_fill_still_runs_when_standup_is_on(self, db_path, monkeypatch):
+        self._seed_everything(db_path)
+        called = {}
+
+        def _fake(*a, **k):
+            called["yes"] = True
+            return [], [], "", "skipped"
+
+        monkeypatch.setattr(evidence, "_gap_fill", _fake)
+        _gather(db_path, deep_scan=True, scope=self._scope(None))
+        assert called.get("yes")

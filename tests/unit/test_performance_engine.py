@@ -532,3 +532,49 @@ class TestTheReviewReportsItsContextPhase:
         events: list = []
         engine.run_six_month_review("Ada", db_path=db_path, on_progress=events.append)
         assert [e for e in events if e["component_id"] == engine.PHASE_CONTEXT][-1]["status"] == "partial"
+
+
+class TestContextDepsReachTheGathers:
+    """The engines resolve project_id/context_deps into a ProjectScope and hand
+    it to the evidence gather and (for the review) the ceremony read."""
+
+    def _capture_evidence(self, monkeypatch):
+        from yeaboi.performance.evidence import EngineerEvidence
+
+        seen = {}
+
+        def _fake(engineer, **kw):
+            seen.update(kw)
+            return EngineerEvidence(engineer=engineer, activity=EngineerActivity(engineer=engineer))
+
+        monkeypatch.setattr(engine.evidence_mod, "gather_engineer_evidence", _fake)
+        return seen
+
+    def test_prep_builds_a_scope_from_context_deps(self, monkeypatch, db_path):
+        seen = self._capture_evidence(monkeypatch)
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["hi"]}))
+        engine.run_one_on_one_prep("Ada", db_path=db_path, context_deps=["retro"])
+        assert seen["scope"] is not None
+        assert seen["scope"].context_deps == frozenset({"retro"})
+
+    def test_prep_with_no_deps_passes_no_scope(self, monkeypatch, db_path):
+        seen = self._capture_evidence(monkeypatch)
+        _patch_llm(monkeypatch, json.dumps({"talking_points": ["hi"]}))
+        engine.run_one_on_one_prep("Ada", db_path=db_path)
+        assert seen["scope"] is None  # unlinked, all-on — today's behavior
+
+    def test_review_threads_the_scope_into_the_ceremony_read(self, monkeypatch, db_path):
+        seen_ev = self._capture_evidence(monkeypatch)
+        _patch_llm(monkeypatch, json.dumps({"strengths": ["ships"]}))
+        seen_cer = {}
+
+        def _fake_ceremony(project_name="", **kw):
+            seen_cer.update(kw)
+            from yeaboi.agent.ceremony_history import CeremonyContext
+
+            return CeremonyContext()
+
+        monkeypatch.setattr("yeaboi.agent.ceremony_history.gather_ceremony_context", _fake_ceremony)
+        engine.run_six_month_review("Ada", db_path=db_path, context_deps=[])
+        assert seen_ev["scope"] is not None and seen_ev["scope"].incognito
+        assert seen_cer["scope"] is seen_ev["scope"]

@@ -9512,19 +9512,27 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
 
     def _run_action(label: str, engineer: str) -> None:
         """Run one AI/notes action for the selected engineer (blocks briefly)."""
+        # The active project + Context toggles scope the engines' cross-mode
+        # evidence/ceremony reads, like every other launch site.
+        from yeaboi.projects.active import get_active_project, get_context_deps
         from yeaboi.ui.mode_select.screens._screens_secondary import (
             PERF_COMPLETE_PHASES,
             PERF_PREP_PHASES,
             PERF_REVIEW_PHASES,
         )
 
+        _perf_deps = get_context_deps()
+        _perf_ctx = {
+            "project_id": get_active_project(),
+            "context_deps": None if _perf_deps is None else list(_perf_deps),
+        }
         try:
             if label == "1:1 Prep":
                 from yeaboi.performance.engine import run_one_on_one_prep
 
                 prep = _generate(
                     lambda on_progress: run_one_on_one_prep(
-                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress
+                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress, **_perf_ctx
                     ),
                     heading=f"1:1 Prep — {engineer}",
                     phases=PERF_PREP_PHASES,
@@ -9562,7 +9570,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
 
                 review = _generate(
                     lambda on_progress: run_six_month_review(
-                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress
+                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress, **_perf_ctx
                     ),
                     heading=f"6-Month Review — {engineer}",
                     phases=PERF_REVIEW_PHASES,
