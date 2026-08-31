@@ -156,7 +156,7 @@ def _carried_from_report(prior_report: RetroReport) -> tuple[RetroCard, ...]:
 
 
 def history_providers(
-    *, project_name: str = "", db_path: Path | None = None
+    *, project_name: str = "", db_path: Path | None = None, scope: ProjectScope | None = None
 ) -> tuple[Callable[[], list[dict]], Callable[[int], dict | None]]:
     """Readers the browser board uses to step back through previous retros.
 
@@ -164,9 +164,14 @@ def history_providers(
     retro is persisted in, and a board with nothing behind it (a dev fixture, a
     retro run outside a session) simply reports no history.
 
+    ``scope`` narrows both readers: with the ``retro`` dependency off they
+    report nothing, and a session-scoped run only sees (and can only fetch by
+    id) the scope's own retros.
+
     Both are best-effort — a store that cannot be read is a board with no past,
     never a board that fails to load.
     """
+    from yeaboi.projects.scope import wants
 
     def _open() -> Any:
         from yeaboi.paths import get_db_path
@@ -175,6 +180,8 @@ def history_providers(
         return RetroStore(db_path or get_db_path())
 
     def listing() -> list[dict]:
+        if not wants(scope, "retro"):
+            return []
         # Across sessions, like the carry-forward reader above and for the same
         # reason: a retro runs under whatever quick session was open that day,
         # so a same-session history is almost always empty. Project-first, so a
@@ -185,6 +192,9 @@ def history_providers(
         except Exception as exc:  # pragma: no cover - defensive; history is best-effort
             logger.warning("retro: could not list previous retros: %s", exc)
             return []
+        if scope is not None and scope.session_ids is not None:
+            allowed = set(scope.session_ids)
+            runs = [r for r in runs if r.get("session_id") in allowed]
         # Already newest-first; a *stable* sort on the project match keeps it
         # that way inside each group.
         if project_name:
@@ -192,12 +202,17 @@ def history_providers(
         return runs[:24]
 
     def one(run_id: int) -> dict | None:
+        if not wants(scope, "retro"):
+            return None
         try:
             with _open() as store:
                 report = store.get_run_by_id(run_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("retro: could not read retro id=%s: %s", run_id, exc)
             return None
+        if report and scope is not None and scope.session_ids is not None:
+            if report.session_id not in scope.session_ids:
+                return None
         return report_payload(report) if report else None
 
     return listing, one

@@ -251,7 +251,7 @@ class BoardSupervisor:
         # Read lazily, so a store that cannot be opened costs a board with no
         # history rather than a board.
         server.history_list, server.history_report = history_providers(
-            project_name=target.project_name, db_path=self.db_path
+            project_name=target.project_name, db_path=self.db_path, scope=scope
         )
         server.start()
         session = BoardSession(

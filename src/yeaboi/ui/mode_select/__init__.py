@@ -11405,7 +11405,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     server = RetroServer(board, port=get_retro_server_port())
     # Previous retros, for the board's back arrow. Read lazily, so a store that
     # cannot be opened costs a board with no history rather than a board.
-    server.history_list, server.history_report = history_providers(project_name=project_name, db_path=_ana_dbp)
+    server.history_list, server.history_report = history_providers(
+        project_name=project_name, db_path=_ana_dbp, scope=_retro_scope
+    )
     try:
         server.start()
         logger.info("retro: server started on port %s (session=%s)", server.port, session_id)

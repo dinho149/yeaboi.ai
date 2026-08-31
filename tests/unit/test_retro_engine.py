@@ -367,3 +367,55 @@ class TestCarryRespectsTheRetroToggle:
         scope = ProjectScope("", None, frozenset({"retro"}))
         carried = engine.carried_action_items_for_session("cur", db_path=db, scope=scope)
         assert [c.text for c in carried] == ["ship the docs"]
+
+
+class TestHistoryProviders:
+    def _seed(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("proj-sess", project_name="Alpha", date="2026-07-01"))
+            store.record_run(_prior_report("other-sess", project_name="Beta", date="2026-07-09"))
+        return db
+
+    def test_unscoped_listing_matches_scope_none(self, tmp_path):
+        db = self._seed(tmp_path)
+        listing_bare, one_bare = engine.history_providers(db_path=db)
+        listing_none, one_none = engine.history_providers(db_path=db, scope=None)
+        assert listing_bare() == listing_none()
+        first_id = listing_bare()[0]["id"]
+        assert one_bare(first_id) == one_none(first_id)
+
+    def test_retro_dep_off_reports_no_history(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = self._seed(tmp_path)
+        listing, one = engine.history_providers(db_path=db, scope=ProjectScope("", None, frozenset()))
+        assert listing() == []
+        run_id = engine.history_providers(db_path=db)[0]()[0]["id"]
+        assert one(run_id) is None
+
+    def test_session_scope_filters_the_listing(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = self._seed(tmp_path)
+        scope = ProjectScope("proj-11112222", ("proj-sess",))
+        listing, _one = engine.history_providers(db_path=db, scope=scope)
+        runs = listing()
+        assert [r["session_id"] for r in runs] == ["proj-sess"]
+
+    def test_a_foreign_id_cannot_be_fetched_through_a_scoped_reader(self, tmp_path):
+        # The listing hides foreign runs; the id endpoint must not be a bypass.
+        from yeaboi.projects.scope import ProjectScope
+
+        db = self._seed(tmp_path)
+        all_runs = engine.history_providers(db_path=db)[0]()
+        foreign = next(r["id"] for r in all_runs if r["session_id"] == "other-sess")
+        own = next(r["id"] for r in all_runs if r["session_id"] == "proj-sess")
+        _listing, one = engine.history_providers(db_path=db, scope=ProjectScope("p", ("proj-sess",)))
+        assert one(foreign) is None
+        assert one(own) is not None
+
+    def test_a_broken_store_is_a_board_with_no_past(self, tmp_path):
+        listing, one = engine.history_providers(db_path=tmp_path / "not-a-dir" / "nope.db")
+        assert listing() == []
+        assert one(1) is None
