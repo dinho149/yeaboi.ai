@@ -52,15 +52,18 @@ def capabilities(app, request: Request) -> Response:
     """The card inventory, verbatim from the TUI's single source of truth.
 
     Served rather than re-declared so the desktop home screen can never drift
-    from ``_MODE_CARDS`` — the same dicts the welcome screen renders.
+    from ``_MODE_CARDS`` — the same dicts the welcome screen renders. ``modes``
+    is the Team menu (the key predates the Solo world and the desktop reads
+    it); ``solo`` is the Solo menu, additive.
     """
-    from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _INTAKE_CARDS, _MODE_CARDS
+    from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _INTAKE_CARDS, _MODE_CARDS, _SOLO_CARDS
     from yeaboi.ui.mode_select.screens._screens_category import _CATEGORY_CARDS
 
     return json_response(
         to_jsonable(
             {
                 "categories": _CATEGORY_CARDS,
+                "solo": _SOLO_CARDS,
                 "modes": _MODE_CARDS,
                 "agents": _AGENT_CARDS,
                 "intake": _INTAKE_CARDS,

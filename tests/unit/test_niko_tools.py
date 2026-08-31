@@ -178,7 +178,7 @@ class TestCapabilities:
     def test_list_capabilities_serves_the_real_cards(self):
         result = niko_tools.call("list_capabilities", {})
         assert {"categories", "modes", "agents", "intake"} <= set(result)
-        assert {"team", "agents"} <= {row["key"] for row in result["categories"]}
+        assert {"solo", "team", "agents"} <= {row["key"] for row in result["categories"]}
 
     def test_list_routes_names_the_capability_each_screen_belongs_to(self):
         rows = {row["path"]: row for row in niko_tools.call("list_routes", {})["routes"]}

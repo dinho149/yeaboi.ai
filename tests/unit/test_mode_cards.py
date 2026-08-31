@@ -66,18 +66,22 @@ class TestPerformanceCardRegistration:
         assert _performance_card()["available"] is True
 
     def test_no_other_card_carries_a_badge(self):
-        # Performance and Ship are the two beta modes on the Humans menu;
-        # test_beta_surfaces.py keeps their three markers (badge, notice, tip)
-        # in agreement.
+        # Performance and Ship are the two beta modes on the Team menu (Ship
+        # also on Solo); test_beta_surfaces.py keeps their three markers
+        # (badge, notice, tip) in agreement.
+        from yeaboi.ui.mode_select.screens._screens import _SOLO_CARDS
+
         badged = [
             card["key"]
-            for card in (*_MODE_CARDS, *_INTAKE_CARDS, *_OFFLINE_CARDS)
+            for card in (*_MODE_CARDS, *_SOLO_CARDS, *_INTAKE_CARDS, *_OFFLINE_CARDS)
             if card.get("badge") and card.get("key") not in ("performance", "ship")
         ]
         assert badged == []
 
     def test_every_card_still_has_the_core_keys(self):
-        for card in (*_MODE_CARDS, *_INTAKE_CARDS, *_OFFLINE_CARDS):
+        from yeaboi.ui.mode_select.screens._screens import _SOLO_CARDS
+
+        for card in (*_MODE_CARDS, *_SOLO_CARDS, *_INTAKE_CARDS, *_OFFLINE_CARDS):
             assert {"title", "description", "available", "color"} <= set(card)
 
 
@@ -204,6 +208,11 @@ class TestNikoIsNotACard:
 
     def test_the_team_menu_does_not_carry_it(self):
         assert "niko" not in {card["key"] for card in _MODE_CARDS}
+
+    def test_the_solo_menu_does_not_carry_it(self):
+        from yeaboi.ui.mode_select.screens._screens import _SOLO_CARDS
+
+        assert "niko" not in {card["key"] for card in _SOLO_CARDS}
 
     def test_ten_cards_still_clear_the_enforced_minimum(self):
         from yeaboi.ui.mode_select.screens._screens import _MIN_HEIGHT, _MIN_WIDTH

@@ -841,17 +841,29 @@ class TestMcpTools:
 
 class TestTuiModes:
     def test_mode_cards_registered(self):
-        # The union of both category menus — Humans (_MODE_CARDS) and Agents
-        # (_AGENT_CARDS) — must equal the registered tui_mode column.
-        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
+        # The union of every category menu — Solo (_SOLO_CARDS), Team
+        # (_MODE_CARDS) and Agents (_AGENT_CARDS) — must equal the registered
+        # tui_mode column.
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS, _SOLO_CARDS
 
-        actual = {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
+        actual = {card["key"] for card in (*_SOLO_CARDS, *_MODE_CARDS, *_AGENT_CARDS)}
         registered = set(_non_exempt("tui_mode").values())
         assert actual == registered, (
-            f"_MODE_CARDS/_AGENT_CARDS keys vs CAPABILITIES differ.\n"
+            f"_SOLO_CARDS/_MODE_CARDS/_AGENT_CARDS keys vs CAPABILITIES differ.\n"
             f"  new unregistered cards: {sorted(actual - registered)}\n"
             f"  registered but card removed: {sorted(registered - actual)}\n{_HOW_TO}"
         )
+
+    def test_solo_cards_are_a_subset_of_the_team_menu(self):
+        # Solo introduces no capability of its own: every solo card shares a
+        # Team card's key (dispatch, hubs, tips and this registry all key on
+        # it), and the complement is exactly the deliberately team-only modes.
+        from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS, _SOLO_CARDS
+
+        solo = {card["key"] for card in _SOLO_CARDS}
+        team = {card["key"] for card in _MODE_CARDS}
+        assert solo <= team, sorted(solo - team)
+        assert team - solo == {"retro", "poker", "performance"}
 
 
 # ---------------------------------------------------------------------------

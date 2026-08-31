@@ -56,6 +56,7 @@ from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     _MIN_WIDTH,
     _MODE_CARDS,
     _OFFLINE_CARDS,
+    _SOLO_CARDS,
     _SWEEP_ROW_WEIGHT,
     _build_mode_screen,
     _build_slide_frame,
@@ -12663,8 +12664,10 @@ def _run_category_screen(
             )
         )
         key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
-        if key in ("left", "right", "up", "down", "tab"):
-            selected = 1 - selected
+        if key in ("left", "up"):
+            selected = (selected - 1) % len(_CATEGORY_CARDS)
+        elif key in ("right", "down", "tab"):
+            selected = (selected + 1) % len(_CATEGORY_CARDS)
         elif key == "enter":
             chosen = _CATEGORY_CARDS[selected]["key"]
             logger.info("category chosen: %s", chosen)
@@ -13251,6 +13254,15 @@ SAVED_SESSION_HUBS = {
     "ship": _run_ship_hub,
 }
 
+#: Which menu (card list + companion mascot) each landing category opens.
+#: The one place the category key picks a menu — the Phase-0/Phase-1 loop and
+#: the tip jump all read this instead of hand-rolling ternaries.
+_CATEGORY_MENUS: dict[str, tuple[list[dict], str]] = {
+    "solo": (_SOLO_CARDS, "duck"),
+    "team": (_MODE_CARDS, "duck"),
+    "agents": (_AGENT_CARDS, "robo"),
+}
+
 
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
@@ -13275,8 +13287,7 @@ def select_mode(
     from yeaboi.config import get_last_category, set_last_category
 
     category = get_last_category()
-    cards: list[dict] = _MODE_CARDS if category == "team" else _AGENT_CARDS
-    mascot = "duck" if category == "team" else "robo"
+    cards, mascot = _CATEGORY_MENUS[category]
     _category_pending = True  # show the split on the first pass through the loop
     _back_to_category = False
 
@@ -13353,8 +13364,7 @@ def select_mode(
                 if _pick != category:
                     set_last_category(_pick)
                 category = _pick
-                cards = _MODE_CARDS if category == "team" else _AGENT_CARDS
-                mascot = "duck" if category == "team" else "robo"
+                cards, mascot = _CATEGORY_MENUS[category]
                 n = len(cards)
                 selected = 0
                 # A category pick always sweeps its menu in fresh.
@@ -13509,16 +13519,25 @@ def select_mode(
                             logger.info("tip jump to mode: %s", _tip.mode_key)
                             selected = _j
                             break
-                        _other = _AGENT_CARDS if cards is _MODE_CARDS else _MODE_CARDS
-                        _j = next((i for i, m in enumerate(_other) if m["key"] == _tip.mode_key), None)
-                        if _j is not None and _other[_j]["available"]:
-                            category = "agents" if _other is _AGENT_CARDS else "team"
-                            logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
-                            set_last_category(category)
-                            cards = _other
-                            mascot = "duck" if category == "team" else "robo"
-                            n = len(cards)
-                            selected = _j
+                        # Team first: Solo's keys are a subset of Team's, so a
+                        # shared key jumped from elsewhere lands on the Team menu.
+                        _jumped = False
+                        for _cat in ("team", "agents", "solo"):
+                            _other, _other_mascot = _CATEGORY_MENUS[_cat]
+                            if _other is cards:
+                                continue
+                            _j = next((i for i, m in enumerate(_other) if m["key"] == _tip.mode_key), None)
+                            if _j is not None and _other[_j]["available"]:
+                                category = _cat
+                                logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
+                                set_last_category(category)
+                                cards = _other
+                                mascot = _other_mascot
+                                n = len(cards)
+                                selected = _j
+                                _jumped = True
+                                break
+                        if _jumped:
                             break
                 elif key == "c":
                     # Open the Changelog page (bottom-left hint). Handled inline
@@ -15730,7 +15749,7 @@ def select_mode(
                         # Step 2: Slide Planning title from top down to its 3-item
                         # layout position. In the last ~40% of the slide, fade in
                         # the other two mode titles so they appear as Planning lands.
-                        chosen = _MODE_CARDS[selected]
+                        chosen = cards[selected]
                         base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
                         base_style = f"bold rgb({base_r},{base_g},{base_b})"
                         others = [i for i in range(n) if i != selected]

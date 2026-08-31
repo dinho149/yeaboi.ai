@@ -453,6 +453,18 @@ class TestModeAtRow:
                 hit_order.append(idx)
         assert hit_order == list(range(len(_MODE_CARDS)))
 
+    def test_rows_are_contiguous_and_ordered_on_the_solo_menu(self):
+        # The seven-card Solo menu drives the same builder/hit-test pair.
+        from yeaboi.ui.mode_select.screens._screens import _SOLO_CARDS
+
+        w, h = 120, 40
+        hit_order = []
+        for row in range(1, h + 1):
+            idx = mode_at_row(3, width=w, height=h, row=row, col=10, cards=_SOLO_CARDS)
+            if idx is not None and (not hit_order or hit_order[-1] != idx):
+                hit_order.append(idx)
+        assert hit_order == list(range(len(_SOLO_CARDS)))
+
     def test_selected_mode_spans_more_rows_than_unselected(self):
         # The selected card also shows its description, so it owns extra rows.
         w, h = 120, 40

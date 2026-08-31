@@ -33,7 +33,7 @@ The token never appears in URLs. Missing/wrong token → `401 {"error":"unauthor
 |---|---|---|
 | GET | `/api/health` | unauthenticated; `{ok, pid, version, schema}` |
 | GET | `/api/meta/version` | `{version, schema_version, python, platform}` |
-| GET | `/api/meta/capabilities` | the TUI card inventory verbatim: `{categories, modes, agents, intake}` |
+| GET | `/api/meta/capabilities` | the TUI card inventory verbatim: `{categories, solo, modes, agents, intake}` — `modes` is the Team menu, `solo` the Solo menu |
 | GET | `/api/meta/tips` | `{tips: [{key, text, mode_key, is_new, is_beta, surfaces}]}` |
 | GET | `/api/meta/changelog` | `{entries: [{version, date, headline, summary, highlights[{text, areas, surfaces}]}], areas: [{name, color}]}` |
 | GET | `/api/meta/privacy` | `{headline, statement: [str…], groups: [{key, title}], switches: [{key, env, on_value}], egress: [{key, group, what, where, when, default, off_switch}]}` — the privacy statement and egress-disclosure table, serialized verbatim from `yeaboi.privacy` (the copy owner every surface renders). Carries no capability and is never gated behind one: disclosure must always answer |

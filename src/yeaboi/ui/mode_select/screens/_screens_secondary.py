@@ -4120,6 +4120,8 @@ def _build_all_tips_screen(
     theme = CHANGELOG_THEME
     title = tips_title(shimmer_tick, width=width)
     sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=_PAD + "  ")
+    # The Team menu carries every shared card key (Solo's keys are a subset),
+    # so it is the one list this gallery needs to resolve a tip's mode title.
     cards = {card["key"]: card for card in _MODE_CARDS}
     gold = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
     beta_c = f"rgb({BETA_RGB[0]},{BETA_RGB[1]},{BETA_RGB[2]})"

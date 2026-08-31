@@ -12,7 +12,7 @@ up, so the selection state needs no extra chrome. Pure builders only — the run
 loop lives in :mod:`yeaboi.ui.mode_select` (Phase 0 of ``select_mode``).
 
 Geometry note: the builder and :func:`category_at_pos` share one helper
-(:func:`_category_columns`) instead of hand-mirroring each other's maths — the
+(:func:`_category_bounds`) instead of hand-mirroring each other's maths — the
 lesson of ``mode_at_row``'s lock-step comment, applied from the start.
 
 # See docs: "TUI system" — shared component structure
@@ -32,10 +32,21 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import AGENTS_THEME, TEAM_THEME, build_page_panel
-from yeaboi.ui.shared._mascot import FRAMES, mini_cells, render_full
+from yeaboi.ui.shared._components import AGENTS_THEME, SOLO_THEME, TEAM_THEME, build_page_panel
+from yeaboi.ui.shared._mascot import FRAMES, flock_cells, flock_head_cells, full_cells, mini_cells
 
 _CATEGORY_CARDS: list[dict[str, Any]] = [
+    {
+        "key": "solo",
+        "title": "Solo",
+        "verb": "Run your own show",
+        "capabilities": ["planning", "standups", "analysis", "reports"],
+        "color": SOLO_THEME.accent,
+        "bright": SOLO_THEME.accent_bright,
+        "dim": "rgb(95,80,45)",  # the resting shade — no theme slot for it
+        "tint": "rgb(30,25,15)",  # card-bg convention: a dark shade of the accent
+        "mascot": "duck",
+    },
     {
         "key": "team",
         "title": "Team",
@@ -43,9 +54,9 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
         "capabilities": ["planning", "standups", "retros", "poker", "reviews"],
         "color": TEAM_THEME.accent,
         "bright": TEAM_THEME.accent_bright,
-        "dim": "rgb(55,95,58)",  # the resting shade — no theme slot for it
-        "tint": "rgb(17,28,20)",  # card-bg convention: a dark shade of the accent
-        "mascot": "duck",
+        "dim": "rgb(55,95,58)",
+        "tint": "rgb(17,28,20)",
+        "mascot": "flock",
     },
     {
         "key": "agents",
@@ -94,7 +105,7 @@ _WALK: dict[str, float] = {}
 
 
 def reset_category_walk() -> None:
-    """Put both mascots back where they started (tests, and a fresh entrance)."""
+    """Put every mascot back where it started (tests, and a fresh entrance)."""
     _WALK.clear()
 
 
@@ -145,7 +156,7 @@ def _walk_step(key: str, selected: bool) -> int:
 
 _CARD_ROWS = 28
 _HINT_ROWS = 4  # blank + the key-hint line + the two rows the footer note lands on
-_GUTTER_COLS = 2  # breathing room between the two cards
+_GUTTER_COLS = 1  # breathing room between the cards — one column, three-up is tight
 
 # The quiet layer around the living cards.
 _HEADING = "Who are we working with today?"
@@ -157,14 +168,24 @@ _CAPS_SELECTED = "rgb(168,172,184)"
 _CAPS_RESTING = "rgb(96,100,114)"
 
 
-def _category_columns(width: int) -> int:
-    """The 1-based terminal column where the right (Agents) half begins.
+def _category_bounds(width: int) -> list[tuple[int, int]]:
+    """The 1-based terminal column span (start, end) of each world-card.
 
-    The panel splits its inner width into two equal columns; borders and padding
-    are symmetric, so the midpoint of the full width is the boundary. Shared by
-    the builder's grid and the click hit-test so they cannot drift.
+    The panel splits its inner width (frame border + padding are 3 columns a
+    side) into equal card columns separated by ``_GUTTER_COLS``; the last card
+    absorbs the division remainder. Shared by the builder's grid and the click
+    hit-test so they cannot drift.
     """
-    return width // 2 + 1
+    n = len(_CATEGORY_CARDS)
+    inner_w = width - 6  # borders (2) + horizontal padding (4)
+    card_w = max(20, (inner_w - (n - 1) * _GUTTER_COLS) // n)
+    bounds: list[tuple[int, int]] = []
+    start = 4  # 1-based: border (1) + left padding (2) put the first card at col 4
+    for i in range(n):
+        w = card_w if i < n - 1 else max(card_w, inner_w - (card_w + _GUTTER_COLS) * (n - 1))
+        bounds.append((start, start + w - 1))
+        start += w + _GUTTER_COLS
+    return bounds
 
 
 def _capability_rows(card: dict[str, Any], *, selected: bool, budget: int) -> list[Text]:
@@ -216,11 +237,25 @@ def _card_half(
     # up the ground plane as well as making it smaller. Both occupy the same
     # _MASCOT_ROWS, so the card never changes height as the selection moves.
     # The mascot leads the entrance; the name follows him (see the title below).
+    # Three-up at narrow widths the full trace (34 cells) no longer fits the
+    # card, so the arrived state drops a tier: the mini trace, unshaded on the
+    # near ground — the walk still reads through size, light and position.
+    full_tier = half_width >= 34  # the card pads vertically only
     if True:
         step = _walk_step(card["key"], selected)
+        anim = int(shimmer_tick * 8) % FRAMES
         if step >= _MASCOT_WALK_STEPS - 1:
-            # Arrived: the full trace, wings going, feet on the near ground.
-            mascot: RenderableType = render_full(int(shimmer_tick * 8) % FRAMES, mascot=card["mascot"])
+            # Arrived: the biggest trace that fits, wings going, on the near ground.
+            if card["mascot"] == "flock":
+                cells = flock_cells(anim) if full_tier else flock_head_cells(anim)
+            else:
+                cells = (
+                    full_cells(anim, mascot=card["mascot"]) if full_tier else mini_cells(anim, mascot=card["mascot"])
+                )
+            mascot: RenderableType = Group(
+                *[Text("") for _ in range(_MASCOT_ROWS - len(cells))],
+                *_shaded_rows(cells, 1.0),
+            )
         else:
             # Still coming: the smaller trace, standing on the same ground the
             # full one does — his feet are on the title either way, and only
@@ -266,7 +301,7 @@ def _card_half(
     verb.no_wrap = True
     verb.overflow = "ellipsis"
 
-    inner_budget = max(16, half_width - 6)  # card borders + padding
+    inner_budget = max(16, half_width - 2)  # card padding
     caps = _capability_rows(card, selected=selected, budget=inner_budget)
 
     body = Group(
@@ -278,12 +313,12 @@ def _card_half(
         Align.center(verb),
         *[Align.center(row) for row in caps],
     )
-    # No frame, and no background wash. Two boxes side by side made the choice
+    # No frame, and no background wash. Boxes side by side made the choice
     # look like a form; the mascot walking forward is what marks the live one.
-    # The padding keeps the geometry the border used to occupy, so the card is
-    # the same height either way — ``test_card_height_matches_the_layout_constant``
-    # pins that to _CARD_ROWS.
-    return Padding(body, (1, 2))
+    # Vertical padding only — three-up the columns are the scarce dimension,
+    # and every row centres itself. The card stays the same height either way —
+    # ``test_card_height_matches_the_layout_constant`` pins it to _CARD_ROWS.
+    return Padding(body, (1, 0))
 
 
 def _build_category_screen(
@@ -295,18 +330,24 @@ def _build_category_screen(
     intro: float = 1.0,
 ) -> Panel:
     """Build the full-screen landing split."""
-    inner_w = width - 6  # borders (2) + horizontal padding (4)
-    half_w = max(20, (inner_w - _GUTTER_COLS) // 2)
+    bounds = _category_bounds(width)
+    widths = [end - start + 1 for start, end in bounds]
     halves = [
-        _card_half(card, selected=i == selected, shimmer_tick=shimmer_tick, intro=intro, half_width=half_w)
+        _card_half(card, selected=i == selected, shimmer_tick=shimmer_tick, intro=intro, half_width=widths[i])
         for i, card in enumerate(_CATEGORY_CARDS)
     ]
 
-    grid = Table.grid(expand=True)
-    grid.add_column(ratio=1)
-    grid.add_column(width=_GUTTER_COLS)
-    grid.add_column(ratio=1)
-    grid.add_row(halves[0], Text(""), halves[1])
+    # Explicit column widths from the shared bounds — a ratio grid rounds its
+    # own way, and the click hit-test must land where the cards actually are.
+    grid = Table.grid()
+    cells: list[RenderableType] = []
+    for i, w in enumerate(widths):
+        if i:
+            grid.add_column(width=_GUTTER_COLS)
+            cells.append(Text(""))
+        grid.add_column(width=w)
+        cells.append(halves[i])
+    grid.add_row(*cells)
 
     hint = Text(justify="center")
     for key, label in (("←/→", "switch"), ("enter", "choose"), ("q", "quit")):
@@ -353,12 +394,17 @@ def _build_category_screen(
 
 
 def category_at_pos(width: int, height: int, *, row: int, col: int) -> int | None:
-    """Map a 1-based terminal click to a category index (0=team, 1=agents).
+    """Map a 1-based terminal click to a category index (0=solo, 1=team, 2=agents).
 
-    Any click inside the content band counts for the half it lands in — the
-    cards are the whole screen, so precision clicking isn't required. The top
-    border row and the bottom hint row return None.
+    Any click inside the content band counts for the card region it lands in —
+    the cards are the whole screen, so precision clicking isn't required: a
+    gutter (and the frame padding either side) counts for the nearest card. The
+    top border row and the bottom hint row return None.
     """
     if row <= 2 or row >= height - 1:
         return None
-    return 0 if col < _category_columns(width) else 1
+    bounds = _category_bounds(width)
+    for i, (_start, end) in enumerate(bounds[:-1]):
+        if col <= end + _GUTTER_COLS:
+            return i
+    return len(bounds) - 1
