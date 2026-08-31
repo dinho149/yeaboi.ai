@@ -17,7 +17,9 @@ from yeaboi.changelog import (
     VALID_SURFACES,
     ChangelogEntry,
     ChangelogHighlight,
+    changelog_areas,
     entries_since,
+    filter_by_area,
     filter_for_surface,
     load_changelog,
     read_seen_version,
@@ -110,6 +112,7 @@ class TestCopyContract:
 
     HEADLINE_MAX = 60
     SUMMARY_MAX = 240
+    SENTENCE_MAX = 2
     HIGHLIGHT_MAX = 90
     HIGHLIGHTS_MAX = 4
 
@@ -145,6 +148,11 @@ class TestCopyContract:
             assert summary, f"{entry['version']}: no summary"
             assert len(summary) <= self.SUMMARY_MAX, f"{entry['version']}: summary is {len(summary)} chars"
 
+    def test_summaries_are_at_most_two_sentences(self):
+        for entry in _raw_entries():
+            sentences = [part for part in re.split(r"(?<=[.!?])\s+", entry.get("summary", "")) if part]
+            assert len(sentences) <= self.SENTENCE_MAX, f"{entry['version']}: {len(sentences)} sentences"
+
     def test_highlights(self):
         for entry in _raw_entries():
             highlights = entry.get("highlights") or []
@@ -153,6 +161,7 @@ class TestCopyContract:
                 text = hl.get("text", "")
                 assert text, f"{entry['version']}: highlight with no text"
                 assert len(text) <= self.HIGHLIGHT_MAX, f"{entry['version']}: highlight is {len(text)} chars"
+                assert not text.endswith("."), f"{entry['version']}: highlight ends with a full stop"
 
     def test_no_internal_identifiers(self):
         for entry in _raw_entries():
@@ -394,3 +403,30 @@ class TestDataclasses:
         entry = ChangelogEntry(version="1.0.0")
         with pytest.raises(AttributeError):
             entry.version = "2.0.0"  # type: ignore[misc]
+
+
+class TestAreaHelpers:
+    ENTRIES = [
+        ChangelogEntry(
+            version="2.0.0",
+            highlights=(
+                ChangelogHighlight(text="a", areas=("retro",)),
+                ChangelogHighlight(text="b", areas=("planning",)),
+            ),
+        ),
+        ChangelogEntry(version="1.0.0", highlights=(ChangelogHighlight(text="c", areas=("planning",)),)),
+    ]
+
+    def test_areas_come_back_in_mode_grid_order(self):
+        assert changelog_areas(self.ENTRIES) == ["planning", "retro"]
+
+    def test_filter_keeps_only_matching_highlights(self):
+        filtered = filter_by_area(self.ENTRIES, "retro")
+        assert [e.version for e in filtered] == ["2.0.0"]
+        assert [hl.text for hl in filtered[0].highlights] == ["a"]
+
+    def test_empty_filter_is_a_no_op(self):
+        assert filter_by_area(self.ENTRIES, "") is self.ENTRIES
+
+    def test_unknown_area_matches_nothing(self):
+        assert filter_by_area(self.ENTRIES, "nope") == []

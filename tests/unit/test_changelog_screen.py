@@ -10,8 +10,7 @@ from rich.panel import Panel
 from yeaboi.changelog import ChangelogEntry, ChangelogHighlight
 from yeaboi.ui.mode_select.screens._screens_secondary import (
     _build_changelog_screen,
-    changelog_areas,
-    filter_by_area,
+    _changelog_short_date,
 )
 
 
@@ -239,21 +238,84 @@ class TestSelectionAnchoring:
         assert "The tall one" in out
 
 
-class TestAreaHelpers:
-    def test_changelog_areas_are_in_mode_grid_order(self):
-        assert changelog_areas(_entries()) == ["analysis", "planning", "settings", "general"]
+class TestFilterRow:
+    def test_shows_the_whole_ring_even_while_filtered(self):
+        """Deriving the chips from the filtered entries collapsed the row to two."""
+        ring = ["", "planning", "retro", "standup"]
+        out = _render(
+            _build_changelog_screen(_entries(), width=120, height=24, area_filter="retro", areas=ring),
+            width=120,
+        )
+        assert "[retro]" in out
+        for area in ("planning", "standup"):
+            assert area in out
 
-    def test_filter_by_area_keeps_matching_highlights(self):
-        filtered = filter_by_area(_entries(), "settings")
-        assert [e.version for e in filtered] == ["2.11.0"]
-        assert all("settings" in hl.areas for e in filtered for hl in e.highlights)
-
-    def test_empty_filter_is_a_no_op(self):
-        entries = _entries()
-        assert filter_by_area(entries, "") is entries
-
-    def test_filter_row_windows_to_fit(self):
+    def test_windows_to_fit_and_keeps_the_active_chip(self):
         """Ten areas do not fit at 80 columns; the active chip always survives."""
-        entries = _entries()
-        out = _render(_build_changelog_screen(entries, width=80, height=24, area_filter="general"), width=80)
-        assert "[general]" in out
+        ring = [
+            "",
+            *sorted(
+                {
+                    "analysis",
+                    "planning",
+                    "standup",
+                    "retro",
+                    "performance",
+                    "reporting",
+                    "usage",
+                    "settings",
+                    "agents",
+                    "general",
+                }
+            ),
+        ]
+        out = _render(
+            _build_changelog_screen(_entries(), width=80, height=24, area_filter="usage", areas=ring), width=80
+        )
+        assert "[usage]" in out
+        assert "…" in out  # something was clipped, and says so
+
+    def test_falls_back_to_all_with_no_ring(self):
+        out = _render(_build_changelog_screen(_entries(), width=80, height=24), width=80)
+        assert "[all]" in out
+
+
+class TestShortDate:
+    def test_formats_an_iso_date(self):
+        assert _changelog_short_date("2026-08-31") == "Aug 31"
+
+    def test_single_digit_day_has_no_padding_zero(self):
+        assert _changelog_short_date("2026-08-05") == "Aug 5"
+
+    def test_unparseable_never_outgrows_the_column(self):
+        # It feeds a 6-wide column; a full ISO string would shove the headline across.
+        assert len(_changelog_short_date("not-a-date-at-all")) <= 6
+        assert _changelog_short_date("") == ""
+
+
+class TestCollapsedDots:
+    def test_general_is_dropped_beside_a_real_area(self):
+        """It is on almost every release, so next to a real tag it says nothing."""
+        entry = ChangelogEntry(
+            version="1.0.0",
+            date="2026-01-01",
+            headline="Two areas",
+            highlights=(
+                ChangelogHighlight(text="a", areas=("planning",)),
+                ChangelogHighlight(text="b", areas=("general",)),
+            ),
+        )
+        out = _render(_build_changelog_screen([entry], width=100, height=24))
+        row = next(line for line in out.splitlines() if "Two areas" in line)
+        assert row.count("●") == 1
+
+    def test_general_alone_still_shows(self):
+        entry = ChangelogEntry(
+            version="1.0.0",
+            date="2026-01-01",
+            headline="Only general",
+            highlights=(ChangelogHighlight(text="a", areas=("general",)),),
+        )
+        out = _render(_build_changelog_screen([entry], width=100, height=24))
+        row = next(line for line in out.splitlines() if "Only general" in line)
+        assert row.count("●") == 1

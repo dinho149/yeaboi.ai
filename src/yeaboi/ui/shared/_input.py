@@ -548,6 +548,10 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                     else:
                         _read_available()
                     return ""
+                # Back-tab. Terminals send Shift+Tab as CSI Z, and without this it
+                # falls into the drain below and reaches the app as nothing at all.
+                if ch3 == "Z":
+                    return "shift+tab"
                 # Unknown CSI sequence — drain and ignore
                 _read_available()
                 return ""

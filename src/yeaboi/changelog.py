@@ -160,8 +160,10 @@ def read_seen_version() -> str:
         raw = json.loads(get_changelog_seen_path().read_text(encoding="utf-8"))
         version = raw.get("version", "") if isinstance(raw, dict) else ""
         return version if isinstance(version, str) else ""
+    except FileNotFoundError:
+        return ""  # never opened the page — the ordinary first run, not a failure
     except Exception:
-        logger.debug("changelog seen-version unreadable", exc_info=True)
+        logger.warning("changelog seen-version unreadable", exc_info=True)
         return ""
 
 
@@ -175,7 +177,7 @@ def write_seen_version(version: str) -> None:
         get_changelog_seen_path().write_text(json.dumps({"version": version, "at": time.time()}), encoding="utf-8")
         logger.debug("changelog seen-version written: %s", version)
     except Exception:
-        logger.debug("changelog seen-version not written", exc_info=True)
+        logger.warning("changelog seen-version not written", exc_info=True)
 
 
 def entries_since(entries: list[ChangelogEntry], version: str) -> list[ChangelogEntry]:
@@ -195,6 +197,24 @@ def entries_since(entries: list[ChangelogEntry], version: str) -> list[Changelog
         if current is not None and current > seen:
             newer.append(entry)
     return newer
+
+
+def changelog_areas(entries: list[ChangelogEntry]) -> list[str]:
+    """The area tags present in ``entries``, in the mode grid's own order."""
+    present = {area for entry in entries for hl in entry.highlights for area in hl.areas}
+    return [area for area in AREA_COLORS if area in present]
+
+
+def filter_by_area(entries: list[ChangelogEntry], area: str) -> list[ChangelogEntry]:
+    """Keep only the entries and highlights carrying ``area``; empty area keeps all."""
+    if not area:
+        return entries
+    kept = []
+    for entry in entries:
+        highlights = tuple(hl for hl in entry.highlights if area in hl.areas)
+        if highlights:
+            kept.append(replace(entry, highlights=highlights))
+    return kept
 
 
 def build_changelog_text(entries: list[ChangelogEntry] | None = None) -> str:

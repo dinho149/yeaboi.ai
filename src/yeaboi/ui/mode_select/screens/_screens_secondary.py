@@ -3419,30 +3419,9 @@ def _changelog_short_date(iso: str) -> str:
         # %-d is glibc-only; format the day ourselves so Windows renders the same.
         parsed = datetime.strptime(iso, "%Y-%m-%d")
     except (ValueError, TypeError):
-        return iso or ""
+        # Never wider than a real date, or it shoves the headline column across.
+        return (iso or "")[:6]
     return f"{parsed.strftime('%b')} {parsed.day}"
-
-
-def changelog_areas(entries: list) -> list[str]:
-    """The area tags present in ``entries``, in the mode grid's own order."""
-    from yeaboi.changelog import AREA_COLORS
-
-    present = {area for entry in entries for hl in entry.highlights for area in hl.areas}
-    return [area for area in AREA_COLORS if area in present]
-
-
-def filter_by_area(entries: list, area: str) -> list:
-    """Keep only the entries and highlights carrying ``area`` (empty area = all)."""
-    from dataclasses import replace
-
-    if not area:
-        return entries
-    kept = []
-    for entry in entries:
-        highlights = tuple(hl for hl in entry.highlights if area in hl.areas)
-        if highlights:
-            kept.append(replace(entry, highlights=highlights))
-    return kept
 
 
 def _build_changelog_screen(
@@ -3463,6 +3442,7 @@ def _build_changelog_screen(
     since: list | None = None,
     seen_version: str = "",
     anchor: bool = True,
+    areas: list | None = None,
 ) -> Panel:
     """Build the Changelog page: a selectable release list that expands in place.
 
@@ -3549,6 +3529,8 @@ def _build_changelog_screen(
             for area in hl.areas:
                 if area not in seen_areas:
                     seen_areas.append(area)
+        if len(seen_areas) > 1:
+            seen_areas = [a for a in seen_areas if a != "general"]
         if seen_areas:
             row.append("  ")
             for area in seen_areas:
@@ -3610,6 +3592,14 @@ def _build_changelog_screen(
         # The loop tracks its own offset; hand back the one actually rendered so a
         # selection move and a scroll key never disagree about where the page is.
         scroll_meta["offset"] = actual_scroll
+        # The topmost release on screen. A scroll key adopts it as the selection,
+        # so the next arrow press steps from what the reader is looking at rather
+        # than snapping back to wherever the selection was left behind.
+        top = next(
+            (idx for idx, (first, last) in sorted(spans.items()) if last > actual_scroll),
+            selected,
+        )
+        scroll_meta["top_entry"] = top
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
 
     _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
@@ -3653,7 +3643,7 @@ def _build_changelog_screen(
         Text(""),
         sub,
         Text(""),
-        _changelog_filter_row(entries, area_filter, theme, width),
+        _changelog_filter_row(areas, area_filter, theme, width),
         viewport_renderable,
         Text(""),
         hints,
@@ -3695,15 +3685,21 @@ def _changelog_since_block(since: list, seen_version: str, theme, wrap_w: int) -
     return lines
 
 
-def _changelog_filter_row(entries: list, area_filter: str, theme, width: int) -> Text:
+def _changelog_filter_row(areas: list | None, area_filter: str, theme, width: int) -> Text:
     """The sticky area-filter row: ``all`` plus every area the ledger uses.
+
+    ``areas`` is the WHOLE ring, computed once by the caller over the unfiltered
+    ledger — deriving it from the entries on screen would collapse the row to the
+    two chips that survive the current filter while Tab still cycled all eleven.
 
     Kept out of the scrolling body so the reader can always see which filter is on.
     Mirrors the desktop What's New page's chips.
     """
     from yeaboi.changelog import AREA_COLORS
 
-    names = ["", *changelog_areas(entries)]
+    names = list(areas) if areas else [""]
+    if "" not in names:
+        names.insert(0, "")
     if area_filter and area_filter not in names:
         names.append(area_filter)
     active = names.index(area_filter) if area_filter in names else 0

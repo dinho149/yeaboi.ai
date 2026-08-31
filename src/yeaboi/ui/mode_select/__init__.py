@@ -5498,19 +5498,16 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
     Opening the page marks the newest release read, so the catch-up digest at the
     top only ever reports what shipped since the reader was last here.
     """
-    from yeaboi import __version__
     from yeaboi.changelog import (
+        changelog_areas,
         entries_since,
+        filter_by_area,
         filter_for_surface,
         load_changelog,
         read_seen_version,
         write_seen_version,
     )
-    from yeaboi.ui.mode_select.screens._screens_secondary import (
-        _build_changelog_screen,
-        changelog_areas,
-        filter_by_area,
-    )
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_changelog_screen
     from yeaboi.update_check import get_update_status
 
     # Desktop- and web-only notes belong to those surfaces' own What's New views.
@@ -5537,8 +5534,10 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
     message = ""
     # Whether the next paint should pull the viewport back to the selected release.
     # Set by a selection move, cleared by a scroll key — otherwise the anchor and
-    # the scroll keys fight and the page cannot be scrolled at all.
-    anchor = True
+    # the scroll keys fight and the page cannot be scrolled at all. It starts off:
+    # the first paint must show the top of the page, or on a short terminal the
+    # anchor scrolls straight past the catch-up digest the page opens with.
+    anchor = False
     anim_start = time.monotonic()  # typewriter subtitle clock
 
     def _render() -> None:
@@ -5564,14 +5563,20 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
                 since=since,
                 seen_version=seen_version,
                 anchor=anchor,
+                areas=areas,
             )
         )
 
     _render()
     while True:
         # The builder anchors on the selection, so the offset it rendered is the
-        # truth — adopt it before acting on the next key.
+        # truth — adopt it before acting on the next key. While the anchor is off
+        # the reader is driving with the scroll keys, so the selection follows the
+        # topmost release on screen; the next arrow press then steps from what they
+        # are actually looking at.
         scroll = _scroll_meta.get("offset", scroll)
+        if not anchor:
+            selected = _scroll_meta.get("top_entry", selected)
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
         # No buttons of its own — a click has nothing to hit here (the app-wide
         # chrome tabs are handled by the shared input layer).
@@ -5580,7 +5585,7 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
         if k in ("up", "down") and entries:
             selected = max(0, min(len(entries) - 1, selected + (1 if k == "down" else -1)))
             anchor = True
-        elif k in ("enter", "space") and entries:
+        elif k in ("enter", "space", " ") and entries:
             version = entries[selected].version
             expanded.symmetric_difference_update({version})
             anchor = True
@@ -5601,9 +5606,9 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
             break
         _render()
 
-    if all_entries:
-        write_seen_version(all_entries[0].version)
-    logger.info("changelog: page closed (version=%s)", __version__)
+    marked = all_entries[0].version if all_entries else ""
+    write_seen_version(marked)
+    logger.info("changelog: page closed (marked read=%s)", marked or "-")
 
 
 def _run_all_tips_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:

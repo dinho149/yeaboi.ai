@@ -505,7 +505,8 @@ def markdown(batch: dict, *, asking: bool = True) -> str:
     )
     lines = [head, ""]
     for entry in batch["entries"]:
-        lines.append(f"**{entry.get('version', '?')}** — {entry.get('summary', '')}".rstrip(" —"))
+        title = entry.get("headline") or entry.get("summary", "")
+        lines.append(f"**{entry.get('version', '?')}** — {title}".rstrip(" —"))
         for highlight in entry.get("highlights") or []:
             areas = ", ".join(highlight.get("areas") or [])
             suffix = f"  `[{areas}]`" if areas else ""
