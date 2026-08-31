@@ -11,12 +11,15 @@ from yeaboi.feedback import (
     FEEDBACK_AREAS,
     FEEDBACK_REPO,
     FEEDBACK_TYPES,
+    MAX_INLINE_TEXT_CHARS,
     FeedbackResult,
     build_issue_body,
     build_issue_url,
+    feedback_attachment_kind,
     issue_labels,
     issue_title,
     polish_feedback,
+    read_text_tail,
     submit_feedback,
 )
 
@@ -81,6 +84,68 @@ class TestBuildIssueBody:
         body = build_issue_body("Bug", "general", "desc", [f"{home}/.yeaboi/attachments/feedback/img.png"])
         assert home not in body
         assert "`~/.yeaboi/attachments/feedback/img.png`" in body
+
+
+class TestTextAttachments:
+    """Logs are the one attachment that genuinely reaches GitHub — inlined."""
+
+    def test_kind_vocabulary(self):
+        assert feedback_attachment_kind("image/png") == "image"
+        assert feedback_attachment_kind("text/plain") == "text"
+        assert feedback_attachment_kind("application/zip") is None
+
+    def test_contents_inlined_in_a_collapsed_block(self, tmp_path):
+        log = tmp_path / "app.log"
+        log.write_text("first line\nboom: it broke\n")
+        body = build_issue_body("Bug", "general", "desc", None, [str(log)])
+        assert "### Logs and files (1)" in body
+        assert "<summary>app.log — 3 lines</summary>" in body
+        assert "boom: it broke" in body
+
+    def test_only_the_tail_survives_a_long_log(self, tmp_path):
+        log = tmp_path / "big.log"
+        log.write_text("x" * (MAX_INLINE_TEXT_CHARS + 500) + "\nTHE END\n")
+        body = build_issue_body("Bug", "general", "desc", None, [str(log)])
+        assert "THE END" in body
+        assert len(body) < MAX_INLINE_TEXT_CHARS + 2_000
+        assert "last " in body
+
+    def test_backticks_inside_a_log_cannot_escape_the_fence(self, tmp_path):
+        log = tmp_path / "md.log"
+        log.write_text("```\nnot the end of the block\n```\n")
+        body = build_issue_body("Bug", "general", "desc", None, [str(log)])
+        assert "````" in body
+        assert "not the end of the block" in body
+
+    def test_browser_body_names_the_files_instead_of_carrying_them(self, tmp_path):
+        log = tmp_path / "app.log"
+        log.write_text("boom: it broke\n")
+        body = build_issue_body("Bug", "general", "desc", None, [str(log)], inline_text=False)
+        assert "boom: it broke" not in body
+        assert f"`{log}`" in body
+        assert "drag them onto this issue" in body
+
+    def test_home_paths_relativized_in_the_named_form(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        log = tmp_path / "app.log"
+        log.write_text("boom\n")
+        body = build_issue_body("Bug", "general", "desc", None, [str(log)], inline_text=False)
+        assert str(tmp_path) not in body
+        assert "`~/app.log`" in body
+
+    def test_no_section_when_there_are_none(self):
+        assert "Logs and files" not in build_issue_body("Bug", "general", "desc", None, [])
+
+    def test_an_unreadable_file_does_not_sink_the_report(self, tmp_path):
+        body = build_issue_body("Bug", "general", "desc", None, [str(tmp_path / "gone.log")])
+        assert "### Logs and files (1)" in body
+        assert "desc" in body
+
+    def test_read_text_tail_reports_whether_it_cut(self, tmp_path):
+        log = tmp_path / "a.log"
+        log.write_text("abcdef")
+        assert read_text_tail(str(log), 100) == ("abcdef", False)
+        assert read_text_tail(str(log), 3) == ("def", True)
 
 
 class TestBuildIssueUrl:

@@ -5,14 +5,17 @@ issue on a public repository under the user's own GitHub token is not something
 an arbitrary tool client should be able to do on their behalf. It is offered
 where a person is looking at the form they wrote.
 
-Two calls, matching the two buttons. Polish is one LLM call that rewrites the
-draft and returns it for review — it never submits. Submit is the one that
-writes, and it never raises: a token path failure comes back as a browser URL
-the person can finish by hand.
+Four calls. Polish is one LLM call that rewrites the draft and returns it for
+review — it never submits. Submit is the one that writes, and it never raises: a
+token path failure comes back as a browser URL the person can finish by hand.
 
-Screenshot attachments are TUI-only for now (``Ctrl+V`` chips over a terminal
-image protocol); the desktop form sends text, and the paths field stays in the
-wire shape so a later drag-and-drop needs no new route.
+Attachments arrive as base64 in JSON, like ``routes_chat.attach``: the proxy the
+desktop reaches this server through sends JSON bodies only, and there is no
+multipart parser here. ``attach`` stores the bytes and hands back a path; the
+submit and polish calls then carry paths, and every path they carry is checked
+to live inside the feedback attachments directory. That check is load-bearing —
+``polish_feedback`` reads these files and sends their contents to an LLM, so an
+unchecked path would read any file on the machine.
 """
 
 from __future__ import annotations
@@ -26,12 +29,103 @@ logger = logging.getLogger(__name__)
 _MAX_TITLE = 250
 _MAX_DESCRIPTION = 20_000
 
+#: Where every feedback attachment lives. One scope for the whole form: these
+#: files outlive no session and belong to no project.
+_SCOPE = "feedback"
+
 
 def options(app, request: Request) -> Response:
-    """``GET /api/feedback/options`` — the type and area vocabularies."""
-    from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_REPO, FEEDBACK_TYPES
+    """``GET /api/feedback/options`` — the vocabularies, the caps, and the route.
 
-    return json_response({"types": list(FEEDBACK_TYPES), "areas": list(FEEDBACK_AREAS), "repo": FEEDBACK_REPO})
+    ``has_github_token`` is what lets the form say which of the two paths Submit
+    will take before it is pressed, rather than after.
+    """
+    import platform
+
+    from yeaboi import __version__
+    from yeaboi.changelog import AREA_COLORS
+    from yeaboi.config import get_github_token
+    from yeaboi.feedback import (
+        FEEDBACK_AREAS,
+        FEEDBACK_IMAGE_MIMES,
+        FEEDBACK_REPO,
+        FEEDBACK_TEXT_MIMES,
+        FEEDBACK_TYPES,
+        MAX_ATTACHMENTS,
+        MAX_TEXT_ATTACHMENT_BYTES,
+    )
+    from yeaboi.ui.shared._attachments import MAX_IMAGE_BYTES
+
+    return json_response(
+        {
+            "types": list(FEEDBACK_TYPES),
+            "areas": list(FEEDBACK_AREAS),
+            "repo": FEEDBACK_REPO,
+            "area_colors": {area: AREA_COLORS[area] for area in FEEDBACK_AREAS if area in AREA_COLORS},
+            "version": __version__,
+            "platform": f"{platform.system()} {platform.machine()}",
+            "has_github_token": bool(get_github_token()),
+            "image_mimes": list(FEEDBACK_IMAGE_MIMES),
+            "text_mimes": list(FEEDBACK_TEXT_MIMES),
+            "max_image_bytes": MAX_IMAGE_BYTES,
+            "max_text_bytes": MAX_TEXT_ATTACHMENT_BYTES,
+            "max_attachments": MAX_ATTACHMENTS,
+        }
+    )
+
+
+def attach(app, request: Request) -> Response:
+    """``POST /api/feedback/attachments`` — keep one screenshot or log file.
+
+    Body ``{"name": "app.log", "mime": "text/plain", "data": "<base64>"}``. The
+    reply's ``path`` is what a later submit or polish call sends back.
+    """
+    import base64
+    import binascii
+    import uuid
+
+    from yeaboi.feedback import (
+        MAX_TEXT_ATTACHMENT_BYTES,
+        attachment_extension,
+        feedback_attachment_kind,
+        read_text_tail,
+    )
+    from yeaboi.paths import get_attachments_dir
+    from yeaboi.ui.shared._attachments import MAX_IMAGE_BYTES
+
+    payload = request.json()
+    mime = str(payload.get("mime", ""))
+    kind = feedback_attachment_kind(mime)
+    if kind is None:
+        raise HTTPError(400, f"unsupported file type {mime!r} — attach a PNG, a JPEG, or a text file")
+    try:
+        data = base64.b64decode(str(payload.get("data", "")), validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPError(400, "the file must be base64") from None
+    if not data:
+        raise HTTPError(400, "no file was sent")
+
+    ceiling = MAX_IMAGE_BYTES if kind == "image" else MAX_TEXT_ATTACHMENT_BYTES
+    if len(data) > ceiling:
+        raise HTTPError(
+            413,
+            f"Too large ({len(data) / (1024 * 1024):.1f} MB, max {ceiling / (1024 * 1024):.1f} MB)",
+        )
+
+    path = get_attachments_dir(_SCOPE) / f"{kind}-{uuid.uuid4().hex[:8]}{attachment_extension(mime)}"
+    try:
+        path.write_bytes(data)
+    except OSError as exc:
+        logger.error("failed to save feedback attachment to %s: %s", path, exc)
+        raise HTTPError(500, "Could not save the attachment") from None
+
+    name = _safe_name(payload.get("name"), path.name)
+    logger.info("feedback attachment saved: kind=%s bytes=%d mime=%s", kind, len(data), mime)
+    reply = {"path": str(path), "name": name, "kind": kind, "bytes": len(data)}
+    if kind == "text":
+        text, _ = read_text_tail(str(path), limit=MAX_TEXT_ATTACHMENT_BYTES)
+        reply["lines"] = text.count("\n") + 1 if text else 0
+    return json_response(reply)
 
 
 def submit(app, request: Request) -> Response:
@@ -40,7 +134,8 @@ def submit(app, request: Request) -> Response:
     from yeaboi.mcp.runtime import to_jsonable
 
     kind, area, title, description = _draft(request)
-    result = submit_feedback(kind, area, title, description)
+    images, texts = _attachment_paths(request.json())
+    result = submit_feedback(kind, area, title, description, images, texts)
     logger.info("feedback submitted: type=%s area=%s ok=%s via=%s", kind, area, result.ok, result.via)
     return json_response(to_jsonable(result))
 
@@ -55,13 +150,25 @@ def polish(app, request: Request) -> Response:
     from yeaboi.feedback import polish_feedback
 
     kind, area, title, description = _draft(request)
-    polished, status = polish_feedback(kind, area, title, description)
+    images, texts = _attachment_paths(request.json())
+    polished, status = polish_feedback(kind, area, title, description, images, texts)
     return json_response(
         {
             "polished": {"title": polished[0], "description": polished[1]} if polished else None,
             "status": status,
         }
     )
+
+
+def _safe_name(raw, fallback: str) -> str:
+    """The reporter's own filename, stripped of any path. Shown in the issue body."""
+    from pathlib import PurePosixPath, PureWindowsPath
+
+    name = str(raw or "").strip()
+    if not name:
+        return fallback
+    name = PureWindowsPath(PurePosixPath(name).name).name
+    return name[:120] or fallback
 
 
 def _draft(request: Request) -> tuple[str, str, str, str]:
@@ -82,3 +189,38 @@ def _draft(request: Request) -> tuple[str, str, str, str]:
     if not description:
         raise HTTPError(400, "a feedback report needs a description")
     return kind, area, title[:_MAX_TITLE], description[:_MAX_DESCRIPTION]
+
+
+def _attachment_paths(payload: dict) -> tuple[list[str], list[str]]:
+    """The attachment paths this report carries, confined to the attachments directory.
+
+    A path from anywhere else is refused rather than ignored: polish reads these
+    files and sends them to an LLM, and the issue body prints them.
+    """
+    from pathlib import Path
+
+    from yeaboi.feedback import MAX_ATTACHMENTS
+    from yeaboi.paths import get_attachments_dir
+
+    root = get_attachments_dir(_SCOPE).resolve()
+    kept: list[list[str]] = [[], []]
+    total = 0
+    for index, key in enumerate(("image_paths", "text_paths")):
+        raw = payload.get(key) or []
+        if not isinstance(raw, list):
+            raise HTTPError(400, f"{key} must be a list of attachment paths")
+        for entry in raw:
+            path = Path(str(entry))
+            try:
+                resolved = path.resolve()
+                resolved.relative_to(root)
+            except (OSError, ValueError):
+                raise HTTPError(400, "an attachment path must be one this app returned") from None
+            total += 1
+            if total > MAX_ATTACHMENTS:
+                raise HTTPError(400, f"too many attachments — {MAX_ATTACHMENTS} at most")
+            # A file the person removed from disk between attaching and sending
+            # is dropped, not an error: the report is still worth filing.
+            if resolved.is_file():
+                kept[index].append(str(resolved))
+    return kept[0], kept[1]

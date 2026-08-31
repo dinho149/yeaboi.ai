@@ -111,10 +111,26 @@ class TestFeedback:
         assert "planning" in payload["areas"]
         assert "/" in payload["repo"]
 
+    def test_options_say_which_route_submit_will_take(self, app, monkeypatch):
+        # The form can only name the button honestly if it is told this.
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "ghp_x")
+        assert body(request(app, "GET", "/api/feedback/options"))["has_github_token"] is True
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "")
+        assert body(request(app, "GET", "/api/feedback/options"))["has_github_token"] is False
+
+    def test_options_carry_the_attachment_caps_and_colours(self, app):
+        payload = body(request(app, "GET", "/api/feedback/options"))
+        assert "image/png" in payload["image_mimes"]
+        assert "text/plain" in payload["text_mimes"]
+        assert payload["max_image_bytes"] > payload["max_text_bytes"]
+        assert payload["max_attachments"] == 6
+        assert payload["area_colors"]["planning"].startswith("rgb(")
+        assert payload["version"] and payload["platform"]
+
     def test_a_submission_reaches_the_engine_with_the_draft(self, app, monkeypatch):
         seen = {}
 
-        def _submit(kind, area, title, description, image_paths=None):
+        def _submit(kind, area, title, description, image_paths=None, text_paths=None):
             seen.update(kind=kind, area=area, title=title, description=description)
             from yeaboi.feedback import FeedbackResult
 
@@ -180,6 +196,161 @@ class TestFeedback:
         )
         assert payload["polished"] is None
         assert "unavailable" in payload["status"]
+
+
+class TestFeedbackAttachments:
+    """Base64 in, a path out — and only that path is accepted back."""
+
+    @pytest.fixture
+    def attachments(self, tmp_path, monkeypatch):
+        root = tmp_path / "attachments" / "feedback"
+        root.mkdir(parents=True)
+        monkeypatch.setattr("yeaboi.paths.get_attachments_dir", lambda _scope: root)
+        return root
+
+    def _attach(self, app, mime, raw, name="app.log"):
+        import base64
+
+        return request(
+            app,
+            "POST",
+            "/api/feedback/attachments",
+            {"name": name, "mime": mime, "data": base64.b64encode(raw).decode()},
+        )
+
+    def test_a_log_is_saved_and_counted(self, app, attachments):
+        payload = body(self._attach(app, "text/plain", b"one\ntwo\n"))
+        assert payload["kind"] == "text"
+        assert payload["name"] == "app.log"
+        assert payload["lines"] == 3
+        assert Path(payload["path"]).read_bytes() == b"one\ntwo\n"
+
+    def test_a_screenshot_is_saved_without_a_line_count(self, app, attachments):
+        payload = body(self._attach(app, "image/png", b"\x89PNG fake", name="shot.png"))
+        assert payload["kind"] == "image"
+        assert "lines" not in payload
+        assert Path(payload["path"]).suffix == ".png"
+
+    def test_a_directory_in_the_name_never_reaches_the_issue(self, app, attachments):
+        payload = body(self._attach(app, "text/plain", b"x", name="../../etc/passwd"))
+        assert payload["name"] == "passwd"
+
+    def test_an_unsupported_type_is_refused(self, app, attachments):
+        response = self._attach(app, "application/zip", b"PK\x03\x04")
+        assert response.code == 400
+        assert "unsupported file type" in json.loads(response.body)["error"]
+
+    def test_an_oversized_log_is_refused(self, app, attachments):
+        from yeaboi.feedback import MAX_TEXT_ATTACHMENT_BYTES
+
+        response = self._attach(app, "text/plain", b"x" * (MAX_TEXT_ATTACHMENT_BYTES + 1))
+        assert response.code == 413
+        assert "Too large" in json.loads(response.body)["error"]
+
+    def test_something_that_is_not_base64_is_refused(self, app, attachments):
+        response = request(
+            app, "POST", "/api/feedback/attachments", {"name": "a.log", "mime": "text/plain", "data": "not base64!!"}
+        )
+        assert response.code == 400
+
+    def test_a_saved_path_round_trips_into_a_submission(self, app, attachments, monkeypatch):
+        seen = {}
+
+        def _submit(kind, area, title, description, image_paths=None, text_paths=None):
+            seen.update(images=image_paths, texts=text_paths)
+            from yeaboi.feedback import FeedbackResult
+
+            return FeedbackResult(ok=True, via="api", url="https://example/1", message="ok")
+
+        monkeypatch.setattr("yeaboi.feedback.submit_feedback", _submit)
+        saved = body(self._attach(app, "text/plain", b"boom\n"))["path"]
+        request(
+            app,
+            "POST",
+            "/api/feedback",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "text_paths": [saved]},
+        )
+        assert seen == {"images": [], "texts": [saved]}
+
+    def test_a_path_outside_the_attachments_directory_is_refused(self, app, attachments, tmp_path, monkeypatch):
+        # polish reads these files and sends them to a model, so this is the
+        # difference between an attachment and an arbitrary-file read.
+        monkeypatch.setattr(
+            "yeaboi.feedback.submit_feedback",
+            lambda *a, **k: pytest.fail("nothing should be filed for a path we did not hand out"),
+        )
+        secret = tmp_path / "id_rsa"
+        secret.write_text("PRIVATE KEY")
+        response = request(
+            app,
+            "POST",
+            "/api/feedback",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "text_paths": [str(secret)]},
+        )
+        assert response.code == 400
+        assert "one this app returned" in json.loads(response.body)["error"]
+
+    def test_traversal_out_of_the_attachments_directory_is_refused(self, app, attachments):
+        response = request(
+            app,
+            "POST",
+            "/api/feedback",
+            {
+                "kind": "Bug",
+                "area": "planning",
+                "title": "t",
+                "description": "d",
+                "image_paths": [str(attachments / ".." / ".." / "id_rsa")],
+            },
+        )
+        assert response.code == 400
+
+    def test_a_file_deleted_after_attaching_is_dropped_not_fatal(self, app, attachments, monkeypatch):
+        seen = {}
+
+        def _submit(kind, area, title, description, image_paths=None, text_paths=None):
+            seen.update(texts=text_paths)
+            from yeaboi.feedback import FeedbackResult
+
+            return FeedbackResult(ok=True, via="api", url="u", message="ok")
+
+        monkeypatch.setattr("yeaboi.feedback.submit_feedback", _submit)
+        saved = body(self._attach(app, "text/plain", b"boom\n"))["path"]
+        Path(saved).unlink()
+        response = request(
+            app,
+            "POST",
+            "/api/feedback",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "text_paths": [saved]},
+        )
+        assert response.code == 200
+        assert seen == {"texts": []}
+
+    def test_more_than_the_ceiling_is_refused(self, app, attachments):
+        saved = body(self._attach(app, "text/plain", b"x"))["path"]
+        response = request(
+            app,
+            "POST",
+            "/api/feedback",
+            {
+                "kind": "Bug",
+                "area": "planning",
+                "title": "t",
+                "description": "d",
+                "text_paths": [saved] * 7,
+            },
+        )
+        assert response.code == 400
+        assert "too many attachments" in json.loads(response.body)["error"]
+
+    def test_paths_must_be_a_list(self, app, attachments):
+        response = request(
+            app,
+            "POST",
+            "/api/feedback",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "image_paths": "a.png"},
+        )
+        assert response.code == 400
 
 
 class TestConsentRoutes:
