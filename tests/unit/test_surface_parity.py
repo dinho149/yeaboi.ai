@@ -171,10 +171,10 @@ CAPABILITIES: dict[str, dict] = {
         },
         "skill": "standup",
         "desktop": {
-            "/humans/standup",
-            "/humans/standup/setup",
-            "/humans/standup/schedule",
-            "/humans/standup/review",
+            "/team/standup",
+            "/team/standup/setup",
+            "/team/standup/schedule",
+            "/team/standup/review",
         },
     },
     "reporting": {
@@ -185,7 +185,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "reporting",
         "cli": {"report"},
         "skill": "delivery-report",
-        "desktop": {"/humans/reporting", "/humans/reporting/new", "/humans/reporting/style"},
+        "desktop": {"/team/reporting", "/team/reporting/new", "/team/reporting/style"},
     },
     "performance": {
         "engines": {
@@ -203,7 +203,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "performance",
         "cli": {"perf"},
         "skill": "performance",
-        "desktop": {"/humans/performance", "/humans/performance/engineer"},
+        "desktop": {"/team/performance", "/team/performance/engineer"},
     },
     "scrum-poker": {
         # get_poker_perspective: the one LLM call (AI take on a revealed vote
@@ -214,7 +214,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "poker",
         "cli": {"poker"},  # history read-back + export; the live voting board stays TUI-hosted
         "skill": Exempt("live voting session is TUI-hosted by design; history stays readable via poker_history"),
-        "desktop": {"/humans/poker", "/humans/poker/new", "/humans/poker/board"},
+        "desktop": {"/team/poker", "/team/poker/new", "/team/poker/board"},
     },
     "retro-board": {
         # carried_action_items_for_session: the headless carry-forward load (prior
@@ -234,7 +234,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "retro",
         "cli": {"retro"},  # history read-back + export; the live board itself stays TUI-hosted
         "skill": Exempt("live board is TUI-only by design; history stays readable via retro_history"),
-        "desktop": {"/humans/retro", "/humans/retro/board"},
+        "desktop": {"/team/retro", "/team/retro/board"},
     },
     "team-learning": {
         "engines": Exempt("lives in tools/team_learning.py as @tool functions — covered by test_tools_registry"),
@@ -254,7 +254,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "team-analysis",
         "cli": {"analyze", "--learn"},
         "skill": "team-analysis",
-        "desktop": {"/humans/analysis", "/humans/analysis/new", "/humans/analysis/results"},
+        "desktop": {"/team/analysis", "/team/analysis/new", "/team/analysis/results"},
     },
     "roadmap": {
         # Landed on main (TUI-only) before both this parity framework and the
@@ -479,7 +479,7 @@ CAPABILITIES: dict[str, dict] = {
         # or a task, nor split an epic into stacked PRs. A route-set check
         # cannot see a narrowing inside a route, so it is named here and in
         # contracts/v1/app_http.md.
-        "desktop": {"/humans/ship", "/humans/ship/run"},
+        "desktop": {"/team/ship", "/team/ship/run"},
     },
 }
 

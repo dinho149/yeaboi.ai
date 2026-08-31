@@ -58,7 +58,7 @@ def _render(width=110, height=40, selected=0, **kwargs) -> str:
 
 class TestCards:
     def test_two_categories_in_order(self):
-        assert [c["key"] for c in _CATEGORY_CARDS] == ["humans", "agents"]
+        assert [c["key"] for c in _CATEGORY_CARDS] == ["team", "agents"]
 
     def test_core_keys_present(self):
         for card in _CATEGORY_CARDS:
@@ -80,7 +80,7 @@ class TestRender:
         shaded = ",".join(
             str(round(c * _MASCOT_SHADE + t * (1.0 - _MASCOT_SHADE))) for c, t in zip(steel, _SHADE_TOWARD, strict=True)
         )
-        resting = _render(selected=0)  # humans live, so the robo is at the back
+        resting = _render(selected=0)  # team live, so the robo is at the back
         assert "140;160;178" not in resting
         assert shaded.replace(",", ";") in resting, shaded
 
@@ -98,9 +98,9 @@ class TestRender:
 
         # No frame and no wash any more: the live card is marked by its wordmark
         # burning bright and by its mascot having walked to the front.
-        humans, agents = (_rgb(c["bright"]) for c in _CATEGORY_CARDS)
+        team, agents = (_rgb(c["bright"]) for c in _CATEGORY_CARDS)
         assert agents in right and agents not in left
-        assert humans in left and humans not in right
+        assert team in left and team not in right
         for tint in ("15;24;32", "17;28;20"):
             assert tint not in left and tint not in right, tint
 
@@ -244,7 +244,7 @@ class TestRender:
         # on its own still appears — in "Watch your AI agents work".)
         for line in plain.split("\n"):
             if "─" in line:
-                assert "humans" not in line and "agents" not in line, line
+                assert "team" not in line and "agents" not in line, line
         # And the cards themselves draw none. Counted on the CARD, not on the
         # page: the page's frame count depends on what else the chrome has been
         # asked to draw (an update box, a drawer), which is not this test's
@@ -294,7 +294,7 @@ class TestRender:
 
 
 class TestHitTest:
-    def test_left_half_is_humans(self):
+    def test_left_half_is_team(self):
         assert category_at_pos(100, 30, row=15, col=10) == 0
 
     def test_right_half_is_agents(self):
@@ -327,7 +327,7 @@ class TestSeedFrame:
     the tail of the splash — the flicker at the splash → landing-split boundary.
     """
 
-    def _seed(self, category="humans", width=110, height=40):
+    def _seed(self, category="team", width=110, height=40):
         from yeaboi.ui.mode_select import _landing_first_frame
 
         return _landing_first_frame(category, width=width, height=height)
@@ -369,7 +369,7 @@ class TestSeedFrame:
     def test_it_opens_on_the_remembered_category(self):
         from yeaboi.ui.mode_select.screens._screens_category import category_index
 
-        assert category_index("humans") == 0
+        assert category_index("team") == 0
         assert category_index("agents") == 1
         # An unknown key must not raise — a hand-edited config lands on Humans.
         assert category_index("nonsense") == 0

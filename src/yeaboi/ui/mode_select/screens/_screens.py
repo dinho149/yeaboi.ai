@@ -123,9 +123,9 @@ _MODE_CARDS: list[dict[str, Any]] = [
 ]
 
 # ---------------------------------------------------------------------------
-# Agents mode definitions — the second category on the landing split. Kept as a
+# Agents mode definitions — the third category on the landing split. Kept as a
 # SEPARATE list, never merged into _MODE_CARDS: the welcome tests pin exact
-# renders and hardcoded indices against _MODE_CARDS, and the two menus are
+# renders and hardcoded indices against _MODE_CARDS, and the menus are
 # separate screens sharing one builder (_build_mode_screen(cards=...)).
 # ---------------------------------------------------------------------------
 
@@ -698,7 +698,7 @@ def _build_mode_screen(
     sweep_skip: index of one title to leave fully shown while the sweep reveals the
     rest — used by the return transition (the mode you came from is already home).
     cards / mascot: the card list this menu shows (default ``_MODE_CARDS``) and the
-    companion sprite beside it ("duck" for Humans, "robo" for Agents). Only the
+    companion sprite beside it ("duck" for Solo/Team, "robo" for Agents). Only the
     *source* of the rows changes — every layout constant stays identical, and
     ``mode_at_row``/``selected_title_offset`` must be passed the same ``cards``.
     """

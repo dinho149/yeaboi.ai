@@ -196,7 +196,7 @@ nothing to confirm.
 *archives* rather than purges: a conversation is a record of what the user was
 told. The terminal's saved-conversations hub does the permanent delete.
 
-`route` on `send` is where the user is (`/agents/usage`, `/humans/retro`) and
+`route` on `send` is where the user is (`/agents/usage`, `/team/retro`) and
 colours the answer toward that screen. Omit it rather than guessing — Niko says
 it does not know which screen rather than inventing one. `user_name` is what to
 call them; the shell reads it from its own identity file.

@@ -37,7 +37,7 @@ produces a new report.
   result to continue one. The thread is persisted locally, so it survives
   restarts and is the same thread the desktop panel and `yeaboi ask` see.
 - **`route`** — where the user is, as a desktop route (`/agents/usage`,
-  `/humans/retro`). It colours the answer toward that screen. Omit it rather
+  `/team/retro`). It colours the answer toward that screen. Omit it rather
   than guessing; Niko says it doesn't know which screen rather than inventing
   one.
 - **`max_rounds`** — tool rounds before Niko must answer. The default of 4 is

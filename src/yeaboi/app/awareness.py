@@ -48,7 +48,7 @@ class Notice:
 NOTICES: dict[str, Notice] = {
     "ceremony_ran": Notice("ceremony_ran", "A ceremony fired!", route="/ceremonies"),
     "ceremony_failed": Notice("ceremony_failed", "A ceremony went wrong.", route="/ceremonies"),
-    "ship_gate": Notice("ship_gate", "A diff needs you.", sticky=True, route="/humans/ship/run"),
+    "ship_gate": Notice("ship_gate", "A diff needs you.", sticky=True, route="/team/ship/run"),
 }
 
 

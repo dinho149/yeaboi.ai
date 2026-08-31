@@ -190,14 +190,14 @@ class TestTheToolLoop:
 
 class TestNavigate:
     def test_the_route_reaches_the_answer_and_the_stream(self, wired, monkeypatch):
-        monkeypatch.setattr("yeaboi.niko.tools.call", lambda name, args: {"route": "/humans/retro"})
+        monkeypatch.setattr("yeaboi.niko.tools.call", lambda name, args: {"route": "/team/retro"})
         wired.install(
-            FakeModel([_tool_reply("navigate", {"route": "/humans/retro"}), AIMessage(content="Taking you there.")])
+            FakeModel([_tool_reply("navigate", {"route": "/team/retro"}), AIMessage(content="Taking you there.")])
         )
         seen = []
         answer = engine.ask("run a retro", db_path=wired.db, on_event=seen.append)
-        assert answer.route == "/humans/retro"
-        assert [e.route for e in seen if isinstance(e, engine.Navigate)] == ["/humans/retro"]
+        assert answer.route == "/team/retro"
+        assert [e.route for e in seen if isinstance(e, engine.Navigate)] == ["/team/retro"]
 
     def test_a_refused_route_is_not_suggested(self, wired, monkeypatch):
         monkeypatch.setattr("yeaboi.niko.tools.call", lambda name, args: {"error": "not a route", "route": ""})

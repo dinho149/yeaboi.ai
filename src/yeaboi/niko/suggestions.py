@@ -7,7 +7,7 @@ rename a route and the mapping follows it; drop a capability and
 that no longer exists.
 
 Resolution order matches the surface's own specificity — exact route, then the
-capability that owns it, then the section (``/humans`` vs ``/agents``), then a
+capability that owns it, then the section (``/team`` vs ``/agents``), then a
 default set. A screen with nothing to say falls back rather than showing
 nothing: an empty chip list reads as a broken panel.
 
@@ -93,7 +93,7 @@ BY_CAPABILITY: dict[str, list[dict]] = {
 
 #: Section fallbacks, for a screen whose capability has no chips of its own.
 BY_SECTION: dict[str, list[dict]] = {
-    "/humans": [
+    "/team": [
         _chip("What should I do next?", "Based on my data, what should I work on next?", "compass"),
         _chip("What have I planned?", "List my saved planning sessions and how far each one got.", "layers"),
     ],
@@ -131,7 +131,7 @@ def route_index() -> dict[str, dict]:
 def screen_for(route: str) -> dict:
     """What the manifest says about ``route`` — longest matching prefix wins.
 
-    Prefix rather than exact so ``/humans/retro/board`` inherits the retro row
+    Prefix rather than exact so ``/team/retro/board`` inherits the retro row
     when the deeper path is not itself registered, which is how the renderer's
     own active-state works.
     """

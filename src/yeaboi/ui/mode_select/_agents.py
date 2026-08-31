@@ -167,7 +167,7 @@ def _run_agent_page(
         status = ""
         refreshing = artifact is not None
         # duck_working_thread: the corner robo bobs for the engine's lifetime,
-        # same liveness cue the Humans pages give their worker runs.
+        # same liveness cue the Team pages give their worker runs.
         duck_working_thread(_work, name=label).start()
 
     _start_worker()

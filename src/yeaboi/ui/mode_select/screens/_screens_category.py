@@ -1,7 +1,7 @@
-"""The landing split — Humans vs Agents — shown between the splash and a menu.
+"""The landing split — Solo vs Team vs Agents — shown between the splash and a menu.
 
-Two rounded world-cards side by side, each carrying its FULL-BODY mascot (the
-duck for Humans, the robotic duck for Agents), a solid-accent block title, a
+Rounded world-cards side by side, each carrying its mascot (the OG duck for
+Solo, the duck trio for Team, the robotic duck for Agents), a solid-accent block title, a
 verb line, and an accent-middot capability list. The page's one question lives
 in the outer frame's border, not floating in space.
 
@@ -32,17 +32,17 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import AGENTS_THEME, HUMANS_THEME, build_page_panel
+from yeaboi.ui.shared._components import AGENTS_THEME, TEAM_THEME, build_page_panel
 from yeaboi.ui.shared._mascot import FRAMES, mini_cells, render_full
 
 _CATEGORY_CARDS: list[dict[str, Any]] = [
     {
-        "key": "humans",
-        "title": "Humans",
+        "key": "team",
+        "title": "Team",
         "verb": "Run your team's scrum",
         "capabilities": ["planning", "standups", "retros", "poker", "reviews"],
-        "color": HUMANS_THEME.accent,
-        "bright": HUMANS_THEME.accent_bright,
+        "color": TEAM_THEME.accent,
+        "bright": TEAM_THEME.accent_bright,
         "dim": "rgb(55,95,58)",  # the resting shade — no theme slot for it
         "tint": "rgb(17,28,20)",  # card-bg convention: a dark shade of the accent
         "mascot": "duck",
@@ -294,7 +294,7 @@ def _build_category_screen(
     shimmer_tick: float = 0.0,
     intro: float = 1.0,
 ) -> Panel:
-    """Build the full-screen Humans/Agents landing split."""
+    """Build the full-screen landing split."""
     inner_w = width - 6  # borders (2) + horizontal padding (4)
     half_w = max(20, (inner_w - _GUTTER_COLS) // 2)
     halves = [
@@ -353,7 +353,7 @@ def _build_category_screen(
 
 
 def category_at_pos(width: int, height: int, *, row: int, col: int) -> int | None:
-    """Map a 1-based terminal click to a category index (0=humans, 1=agents).
+    """Map a 1-based terminal click to a category index (0=team, 1=agents).
 
     Any click inside the content band counts for the half it lands in — the
     cards are the whole screen, so precision clicking isn't required. The top

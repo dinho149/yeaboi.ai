@@ -12515,7 +12515,7 @@ def _sweep_menu_in(
     leaves that one title fully shown throughout (used after the return slide, when
     the mode you came from is already home and only the rest scroll in). A no-op
     wipe (straight to the final frame) when the terminal is too small.
-    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
+    ``cards``/``mascot`` pick the menu (Team default, Agents when passed).
     """
     _iw, _ih = console.size
     if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
@@ -12585,7 +12585,7 @@ def _slide_menu_in(
     Phase 2 hands off to the diagonal wipe (``_sweep_menu_in`` with ``sweep_skip``)
     so every OTHER title reveals top-left → bottom-right while the one you picked
     stays put. A no-op (straight to the final frame) when the terminal is too small.
-    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
+    ``cards``/``mascot`` pick the menu (Team default, Agents when passed).
     """
     _card_list = _MODE_CARDS if cards is None else cards
     w, h = console.size
@@ -12625,9 +12625,9 @@ def _run_category_screen(
     read_key,
     supports_timeout: bool,
     *,
-    preselected: str = "humans",
+    preselected: str = "team",
 ) -> str | None:
-    """Phase 0 — the Humans/Agents landing split. Returns a category key or
+    """Phase 0 — the landing split. Returns a category key or
     None to quit.
 
     Always shown on a fresh load (the last-used category is *preselected*,
@@ -13275,8 +13275,8 @@ def select_mode(
     from yeaboi.config import get_last_category, set_last_category
 
     category = get_last_category()
-    cards: list[dict] = _MODE_CARDS if category == "humans" else _AGENT_CARDS
-    mascot = "duck" if category == "humans" else "robo"
+    cards: list[dict] = _MODE_CARDS if category == "team" else _AGENT_CARDS
+    mascot = "duck" if category == "team" else "robo"
     _category_pending = True  # show the split on the first pass through the loop
     _back_to_category = False
 
@@ -13341,7 +13341,7 @@ def select_mode(
             _returning = _skip_fade_in
             _skip_fade_in = False
 
-            # ── Phase 0: the Humans/Agents landing split ─────────────────────
+            # ── Phase 0: the landing split ───────────────────────────────────
             # Shown on a fresh load and whenever Esc backs out of a menu; a
             # return from a sub-page keeps its category and skips straight to
             # the menu transition below.
@@ -13353,8 +13353,8 @@ def select_mode(
                 if _pick != category:
                     set_last_category(_pick)
                 category = _pick
-                cards = _MODE_CARDS if category == "humans" else _AGENT_CARDS
-                mascot = "duck" if category == "humans" else "robo"
+                cards = _MODE_CARDS if category == "team" else _AGENT_CARDS
+                mascot = "duck" if category == "team" else "robo"
                 n = len(cards)
                 selected = 0
                 # A category pick always sweeps its menu in fresh.
@@ -13512,11 +13512,11 @@ def select_mode(
                         _other = _AGENT_CARDS if cards is _MODE_CARDS else _MODE_CARDS
                         _j = next((i for i, m in enumerate(_other) if m["key"] == _tip.mode_key), None)
                         if _j is not None and _other[_j]["available"]:
-                            category = "agents" if _other is _AGENT_CARDS else "humans"
+                            category = "agents" if _other is _AGENT_CARDS else "team"
                             logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
                             set_last_category(category)
                             cards = _other
-                            mascot = "duck" if category == "humans" else "robo"
+                            mascot = "duck" if category == "team" else "robo"
                             n = len(cards)
                             selected = _j
                             break

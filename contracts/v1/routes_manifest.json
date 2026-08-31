@@ -32,97 +32,97 @@
       "title": "Usage"
     },
     {
-      "path": "/humans/analysis",
+      "path": "/team/analysis",
       "capability": "team-analysis",
       "title": "Analysis"
     },
     {
-      "path": "/humans/analysis/new",
+      "path": "/team/analysis/new",
       "capability": "team-analysis",
       "title": "Analysis · New"
     },
     {
-      "path": "/humans/analysis/results",
+      "path": "/team/analysis/results",
       "capability": "team-analysis",
       "title": "Analysis · Results"
     },
     {
-      "path": "/humans/standup",
+      "path": "/team/standup",
       "capability": "standup",
       "title": "Standup"
     },
     {
-      "path": "/humans/standup/setup",
+      "path": "/team/standup/setup",
       "capability": "standup",
       "title": "Standup · Setup"
     },
     {
-      "path": "/humans/standup/schedule",
+      "path": "/team/standup/schedule",
       "capability": "standup",
       "title": "Standup · Schedule"
     },
     {
-      "path": "/humans/standup/review",
+      "path": "/team/standup/review",
       "capability": "standup",
       "title": "Standup · Transcript review"
     },
     {
-      "path": "/humans/retro",
+      "path": "/team/retro",
       "capability": "retro-board",
       "title": "Retro"
     },
     {
-      "path": "/humans/retro/board",
+      "path": "/team/retro/board",
       "capability": "retro-board",
       "title": "Retro · Board"
     },
     {
-      "path": "/humans/poker",
+      "path": "/team/poker",
       "capability": "scrum-poker",
       "title": "Poker"
     },
     {
-      "path": "/humans/poker/new",
+      "path": "/team/poker/new",
       "capability": "scrum-poker",
       "title": "Poker · New session"
     },
     {
-      "path": "/humans/poker/board",
+      "path": "/team/poker/board",
       "capability": "scrum-poker",
       "title": "Poker · Table"
     },
     {
-      "path": "/humans/performance",
+      "path": "/team/performance",
       "capability": "performance",
       "title": "Performance"
     },
     {
-      "path": "/humans/performance/engineer",
+      "path": "/team/performance/engineer",
       "capability": "performance",
       "title": "Performance · Engineer"
     },
     {
-      "path": "/humans/reporting",
+      "path": "/team/reporting",
       "capability": "reporting",
       "title": "Reporting"
     },
     {
-      "path": "/humans/reporting/new",
+      "path": "/team/reporting/new",
       "capability": "reporting",
       "title": "Reporting · New report"
     },
     {
-      "path": "/humans/reporting/style",
+      "path": "/team/reporting/style",
       "capability": "reporting",
       "title": "Reporting · Deck style"
     },
     {
-      "path": "/humans/ship",
+      "path": "/team/ship",
       "capability": "ship",
       "title": "Ship"
     },
     {
-      "path": "/humans/ship/run",
+      "path": "/team/ship/run",
       "capability": "ship",
       "title": "Ship · Run"
     },

@@ -202,7 +202,7 @@ class TestNikoIsNotACard:
     is recorded in tests/unit/test_surface_parity.py's CAPABILITIES row.
     """
 
-    def test_the_humans_menu_does_not_carry_it(self):
+    def test_the_team_menu_does_not_carry_it(self):
         assert "niko" not in {card["key"] for card in _MODE_CARDS}
 
     def test_ten_cards_still_clear_the_enforced_minimum(self):

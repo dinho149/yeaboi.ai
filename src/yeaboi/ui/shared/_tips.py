@@ -223,7 +223,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_new=True,
     ),
     # The Agents family — cards live on the Agents menu (_AGENT_CARDS); the `g`
-    # jump switches category when the tip fires from the Humans menu.
+    # jump switches category when the tip fires from another menu.
     FeatureTip(
         "agent-usage",
         "\U0001f916 Tip: Agents → Usage shows what your AI agents cost — per model, project and day",

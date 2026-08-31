@@ -89,8 +89,8 @@ class TestMessages:
     def test_route_is_snapshotted_per_turn(self, store):
         conversation = store.create()
         store.add_message(conversation.id, role="user", content="a", route="/agents/usage")
-        store.add_message(conversation.id, role="user", content="b", route="/humans/retro")
-        assert [m.route for m in store.messages(conversation.id)] == ["/agents/usage", "/humans/retro"]
+        store.add_message(conversation.id, role="user", content="b", route="/team/retro")
+        assert [m.route for m in store.messages(conversation.id)] == ["/agents/usage", "/team/retro"]
 
     def test_ordered_oldest_first_even_within_a_second(self, store):
         conversation = store.create()

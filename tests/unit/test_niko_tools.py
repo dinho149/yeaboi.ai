@@ -86,7 +86,7 @@ class TestNavigate:
         assert niko_tools.call("navigate", {"route": "/agents/usage"}) == {"route": "/agents/usage"}
 
     def test_refuses_an_invented_route(self):
-        result = niko_tools.call("navigate", {"route": "/humans/teleport"})
+        result = niko_tools.call("navigate", {"route": "/team/teleport"})
         assert result["route"] == ""
         assert "list_routes" in result["error"]
 
@@ -98,7 +98,7 @@ class TestNavigate:
 class TestKnownRoutes:
     def test_reads_the_committed_manifest(self):
         paths = {row["path"] for row in niko_tools.known_routes()}
-        assert {"/home", "/agents/usage", "/humans/retro"} <= paths
+        assert {"/home", "/agents/usage", "/team/retro"} <= paths
 
     def test_falls_back_to_the_repo_copy_when_unpackaged(self):
         # The wheel ships a copy under yeaboi/data/; a source checkout has none
@@ -178,7 +178,7 @@ class TestCapabilities:
     def test_list_capabilities_serves_the_real_cards(self):
         result = niko_tools.call("list_capabilities", {})
         assert {"categories", "modes", "agents", "intake"} <= set(result)
-        assert {"humans", "agents"} <= {row["key"] for row in result["categories"]}
+        assert {"team", "agents"} <= {row["key"] for row in result["categories"]}
 
     def test_list_routes_names_the_capability_each_screen_belongs_to(self):
         rows = {row["path"]: row for row in niko_tools.call("list_routes", {})["routes"]}
