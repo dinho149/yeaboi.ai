@@ -12,7 +12,7 @@ gets the table.
 
 ``settings_json`` reserves two keys read elsewhere: ``default_analysis_profile_id``
 (seeds a scoped planning run's team profile) and ``default_context_deps``
-(the incognito/context-toggle default; defined ahead of that work, unread here).
+(the context-source toggles a scoped run inherits — read by scope.resolve_scope).
 
 # See docs: "Session Management" — SQLite persistence, schema versioning
 """

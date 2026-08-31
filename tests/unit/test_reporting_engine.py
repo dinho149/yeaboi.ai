@@ -519,3 +519,37 @@ class TestProjectScopedReport:
         _patch_llm(monkeypatch, json.dumps({"headline": "h", "executive_summary": "s"}))
         report = engine.run_delivery_report("last_sprint", session_id="", db_path=db_path)
         assert report.project_name == ""
+
+
+class TestReportContextDeps:
+    def _seed(self, db_path):
+        from yeaboi.agent.state import Sprint
+        from yeaboi.projects.store import ProjectStore
+        from yeaboi.sessions import SessionStore
+
+        with ProjectStore(db_path) as projects:
+            pid = projects.create("Apollo")["project_id"]
+        with SessionStore(db_path) as s:
+            s.create_session("plan-1", "Apollo", mode="planning", project_id=pid)
+            s.save_state(
+                "plan-1",
+                {
+                    "project_name": "Apollo",
+                    "sprints": [Sprint(id="SP-1", name="Sprint 1", goal="", capacity_points=10, story_ids=())],
+                },
+            )
+        return pid
+
+    def test_plan_dep_off_skips_the_sprint_framing(self, monkeypatch, db_path):
+        pid = self._seed(db_path)
+        _patch_activity(monkeypatch, items=_items(1))
+        _patch_llm(monkeypatch, json.dumps({"headline": "h", "executive_summary": "s"}))
+        report = engine.run_delivery_report("last_sprint", project_id=pid, context_deps=[], db_path=db_path)
+        assert report.project_name == ""
+
+    def test_plan_dep_on_still_frames(self, monkeypatch, db_path):
+        pid = self._seed(db_path)
+        _patch_activity(monkeypatch, items=_items(1))
+        _patch_llm(monkeypatch, json.dumps({"headline": "h", "executive_summary": "s"}))
+        report = engine.run_delivery_report("last_sprint", project_id=pid, context_deps=["plan"], db_path=db_path)
+        assert report.project_name == "Apollo"

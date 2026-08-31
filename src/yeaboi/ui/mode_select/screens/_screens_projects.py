@@ -34,7 +34,17 @@ _HEADER_ROWS = 2 + TITLE_ROWS + 1
 # crops from the bottom, and buttons half off screen still answer Enter).
 _ACTION_ROWS = 4
 
-ACTIONS = ["Set active", "Archive", "Back"]
+ACTIONS = ["Set active", "Context", "Archive", "Back"]
+
+# The context sub-page: which cross-mode sources a run may read.
+CONTEXT_ACTIONS = ["All on", "Incognito", "Back"]
+CONTEXT_ROWS: tuple[tuple[str, str, str], ...] = (
+    ("retro", "Retro history", "action items, themes and carry-over"),
+    ("standup", "Standup history", "blockers, confidence trend and cadence"),
+    ("plan", "Latest sprint plan", "sprint framing and roster for standups and reports"),
+    ("performance", "Performance", "open 1:1 actions and review focus"),
+    ("analysis", "Analysis profile", "team calibration and AC style"),
+)
 
 
 def _cell(text: str, style: str) -> Text:
@@ -121,4 +131,57 @@ def _build_projects_screen(
 
     btn_top, btn_mid, btn_bot = build_action_buttons(actions or list(ACTIONS), action_sel)
     content = Group(Text(""), title, Text(""), sub, viewport, Text(""), btn_top, btn_mid, btn_bot)
+    return build_page_panel(content, theme=theme, height=height)
+
+
+def _build_context_screen(
+    deps: tuple[str, ...] | None,
+    *,
+    selected: int = 0,
+    action_sel: int = 0,
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+    sub_reveal: float | None = None,
+    message: str = "",
+) -> Panel:
+    """Build the context-toggles sub-page: one ●/○ row per source.
+
+    ``deps`` mirrors the engines' contract: ``None`` inherits (all sources
+    on, or the project default when one is set), ``()`` is incognito.
+    """
+    theme = PROJECTS_THEME
+    title = projects_title(shimmer_tick)
+    sub = build_reveal_subtitle("Which sources feed this session's runs", sub_reveal, pad=PAD + "  ")
+
+    body: list = [Text("")]
+    for i, (token, label, hint) in enumerate(CONTEXT_ROWS):
+        focused = i == selected
+        on = deps is None or token in deps
+        glyph = "●" if on else "○"
+        marker = "▸ " if focused else "  "
+        style = f"bold {theme.accent_bright}" if focused else (theme.value if on else theme.muted)
+        row = Text(f"{PAD}{marker}{glyph} {label}", style=style)
+        row.append(f"  ·  {hint}", style=theme.dim)
+        body.append(row)
+    body.append(Text(""))
+    if deps is None:
+        body.append(Text(f"{PAD}Inheriting — every source on (or the project's saved default).", style=theme.dim))
+    elif not deps:
+        body.append(Text(f"{PAD}Incognito — runs read no cross-mode context. Sessions still persist.", style=theme.dim))
+    else:
+        body.append(Text(f"{PAD}Only the ● sources feed runs started from the menu.", style=theme.dim))
+    body.append(Text(f"{PAD}Space toggles a source; changes last until yeaboi is closed.", style=theme.dim))
+    if message:
+        body.append(Text(""))
+        body.append(Text(f"{PAD}{message}", style=theme.accent))
+
+    viewport_h = calc_viewport(height, header_h=_HEADER_ROWS, action_h=_ACTION_ROWS)
+    total = len(body)
+    visible = body[:viewport_h]
+    padded = list(visible) + [Text("")] * max(0, viewport_h - len(visible))
+    publish_geometry(None, max(0, total - viewport_h), viewport_h)
+
+    btn_top, btn_mid, btn_bot = build_action_buttons(list(CONTEXT_ACTIONS), action_sel)
+    content = Group(Text(""), title, Text(""), sub, Group(*padded), Text(""), btn_top, btn_mid, btn_bot)
     return build_page_panel(content, theme=theme, height=height)

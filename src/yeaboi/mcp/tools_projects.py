@@ -78,6 +78,8 @@ def register(app) -> None:
     async def project_set_defaults(project_id: str, defaults: dict | None = None) -> dict:
         """Merge default settings into a project. Accepted keys:
         default_analysis_profile_id (the team profile a scoped plan_generate seeds when the
-        caller passes none — set it after a team analysis) and default_context_deps
-        (reserved for the context-toggle work). Unknown keys are rejected."""
+        caller passes none — set it after a team analysis) and default_context_deps (the
+        context-source toggles a scoped run inherits when the caller passes none — a list of
+        retro/standup/plan/performance/analysis; [] makes the project's runs incognito by
+        default). Unknown keys are rejected."""
         return await run_readonly(_set_defaults, project_id, defaults)

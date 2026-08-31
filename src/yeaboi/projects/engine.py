@@ -20,7 +20,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # The settings keys set_project_defaults accepts. default_context_deps is the
-# context-toggle seam — reserved and stored now, read by the incognito work.
+# context-source toggle default a scoped run inherits (scope.resolve_scope).
 _DEFAULT_KEYS = ("default_analysis_profile_id", "default_context_deps")
 
 

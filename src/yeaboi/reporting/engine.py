@@ -283,6 +283,7 @@ def run_delivery_report(
     jira_project: str = "",
     azdo_project: str = "",
     project_id: str = "",
+    context_deps: list[str] | None = None,
     db_path=None,
     today: date | None = None,
     window_start: str = "",
@@ -307,6 +308,10 @@ def run_delivery_report(
         project_id: project to scope by ("" inherits the session's own link).
             A scoped report frames itself with the project's latest sprint
             plan instead of the session's own saved state.
+        context_deps: context-source toggles for this run (see
+            ``projects.scope.CONTEXT_DEP_TOKENS``). ``None`` inherits the
+            project default; an empty list is an incognito run. The ``plan``
+            dep gates the sprint-plan framing above.
         window_start / window_end: explicit ISO date range (quarter or custom-window
             report). When ``window_start`` is set the look-back window is derived
             from it instead of ``period``.
@@ -342,8 +347,8 @@ def run_delivery_report(
     # latest sprint plan, mirroring run_standup.
     from yeaboi.projects.scope import latest_planning_state, resolve_scope
 
-    scope = resolve_scope(project_id, session_id, db_path=db_path)
-    if scope is not None:
+    scope = resolve_scope(project_id, session_id, context_deps=context_deps, db_path=db_path)
+    if scope is not None and scope.wants("plan"):
         planned = latest_planning_state(scope, db_path=db_path)
         if planned is not None:
             logger.info("run_delivery_report: sprint framing from project %s plan %s", scope.project_id, planned[0])

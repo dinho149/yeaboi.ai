@@ -2706,11 +2706,16 @@ def _collect_standup_data(message: str = "") -> dict:
 def _standup_generate(session_id: str, on_progress=None) -> str:
     """Run a standup for preview (no delivery) and return a status message."""
     try:
-        from yeaboi.projects.active import get_active_project
+        from yeaboi.projects.active import get_active_project, get_context_deps
         from yeaboi.standup.engine import run_standup
 
         report = run_standup(
-            session_id, deliver=False, dry_run=True, on_progress=on_progress, project_id=get_active_project()
+            session_id,
+            deliver=False,
+            dry_run=True,
+            on_progress=on_progress,
+            project_id=get_active_project(),
+            context_deps=get_context_deps(),
         )
         warn = f" · {len(report.warnings)} notice(s)" if report.warnings else ""
         logger.info(
@@ -4161,6 +4166,7 @@ _STANDUP_SETUP_FIELDS = (
     "documentation_scope_configured",
     "automation_markers",
     "automation_handling",
+    "context_deps",
 )
 
 
@@ -4500,6 +4506,7 @@ def _standup_team_configure(
             habit_detection=merged.get("habit_detection", "on"),
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
+            context_deps=merged.get("context_deps"),
         )
     logger.info(
         "standup team: saved session=%s sources=%s members=%d",
@@ -4786,6 +4793,7 @@ def _standup_code_configure(
             habit_detection=merged.get("habit_detection", "on"),
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
+            context_deps=merged.get("context_deps"),
         )
     logger.info(
         "standup code: saved session=%s sources=%s github_owners=%d github_repos=%d excluded=%d azdo_projects=%d",
@@ -4903,6 +4911,7 @@ def _standup_documentation_configure(
             habit_detection=merged.get("habit_detection", "on"),
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
+            context_deps=merged.get("context_deps"),
         )
     return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
 
@@ -5085,6 +5094,7 @@ def _standup_transcripts_configure(
             habit_detection=merged.get("habit_detection", "on"),
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
+            context_deps=merged.get("context_deps"),
         )
     logger.info(
         "standup transcripts configured: session=%s dir=%s auto=%s",
@@ -5517,6 +5527,7 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             habit_detection=existing.get("habit_detection", "on"),
             habit_rules=existing.get("habit_rules", ""),
             habit_ai_match=existing.get("habit_ai_match", "on"),
+            context_deps=existing.get("context_deps"),
         )
     logger.info("standup identity: saved (session=%s)", session_id)
     return "Identity saved."
@@ -9863,6 +9874,12 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
         return get_active_project()
 
+    def _active_context() -> tuple[str, ...] | None:
+        # Same read-at-generate-time rule as _active_project.
+        from yeaboi.projects.active import get_context_deps
+
+        return get_context_deps()
+
     q_label, q_start, q_end = quarter_bounds()
     periods = [(o["key"], o["label"], o["description"]) for o in report_setup.period_options()]
     # Loaded once per page entry — custom palettes come from reporting_themes.json;
@@ -10124,6 +10141,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 period_key,
                 session_id=session_id,
                 project_id=_active_project(),
+                context_deps=_active_context(),
                 db_path=_ana_dbp,
                 theme=state["theme"],
                 sources=state["sources"],
@@ -10149,6 +10167,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 PERIOD_QUARTER,
                 session_id=session_id,
                 project_id=_active_project(),
+                context_deps=_active_context(),
                 db_path=_ana_dbp,
                 window_start=window_start,
                 window_end=window_end,
@@ -10212,6 +10231,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 PERIOD_WINDOW,
                 session_id=session_id,
                 project_id=_active_project(),
+                context_deps=_active_context(),
                 db_path=_ana_dbp,
                 window_start=start_iso,
                 window_end=end_iso,
@@ -11372,9 +11392,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # carried_action_items_for_session returns () when there's no prior retro.
     # A project-linked session hard-filters the carry to its own project and adds
     # the project's recent standup blockers as dismissible review cards.
-    from yeaboi.projects.active import get_active_project
+    from yeaboi.projects.active import get_active_project, get_context_deps
 
-    _retro_scope = resolve_scope(get_active_project(), session_id, db_path=_ana_dbp)
+    _retro_scope = resolve_scope(get_active_project(), session_id, context_deps=get_context_deps(), db_path=_ana_dbp)
     carried = carried_action_items_for_session(
         session_id, project_name=project_name, db_path=_ana_dbp, scope=_retro_scope
     )

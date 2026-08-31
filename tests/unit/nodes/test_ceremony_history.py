@@ -303,3 +303,73 @@ class TestScopedGather:
         monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
         ctx = gather_ceremony_context(scope=ProjectScope("proj-11112222", ()))
         assert ctx.retro_count == 0 and ctx.standup_count == 0
+
+
+class TestContextDepGates:
+    """The retro/standup toggles gate each producer's reads; None-deps is byte-identical."""
+
+    def _seed(self, db):
+        with RetroStore(db) as r:
+            _seed_retro(r, "proj-sess", "2026-06-01T00:00:00+00:00", "Alpha", [_ac("Alpha item")])
+        with StandupStore(db) as s:
+            _seed_standup(s, "proj-sess", "2026-06-02T00:00:00+00:00", 70)
+
+    def test_retro_off_skips_every_retro_read(self, tmp_path, monkeypatch):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed(db)
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        ctx = gather_ceremony_context(scope=ProjectScope("proj-11112222", ("proj-sess",), frozenset({"standup"})))
+        assert ctx.retro_count == 0
+        assert ctx.action_items == ()
+        assert ctx.retro_cadence == "no retros recorded"
+        assert ctx.standup_count == 1
+
+    def test_standup_off_skips_every_standup_read(self, tmp_path, monkeypatch):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed(db)
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        ctx = gather_ceremony_context(scope=ProjectScope("proj-11112222", ("proj-sess",), frozenset({"retro"})))
+        assert ctx.standup_count == 0
+        assert ctx.confidence_trend == ""
+        assert ctx.standup_cadence == "no standups recorded"
+        assert ctx.retro_count == 1
+
+    def test_incognito_reads_nothing_at_all(self, tmp_path, monkeypatch):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed(db)
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        ctx = gather_ceremony_context(scope=ProjectScope("", None, frozenset()))
+        assert ctx.retro_count == 0 and ctx.standup_count == 0
+        assert ctx.summary_md == gather_ceremony_context(scope=ProjectScope("x", (), frozenset())).summary_md
+
+    def test_none_deps_scope_equals_no_scope(self, tmp_path, monkeypatch):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed(db)
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        unscoped = gather_ceremony_context()
+        carrier = gather_ceremony_context(scope=ProjectScope("", None, None))
+        assert asdict(unscoped) == asdict(carrier)
+
+    def test_scoped_cadence_and_trend_ignore_foreign_sessions(self, tmp_path, monkeypatch):
+        # The pre-existing leak: get_all_history is team-wide, so a scoped run's
+        # cadence/trend must post-filter to the project's own sessions.
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with StandupStore(db) as s:
+            _seed_standup(s, "proj-sess", "2026-06-01T00:00:00+00:00", 40)
+            _seed_standup(s, "proj-sess", "2026-06-02T00:00:00+00:00", 80)
+            _seed_standup(s, "other-sess", "2026-06-03T00:00:00+00:00", 5)
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        scoped = gather_ceremony_context(scope=ProjectScope("proj-11112222", ("proj-sess",)))
+        # The foreign 5%-confidence run must not drag the trend: the scoped
+        # trend ends on the project's own 80% run (rising), not the outlier.
+        assert "5%" not in scoped.confidence_trend

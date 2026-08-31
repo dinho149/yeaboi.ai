@@ -1265,3 +1265,73 @@ class TestComputePromptQuality:
         rating = compute_prompt_quality(qs)
         suggestion_text = " ".join(rating.suggestions)
         assert "Q14" in suggestion_text or "Q17" in suggestion_text
+
+
+class TestWantsDep:
+    def test_absent_key_allows_everything(self):
+        from yeaboi.agent.nodes import _wants_dep
+
+        assert _wants_dep({}, "analysis")
+        assert _wants_dep({"context_deps": ""}, "retro")
+
+    def test_json_list_gates_by_membership(self):
+        from yeaboi.agent.nodes import _wants_dep
+
+        state = {"context_deps": '["retro", "plan"]'}
+        assert _wants_dep(state, "retro")
+        assert not _wants_dep(state, "analysis")
+
+    def test_empty_list_is_incognito(self):
+        from yeaboi.agent.nodes import _wants_dep
+
+        assert not _wants_dep({"context_deps": "[]"}, "retro")
+
+
+class TestAnalysisDepGatesCalibration:
+    def _analyze(self, monkeypatch, state_extras):
+        from yeaboi.agent import nodes
+
+        fake_response = MagicMock()
+        fake_response.content = VALID_ANALYSIS_JSON
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = fake_response
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: mock_llm)
+        loads: list = []
+        monkeypatch.setattr(nodes, "_load_team_profile", lambda pid="": loads.append(("profile", pid)) or None)
+        monkeypatch.setattr(
+            nodes, "_load_team_examples", lambda pid="", db_path=None: loads.append(("examples", pid)) or None
+        )
+        qs = make_completed_questionnaire()
+        state = {
+            "messages": [HumanMessage(content="continue")],
+            "questionnaire": qs,
+            "team_size": 3,
+            "velocity_per_sprint": 15,
+            **state_extras,
+        }
+        project_analyzer(state)
+        return loads
+
+    def test_analysis_off_never_loads_a_profile(self, monkeypatch):
+        # The auto-detect fallback means the gate must sit at the call site:
+        # even a blank profile id would otherwise load a detected profile.
+        loads = self._analyze(monkeypatch, {"context_deps": "[]", "analysis_profile_id": "team-x"})
+        assert loads == []
+
+    def test_analysis_on_loads_as_before(self, monkeypatch):
+        loads = self._analyze(monkeypatch, {"analysis_profile_id": "team-x"})
+        assert ("profile", "team-x") in loads
+
+    def test_gather_performance_summary_honours_the_scope(self, monkeypatch, tmp_path):
+        from yeaboi.agent.nodes import _gather_performance_summary
+        from yeaboi.performance.store import PerformanceStore
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        from yeaboi.agent.state import OneOnOneRecord
+
+        with PerformanceStore(db) as store:
+            store.record_completion(OneOnOneRecord(engineer="Ada", date="2026-07-12", action_items=("write tests",)))
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        assert _gather_performance_summary() != ""
+        assert _gather_performance_summary(ProjectScope("", None, frozenset())) == ""

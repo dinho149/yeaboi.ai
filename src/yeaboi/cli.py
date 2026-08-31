@@ -274,6 +274,21 @@ def _resolve_resume(console: Console, resume_arg: str) -> tuple[dict | None, str
         return state, resume_arg
 
 
+def _context_spec(spec: str) -> list[str] | None:
+    """argparse type for --context: 'all' | 'none' | csv of dep tokens."""
+    from yeaboi.projects.scope import parse_context_spec
+
+    try:
+        return parse_context_spec(spec)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _cli_context_deps(args: argparse.Namespace) -> list[str] | None:
+    """Map --incognito/--context onto the engines' context_deps value."""
+    return [] if getattr(args, "incognito", False) else args.context
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -580,6 +595,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project to scope by (see `yeaboi project list`); default inherits the session's own link",
     )
     report_p.add_argument(
+        "--context",
+        default=None,
+        type=_context_spec,
+        metavar="SPEC",
+        help="Context sources for this run: 'all', 'none', or a comma-separated subset of "
+        "retro,standup,plan,performance,analysis (default: inherit the project setting)",
+    )
+    report_p.add_argument(
+        "--incognito", action="store_true", help="No cross-mode context (same as --context none; wins if both given)"
+    )
+    report_p.add_argument(
         "--window-start", default="", metavar="YYYY-MM-DD", help="Explicit window start (quarter/window periods)"
     )
     report_p.add_argument("--window-end", default="", metavar="YYYY-MM-DD", help="Explicit window end")
@@ -627,6 +653,17 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         metavar="PROJ_ID",
         help="Project to scope by (sprint/roster from its latest plan); default inherits the session's own link",
+    )
+    standup_p.add_argument(
+        "--context",
+        default=None,
+        type=_context_spec,
+        metavar="SPEC",
+        help="Context sources for this run: 'all', 'none', or a comma-separated subset of "
+        "retro,standup,plan,performance,analysis (default: inherit the saved config, then the project setting)",
+    )
+    standup_p.add_argument(
+        "--incognito", action="store_true", help="No cross-mode context (same as --context none; wins if both given)"
     )
     standup_p.add_argument("--deliver", action="store_true", help="Send to the configured channels (default: print)")
     standup_p.add_argument(
@@ -822,6 +859,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PROJ_ID",
         help="Accepted for cross-mode uniformity; performance data is engineer-keyed, so this is a no-op",
     )
+    prep_p.add_argument(
+        "--context",
+        default=None,
+        type=_context_spec,
+        metavar="SPEC",
+        help="Accepted for cross-mode uniformity ('all', 'none', or a csv of sources); a no-op like --project",
+    )
+    prep_p.add_argument("--incognito", action="store_true", help="Same as --context none (a no-op like --project)")
     prep_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     prep_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
     prep_p.add_argument(
@@ -858,6 +903,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PROJ_ID",
         help="Accepted for cross-mode uniformity; performance data is engineer-keyed, so this is a no-op",
     )
+    review_p.add_argument(
+        "--context",
+        default=None,
+        type=_context_spec,
+        metavar="SPEC",
+        help="Accepted for cross-mode uniformity ('all', 'none', or a csv of sources); a no-op like --project",
+    )
+    review_p.add_argument("--incognito", action="store_true", help="Same as --context none (a no-op like --project)")
     review_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     review_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
     review_p.add_argument(
@@ -2076,6 +2129,7 @@ def _cmd_report(args: argparse.Namespace, console: Console) -> int:
         jira_project=args.jira_project,
         azdo_project=args.azdo_project,
         project_id=args.project,
+        context_deps=_cli_context_deps(args),
         window_start=args.window_start,
         window_end=args.window_end,
         sprint_names=sprint_names,
@@ -2147,6 +2201,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: Console) -> int:
     report = run_standup(
         session_id,
         project_id=args.project,
+        context_deps=_cli_context_deps(args),
         deliver=args.deliver,
         days=args.days or None,
         channels=args.channels,
@@ -2434,6 +2489,7 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
             azdo_project=args.azdo_project,
             deep_scan=args.deep_scan,
             project_id=args.project,
+            context_deps=_cli_context_deps(args),
         )
         for warning in prep.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
@@ -2478,6 +2534,7 @@ def _cmd_perf(args: argparse.Namespace, console: Console) -> int:
             period_months=args.months,
             deep_scan=args.deep_scan,
             project_id=args.project,
+            context_deps=_cli_context_deps(args),
         )
         for warning in review.warnings:
             print(f"⚠ {warning}", file=sys.stderr)

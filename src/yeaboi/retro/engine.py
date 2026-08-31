@@ -58,18 +58,21 @@ def carried_action_items_for_session(
 
     # See CLAUDE.md — Retro action-item carry-forward loop (mirrors Performance 1:1s)
     """
+    if scope is not None and not scope.wants("retro"):
+        return ()
     try:
         from yeaboi.paths import get_db_path
         from yeaboi.retro.store import RetroStore
 
         path = db_path or get_db_path()
+        session_ids = scope.session_ids if scope is not None else None
         with RetroStore(path) as store:
             # Project-first, newest-first across ALL sessions (see docstring).
-            # A scope replaces the name bias with a hard session filter.
+            # A session-narrowed scope replaces the name bias with a hard filter.
             reports = store.get_recent_reports(
                 limit=5,
-                project_name="" if scope else project_name,
-                session_ids=scope.session_ids if scope is not None else None,
+                project_name=project_name if session_ids is None else "",
+                session_ids=session_ids,
             )
     except Exception as exc:  # pragma: no cover - defensive; carry-forward is best-effort
         logger.warning("retro: could not load carried action items (session=%s): %s", session_id, exc)

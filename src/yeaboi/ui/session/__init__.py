@@ -208,6 +208,18 @@ def _run_session_body(
     else:
         graph_state: dict = {"messages": []}
         graph_state["_intake_mode"] = intake_mode
+        try:
+            from yeaboi.projects.active import get_context_deps
+
+            if get_context_deps() is not None:
+                import json as _json
+
+                # The welcome screen's context toggles (Projects → Context)
+                # gate this run's cross-mode reads — see agent/nodes._wants_dep.
+                graph_state["context_deps"] = _json.dumps(sorted(get_context_deps()))
+                logger.info("Planning session context deps: %s", graph_state["context_deps"])
+        except Exception:  # noqa: BLE001 — toggles are best-effort, never block a session
+            logger.debug("could not read context toggles", exc_info=True)
         if analysis_profile_id:
             graph_state["analysis_profile_id"] = analysis_profile_id
             # Extract custom DoD items from the analysis profile

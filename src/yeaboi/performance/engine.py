@@ -223,6 +223,7 @@ def run_one_on_one_prep(
     azdo_project: str = "",
     deep_scan: bool = False,
     project_id: str = "",
+    context_deps: list[str] | None = None,
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -239,9 +240,11 @@ def run_one_on_one_prep(
     covered; it costs API calls, so it is off by default. ``on_progress`` takes
     one lifecycle event per phase (see ``analysis/progress.py``) so a caller can
     draw a live checklist; it is an injection seam, never a behaviour switch.
-    ``project_id`` is accepted for cross-mode uniformity and deliberately
-    unused: performance data is engineer-keyed, and a person's history must
-    not shrink because a project is active (see projects/scope.py).
+    ``project_id`` and ``context_deps`` are accepted for cross-mode uniformity
+    and deliberately unused: performance data is engineer-keyed, and a person's
+    history must not shrink because a project is active (see projects/scope.py).
+    The deferred leak follow-up wires ``context_deps`` to this engine's own
+    ceremony reads.
     """
     today = today or date.today()
     date_str = today.isoformat()
@@ -669,6 +672,7 @@ def run_six_month_review(
     period_months: int = 6,
     deep_scan: bool = False,
     project_id: str = "",
+    context_deps: list[str] | None = None,
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -682,9 +686,11 @@ def run_six_month_review(
     framework, then asks the LLM for a structured review. Persists the review.
 
     ``deep_scan`` permits one capped live scan for the stretch no saved standup
-    covered; it costs API calls, so it is off by default. ``project_id`` is
-    accepted for cross-mode uniformity and deliberately unused: performance
-    data is engineer-keyed (see projects/scope.py).
+    covered; it costs API calls, so it is off by default. ``project_id`` and
+    ``context_deps`` are accepted for cross-mode uniformity and deliberately
+    unused: performance data is engineer-keyed (see projects/scope.py). The
+    deferred leak follow-up wires ``context_deps`` to this engine's own
+    ceremony reads.
     """
     today = today or date.today()
     period_end = today.isoformat()

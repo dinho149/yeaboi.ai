@@ -344,3 +344,26 @@ class TestStandupBlockerCards:
         db = tmp_path / "sessions.db"
         self._seed_standup_report(db, "proj-sess", [("Alice", "waiting on review")])
         assert engine.standup_blocker_cards(None, db_path=db) == ()
+
+
+class TestCarryRespectsTheRetroToggle:
+    def test_retro_dep_off_carries_nothing_even_unscoped(self, tmp_path):
+        # The scope object is the sentinel: an unscoped incognito run (no
+        # project, session_ids=None) must still suppress the carry-forward.
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("prev"))
+        scope = ProjectScope("", None, frozenset())
+        assert engine.carried_action_items_for_session("cur", project_name="Apollo", db_path=db, scope=scope) == ()
+
+    def test_retro_dep_on_still_carries(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("prev"))
+        scope = ProjectScope("", None, frozenset({"retro"}))
+        carried = engine.carried_action_items_for_session("cur", db_path=db, scope=scope)
+        assert [c.text for c in carried] == ["ship the docs"]

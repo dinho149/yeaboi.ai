@@ -151,6 +151,11 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     # Archive is amber (reversible, but it hides the row).
     "Set active": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Archive": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
+    # Context sub-page: All on restores every source (green); Incognito switches
+    # them all off, deliberate but reversible, so it wears the amber.
+    "Context": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "All on": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Incognito": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     # Ceremonies page. "Run now" is the affirmative action (green like Accept);
     # Pause/Resume are neutral, because neither is the destructive one.
     "Run now": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),

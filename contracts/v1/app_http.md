@@ -423,9 +423,14 @@ A **run** streams `op`, `progress`, then `done: {report, delivered}`; cancelling
 the op raises at the next stage boundary, before anything is persisted, and the
 stream ends `cancelled`. The run body also takes an optional `project_id`
 (a `proj-<8hex>` projects-table row id): a scoped run frames itself with
-that project's latest sprint plan; blank inherits the session's own link. The
-standup run needs no such field — its session is the scope (an unlinked session
-runs team-wide, exactly as before projects existed).
+that project's latest sprint plan; blank inherits the session's own link. It
+also takes an optional `context_deps` (a list drawn from retro, standup, plan,
+performance, analysis): the run's context-source toggles — omitted/null
+inherits the project default, `[]` is an incognito run (no cross-mode
+context). The standup run needs neither field — its session is the scope (an
+unlinked session runs team-wide, exactly as before projects existed), and its
+toggles live in the session's saved standup config (`standup_config_set`'s
+`context_deps`).
 
 `/api/reporting/fit` answers `{extra_slides, style}`. `extra_slides: 0` means
 there is nothing to ask — the style that comes back is the one to export with.

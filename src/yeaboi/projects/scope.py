@@ -1,10 +1,18 @@
 """Project scope — the pull-based resolver that narrows cross-mode reads.
 
-A ``ProjectScope`` names a project and the sessions linked to it; gatherers
-(``gather_ceremony_context``, retro carry-forward, …) take an optional
-``scope=`` and hard-filter their store reads to those sessions. ``None`` is
-today's team-wide behavior, byte-for-byte — scoping is strictly an opt-in
-narrowing, and resolution never raises (a bad id degrades to unscoped).
+A ``ProjectScope`` names a project, the sessions linked to it, and which
+context dependencies the run may use; gatherers (``gather_ceremony_context``,
+retro carry-forward, …) take an optional ``scope=`` and hard-filter their
+store reads to those sessions. ``None`` is today's team-wide behavior,
+byte-for-byte — scoping is strictly an opt-in narrowing, and resolution never
+raises (a bad id degrades to unscoped).
+
+Context dependencies are the coarse per-producer toggles of
+``CONTEXT_DEP_TOKENS``. ``context_deps=None`` means every feed is enabled;
+an empty set is an incognito run (context isolation, not ephemerality —
+the session still persists). Precedence for a run: an explicit caller value,
+else the mode's own persisted config (standup only), else the project's
+``default_context_deps`` setting, else all-on.
 
 Deliberately unscoped: PerformanceStore reads. 1:1s and reviews are keyed by
 engineer, not project — an engineer's history must not shrink because a
@@ -16,47 +24,150 @@ not the legacy planning-TUI uuid4 "project_id" in ``projects.json``.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# The toggleable context feeds, one per producer mode:
+#   retro       — retro action items/themes/cadence into planning, retro→retro carry-over
+#   standup     — confidence trend/cadence into planning, blockers into retro
+#   plan        — latest-sprint-plan substitution into standup and reporting
+#   performance — open 1:1 actions and review focus into planning
+#   analysis    — analysis-profile seeding and team calibration into planning
+CONTEXT_DEP_TOKENS = ("retro", "standup", "plan", "performance", "analysis")
+
 
 @dataclass(frozen=True)
 class ProjectScope:
-    """The sessions a project's context reads are narrowed to."""
+    """The sessions and context dependencies a run's reads are narrowed to."""
 
     project_id: str
-    session_ids: tuple[str, ...]
-    # Context-toggle seam: None = every dependency enabled. resolve_scope
-    # always sets None today; the incognito/context_deps work assigns it.
+    # None = no session narrowing (team-wide reads); a tuple hard-filters.
+    session_ids: tuple[str, ...] | None
+    # None = every dependency enabled; an empty set = incognito.
     context_deps: frozenset[str] | None = None
 
+    def wants(self, dep: str) -> bool:
+        """Whether this scope allows the given context dependency."""
+        return self.context_deps is None or dep in self.context_deps
 
-def resolve_scope(project_id: str = "", session_id: str = "", *, db_path: Path | None = None) -> ProjectScope | None:
+
+def wants(scope: ProjectScope | None, dep: str) -> bool:
+    """Whether ``scope`` allows ``dep``; an absent scope allows everything."""
+    return scope is None or scope.wants(dep)
+
+
+def normalize_context_deps(value: object) -> frozenset[str] | None:
+    """Coerce a caller-supplied deps value to a frozenset of known tokens.
+
+    Accepts ``None`` (→ ``None`` = all on), an iterable of tokens, a JSON
+    list string, or a comma-separated string. Unknown tokens are dropped with
+    a warning rather than raised — same never-raise contract as the resolver.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.startswith("["):
+            try:
+                value = json.loads(text)
+            except ValueError:
+                logger.warning("normalize_context_deps: unparseable JSON %r — treating as all-on", text)
+                return None
+        else:
+            value = [part.strip() for part in text.split(",")]
+    if not isinstance(value, Iterable):
+        logger.warning("normalize_context_deps: unsupported value %r — treating as all-on", value)
+        return None
+    tokens = {str(item).strip() for item in value if str(item).strip()}
+    unknown = tokens - set(CONTEXT_DEP_TOKENS)
+    if unknown:
+        logger.warning("normalize_context_deps: dropping unknown token(s) %s", sorted(unknown))
+    return frozenset(tokens & set(CONTEXT_DEP_TOKENS))
+
+
+def parse_context_spec(spec: str) -> list[str] | None:
+    """Parse the surface grammar for context toggles into an engine value.
+
+    ``""``/``"inherit"`` → ``None`` (inherit), ``"all"`` → every token,
+    ``"none"`` → ``[]`` (incognito), else a comma-separated token list.
+    Raises ``ValueError`` on an unknown token — a surface typo must not read
+    as "that source is switched off".
+    """
+    word = spec.strip().lower()
+    if word in ("", "inherit"):
+        return None
+    if word == "all":
+        return list(CONTEXT_DEP_TOKENS)
+    if word == "none":
+        return []
+    tokens = [part.strip() for part in spec.split(",") if part.strip()]
+    unknown = [token for token in tokens if token not in CONTEXT_DEP_TOKENS]
+    if unknown:
+        raise ValueError(f"unknown context source(s) {unknown} — valid: {', '.join(CONTEXT_DEP_TOKENS)}")
+    return list(dict.fromkeys(tokens))
+
+
+def resolve_scope(
+    project_id: str = "",
+    session_id: str = "",
+    *,
+    context_deps: Iterable[str] | str | None = None,
+    db_path: Path | None = None,
+) -> ProjectScope | None:
     """Resolve the scope a run operates under. ``None`` = unscoped (team-wide).
 
     Precedence: an explicit ``project_id`` wins; otherwise the project is
-    inherited from ``session_id``'s ``sessions_meta`` row; an unlinked session
-    (or neither argument) resolves to ``None``. Never raises.
+    inherited from ``session_id``'s ``sessions_meta`` row. ``context_deps``
+    falls back to the project's ``default_context_deps`` setting when the
+    caller passes ``None``. Returns ``None`` only when there is neither a
+    project nor a deps restriction. Never raises.
     """
+    deps = normalize_context_deps(context_deps)
     try:
         from yeaboi.paths import get_db_path
         from yeaboi.sessions import SessionStore
 
         path = db_path or get_db_path()
         if not Path(path).exists():
-            return None
+            return ProjectScope(project_id="", session_ids=None, context_deps=deps) if deps is not None else None
         with SessionStore(path) as store:
             pid = project_id or (store.session_project_id(session_id) if session_id else "")
             if not pid:
-                return None
+                if deps is None:
+                    return None
+                return ProjectScope(project_id="", session_ids=None, context_deps=deps)
             ids = tuple(store.session_ids_for_project(pid))
-        logger.info("Resolved project scope: project=%s sessions=%d", pid, len(ids))
-        return ProjectScope(project_id=pid, session_ids=ids)
+        if deps is None:
+            deps = _project_default_deps(pid, db_path=path)
+        logger.info(
+            "Resolved project scope: project=%s sessions=%d deps=%s",
+            pid,
+            len(ids),
+            "all" if deps is None else sorted(deps),
+        )
+        return ProjectScope(project_id=pid, session_ids=ids, context_deps=deps)
     except Exception:  # noqa: BLE001 — scoping is best-effort; a bad id must not break a run
         logger.debug("resolve_scope failed (non-fatal)", exc_info=True)
+        return ProjectScope(project_id="", session_ids=None, context_deps=deps) if deps is not None else None
+
+
+def _project_default_deps(project_id: str, *, db_path: Path | None = None) -> frozenset[str] | None:
+    """The project's ``default_context_deps`` setting, or ``None`` (all on)."""
+    try:
+        from yeaboi.paths import get_db_path
+        from yeaboi.projects.store import ProjectStore
+
+        with ProjectStore(db_path or get_db_path()) as store:
+            return normalize_context_deps(store.get_settings(project_id).get("default_context_deps"))
+    except Exception:  # noqa: BLE001 — same never-raise contract as resolve_scope
+        logger.debug("_project_default_deps failed (non-fatal)", exc_info=True)
         return None
 
 
@@ -65,9 +176,10 @@ def recent_standup_blockers(scope: ProjectScope | None, *, limit: int = 10, db_p
 
     Feeds the standup→retro edge: a scoped retro board seeds these as
     dismissible review cards. Unscoped (``None``) returns nothing — the
-    team-wide board keeps its carry-forward-only seeding. Never raises.
+    team-wide board keeps its carry-forward-only seeding — and a scope with
+    the ``standup`` dep off returns nothing likewise. Never raises.
     """
-    if scope is None or not scope.session_ids:
+    if scope is None or not scope.session_ids or not scope.wants("standup"):
         return []
     try:
         from yeaboi.paths import get_db_path

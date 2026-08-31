@@ -596,14 +596,24 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
 CLI_RENAMES: dict[str, dict[str, str]] = {
-    "report": {"session": "session_id", "label": "period_label_override", "project": "project_id"},
-    "standup": {"session": "session_id", "project": "project_id"},
+    "report": {
+        "session": "session_id",
+        "label": "period_label_override",
+        "project": "project_id",
+        "context": "context_deps",
+    },
+    "standup": {"session": "session_id", "project": "project_id", "context": "context_deps"},
     # --transcript/--date carry explicit dest= in cli.py, so only --session
     # needs a rename here.
     "standup-review": {"session": "session_id"},
-    "perf prep": {"session": "session_id", "project": "project_id"},
+    "perf prep": {"session": "session_id", "project": "project_id", "context": "context_deps"},
     "perf complete": {"session": "session_id"},
-    "perf review": {"session": "session_id", "months": "period_months", "project": "project_id"},
+    "perf review": {
+        "session": "session_id",
+        "months": "period_months",
+        "project": "project_id",
+        "context": "context_deps",
+    },
     "ship run": {"session": "session_id", "check": "check_command"},
     "ship resume": {"check": "check_command"},
     "project link": {"session": "session_id"},
@@ -624,12 +634,14 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
 CLI_ONLY_DESTS: dict[str, set[str]] = {
     # source/code_sources/documentation_sources are assembled into the engine's
     # `sources` dict (component → source list), mirroring analyze's components flags.
-    "report": {"format", "strict", "source", "code_sources", "documentation_sources"},
+    # incognito is sugar over context_deps=[] (see _cli_context_deps), not an engine param.
+    "report": {"format", "strict", "source", "code_sources", "documentation_sources", "incognito"},
     "standup": {
         "format",
         "strict",
         "schedule",
         "list_members",
+        "incognito",
     },  # schedule/list-members are adapters, not run_standup params
     # file-issues drives the separate file_transcript_issues entry point;
     # list-gaps is a store read. `paths` is the bare positional form of
@@ -637,9 +649,9 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     # produces) — the handler folds it into transcript_paths, and a lone "-" into
     # transcript_text.
     "standup-review": {"format", "strict", "file_issues", "list_gaps", "paths"},
-    "perf prep": {"strict"},
+    "perf prep": {"strict", "incognito"},
     "perf complete": {"strict"},
-    "perf review": {"strict"},
+    "perf review": {"strict", "incognito"},
     "agents cost": {"format", "strict"},
     "agents standup": {"format", "strict"},
     "agents security": {"format", "strict"},

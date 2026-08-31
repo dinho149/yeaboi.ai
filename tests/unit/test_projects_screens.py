@@ -10,7 +10,7 @@ import io
 
 from rich.console import Console
 
-from yeaboi.ui.mode_select.screens._screens_projects import _build_projects_screen
+from yeaboi.ui.mode_select.screens._screens_projects import _build_context_screen, _build_projects_screen
 
 _W, _H = 84, 40
 
@@ -70,3 +70,37 @@ class TestTheRow:
 class TestMessage:
     def test_a_message_reaches_the_page(self):
         assert "Archived Apollo." in _render(projects=[_project()], message="Archived Apollo.")
+
+
+def _render_context(deps, **kwargs) -> str:
+    panel = _build_context_screen(deps, width=_W, height=_H, **kwargs)
+    console = Console(file=io.StringIO(), width=_W, height=_H)
+    console.print(panel)
+    return console.file.getvalue()
+
+
+class TestContextScreen:
+    def test_inherit_shows_every_source_on(self):
+        out = _render_context(None)
+        assert "Retro history" in out
+        assert "Analysis profile" in out
+        assert "Inheriting" in out
+        assert "○" not in out
+
+    def test_a_disabled_source_wears_the_hollow_glyph(self):
+        out = _render_context(("standup", "plan", "performance", "analysis"))
+        assert "○" in out
+        assert "Only the ● sources" in out
+
+    def test_incognito_names_itself_and_keeps_sessions(self):
+        out = _render_context(())
+        assert "Incognito" in out
+        assert "Sessions still persist" in out
+
+    def test_draws_its_buttons(self):
+        out = _render_context(None)
+        assert "All on" in out
+        assert "Back" in out
+
+    def test_a_message_reaches_the_page(self):
+        assert "saved" in _render_context(None, message="saved")

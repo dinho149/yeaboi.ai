@@ -28,6 +28,7 @@ export-only branch exactly:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -183,6 +184,7 @@ def run_planning_pipeline(
     ac_format: str = "",
     architecture_spike: str = "auto",
     project_id: str = "",
+    context_deps: list[str] | None = None,
 ) -> dict:
     """Run the full planning pipeline headlessly and return the final graph state.
 
@@ -218,6 +220,12 @@ def run_planning_pipeline(
         project_id: Project to link the session to ("" = unscoped). A scoped
             run hard-filters ceremony context to the project's own sessions
             and seeds the analysis profile from the project's defaults.
+        context_deps: Context-source toggles for this run (see
+            ``projects.scope.CONTEXT_DEP_TOKENS``): ``retro``/``standup``
+            gate ceremony history, ``performance`` the 1:1 context,
+            ``analysis`` the team-profile calibration. ``None`` inherits the
+            project's ``default_context_deps``, then all-on; an empty list is
+            an incognito run (context isolation — the session still persists).
 
     Returns:
         The final graph state dict (analysis, features, stories, tasks,
@@ -275,20 +283,32 @@ def run_planning_pipeline(
             # A pre-made choice means the spike question is never asked;
             # "auto" leaves it unset so _next_auto_input's confidence rule answers.
             graph_state["spike_choice"] = architecture_spike
+        from yeaboi.projects.scope import normalize_context_deps
+
+        effective_deps = normalize_context_deps(context_deps)
         if project_id:
             graph_state["project_id"] = project_id
             try:
                 from yeaboi.projects.store import ProjectStore
 
                 with ProjectStore(db_path or get_db_path()) as projects:
-                    default_profile = str(projects.get_settings(project_id).get("default_analysis_profile_id", ""))
-                if default_profile:
+                    settings = projects.get_settings(project_id)
+                if effective_deps is None:
+                    effective_deps = normalize_context_deps(settings.get("default_context_deps"))
+                default_profile = str(settings.get("default_analysis_profile_id", ""))
+                if default_profile and (effective_deps is None or "analysis" in effective_deps):
                     # The analysis→planning edge: the project remembers which
-                    # team profile its last analysis produced.
+                    # team profile its last analysis produced. An off `analysis`
+                    # dep suppresses the seeding for this run.
                     graph_state["analysis_profile_id"] = default_profile
                     logger.info("Headless: seeded analysis profile %s from project %s", default_profile, project_id)
             except Exception:
                 logger.warning("Could not read project defaults for %s (continuing)", project_id, exc_info=True)
+        if effective_deps is not None:
+            # A JSON-list state key so the node reads (_wants_dep) and the saved
+            # session both carry the run's toggles.
+            graph_state["context_deps"] = json.dumps(sorted(effective_deps))
+            logger.info("Headless: context deps restricted to %s", sorted(effective_deps))
 
         store = SessionStore(db_path or get_db_path()) if save_session else None
         session_created = False

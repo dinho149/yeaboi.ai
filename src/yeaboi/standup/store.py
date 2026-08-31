@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS standup_config (
     habit_detection   TEXT NOT NULL DEFAULT 'on',
     habit_rules       TEXT NOT NULL DEFAULT '',
     habit_ai_match    TEXT NOT NULL DEFAULT 'on',
+    context_deps      TEXT NOT NULL DEFAULT '',
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
 );
@@ -528,6 +529,10 @@ class StandupStore:
                ADD COLUMN habit_rules TEXT NOT NULL DEFAULT ''""",
             """ALTER TABLE standup_config
                ADD COLUMN habit_ai_match TEXT NOT NULL DEFAULT 'on'""",
+            # Context-source toggles (projects/scope.py): a JSON list of dep
+            # tokens; '' inherits the project default, '[]' is incognito.
+            """ALTER TABLE standup_config
+               ADD COLUMN context_deps TEXT NOT NULL DEFAULT ''""",
             # Edit-provenance columns (sessions.py v21/v26): a v21 version-number
             # collision could leave a DB stamped past 21 without them, and
             # several entry points (--standup-run, the MCP tools) open this
@@ -598,6 +603,7 @@ class StandupStore:
         habit_detection: str = "on",
         habit_rules: str = "",
         habit_ai_match: str = "on",
+        context_deps: list[str] | None = None,
     ) -> None:
         """Insert or update the standup schedule/delivery config for a session.
 
@@ -618,7 +624,9 @@ class StandupStore:
         (standup/habits.py), and ``habit_ai_match`` switches off the
         language-model pass that excuses a change belonging to a ticket it never
         names (standup/adjudicate.py) — a separate switch because it is the only
-        part of practice detection that spends money.
+        part of practice detection that spends money. ``context_deps`` is the
+        session's context-source toggles (``None`` inherits the project
+        default, ``[]`` is incognito — see projects/scope.py).
 
         **This is a full upsert with defaulted keywords**, so a caller that omits
         a field resets it. Every call site must pass through the values it read.
@@ -651,8 +659,8 @@ class StandupStore:
                     documentation_sources, documentation_scope_configured,
                     automation_markers, automation_handling,
                     transcript_dir, transcript_review_enabled,
-                    habit_detection, habit_rules, habit_ai_match, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    habit_detection, habit_rules, habit_ai_match, context_deps, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
                    enabled = excluded.enabled,
                    time = excluded.time,
@@ -681,6 +689,7 @@ class StandupStore:
                    habit_detection = excluded.habit_detection,
                    habit_rules = excluded.habit_rules,
                    habit_ai_match = excluded.habit_ai_match,
+                   context_deps = excluded.context_deps,
                    updated_at = excluded.updated_at""",
             (
                 session_id,
@@ -711,6 +720,7 @@ class StandupStore:
                 habit_detection or "on",
                 habit_rules,
                 habit_ai_match or "on",
+                "" if context_deps is None else json.dumps(context_deps),
                 now,
                 now,
             ),
@@ -752,7 +762,8 @@ class StandupStore:
             "code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured, "
             "documentation_sources, documentation_scope_configured, automation_markers, automation_handling, "
             "transcript_dir, transcript_review_enabled, "
-            "habit_detection, habit_rules, habit_ai_match, github_owners, github_excluded_repositories "
+            "habit_detection, habit_rules, habit_ai_match, github_owners, github_excluded_repositories, "
+            "context_deps "
             "FROM standup_config WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -827,6 +838,9 @@ class StandupStore:
             "habit_detection": row[23] or "on",
             "habit_rules": row[24] or "",
             "habit_ai_match": row[25] or "on",
+            # None = inherit (project default / all-on); a list is the saved
+            # toggle set, [] being incognito.
+            "context_deps": _json_list(row[28]) if row[28] else None,
         }
 
     # ── Self-reported updates ─────────────────────────────────────────────

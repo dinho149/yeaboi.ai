@@ -279,3 +279,12 @@ class TestProjectIdStateRoundTrip:
             store.save_state("s1", {"messages": [], "project_id": "proj-11112222"})
             loaded = store.load_state("s1")
         assert loaded["project_id"] == "proj-11112222"
+
+
+class TestContextDepsStateRoundTrip:
+    def test_context_deps_survives_save_and_load(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test")
+            store.save_state("s1", {"messages": [], "context_deps": '["retro", "plan"]'})
+            loaded = store.load_state("s1")
+        assert loaded["context_deps"] == '["retro", "plan"]'

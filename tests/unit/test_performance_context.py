@@ -33,3 +33,26 @@ class TestGatherPerformanceContext:
         monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
         ctx = context.gather_performance_context()
         assert ctx.engineers_with_actions == 0
+
+
+class TestPerformanceToggle:
+    def test_performance_dep_off_yields_an_empty_context(self, monkeypatch, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with PerformanceStore(db) as store:
+            store.record_completion(OneOnOneRecord(engineer="Ada", date="2026-07-12", action_items=("write tests",)))
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        ctx = context.gather_performance_context(scope=ProjectScope("", None, frozenset()))
+        assert ctx.is_empty and ctx.summary_md == ""
+
+    def test_scope_without_a_restriction_never_narrows(self, monkeypatch, tmp_path):
+        # Engineer-keyed: session narrowing is deliberately ignored.
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with PerformanceStore(db) as store:
+            store.record_completion(OneOnOneRecord(engineer="Ada", date="2026-07-12", action_items=("write tests",)))
+        monkeypatch.setattr("yeaboi.config.get_sessions_db", lambda: db)
+        ctx = context.gather_performance_context(scope=ProjectScope("proj-11112222", ("elsewhere",), None))
+        assert not ctx.is_empty

@@ -2868,3 +2868,72 @@ class TestProjectScopedStandup:
         state = self._run(monkeypatch, db_path)
         assert state.get("sprint_length_weeks") == 2
         assert tuple(state.get("selected_team_members", ())) == ("Alice",)
+
+
+class TestStandupContextDeps:
+    """The plan toggle gates the sprint-plan substitution; the config column feeds it."""
+
+    _seed_project = TestProjectScopedStandup._seed_project
+
+    def _run(self, monkeypatch, db_path, *, project_id="", context_deps=None):
+        captured = {}
+
+        def _capture_gather(state, **kw):
+            captured["state"] = state
+            return SprintContext(sprint_name="S", sprint_length_weeks=2)
+
+        _patch_common(monkeypatch, items=[], counts=[])
+        monkeypatch.setattr(engine.sprint_context, "gather", _capture_gather)
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        engine.run_standup(
+            "standup-1",
+            deliver=False,
+            db_path=db_path,
+            today=date(2026, 7, 10),
+            project_id=project_id,
+            context_deps=context_deps,
+        )
+        return captured["state"]
+
+    def test_plan_dep_off_keeps_the_sessions_own_state(self, monkeypatch, db_path):
+        pid = self._seed_project(db_path, link_standup=False)
+        state = self._run(monkeypatch, db_path, project_id=pid, context_deps=["retro", "standup"])
+        assert state.get("sprint_length_weeks") == 2
+
+    def test_incognito_keeps_the_sessions_own_state(self, monkeypatch, db_path):
+        pid = self._seed_project(db_path, link_standup=False)
+        state = self._run(monkeypatch, db_path, project_id=pid, context_deps=[])
+        assert state.get("sprint_length_weeks") == 2
+
+    def test_explicit_deps_including_plan_still_substitute(self, monkeypatch, db_path):
+        pid = self._seed_project(db_path, link_standup=False)
+        state = self._run(monkeypatch, db_path, project_id=pid, context_deps=["plan"])
+        assert state.get("sprint_length_weeks") == 3
+
+    def test_saved_config_deps_apply_when_the_caller_passes_none(self, monkeypatch, db_path):
+        self._seed_project(db_path, link_standup=True)
+        with StandupStore(db_path) as store:
+            store.save_config(
+                "standup-1",
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                context_deps=["retro"],
+            )
+        state = self._run(monkeypatch, db_path)
+        assert state.get("sprint_length_weeks") == 2
+
+    def test_explicit_param_beats_the_saved_config(self, monkeypatch, db_path):
+        self._seed_project(db_path, link_standup=True)
+        with StandupStore(db_path) as store:
+            store.save_config(
+                "standup-1",
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                context_deps=["retro"],
+            )
+        state = self._run(monkeypatch, db_path, context_deps=["plan"])
+        assert state.get("sprint_length_weeks") == 3

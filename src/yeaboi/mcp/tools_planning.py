@@ -129,6 +129,7 @@ def _plan_generate(
     ac_format: str,
     architecture_spike: str,
     project_id: str,
+    context_deps: list | None,
     on_progress,
 ) -> dict:
     from yeaboi.agent.headless import run_planning_pipeline
@@ -142,6 +143,7 @@ def _plan_generate(
         ac_format=ac_format,
         architecture_spike=architecture_spike or "auto",
         project_id=project_id,
+        context_deps=context_deps,
     )
     plan = json.loads(export_plan_json(state))
     plan["session_id"] = state.get("_session_id", "")
@@ -332,6 +334,7 @@ def register(app) -> None:
         ac_format: str = "",
         architecture_spike: str = "auto",
         project_id: str = "",
+        context_deps: list[str] | None = None,
     ) -> dict:
         """Generate a full sprint plan (analysis, epics, stories, tasks, sprints) from a project
         description. Gather the intake_questions smart_essentials from the user first and pass
@@ -347,7 +350,10 @@ def register(app) -> None:
         unless the analyzer's confidence is high).
         `project_id`: link the session to a project (project_list shows them); a scoped run
         reads ceremony context from the project's own sessions and seeds the analysis profile
-        from the project's defaults. Empty = unscoped (team-wide context)."""
+        from the project's defaults. Empty = unscoped (team-wide context).
+        `context_deps`: toggle the run's cross-mode context sources (retro, standup, plan,
+        performance, analysis). Null inherits the project's default_context_deps then all-on;
+        an empty list is an incognito run — no cross-mode context, the session still persists."""
 
         def report(node_name: str, step: int) -> None:
             # Called from the engine's worker thread — bridge the async
@@ -369,6 +375,7 @@ def register(app) -> None:
             ac_format,
             architecture_spike,
             project_id,
+            context_deps,
             report,
         )
 

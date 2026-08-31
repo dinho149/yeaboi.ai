@@ -41,8 +41,10 @@ def env(tmp_path, monkeypatch):
     db = tmp_path / "sessions.db"
     monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
     active.set_active_project("")
+    active.set_context_deps(None)
     yield {"db": db}
     active.set_active_project("")
+    active.set_context_deps(None)
 
 
 def _run(keys) -> _Live:
@@ -68,8 +70,8 @@ class TestClose:
 
     def test_the_back_button_closes_it(self, env):
         create_project("Apollo", db_path=env["db"])
-        # Set active → Archive → Back, then Enter.
-        live = _run(_keys("right", "right", "enter"))
+        # Set active → Context → Archive → Back, then Enter.
+        live = _run(_keys("right", "right", "right", "enter"))
         assert "Apollo" in _render(live.frames[-1])
 
 
@@ -93,5 +95,29 @@ class TestSetActive:
 class TestArchive:
     def test_archive_hides_the_row_and_clears_active(self, env):
         create_project("Apollo", db_path=env["db"])
-        _run(_keys("enter", "right", "enter", "esc"))  # set active, then archive it
+        _run(_keys("enter", "right", "right", "enter", "esc"))  # set active, then archive it
         assert active.get_active_project() == ""
+
+
+class TestContextPage:
+    def test_space_toggles_one_source_off(self, env):
+        # Open Context (button 1), Space the first row (retro) off, back out.
+        _run(_keys("right", "enter", " ", "esc", "esc"))
+        assert active.get_context_deps() == ("standup", "plan", "performance", "analysis")
+
+    def test_incognito_button_switches_everything_off(self, env):
+        _run(_keys("right", "enter", "right", "enter", "esc", "esc"))
+        assert active.get_context_deps() == ()
+
+    def test_all_on_restores_inherit(self, env):
+        active.set_context_deps(())
+        _run(_keys("right", "enter", "enter", "esc", "esc"))
+        assert active.get_context_deps() is None
+
+    def test_incognito_renders_its_own_state_line(self, env):
+        live = _run(_keys("right", "enter", "right", "enter", "esc", "esc"))
+        assert any("Incognito" in _render(f) for f in live.frames)
+
+    def test_context_works_with_no_projects(self, env):
+        _run(_keys("right", "enter", "right", "enter", "esc", "esc"))
+        assert active.get_context_deps() == ()

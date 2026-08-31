@@ -1408,6 +1408,7 @@ def run_standup(
     deliver: bool = True,
     dry_run: bool = False,
     project_id: str = "",
+    context_deps: list[str] | None = None,
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -1442,6 +1443,11 @@ def run_standup(
             an unlinked session stays team-wide). A scoped run reads sprint
             and roster context from the project's latest sprint plan rather
             than this session's own saved state.
+        context_deps: context-source toggles for this run (see
+            ``projects.scope.CONTEXT_DEP_TOKENS``). ``None`` inherits the
+            session's saved standup config, then the project default; an
+            empty list is an incognito run. The ``plan`` dep gates the
+            sprint-plan substitution above.
         db_path: override sessions.db path (tests); defaults to paths.get_db_path().
         today: override for the current date (tests).
         on_progress: optional ``callable(str)`` invoked (best-effort) as each
@@ -1473,18 +1479,6 @@ def run_standup(
     with SessionStore(db_path) as sessions:
         state = sessions.load_state(session_id) or {}
 
-    # Planning→standup edge: a project-scoped run reads the project's latest
-    # sprint plan instead of this session's own state, so a standup session
-    # created beside the plan still knows the sprint, capacity and roster.
-    from yeaboi.projects.scope import latest_planning_state, resolve_scope
-
-    scope = resolve_scope(project_id, session_id, db_path=db_path)
-    if scope is not None:
-        planned = latest_planning_state(scope, db_path=db_path)
-        if planned is not None:
-            plan_session_id, plan_state = planned
-            logger.info("run_standup: sprint context from project %s plan %s", scope.project_id, plan_session_id)
-            state = plan_state
     with StandupStore(db_path) as store:
         config = store.load_config(session_id)
         self_reported = store.get_my_updates(session_id, date_str)
@@ -1500,6 +1494,22 @@ def run_standup(
         # rather than taken as a parameter: it belongs to the session, so every
         # surface that runs a standup gets it without having to remember to.
         feedback_ledger = practice_feedback.load(store, session_id)
+
+    # Planning→standup edge: a project-scoped run reads the project's latest
+    # sprint plan instead of this session's own state, so a standup session
+    # created beside the plan still knows the sprint, capacity and roster.
+    # Context-deps precedence: explicit param, else the session's saved
+    # standup config, else the project default (applied inside resolve_scope).
+    from yeaboi.projects.scope import latest_planning_state, resolve_scope
+
+    effective_deps = context_deps if context_deps is not None else (config or {}).get("context_deps")
+    scope = resolve_scope(project_id, session_id, context_deps=effective_deps, db_path=db_path)
+    if scope is not None and scope.wants("plan"):
+        planned = latest_planning_state(scope, db_path=db_path)
+        if planned is not None:
+            plan_session_id, plan_state = planned
+            logger.info("run_standup: sprint context from project %s plan %s", scope.project_id, plan_session_id)
+            state = plan_state
 
     # What the team corrected on the previous standup, if they corrected it.
     # The corrected *text* already reaches this run for free — a corrected row

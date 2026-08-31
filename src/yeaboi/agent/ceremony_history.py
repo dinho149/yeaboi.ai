@@ -242,12 +242,20 @@ def gather_ceremony_context(
 
     Retros are fetched project-first (matching ``project_name`` sort ahead of
     others); standups are recency-based (their table has no project column).
-    A ``scope`` hard-filters both reads to the project's own sessions instead.
-    Graceful: a missing DB / empty tables / any error yields an empty context —
-    planning/analysis then behave exactly as before.
+    A ``scope`` hard-filters both reads to the project's own sessions instead,
+    and its ``context_deps`` toggles gate each producer: the ``retro`` dep off
+    skips every retro read, ``standup`` likewise. Graceful: a missing DB /
+    empty tables / any error yields an empty context — planning/analysis then
+    behave exactly as before.
 
     # See docs: "Session Management" — SQLite persistence
     """
+    from yeaboi.projects.scope import wants
+
+    want_retro = wants(scope, "retro")
+    want_standup = wants(scope, "standup")
+    if not want_retro and not want_standup:
+        return CeremonyContext()
     try:
         from yeaboi.config import get_sessions_db
         from yeaboi.retro.store import RetroStore
@@ -258,12 +266,25 @@ def gather_ceremony_context(
             return CeremonyContext()
 
         session_ids = scope.session_ids if scope is not None else None
-        with RetroStore(db_path) as rstore:
-            retros = rstore.get_recent_reports(retro_limit, "" if scope else project_name, session_ids=session_ids)
-            retro_hist = rstore.get_all_history(100)
-        with StandupStore(db_path) as sstore:
-            standups = sstore.get_recent_reports(standup_limit, session_ids=session_ids)
-            standup_hist = sstore.get_all_history(100)
+        retros: list = []
+        retro_hist: list[dict] = []
+        standups: list = []
+        standup_hist: list[dict] = []
+        if want_retro:
+            with RetroStore(db_path) as rstore:
+                retros = rstore.get_recent_reports(
+                    retro_limit, project_name if session_ids is None else "", session_ids=session_ids
+                )
+                retro_hist = rstore.get_all_history(100)
+        if want_standup:
+            with StandupStore(db_path) as sstore:
+                standups = sstore.get_recent_reports(standup_limit, session_ids=session_ids)
+                standup_hist = sstore.get_all_history(100)
+        if session_ids is not None:
+            # Cadence/trend must not leak foreign sessions into a scoped run.
+            allowed = set(session_ids)
+            retro_hist = [h for h in retro_hist if h["session_id"] in allowed]
+            standup_hist = [h for h in standup_hist if h["session_id"] in allowed]
     except Exception:  # noqa: BLE001 — ceremony history is best-effort; never abort a plan
         logger.debug("gather_ceremony_context failed (non-fatal)", exc_info=True)
         return CeremonyContext()

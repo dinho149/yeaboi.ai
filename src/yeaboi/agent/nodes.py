@@ -6579,20 +6579,43 @@ def compute_prompt_quality(qs: QuestionnaireState, *, has_user_context: bool = F
     )
 
 
-def _gather_performance_summary() -> str:
+def _gather_performance_summary(scope=None) -> str:
     """Return the team's Performance signal as a markdown block (empty if unused).
 
     Thin, graceful wrapper around performance.gather_performance_context so the
     analyzer / planner stay decoupled from the Performance package internals and a
-    missing DB or unused mode never affects a plan. See README: "Performance Mode".
+    missing DB or unused mode never affects a plan. A ``scope`` with the
+    ``performance`` dep off yields "". See README: "Performance Mode".
     """
     try:
         from yeaboi.performance.context import gather_performance_context
 
-        return gather_performance_context().summary_md
+        return gather_performance_context(scope=scope).summary_md
     except Exception:  # noqa: BLE001 — performance context is best-effort
         logger.debug("_gather_performance_summary failed (non-fatal)", exc_info=True)
         return ""
+
+
+def _wants_dep(state, dep: str) -> bool:
+    """Whether this run's context toggles allow ``dep`` (absent key = all on).
+
+    Reads the ``context_deps`` state key seeded by run_planning_pipeline /
+    the TUI launch sites — a JSON list of projects.scope.CONTEXT_DEP_TOKENS.
+    """
+    raw = state.get("context_deps", "")
+    if not raw:
+        return True
+    from yeaboi.projects.scope import normalize_context_deps
+
+    deps = normalize_context_deps(raw)
+    return deps is None or dep in deps
+
+
+def _state_scope(state):
+    """The run's ProjectScope, built from the state's project + toggle keys."""
+    from yeaboi.projects.scope import resolve_scope
+
+    return resolve_scope(state.get("project_id", ""), context_deps=state.get("context_deps") or None)
 
 
 def project_analyzer(state: ScrumState) -> dict:
@@ -6692,10 +6715,13 @@ def project_analyzer(state: ScrumState) -> dict:
     # Load team profile for calibration-aware analysis.
     # Non-fatal — if no profile exists, the prompt runs without calibration context.
     # See docs: "Scrum Standards" — team learning, self-calibrating estimates
-    team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
-    team_calibration_text = _format_team_calibration(
-        team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
-    )
+    if _wants_dep(state, "analysis"):
+        team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
+        team_calibration_text = _format_team_calibration(
+            team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
+        )
+    else:
+        team_profile, team_calibration_text = None, ""
     team_profile_summary = team_calibration_text.strip()
 
     # Gather the team's recent Standup + Retro history (graceful — an empty
@@ -6705,15 +6731,15 @@ def project_analyzer(state: ScrumState) -> dict:
     # knows its project up front and hard-filters to its own sessions instead.
     # Action items are stashed for story_writer.
     # See docs: "Session Management" — SQLite persistence
-    from yeaboi.projects.scope import resolve_scope
-
-    ceremony = gather_ceremony_context(scope=resolve_scope(state.get("project_id", "")))
+    scope = _state_scope(state)
+    ceremony = gather_ceremony_context(scope=scope)
 
     # Gather per-engineer Performance signal (open 1:1 action items + review focus
     # areas) so the analysis is *person-aware* — e.g. flags an engineer's growth
     # area as a staffing consideration. Graceful: empty when Performance mode is
-    # unused. See README: "Performance Mode".
-    performance = _gather_performance_summary()
+    # unused, or when the run's `performance` toggle is off. See README:
+    # "Performance Mode".
+    performance = _gather_performance_summary(scope)
 
     # Build the formatted answers block for the prompt
     answers_block = _build_answers_block(questionnaire)
@@ -8496,10 +8522,13 @@ def story_writer(state: ScrumState) -> dict:
 
     # Load team calibration for team-specific estimation rules.
     # See docs: "Scrum Standards" — team learning, self-calibrating estimates
-    team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
-    team_calibration_text = _format_team_calibration(
-        team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
-    )
+    if _wants_dep(state, "analysis"):
+        team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
+        team_calibration_text = _format_team_calibration(
+            team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
+        )
+    else:
+        team_profile, team_calibration_text = None, ""
 
     # Resolve DoD items — custom from analysis or default 7
     from yeaboi.agent.state import resolve_ac_style, resolve_dod_items
@@ -8518,7 +8547,7 @@ def story_writer(state: ScrumState) -> dict:
     # The team's learned ticket-template section headings (naming conventions)
     # — persisted on state so exporters can adopt them on every surface.
     _tpl_sections: list[str] = []
-    _examples = _load_team_examples(state.get("analysis_profile_id", ""))
+    _examples = _load_team_examples(state.get("analysis_profile_id", "")) if _wants_dep(state, "analysis") else None
     if _examples:
         _naming = _examples.get("naming_conventions") or {}
         for entry in (_naming.get("template_sections") or [])[:8]:
@@ -9093,10 +9122,13 @@ def task_decomposer(state: ScrumState) -> dict:
 
     # Load team calibration for team-specific task patterns.
     # See docs: "Scrum Standards" — team learning, self-calibrating estimates
-    team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
-    team_calibration_text = _format_team_calibration(
-        team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
-    )
+    if _wants_dep(state, "analysis"):
+        team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
+        team_calibration_text = _format_team_calibration(
+            team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
+        )
+    else:
+        team_profile, team_calibration_text = None, ""
 
     # ── Parallel task decomposition by feature ────────────────────────────
     # Split stories into per-feature groups and decompose concurrently.
@@ -9901,10 +9933,13 @@ def sprint_planner(state: ScrumState) -> dict:
 
     # Load team calibration for velocity-aware sprint planning.
     # See docs: "Scrum Standards" — team learning, self-calibrating estimates
-    team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
-    team_calibration_text = _format_team_calibration(
-        team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
-    )
+    if _wants_dep(state, "analysis"):
+        team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
+        team_calibration_text = _format_team_calibration(
+            team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
+        )
+    else:
+        team_profile, team_calibration_text = None, ""
 
     prompt = get_sprint_planner_prompt(
         project_name=analysis.project_name,
@@ -9919,7 +9954,7 @@ def sprint_planner(state: ScrumState) -> dict:
         team_override_from=original_team_size if state.get("_capacity_team_override", 0) > 0 else None,
         team_calibration=team_calibration_text,
         ceremony_history=state.get("_ceremony_history", "") or "",
-        performance_context=state.get("_performance_context", "") or _gather_performance_summary(),
+        performance_context=state.get("_performance_context", "") or _gather_performance_summary(_state_scope(state)),
         review_feedback=review_feedback if review_mode else None,
         review_mode=review_mode,
         previous_output=previous_output,

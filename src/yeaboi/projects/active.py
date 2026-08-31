@@ -26,3 +26,22 @@ def set_active_project(project_id: str) -> None:
     global _active_project_id
     _active_project_id = project_id
     logger.info("active project set to %s", project_id or "(none)")
+
+
+_context_deps: tuple[str, ...] | None = None
+
+
+def get_context_deps() -> tuple[str, ...] | None:
+    """The session's context-source toggles; ``None`` inherits (all on).
+
+    Same contract as the engines' ``context_deps``: an empty tuple is an
+    incognito run. Unpersisted for the same reason as the active project.
+    """
+    return _context_deps
+
+
+def set_context_deps(deps: tuple[str, ...] | None) -> None:
+    """Set the toggles for this process; ``()`` = incognito, ``None`` = inherit."""
+    global _context_deps
+    _context_deps = deps
+    logger.info("context deps set to %s", "inherit" if deps is None else (", ".join(deps) or "incognito"))

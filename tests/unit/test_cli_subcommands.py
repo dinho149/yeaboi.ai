@@ -302,10 +302,12 @@ class TestStandupCommand:
             documentation_sources,
             review_transcripts,
             project_id,
+            context_deps,
         ):
             captured.update(
                 session_id=session_id,
                 project_id=project_id,
+                context_deps=context_deps,
                 deliver=deliver,
                 days=days,
                 channels=channels,
@@ -329,6 +331,7 @@ class TestStandupCommand:
         assert captured == {
             "session_id": "sid",
             "project_id": "",
+            "context_deps": None,
             "deliver": True,
             "days": 2,
             "channels": ["slack"],
@@ -1573,3 +1576,56 @@ class TestProjectCommand:
         )
         assert _cmd_project(args, _console()) == 0
         assert get_project(project["project_id"], db_path=db)["settings"] == {"default_analysis_profile_id": "team-x"}
+
+
+class TestContextFlags:
+    """--context/--incognito map onto the engines' context_deps."""
+
+    def _capture(self, monkeypatch):
+        captured: dict = {}
+
+        def fake_report(period, **kw):
+            captured.update(kw)
+            return DeliveryReport()
+
+        monkeypatch.setattr("yeaboi.reporting.engine.run_delivery_report", fake_report)
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        return captured
+
+    def test_absent_flag_inherits(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        assert _cmd_report(build_parser().parse_args(["report"]), _console()) == 0
+        assert captured["context_deps"] is None
+
+    def test_csv_reaches_the_engine(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        args = build_parser().parse_args(["report", "--context", "retro,plan"])
+        assert _cmd_report(args, _console()) == 0
+        assert captured["context_deps"] == ["retro", "plan"]
+
+    def test_none_word_is_incognito(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        args = build_parser().parse_args(["report", "--context", "none"])
+        assert _cmd_report(args, _console()) == 0
+        assert captured["context_deps"] == []
+
+    def test_all_word_enables_everything(self, monkeypatch):
+        from yeaboi.projects.scope import CONTEXT_DEP_TOKENS
+
+        captured = self._capture(monkeypatch)
+        args = build_parser().parse_args(["report", "--context", "all"])
+        assert _cmd_report(args, _console()) == 0
+        assert captured["context_deps"] == list(CONTEXT_DEP_TOKENS)
+
+    def test_incognito_wins_over_context(self, monkeypatch):
+        captured = self._capture(monkeypatch)
+        args = build_parser().parse_args(["report", "--context", "all", "--incognito"])
+        assert _cmd_report(args, _console()) == 0
+        assert captured["context_deps"] == []
+
+    def test_a_typo_is_a_parse_error(self, capsys):
+        import pytest
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["report", "--context", "retro,bogus"])
+        assert "unknown context source" in capsys.readouterr().err

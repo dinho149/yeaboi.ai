@@ -1305,3 +1305,28 @@ class TestScopedRecentReports:
         with StandupStore(db_path) as store:
             store.record_run(_make_report(session_id="s1"))
             assert store.get_recent_reports(limit=5, session_ids=()) == []
+
+
+class TestContextDepsColumn:
+    def test_round_trips_none_list_and_incognito(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        with StandupStore(db) as store:
+            base = dict(enabled=False, time="10:00", weekdays="1-5", delivery_channels=["terminal"])
+            store.save_config("inherit", **base)
+            store.save_config("subset", **base, context_deps=["retro", "plan"])
+            store.save_config("incognito", **base, context_deps=[])
+            assert (store.load_config("inherit") or {})["context_deps"] is None
+            assert (store.load_config("subset") or {})["context_deps"] == ["retro", "plan"]
+            assert (store.load_config("incognito") or {})["context_deps"] == []
+
+    def test_alter_heals_a_pre_column_table(self, tmp_path):
+        import sqlite3
+
+        db = tmp_path / "sessions.db"
+        with StandupStore(db) as store:
+            store.save_config("s1", enabled=True, time="09:00", weekdays="1-5", delivery_channels=["terminal"])
+        with sqlite3.connect(db) as conn:
+            conn.execute("ALTER TABLE standup_config DROP COLUMN context_deps")
+        with StandupStore(db) as store:
+            loaded = store.load_config("s1") or {}
+        assert loaded["context_deps"] is None

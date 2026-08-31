@@ -18,8 +18,14 @@ import time
 
 from rich.console import Console
 
-from yeaboi.projects.active import get_active_project, set_active_project
-from yeaboi.ui.mode_select.screens._screens_projects import ACTIONS, _build_projects_screen
+from yeaboi.projects.active import get_active_project, get_context_deps, set_active_project, set_context_deps
+from yeaboi.ui.mode_select.screens._screens_projects import (
+    ACTIONS,
+    CONTEXT_ACTIONS,
+    CONTEXT_ROWS,
+    _build_context_screen,
+    _build_projects_screen,
+)
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
@@ -89,6 +95,12 @@ def run_projects_page(
             if choice == "Back":
                 logger.info("Projects page closed from the buttons")
                 return
+            if choice == "Context":
+                # Orthogonal to the project list — incognito works with no
+                # projects at all, so this sits before the empty-list guard.
+                run_context_page(console, live, read_key, frame_time, supports_timeout)
+                message = ""
+                continue
             if not projects:
                 message = "No projects yet — yeaboi project create <name>"
                 continue
@@ -112,3 +124,72 @@ def run_projects_page(
                 message = f"Archived {project['name']}."
             projects = _load()
             selected = min(selected, max(0, len(projects) - 1))
+
+
+def run_context_page(
+    console: Console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+) -> None:
+    """The context-toggles sub-page: Space flips a source, buttons batch it.
+
+    Writes only ``projects/active.py`` state — the process-local toggles every
+    launch site passes as ``context_deps``. ``None`` = inherit, ``()`` =
+    incognito, same contract as the engines.
+    """
+    logger.info("Context page opened: deps=%s", get_context_deps())
+    selected = action_sel = 0
+    message = ""
+    start = time.monotonic()
+
+    while True:
+        w, h = console.size
+        live.update(
+            _build_context_screen(
+                get_context_deps(),
+                selected=selected,
+                action_sel=action_sel,
+                width=w,
+                height=h,
+                shimmer_tick=time.monotonic() - start,
+                sub_reveal=(time.monotonic() - start) * 6.0,
+                message=message,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+
+        if key in ("esc", "q"):
+            logger.info("Context page closed: deps=%s", get_context_deps())
+            return
+        if key == "left":
+            action_sel = (action_sel - 1) % len(CONTEXT_ACTIONS)
+        elif key == "right":
+            action_sel = (action_sel + 1) % len(CONTEXT_ACTIONS)
+        elif key in ("up", "down"):
+            step = -1 if key == "up" else 1
+            selected = (selected + step) % len(CONTEXT_ROWS)
+            message = ""
+        elif key == " ":
+            token = CONTEXT_ROWS[selected][0]
+            deps = get_context_deps()
+            # Inherit materialises to the full set on the first toggle so
+            # switching one source off leaves the other four explicitly on.
+            current = set(token for token, _label, _hint in CONTEXT_ROWS) if deps is None else set(deps)
+            current.symmetric_difference_update({token})
+            ordered = tuple(t for t, _label, _hint in CONTEXT_ROWS if t in current)
+            set_context_deps(ordered)
+            logger.info("Context page: toggled %s -> %s", token, ordered or "incognito")
+            message = ""
+        elif key == "enter":
+            choice = CONTEXT_ACTIONS[action_sel]
+            if choice == "Back":
+                logger.info("Context page closed from the buttons: deps=%s", get_context_deps())
+                return
+            if choice == "All on":
+                set_context_deps(None)
+                message = "Every source on — runs inherit the project default when one is set."
+            elif choice == "Incognito":
+                set_context_deps(())
+                message = "Incognito — runs read no cross-mode context until this changes."

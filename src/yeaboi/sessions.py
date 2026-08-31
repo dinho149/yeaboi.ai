@@ -179,6 +179,7 @@ _SCALAR_KEYS = {
     "output_format",
     "context_sources",
     "project_id",
+    "context_deps",
     "_chat_greeting_done",
     "_chat_preamble",
     "_chat_fast_forward",

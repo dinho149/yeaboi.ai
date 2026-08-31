@@ -291,3 +291,46 @@ class TestProjectScopedPipeline:
         qs = build_questionnaire_from_answers({1: "A test project", 6: "4", 8: "2"})
         state = run_planning_pipeline(qs, save_session=False)
         assert "project_id" not in state
+
+
+class TestContextDepsPipeline:
+    def _project(self, tmp_path, settings=None):
+        from yeaboi.projects.store import ProjectStore
+
+        db = tmp_path / "sessions.db"
+        with ProjectStore(db) as projects:
+            project = projects.create("Apollo")
+            if settings:
+                projects.set_settings(project["project_id"], settings)
+        return db, project["project_id"]
+
+    def _qs(self):
+        return build_questionnaire_from_answers({1: "A test project", 6: "4", 8: "2"})
+
+    def test_explicit_deps_land_on_state_as_a_json_list(self, fake_graph, tmp_path):
+        db, pid = self._project(tmp_path)
+        state = run_planning_pipeline(self._qs(), db_path=db, project_id=pid, context_deps=["retro", "plan"])
+        assert state["context_deps"] == '["plan", "retro"]'
+
+    def test_incognito_lands_as_an_empty_list(self, fake_graph):
+        state = run_planning_pipeline(self._qs(), save_session=False, context_deps=[])
+        assert state["context_deps"] == "[]"
+
+    def test_none_leaves_the_key_absent(self, fake_graph):
+        state = run_planning_pipeline(self._qs(), save_session=False)
+        assert "context_deps" not in state
+
+    def test_project_default_deps_apply_when_caller_passes_none(self, fake_graph, tmp_path):
+        db, pid = self._project(tmp_path, {"default_context_deps": ["standup"]})
+        state = run_planning_pipeline(self._qs(), db_path=db, project_id=pid)
+        assert state["context_deps"] == '["standup"]'
+
+    def test_analysis_dep_off_suppresses_the_profile_seed(self, fake_graph, tmp_path):
+        db, pid = self._project(tmp_path, {"default_analysis_profile_id": "team-apollo"})
+        state = run_planning_pipeline(self._qs(), db_path=db, project_id=pid, context_deps=["retro"])
+        assert "analysis_profile_id" not in state
+
+    def test_analysis_dep_on_still_seeds_the_profile(self, fake_graph, tmp_path):
+        db, pid = self._project(tmp_path, {"default_analysis_profile_id": "team-apollo"})
+        state = run_planning_pipeline(self._qs(), db_path=db, project_id=pid, context_deps=["analysis"])
+        assert state["analysis_profile_id"] == "team-apollo"
