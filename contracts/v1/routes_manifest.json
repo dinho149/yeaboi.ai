@@ -277,6 +277,16 @@
       "title": "Settings"
     },
     {
+      "path": "/settings/appearance",
+      "capability": null,
+      "title": "Settings · Appearance"
+    },
+    {
+      "path": "/settings/duck",
+      "capability": null,
+      "title": "Settings · Duck"
+    },
+    {
       "path": "/settings/themes",
       "capability": null,
       "title": "Themes"
