@@ -107,7 +107,7 @@ Everything else — the CSPs and what makes an export inert, the export capabili
 
 ## Desktop app (`yeaboi-desktop`)
 
-The sixth surface is an Electron shell over **`yeaboi app`**, the loopback HTTP backend in `src/yeaboi/app/` — and that backend is the whole of it that lives here. The shell itself is in **[yeaboi-desktop](https://github.com/yeaboi-ai/yeaboi-desktop)**, which installs a *released* wheel from PyPI rather than building this tree; nothing about the app, its icons or its installers is edited or built in this repo any more.
+The sixth surface is an Electron shell over **`yeaboi app`**, the loopback HTTP backend in `src/yeaboi/app/` — and that backend is the whole of it that lives here. The shell itself is in **[yeaboi-desktop](https://github.com/yeaboi-ai/yeaboi-desktop)**, which installs a *released* wheel from PyPI rather than building this tree; nothing about the app, its icons or its installers is edited or built in this repo any more. That repo is **public**, and it is more than a shell: beside the wheel it stages a second bundled runtime built from its own vendored `backend/` (the planning-platform FastAPI service). Neither is built here.
 
 Two artefacts cross the boundary, both in `contracts/v1/`, and that repo vendors the directory by sha:
 
