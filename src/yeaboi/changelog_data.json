@@ -2,6 +2,40 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.33.0",
+      "date": "2026-08-31",
+      "summary": "The desktop app's sharing panel can now show what your Cloudflare Access setup is missing before you hit publish. A new settings doctor reports whether you are logged in, have a valid certificate, have a working JWT, and which environment keys are unset — all without downloading the cloudflared binary. A separate verify route runs the same preflight checks that the share itself runs, so you know whether your setup will work before toggling Share Mode on.",
+      "highlights": [
+        {
+          "text": "Check Cloudflare Access state from the desktop settings panel before publishing",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "desktop"
+          ]
+        },
+        {
+          "text": "Verify your access setup will work before enabling Share Mode",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "desktop"
+          ]
+        },
+        {
+          "text": "Instant feedback on missing environment keys and certificate issues",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "desktop"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.32.0",
       "date": "2026-08-27",
       "summary": "Meet Niko, an assistant that knows the whole of yeaboi. Ask it what a mode does, what your own plans, standups, retros or agent spend actually say, or simply what to look at today — and it will answer, then take you to the screen that does the thing. It only ever reads: Niko cannot start a run, change a setting or delete anything, and it will say so and point you at the right page instead. It is on every surface: a Niko card in the terminal with its own saved conversations, `yeaboi ask \"...\"` for a one-liner, a niko_ask tool for MCP hosts, a plugin skill, and a bar in the desktop app. Conversations are saved locally, so reopening one shows what it read as well as what it said. One thing to know if you run a small terminal: the welcome screen now needs 41 rows rather than 40, because Niko is an eleventh card on it.",
