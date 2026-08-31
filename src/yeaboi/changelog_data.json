@@ -2,6 +2,44 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.36.0",
+      "date": "2026-08-31",
+      "headline": "System Check covers integrations and organizes by category",
+      "summary": "Your system health check now includes GitHub, Jira, Azure DevOps, Confluence, Notion, and Slack readiness, plus your machine setup. Results organize into five areas so you can scan what matters at a glance.",
+      "highlights": [
+        {
+          "text": "GitHub, Jira, Azure DevOps, Confluence, Notion and Slack readiness checks",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
+          ]
+        },
+        {
+          "text": "Five category sections organize your system check for at-a-glance scanning",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
+          ]
+        },
+        {
+          "text": "Icons and glyphs mark each category in the terminal for visual clarity",
+          "areas": [
+            "settings"
+          ],
+          "surfaces": [
+            "tui",
+            "desktop"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.35.0",
       "date": "2026-08-31",
       "headline": "See your privacy settings and system health at a glance",
