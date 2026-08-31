@@ -528,3 +528,55 @@ class TestVoiceTipTruthiness:
         monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: False)
         wizard._print_voice_tip(Console(force_terminal=False, color_system=None))
         assert capsys.readouterr().out.strip() == ""
+
+
+class TestOfferCatalog:
+    """The post-save catalog hand-off must never change a scripted run."""
+
+    def _console(self):
+        from rich.console import Console
+
+        return Console(force_terminal=False, color_system=None)
+
+    def test_a_non_tty_run_is_untouched(self, monkeypatch, capsys):
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+        monkeypatch.setattr("builtins.input", lambda *a: pytest.fail("a non-TTY run must not prompt"))
+        wizard._offer_catalog(self._console())
+        assert capsys.readouterr().out.strip() == ""
+
+    def test_declining_points_at_the_catalog_and_opens_nothing(self, monkeypatch, capsys):
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda *a: "")
+        monkeypatch.setattr(
+            "yeaboi.ui.catalog.run_catalog_browser_standalone",
+            lambda *a, **k: pytest.fail("declining must not open the browser"),
+        )
+        wizard._offer_catalog(self._console())
+        out = capsys.readouterr().out
+        assert "connections list --all" in out
+
+    def test_accepting_opens_the_browser_and_echoes_its_status(self, monkeypatch, capsys):
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda *a: "y")
+        monkeypatch.setattr("yeaboi.ui.catalog.run_catalog_browser_standalone", lambda *a, **k: "GitLab verified")
+        wizard._offer_catalog(self._console())
+        assert "GitLab verified" in capsys.readouterr().out
+
+    def test_nothing_left_to_connect_stays_silent(self, monkeypatch, capsys):
+        import yeaboi.setup_wizard as wizard
+
+        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+        monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+        connected = {"connectors": [{"connected": True}]}
+        monkeypatch.setattr("yeaboi.connectors.engine.list_connections", lambda **k: connected)
+        monkeypatch.setattr("builtins.input", lambda *a: pytest.fail("nothing to offer means no prompt"))
+        wizard._offer_catalog(self._console())
+        assert capsys.readouterr().out.strip() == ""

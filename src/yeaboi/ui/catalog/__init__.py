@@ -273,6 +273,30 @@ def _run_verify(console: Console, live, read_key, frame_time, supports_timeout, 
     return out.get("value") or {"ok": False, "message": "verification did not answer"}
 
 
+def run_catalog_browser_standalone(console: Console | None = None) -> str | None:
+    """Run the browser in a Live of its own — for callers outside mode select.
+
+    The setup wizard's hand-off lands here: by the time it offers the catalog it
+    is back in plain-console land, so this owns the screen for the browse and
+    hands it back after.
+    """
+    import inspect
+
+    from yeaboi.connectors.engine import list_connections
+    from yeaboi.ui.shared._input import read_key
+    from yeaboi.ui.shared._music_bar import make_live
+
+    console = console or Console()
+    supports_timeout = "timeout" in inspect.signature(read_key).parameters
+    frame_time = 1 / 30
+    w, h = console.size
+    seed = build_catalog_screen(
+        list_connections(connected_only=False, include_legacy=True), 0, width=w, height=max(10, h - 1)
+    )
+    with make_live(seed, console=console, refresh_per_second=30, screen=True) as live:
+        return run_catalog_browser(console, live, read_key, frame_time, supports_timeout)
+
+
 def run_catalog_browser(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> str | None:
     """Browse the whole catalog and connect from it. Returns a status line, or None.
 
