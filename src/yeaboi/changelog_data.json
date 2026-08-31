@@ -2,6 +2,28 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.37.0",
+      "date": "2026-08-31",
+      "headline": "Attach screenshots and logs to your feedback",
+      "summary": "The desktop feedback form now accepts screenshots and text log files. Attached logs appear as searchable details in your GitHub issue, while images get listed by path, and both improve AI Polish's understanding of problems.",
+      "highlights": [
+        {
+          "text": "Attach screenshots and log files from the desktop feedback form",
+          "areas": ["general"],
+          "surfaces": ["desktop"]
+        },
+        {
+          "text": "Text log files become searchable details in your GitHub issue",
+          "areas": ["general"],
+          "surfaces": ["web"]
+        },
+        {
+          "text": "Attached logs help AI Polish rewrite problems more accurately",
+          "areas": ["general"]
+        }
+      ]
+    },
+    {
       "version": "3.36.0",
       "date": "2026-08-31",
       "headline": "System Check covers integrations and organizes by category",
