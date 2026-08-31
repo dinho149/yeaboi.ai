@@ -2695,9 +2695,10 @@ def _scan_repo_context(questionnaire: QuestionnaireState) -> tuple[str | None, d
 
     Calls GitHub or AzDO read tools directly as Python functions — no LLM
     ReAct loop needed, they are plain functions that return strings.
-    Returns (None, status) if no URL was provided, the platform is unsupported
-    (GitLab, Bitbucket — tools not yet implemented), or all tool calls fail.
-    The caller proceeds gracefully with reduced context when None is returned.
+    Returns (None, status) if no URL was provided, the remote cannot be read
+    (GitLab and Bitbucket have ops connectors but no repo-read tools — a local
+    path scans regardless of platform), or all tool calls fail. The caller
+    proceeds gracefully with reduced context when None is returned.
 
     Returns:
         Tuple of (context string or None, status dict with name/status/detail).
@@ -2740,8 +2741,13 @@ def _scan_repo_context(questionnaire: QuestionnaireState) -> tuple[str | None, d
                 sections.append(result)
 
         else:
-            # GitLab and Bitbucket: no tools implemented yet
-            return None, {"name": "Repository", "status": "skipped", "detail": f"{platform} not yet supported"}
+            # GitLab and Bitbucket remotes: the connectors read their pipelines,
+            # but there is no repo-read tool — a local checkout path scans fine.
+            return None, {
+                "name": "Repository",
+                "status": "skipped",
+                "detail": f"{platform} remotes are not read — give a local checkout path to scan",
+            }
 
     except Exception as e:
         return None, {"name": "Repository", "status": "error", "detail": str(e)[:80]}

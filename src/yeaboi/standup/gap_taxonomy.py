@@ -176,18 +176,15 @@ SYSTEM_ALIASES: dict[str, str] = {
 
 # Systems yeaboi has no integration for at all. Naming them explicitly is what
 # lets "integration_missing" be a fact rather than a guess — an unlisted system
-# falls through to "unknown" and produces nothing.
+# falls through to "unknown" and produces nothing. Linear and Trello stay here
+# until a standup activity collector exists: their connectors verify a
+# credential, but member activity there still cannot appear in a standup.
 KNOWN_UNSUPPORTED: dict[str, str] = {
     "slack": "Slack",
     "teams": "Microsoft Teams",
     "linear": "Linear",
-    "gitlab": "GitLab",
-    "bitbucket": "Bitbucket",
     "figma": "Figma",
     "miro": "Miro",
-    "sentry": "Sentry",
-    "pagerduty": "PagerDuty",
-    "datadog": "Datadog",
     "google_docs": "Google Docs",
     "gdocs": "Google Docs",
     "asana": "Asana",
@@ -198,6 +195,17 @@ KNOWN_UNSUPPORTED: dict[str, str] = {
     "email": "email",
     "ci": "CI",
     "jenkins": "Jenkins",
+}
+
+# Systems a read-only connector covers, but that standup has no member-activity
+# collector for. The distinction matters in the diagnosis copy: their ops
+# signal already reaches yeaboi, so "no integration" would be false.
+CONNECTOR_ONLY: dict[str, str] = {
+    "gitlab": "GitLab",
+    "bitbucket": "Bitbucket",
+    "sentry": "Sentry",
+    "pagerduty": "PagerDuty",
+    "datadog": "Datadog",
 }
 
 # Free text → a slug. The slug, not the free text, is what gets fingerprinted;
@@ -391,7 +399,7 @@ def normalize_system(hint: str) -> str:
     key = (hint or "").strip().lower().replace("-", "_").replace(" ", "_")
     if key in SYSTEM_ALIASES:
         return SYSTEM_ALIASES[key]
-    if key in KNOWN_UNSUPPORTED:
+    if key in KNOWN_UNSUPPORTED or key in CONNECTOR_ONLY:
         return key
     return "unknown"
 
@@ -613,7 +621,7 @@ def classify(
             logger.debug("gap_taxonomy: %s category is ambiguous (%s)", category, candidates)
             return None
 
-    label = _SYSTEM_LABELS.get(system, KNOWN_UNSUPPORTED.get(system, system))
+    label = _SYSTEM_LABELS.get(system, KNOWN_UNSUPPORTED.get(system, CONNECTOR_ONLY.get(system, system)))
     kind_label = _ARTIFACT_LABELS.get(kind, "activity")
 
     # 1. A system yeaboi cannot read at all → a feature request.
@@ -624,6 +632,21 @@ def classify(
             kind,
             detail=f"Work happened in {label}, which standup has no integration for.",
             root_cause=f"yeaboi has no {label} collector, so {kind_label} there can never appear in a standup.",
+            evidence=(f"{label} is not among the sources standup can read.",),
+        )
+
+    # 1b. A system the connector layer covers, but standup cannot collect
+    #     member activity from — half the story would be a false diagnosis.
+    if system in CONNECTOR_ONLY:
+        return Diagnosis(
+            _BY_ID["integration_missing"],
+            (system,),
+            kind,
+            detail=f"Work happened in {label}, which standup has no activity collector for.",
+            root_cause=(
+                f"yeaboi's {label} connector reads its ops signal, but standup has no "
+                f"{label} collector, so {kind_label} there cannot appear against a member."
+            ),
             evidence=(f"{label} is not among the sources standup can read.",),
         )
 
@@ -828,7 +851,8 @@ def build_gap(diagnosis: Diagnosis, claims: tuple[TranscriptClaim, ...]):
 
     cat = diagnosis.category
     system_label = (
-        ", ".join(_SYSTEM_LABELS.get(s, KNOWN_UNSUPPORTED.get(s, s)) for s in diagnosis.systems) or "an unknown system"
+        ", ".join(_SYSTEM_LABELS.get(s, KNOWN_UNSUPPORTED.get(s, CONNECTOR_ONLY.get(s, s))) for s in diagnosis.systems)
+        or "an unknown system"
     )
     kind_label = _ARTIFACT_LABELS.get(diagnosis.kind, "activity")
 
