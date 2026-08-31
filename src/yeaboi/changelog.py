@@ -89,9 +89,13 @@ def _coerce_surfaces(raw: object) -> tuple[str, ...]:
 
 
 def _first_sentence(text: str) -> str:
-    """The text up to its first sentence end — the headline fallback for an old entry."""
+    """The text up to its first sentence end — the headline fallback for an old entry.
+
+    Clipped to the same 60 characters the contract documents for ``headline``: a
+    client laying out against that bound must never be handed a whole summary.
+    """
     head = re.split(r"(?<=[.!?])\s", text.strip(), maxsplit=1)[0].strip()
-    return head.rstrip(".")
+    return head.rstrip(".")[:60].rstrip()
 
 
 def _parse_entry(raw: object) -> ChangelogEntry | None:

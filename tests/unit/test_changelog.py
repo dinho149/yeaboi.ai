@@ -213,6 +213,15 @@ class TestHeadlineFallback:
         )
         assert load_changelog()[0].headline == "Real headline"
 
+    def test_fallback_is_clipped_to_the_documented_bound(self, monkeypatch):
+        """contracts/v1 promises headline <= 60; a long one-sentence summary must not break it."""
+        long_summary = "Something happened " * 20
+        _patch_data(
+            monkeypatch,
+            json.dumps({"entries": [{"version": "1.0.0", "summary": long_summary, "highlights": []}]}),
+        )
+        assert len(load_changelog()[0].headline) <= 60
+
     def test_no_summary_leaves_headline_empty(self, monkeypatch):
         _patch_data(monkeypatch, '{"entries": [{"version": "1.0.0", "highlights": []}]}')
         assert load_changelog()[0].headline == ""

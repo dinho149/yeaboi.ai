@@ -5514,12 +5514,13 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
     all_entries = filter_for_surface(load_changelog(), "tui")
     update_status = get_update_status()
     seen_version = read_seen_version()
-    since = entries_since(all_entries, seen_version)
+    all_since = entries_since(all_entries, seen_version)
+    since = all_since
     areas = ["", *changelog_areas(all_entries)]
     logger.info(
         "changelog: page opened (%d entries, %d since v%s, update_available=%s)",
         len(all_entries),
-        len(since),
+        len(all_since),
         seen_version or "-",
         update_status["update_available"],
     )
@@ -5592,6 +5593,8 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
         elif k in ("tab", "shift+tab") and len(areas) > 1:
             area_idx = (area_idx + (1 if k == "tab" else -1)) % len(areas)
             entries = filter_by_area(all_entries, areas[area_idx])
+            # The digest names releases from the list underneath it, so it narrows too.
+            since = filter_by_area(all_since, areas[area_idx])
             selected = 0
             scroll = 0
             anchor = True
