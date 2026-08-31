@@ -83,10 +83,20 @@ def tips(app, request: Request) -> Response:
 
 
 def changelog(app, request: Request) -> Response:
-    """The bundled release notes, newest-first — feeds the What's New page."""
-    from yeaboi.changelog import load_changelog
+    """The bundled release notes, newest-first — feeds the What's New page.
 
-    return json_response({"entries": [to_jsonable(entry) for entry in load_changelog()]})
+    ``areas`` carries the accent each area tag renders in, so the desktop colours
+    a tag the same as the mode it names — the same trick ``capabilities`` uses for
+    its cards. The client filters ``entries`` to its own surface.
+    """
+    from yeaboi.changelog import AREA_COLORS, load_changelog
+
+    return json_response(
+        {
+            "entries": [to_jsonable(entry) for entry in load_changelog()],
+            "areas": [{"name": name, "color": color} for name, color in sorted(AREA_COLORS.items())],
+        }
+    )
 
 
 def tools(app, request: Request) -> Response:

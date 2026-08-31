@@ -63,6 +63,17 @@ class TestMetaRoutes:
     def test_changelog_serves_entries(self, app):
         payload = json.loads(request(app, "GET", "/api/meta/changelog").body)
         assert payload["entries"], "bundled changelog should never be empty"
+        entry = payload["entries"][0]
+        assert {"version", "date", "headline", "summary", "highlights"} <= set(entry)
+        assert entry["headline"], "every entry carries a headline on the wire"
+
+    def test_changelog_serves_area_accents(self, app):
+        """The desktop colours an area tag from this table — see contracts/v1."""
+        from yeaboi.changelog import AREA_COLORS
+
+        payload = json.loads(request(app, "GET", "/api/meta/changelog").body)
+        served = {row["name"]: row["color"] for row in payload["areas"]}
+        assert served == AREA_COLORS
         assert {"version", "date", "summary", "highlights"} <= set(payload["entries"][0])
         assert {"text", "areas", "surfaces"} <= set(payload["entries"][0]["highlights"][0])
 

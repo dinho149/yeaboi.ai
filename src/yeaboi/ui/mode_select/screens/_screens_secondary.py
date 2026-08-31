@@ -3411,6 +3411,40 @@ def _build_standup_schedule_step_screen(
     return build_page_panel(content, theme=theme, height=height)
 
 
+def _changelog_short_date(iso: str) -> str:
+    """Render ``2026-08-31`` as ``Aug 31``; anything unparseable passes through."""
+    from datetime import datetime
+
+    try:
+        # %-d is glibc-only; format the day ourselves so Windows renders the same.
+        parsed = datetime.strptime(iso, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return iso or ""
+    return f"{parsed.strftime('%b')} {parsed.day}"
+
+
+def changelog_areas(entries: list) -> list[str]:
+    """The area tags present in ``entries``, in the mode grid's own order."""
+    from yeaboi.changelog import AREA_COLORS
+
+    present = {area for entry in entries for hl in entry.highlights for area in hl.areas}
+    return [area for area in AREA_COLORS if area in present]
+
+
+def filter_by_area(entries: list, area: str) -> list:
+    """Keep only the entries and highlights carrying ``area`` (empty area = all)."""
+    from dataclasses import replace
+
+    if not area:
+        return entries
+    kept = []
+    for entry in entries:
+        highlights = tuple(hl for hl in entry.highlights if area in hl.areas)
+        if highlights:
+            kept.append(replace(entry, highlights=highlights))
+    return kept
+
+
 def _build_changelog_screen(
     entries: list,
     *,
@@ -3423,34 +3457,58 @@ def _build_changelog_screen(
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
     message: str = "",
+    selected: int = 0,
+    expanded: object = (),
+    area_filter: str = "",
+    since: list | None = None,
+    seen_version: str = "",
+    anchor: bool = True,
 ) -> Panel:
-    """Build the Changelog page: per-version AI-written notes with area tags.
+    """Build the Changelog page: a selectable release list that expands in place.
 
-    ``entries`` is ``changelog.load_changelog()`` output, filtered by the caller
-    to the surface being shown (newest-first). Each
-    highlight's feature-area tags render in that mode's accent colour
-    (``changelog.AREA_COLORS``) so a change reads as the feature the user already
-    knows by colour. ``update_status`` (``update_check.get_update_status()``)
-    drives an upgrade banner at the top when a newer PyPI release is known.
+    ``entries`` is ``changelog.load_changelog()`` output, filtered by the caller to
+    the surface being shown and to ``area_filter`` (newest-first). Each release is
+    one collapsed row — version, date, headline, a colour dot per feature area —
+    until it is expanded, when its summary and highlights unfold beneath it.
+    ``since`` is the releases newer than ``seen_version``, which lead the page as a
+    catch-up digest. Area colours come from ``changelog.AREA_COLORS`` so a change
+    reads as the feature the user already knows by colour. ``update_status``
+    (``update_check.get_update_status()``) drives the upgrade banner.
+
+    With ``anchor`` set, the builder pulls ``scroll_offset`` to keep the selected
+    release's heading on screen and publishes the offset it used through
+    ``scroll_meta["offset"]`` for the loop to read back. The loop clears it while
+    the reader is working the scroll keys — otherwise every repaint would drag the
+    viewport back to the selection and the page could not be scrolled at all.
     """
     import textwrap
 
     from yeaboi.changelog import AREA_COLORS
-    from yeaboi.ui.shared._components import CHANGELOG_THEME, build_reveal_subtitle, changelog_title
+    from yeaboi.ui.shared._components import (
+        CHANGELOG_THEME,
+        build_key_hints,
+        build_reveal_subtitle,
+        changelog_title,
+    )
 
     theme = CHANGELOG_THEME
     title = changelog_title(shimmer_tick, width=width)
     sub = build_reveal_subtitle("What's new in yeaboi", sub_reveal, pad=_PAD + "  ")
+    open_versions = set(expanded or ())
 
     body_lines: list = []
+    # entry index -> (first line, last line + 1), so the selected release can be
+    # anchored inside the viewport below.
+    spans: dict[int, tuple[int, int]] = {}
+    wrap_w = max(24, width - len(_PAD) - 12)
+
+    def _wrapped(text: str, style: str, *, indent: str = "      ") -> None:
+        for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
+            body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
+
     if message:
         body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
-    wrap_w = max(24, width - len(_PAD) - 12)
-
-    def _wrapped(text: str, style: str, *, indent: str = "    ") -> None:
-        for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
-            body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
     # ── Upgrade banner — newer release known from the background PyPI check ──
     status = update_status or {}
@@ -3461,56 +3519,97 @@ def _build_changelog_screen(
         banner.append("  —  run: ", style=theme.muted)
         banner.append(status.get("upgrade_command", ""), style=theme.warn)
         body_lines.append(banner)
-        body_lines.append(Text(_PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
+        body_lines.append(Text(""))
+
+    # ── Catch-up digest — what shipped since this user last read the page ──
+    for line in _changelog_since_block(since or [], seen_version, theme, wrap_w):
+        body_lines.append(line)
 
     if not entries:
         body_lines.append(Text(""))
-        body_lines.append(Text(_PAD + "    No changelog data available.", style=theme.muted, justify="left"))
+        empty = "Nothing tagged that yet." if area_filter else "No changelog data available."
+        body_lines.append(Text(_PAD + "    " + empty, style=theme.muted, justify="left"))
 
-    for entry in entries:
-        body_lines.append(Text(""))
-        heading = Text(_PAD + "  ", justify="left")
-        heading.append(f"v{entry.version}", style=f"bold {theme.accent_bright}")
-        if entry.date:
-            heading.append("  ·  ", style=theme.sep)
-            heading.append(entry.date, style=theme.muted)
-        body_lines.append(heading)
-        body_lines.append(Text(_PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
-        if entry.summary:
-            _wrapped(entry.summary, theme.desc)
+    # One column width for every version string, so the dates and headlines line up.
+    ver_w = max((len(e.version) for e in entries), default=0) + 1
+    for idx, entry in enumerate(entries):
+        first = len(body_lines)
+        is_sel = idx == selected
+        is_open = entry.version in open_versions
+
+        row = Text(_PAD + ("▸ " if is_sel else "  "), style=theme.accent_bright, justify="left")
+        row.append(f"v{entry.version}".ljust(ver_w), style=f"bold {theme.accent_bright}" if is_sel else theme.value)
+        row.append("  ")
+        row.append(f"{_changelog_short_date(entry.date):>6}", style=theme.muted)
+        row.append("  ")
+        row.append(entry.headline, style=f"bold {theme.accent_bright}" if is_sel else theme.desc)
+        # One dot per area the release touches — the colour is the whole message.
+        seen_areas = []
         for hl in entry.highlights:
-            # Reserve room on the bullet's last line for the coloured area tags.
-            tags_len = sum(len(a) + 2 for a in hl.areas)
-            chunks = textwrap.wrap(hl.text, width=max(24, wrap_w - 3)) or [""]
-            for i, chunk in enumerate(chunks):
-                # Flush with the version heading above it (see the tips gallery).
-                prefix = "  •  " if i == 0 else "     "
-                line = Text(_PAD + prefix + chunk, style=theme.value, justify="left")
-                if i == len(chunks) - 1 and len(prefix) + len(chunk) + tags_len <= wrap_w + 8:
-                    for area in hl.areas:
-                        line.append("  ")
-                        line.append(area, style=f"bold {AREA_COLORS.get(area, theme.muted)}")
-                    body_lines.append(line)
-                elif i == len(chunks) - 1:
-                    body_lines.append(line)
-                    tag_line = Text(_PAD + "       ", justify="left")
-                    for area in hl.areas:
-                        tag_line.append(area, style=f"bold {AREA_COLORS.get(area, theme.muted)}")
-                        tag_line.append("  ")
-                    body_lines.append(tag_line)
-                else:
-                    body_lines.append(line)
+            for area in hl.areas:
+                if area not in seen_areas:
+                    seen_areas.append(area)
+        if seen_areas:
+            row.append("  ")
+            for area in seen_areas:
+                row.append("●", style=AREA_COLORS.get(area, theme.muted))
+        body_lines.append(row)
+
+        if is_open:
+            body_lines.append(Text(_PAD + "    " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
+            if entry.summary:
+                _wrapped(entry.summary, theme.desc)
+            for hl in entry.highlights:
+                # Reserve room on the bullet's last line for the coloured area tags.
+                tags_len = sum(len(a) + 2 for a in hl.areas)
+                chunks = textwrap.wrap(hl.text, width=max(24, wrap_w - 5)) or [""]
+                for i, chunk in enumerate(chunks):
+                    prefix = "    •  " if i == 0 else "       "
+                    line = Text(_PAD + prefix + chunk, style=theme.value, justify="left")
+                    if i < len(chunks) - 1:
+                        body_lines.append(line)
+                        continue
+                    if len(prefix) + len(chunk) + tags_len <= wrap_w + 8:
+                        for area in hl.areas:
+                            line.append("  ")
+                            line.append(area, style=f"bold {AREA_COLORS.get(area, theme.muted)}")
+                        body_lines.append(line)
+                    else:
+                        body_lines.append(line)
+                        tag_line = Text(_PAD + "       ", justify="left")
+                        for area in hl.areas:
+                            tag_line.append(area, style=f"bold {AREA_COLORS.get(area, theme.muted)}")
+                            tag_line.append("  ")
+                        body_lines.append(tag_line)
+            body_lines.append(Text(""))
+
+        spans[idx] = (first, len(body_lines))
 
     # ── Layout using shared components ────────────────────────────
-    # No button row — a keyboard hint replaces it (aligned with the headings),
-    # matching the Usage page. action_h = blank + hint + pocket blank. The no_wrap
-    # pinning below keeps the viewport at exactly viewport_h rows so the hint can't
-    # be shoved off the bottom.
-    viewport_h = calc_viewport(height, header_h=6, action_h=3)
+    # header_h covers the leading blank, the ASCII title, the subtitle and the
+    # sticky area-filter row; action_h the keyboard hint and the music pocket. The
+    # no_wrap pinning below keeps the viewport at exactly viewport_h rows so the
+    # hint can't be shoved off the bottom.
+    viewport_h = calc_viewport(height, header_h=7, action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
-    actual_scroll = min(scroll_offset, max_scroll)
+    actual_scroll = max(0, min(scroll_offset, max_scroll))
+    span = spans.get(selected) if anchor else None
+    if span is not None:
+        first, last = span
+        # Keep the selected release's HEADING on screen, nothing more: an expanded
+        # entry taller than the viewport is read with the scroll keys, and forcing
+        # its tail into view would shove the catch-up digest off the top of a page
+        # the reader has only just opened.
+        if first < actual_scroll:
+            actual_scroll = first
+        elif first >= actual_scroll + viewport_h:
+            actual_scroll = min(first, max(0, last - viewport_h))
     publish_geometry(scroll_meta, max_scroll, viewport_h)
+    if scroll_meta is not None:
+        # The loop tracks its own offset; hand back the one actually rendered so a
+        # selection move and a scroll key never disagree about where the page is.
+        scroll_meta["offset"] = actual_scroll
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
 
     _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
@@ -3544,19 +3643,106 @@ def _build_changelog_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
+    hints = build_key_hints([("↑↓", "select"), ("↵", "expand"), ("tab", "area"), ("esc", "back")], pad=_PAD + "  ")
+    hints.no_wrap = True
+    hints.overflow = "crop"
+
     content = Group(
         Text(""),
         title,
         Text(""),
         sub,
         Text(""),
+        _changelog_filter_row(entries, area_filter, theme, width),
         viewport_renderable,
         Text(""),
-        Text(""),  # the copy hint used to sit here; kept blank to hold the layout
+        hints,
         Text(""),  # keeps the content above the music pocket band
     )
 
     return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
+
+
+def _changelog_since_block(since: list, seen_version: str, theme, wrap_w: int) -> list:
+    """The catch-up digest: what shipped since the user last read the page.
+
+    Empty on a first visit and when nothing is new — a reader with nothing to catch
+    up on should see the releases themselves, not a heading saying so.
+    """
+    if not since or not seen_version:
+        return []
+    import textwrap
+
+    bar = "▌ "
+    plural = "release" if len(since) == 1 else "releases"
+    lines = [
+        Text(_PAD + bar, style=theme.accent_bright, justify="left").append(
+            f"{len(since)} {plural} since v{seen_version}", style=f"bold {theme.accent_bright}"
+        )
+    ]
+    shown = since[:5]
+    for entry in shown:
+        head = textwrap.shorten(entry.headline, width=max(24, wrap_w - 4), placeholder="…")
+        line = Text(_PAD + bar, style=theme.accent_bright, justify="left")
+        line.append("● ", style=theme.accent)
+        line.append(head, style=theme.desc)
+        lines.append(line)
+    if len(since) > len(shown):
+        more = Text(_PAD + bar, style=theme.accent_bright, justify="left")
+        more.append(f"+{len(since) - len(shown)} more", style=theme.muted)
+        lines.append(more)
+    lines.append(Text(""))
+    return lines
+
+
+def _changelog_filter_row(entries: list, area_filter: str, theme, width: int) -> Text:
+    """The sticky area-filter row: ``all`` plus every area the ledger uses.
+
+    Kept out of the scrolling body so the reader can always see which filter is on.
+    Mirrors the desktop What's New page's chips.
+    """
+    from yeaboi.changelog import AREA_COLORS
+
+    names = ["", *changelog_areas(entries)]
+    if area_filter and area_filter not in names:
+        names.append(area_filter)
+    active = names.index(area_filter) if area_filter in names else 0
+
+    # Ten areas do not fit at 80 columns. Show the widest window that does, always
+    # containing the active chip, with an ellipsis on whichever side is clipped.
+    budget = max(20, width - len(_PAD) - 8)
+    lo = hi = active
+    used = len(names[active] or "all") + 2
+    while True:
+        grew = False
+        if hi + 1 < len(names) and used + len(names[hi + 1]) + 4 <= budget:
+            hi += 1
+            used += len(names[hi]) + 4
+            grew = True
+        if lo - 1 >= 0 and used + len(names[lo - 1] or "all") + 4 <= budget:
+            lo -= 1
+            used += len(names[lo] or "all") + 4
+            grew = True
+        if not grew:
+            break
+
+    row = Text(_PAD + "  ", justify="left")
+    if lo > 0:
+        row.append("… ", style=theme.muted)
+    for i in range(lo, hi + 1):
+        name = names[i]
+        if i > lo:
+            row.append("  ", style=theme.sep)
+        label = name or "all"
+        if name == area_filter:
+            row.append(f"[{label}]", style=f"bold {AREA_COLORS.get(name, theme.accent_bright)}")
+        else:
+            row.append(f" {label} ", style=theme.muted)
+    if hi < len(names) - 1:
+        row.append(" …", style=theme.muted)
+    row.no_wrap = True
+    row.overflow = "crop"
+    return row
 
 
 def _build_all_tips_screen(

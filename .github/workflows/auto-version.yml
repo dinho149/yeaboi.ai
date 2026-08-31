@@ -329,13 +329,28 @@ jobs:
                Otherwise run exactly this command (it rewrites pyproject.toml and prints the NEW version):
                  python scripts/bump_version.py <level>
 
-            4. Write the new version's changelog entry in src/yeaboi/changelog_data.json (this file ships inside the package and powers the in-app Changelog page). Prepend a new object at the TOP of the "entries" array (entries are newest-first):
+            4. Write the new version's changelog entry in src/yeaboi/changelog_data.json (this file ships inside the package and powers the in-app Changelog page and the desktop app's What's New). Prepend a new object at the TOP of the "entries" array (entries are newest-first):
                - "version": the new version (no leading "v")
                - "date": today's UTC date, YYYY-MM-DD
-               - "summary": one user-friendly paragraph describing what this PR changes for a user of the app — plain English, no code or file names
-               - "highlights": 1-5 objects of {"text": "...", "areas": [...]} — each a short user-facing change, tagged ONLY with areas from this fixed vocabulary: analysis, planning, standup, retro, performance, reporting, usage, settings, agents, general
-               - Each highlight MAY also carry "surfaces": which of the product's surfaces the change applies to, from this fixed vocabulary: tui (terminal app + CLI), desktop (the desktop app), web (browser share/board pages). OMIT the key when the change applies everywhere — backend/engine work, the common case. Tag only surface-specific changes: a terminal screen layout change is ["tui"], a share-page change is ["web"], a desktop-only backend route is ["desktop"].
+               - "headline": the entry's title — AT MOST 60 characters, sentence case, no trailing period, naming what a user can now do
+               - "summary": AT MOST 240 characters and AT MOST 2 sentences, saying what changes for a user of the app
+               - "highlights": 1-4 objects of {"text": "...", "areas": [...]} — each AT MOST 90 characters, no trailing period, tagged ONLY with areas from this fixed vocabulary: analysis, planning, standup, retro, performance, reporting, usage, settings, agents, general
+               - Each highlight MAY also carry "surfaces": which of the product's surfaces the change applies to, from this fixed vocabulary: tui (terminal app + CLI), desktop (the desktop app), web (browser share/board pages). OMIT the key when the change applies everywhere — backend/engine work, the common case. Tag only surface-specific changes: a terminal screen layout change is ["tui"], a share-page change is ["web"], a desktop-only backend route is ["desktop"]. NEVER put a surface name in "areas".
                If an entry for that version already exists, update it in place instead. Keep the JSON valid (validate by running: python -c "import json; json.load(open('src/yeaboi/changelog_data.json'))").
+
+               WRITE FOR A USER, NOT FOR A REVIEWER. Every string must name an outcome, never a component. No backticks, no --flags, no function() calls, no file names, no CamelCase or snake_case identifiers, no environment variables, no config keys, no terminal row counts, no refactor or test-coverage narration. Product and mode names are welcome: yeaboi, Niko, Jira, Slack, GitHub, Claude, Planning, Standup, Retro, Poker, Performance, Reporting, Ship, Usage, Settings.
+
+               GOOD:
+                 "headline": "Performance reviews show numbers, not paragraphs"
+                 "summary": "Cycle time, story counts and test coverage now read as figures you can scan. The same review looks identical in the terminal, the browser and a share link."
+                 "highlights": [{"text": "See cycle time and test coverage at a glance", "areas": ["performance"]}]
+               BAD (rejected):
+                 "summary": "The engine computes real figures once and projects them two ways — prompt prose for the LLM and structured records for the UI (PerfMetric, EvidenceGroup)…"
+                 "highlights": [{"text": "New TUI components: stat tiles for KPIs, meters for ratios, repositioned coverage strip", "areas": ["tui"]}]
+
+               If the release is genuinely internal, say so plainly rather than dressing it up: headline "Under-the-hood improvements", summary "Nothing changes in how yeaboi works — this release is internal plumbing and fixes."
+
+               tests/unit/test_changelog.py enforces all of the above against the shipped file. Run it before committing: uv run pytest tests/unit/test_changelog.py -q. A failure names the entry and the rule it broke — fix the copy, do not touch the test.
 
             5. Commit the pyproject.toml and changelog_data.json changes together (changelog-only mode: just changelog_data.json) to this PR branch and push. Use commit message:
                  chore: bump version to <new-version> [auto]
