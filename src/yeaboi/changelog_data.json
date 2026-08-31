@@ -34,19 +34,13 @@
       "summary": "Ask Niko what a mode does, or what your plans, standups, retros and agent spend actually say, and it will take you to the screen that does the thing. Niko only reads — it never changes anything.",
       "highlights": [
         {
-          "text": "Ask Niko anything across your plans, ceremonies and agent spend",
-          "areas": [
-            "general"
-          ]
-        },
-        {
           "text": "Read-only by design: Niko looks things up and points you the right way",
           "areas": [
             "general"
           ]
         },
         {
-          "text": "Ask from the terminal, the command line, the desktop app or your own tools",
+          "text": "Ask Niko from the terminal, the command line, the desktop app or your own tools",
           "areas": [
             "general"
           ]
@@ -56,14 +50,23 @@
           "areas": [
             "general"
           ]
+        },
+        {
+          "text": "The welcome screen now needs a terminal at least 41 rows tall",
+          "areas": [
+            "general"
+          ],
+          "surfaces": [
+            "tui"
+          ]
         }
       ]
     },
     {
       "version": "3.31.0",
       "date": "2026-08-25",
-      "headline": "Under-the-hood improvements",
-      "summary": "Nothing changes in how yeaboi works — the browser pages now arrive as a separate package installed alongside it. Upgrading or installing fresh picks it up automatically.",
+      "headline": "The browser pages now install as their own package",
+      "summary": "Boards, share pages, exports and the slide deck are unchanged — they now arrive as a separate package. Upgrading or installing fresh picks it up for you.",
       "highlights": [
         {
           "text": "Boards, share pages, exports and the slide deck behave exactly as before",
@@ -72,7 +75,13 @@
           ]
         },
         {
-          "text": "Installs and upgrades pull in the browser pages for you",
+          "text": "Pinning yeaboi without resolving dependencies? Install yeaboi-web-assets too",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Without it every board and export renders a blank page",
           "areas": [
             "general"
           ]

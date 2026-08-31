@@ -161,6 +161,18 @@ class TestChangelogPageLoop:
         assert selected, "a release stays selected after scrolling"
         assert "v3.20.0" not in selected[0], "selection followed the viewport instead of snapping back"
 
+    def test_the_digest_narrows_with_the_filter(self, env):
+        """It names releases from the list underneath it, so it cannot outlive them."""
+        from rich.console import Console as RichConsole
+
+        changelog.write_seen_version("3.15.0")
+        console = RichConsole(width=120, height=40, legacy_windows=False, record=True)
+        console.print(_run(_keys("tab", "esc")).frames[-1])
+        out = console.export_text()
+        assert "[planning]" in out
+        # The ledger alternates areas, so filtering must drop some of the five.
+        assert "5 releases since" not in out
+
     def test_a_click_is_swallowed(self, env):
         live = _run(_keys("mouse:1,1", "esc"))
         assert live.frames  # no crash, no extra repaint demanded
