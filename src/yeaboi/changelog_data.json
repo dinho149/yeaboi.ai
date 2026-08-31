@@ -2,6 +2,32 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.35.0",
+      "date": "2026-08-31",
+      "headline": "See your privacy settings and system health at a glance",
+      "summary": "Two new pages show what data yeaboi sends and check whether your system is ready to go. Both live in settings and work the same way on your desktop, terminal or CLI.",
+      "highlights": [
+        {
+          "text": "See what data yeaboi sends, grouped by category, with live toggles for egress controls",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Run system checks to see if everything you need is installed and ready",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Both pages work identically in the terminal, desktop app and CLI",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.34.0",
       "date": "2026-08-31",
       "headline": "Reach six more AI models directly",
