@@ -17,9 +17,9 @@ from rich.text import Text
 from yeaboi.provider_verification import _validate_key
 from yeaboi.ui.provider_select._constants import _PROVIDER_CARDS, TOKEN_HELP
 from yeaboi.ui.shared._animations import shimmer_style
+from yeaboi.ui.shared._ansi_font import render_shadow_text
 from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.shared._components import build_page_panel
-from yeaboi.ui.shared._wordmarks import get_shadow_wordmark
 
 # ---------------------------------------------------------------------------
 # Rendering helpers
@@ -153,13 +153,18 @@ def _build_provider_row(
 def _frame_title_rows(word: str, inner_w: int) -> list[str]:
     """Return exactly ``_FRAME_TITLE_ROWS`` equal-width rows for *word*'s title art.
 
-    Uses the tall ANSI-Shadow wordmark when one is baked for *word* and it fits
-    ``inner_w`` (provider/integration names + "Setup" all have bakes); otherwise
-    falls back to the compact two-line font, vertically centred in the reserved
-    block so the header height stays constant. Mirrors ``_components._title_rows``
-    but stays centre-justifiable (the setup frame centres its whole header).
+    Sets *word* in the tall ANSI-Shadow face when every letter has a glyph and the
+    result fits ``inner_w``; otherwise falls back to the compact two-line font,
+    vertically centred in the reserved block so the header height stays constant.
+    Mirrors ``_components._title_rows`` but stays centre-justifiable (the setup
+    frame centres its whole header).
+
+    Built per-word rather than looked up in ``_wordmarks``: only four of the
+    eleven provider names are baked there, so a lookup set the other seven —
+    Ollama and every OpenAI-wire vendor — in the small face on the first screen a
+    new user meets.
     """
-    shadow = get_shadow_wordmark(word)
+    shadow = render_shadow_text(word)
     if shadow is not None and len(shadow[0]) <= inner_w:
         return shadow
 
@@ -224,6 +229,21 @@ def _build_screen_frame(
     return build_page_panel(content, border_style=_ACCENT, height=height)
 
 
+def _fit_window(total: int, selected: int, avail_rows: int, row_h: int) -> tuple[range, int]:
+    """Which of ``total`` equal-height items fit ``avail_rows``, and how many don't.
+
+    The frame does not scroll, so a list longer than the body budget has to be
+    windowed. The window follows the selection, keeping it roughly centred, and
+    gives one row back to the caller's "N more" hint when anything is hidden.
+    """
+    max_items = max(1, avail_rows // row_h)
+    if total <= max_items:
+        return range(total), 0
+    max_items = max(1, (avail_rows - 1) // row_h)
+    start = min(max(0, selected - max_items // 2), total - max_items)
+    return range(start, start + max_items), total - max_items
+
+
 def _build_select_screen(
     selected: int,
     *,
@@ -239,6 +259,12 @@ def _build_select_screen(
     """Build the provider selection screen."""
     show = visible if visible is not None else list(range(len(_PROVIDER_CARDS)))
     fading = fade_indices or []
+
+    # Eleven providers no longer fit the frame, so the list is windowed around
+    # the selection exactly as the model list below it is.
+    middle_h = max(_PROVIDER_ROW_H, (height - 4) - _FRAME_HEADER_H - _FRAME_FOOTER_H)
+    window, hidden = _fit_window(len(_PROVIDER_CARDS), selected, middle_h, _PROVIDER_ROW_H)
+    show = [i for i in show if i in window]
 
     rows: list[tuple[int, Text]] = []
     for i, p in enumerate(_PROVIDER_CARDS):
@@ -276,6 +302,10 @@ def _build_select_screen(
         elif pos < len(rows) - 1:
             body.append(Text(""))
             body_h += 1
+
+    if hidden:
+        body.append(Align.center(Text(f"↑↓  {hidden} more", style="dim")))
+        body_h += 1
 
     return _build_screen_frame(
         subtitle="Select your LLM provider",
@@ -395,9 +425,10 @@ def _build_input_screen(
             justify="center",
         )
 
-    # Required-scope line for credential tokens (not shown for LLM API keys, which
-    # don't have granular scopes). Suppressed during the fade animation so the
-    # intro reads cleanly, matching the keyboard hint above.
+    # Scope line for any key with a TOKEN_HELP entry — the required scopes for a
+    # credential token, and for the OpenAI-wire vendors the fact that a default key
+    # needs none plus which env var moves the endpoint. Suppressed during the fade
+    # animation so the intro reads cleanly, matching the keyboard hint above.
     _help = TOKEN_HELP.get(provider["env_var"])
     show_scope = _help is not None and not input_fade
 
@@ -431,6 +462,7 @@ _MODEL_CARD_SEL_BORDER = "rgb(70,100,180)"
 _MODEL_CARD_DIM_BORDER = "rgb(35,35,45)"
 _MODEL_CARD_DIM_TEXT = "rgb(140,140,140)"
 _MODEL_CARD_H = 3  # rows per card: top border + label + bottom border
+_PROVIDER_ROW_H = 3  # rows per provider: two ASCII rows + separator/tagline
 
 
 def _build_model_card(label: str, *, selected: bool, inner_w: int) -> list[Align]:
@@ -493,24 +525,14 @@ def _build_model_select_screen(
     middle_h = max(_MODEL_CARD_H, (height - 4) - _FRAME_HEADER_H - _FRAME_FOOTER_H)
     reserve = 2 if (error or status) else 0
     avail = max(_MODEL_CARD_H, middle_h - reserve)
-    max_cards = max(1, avail // _MODEL_CARD_H)
-
-    truncated = len(entries) > max_cards
-    if truncated:
-        max_cards = max(1, (avail - 1) // _MODEL_CARD_H)  # reserve a row for the hint
-        # Window follows the selection, keeping it roughly centred.
-        start = min(max(0, selected - max_cards // 2), len(entries) - max_cards)
-    else:
-        start = 0
-    window = range(start, min(start + max_cards, len(entries)))
+    window, hidden = _fit_window(len(entries), selected, avail, _MODEL_CARD_H)
 
     body: list = []
     for i in window:
         body.extend(_build_model_card(entries[i], selected=(i == selected), inner_w=inner_w))
-    body_h = len(list(window)) * _MODEL_CARD_H
+    body_h = len(window) * _MODEL_CARD_H
 
-    if truncated:
-        hidden = len(entries) - len(list(window))
+    if hidden:
         body.append(Align.center(Text(f"↑↓  {hidden} more", style="dim")))
         body_h += 1
 

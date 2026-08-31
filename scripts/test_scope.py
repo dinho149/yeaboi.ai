@@ -549,6 +549,9 @@ GLOBAL: tuple[str, ...] = (
     "src/yeaboi/persistence.py",
     "src/yeaboi/paths.py",
     "src/yeaboi/config.py",
+    # The provider table every surface derives from: the factory, the wizard
+    # cards, the settings engine, verification and the guardrail classifier.
+    "src/yeaboi/llm_providers.py",
     "src/yeaboi/logging_setup.py",
     "src/yeaboi/ui/shared/",  # every screen in the app builds out of it
     "src/yeaboi/web/assets.py",  # the only door to the committed bundles

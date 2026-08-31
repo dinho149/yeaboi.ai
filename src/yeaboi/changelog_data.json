@@ -2,6 +2,32 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.34.0",
+      "date": "2026-08-31",
+      "headline": "Reach six more AI models directly",
+      "summary": "yeaboi now works with Grok, DeepSeek, Kimi, Mistral, Qwen and GLM through their native endpoints. No extra install needed — each one rides the same OpenAI-compatible integration.",
+      "highlights": [
+        {
+          "text": "Choose from Grok, DeepSeek, Kimi, Mistral, Qwen and GLM in settings",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Live discovery shows what models your API key can reach",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Override any provider's endpoint for a regional host or custom deploy",
+          "areas": [
+            "settings"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.33.0",
       "date": "2026-08-31",
       "headline": "Check your sharing setup before you publish",

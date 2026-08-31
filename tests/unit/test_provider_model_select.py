@@ -14,13 +14,17 @@ from rich.console import Console
 from rich.panel import Panel
 
 from yeaboi.agent.llm import _PROVIDER_DEFAULTS
+from yeaboi.llm_providers import OPENAI_COMPATIBLE
 from yeaboi.provider_verification import (
+    INVALID_KEY,
+    _validate_key,
+    _verify_api_key,
     _verify_confluence,
     _verify_model,
     fetch_available_models,
     pull_ollama_model,
 )
-from yeaboi.setup_wizard import _PROVIDERS, run_setup_wizard
+from yeaboi.setup_wizard import run_setup_wizard
 from yeaboi.ui.provider_select import _existing_model_for, _merge_model_presets
 from yeaboi.ui.provider_select._config import _save_progress
 from yeaboi.ui.provider_select._constants import (
@@ -47,6 +51,7 @@ from yeaboi.ui.provider_select.screens._screens import (
     _build_model_select_screen,
     _build_progress,
     _build_screen_frame,
+    _frame_title_rows,
     _link_target,
     _linkify,
 )
@@ -55,6 +60,7 @@ from yeaboi.ui.provider_select.screens._screens_vc import (
     _build_issue_tracking_screen,
     _build_vc_input_screen,
 )
+from yeaboi.ui.shared._ansi_font import render_shadow_text
 from yeaboi.ui.shared._wordmarks import get_shadow_wordmark
 
 # ---------------------------------------------------------------------------
@@ -64,6 +70,17 @@ from yeaboi.ui.shared._wordmarks import get_shadow_wordmark
 
 def _card(provider_val: str) -> dict:
     return next(c for c in _PROVIDER_CARDS if c["provider_val"] == provider_val)
+
+
+# The wizard's provider registry now lives on the cards; these tests address it
+# by the historical 1-5 numbering, so rebuild that mapping here.
+_PROVIDERS = {
+    "1": _card("anthropic"),
+    "2": _card("openai"),
+    "3": _card("google"),
+    "4": _card("bedrock"),
+    "5": _card("ollama"),
+}
 
 
 class _FakeResponse:
@@ -709,6 +726,14 @@ class TestFrameTitleFont:
         # "SETUP" wordmark present; the old "Setup Wizard" compact string is gone.
         assert "█" in out
 
+    @pytest.mark.parametrize("card", _PROVIDER_CARDS, ids=[c["provider_val"] for c in _PROVIDER_CARDS])
+    def test_every_provider_gets_the_tall_face(self, card):
+        # Only four names are baked in _wordmarks; the title is built per-word so
+        # the other seven don't arrive in the small font on the first screen of
+        # setup. Compared against the face itself rather than sniffed out of the
+        # render — Qwen's Q and W use the same half-blocks the compact font does.
+        assert _frame_title_rows(card["name"], 94) == render_shadow_text(card["name"])
+
 
 class TestIssueTrackingHint:
     """The multi-field form (Jira/AzDO/Notion) shows a keyboard hint, hidden on verify."""
@@ -847,9 +872,27 @@ class TestTokenHelp:
         assert "Configure SSO" in out
 
     def test_llm_key_screen_has_no_scope(self):
-        # LLM API keys have no granular scopes — the scope line must not appear.
+        # Anthropic's key has no granular scopes and no endpoint to move — nothing
+        # to say, so the line must not appear.
         out = _render(_build_input_screen(_PROVIDER_CARDS[0], "sk-ant-x", width=100, height=30))
         assert "Scope:" not in out
+
+    @pytest.mark.parametrize("provider_val", sorted(OPENAI_COMPATIBLE))
+    def test_openai_wire_key_screen_shows_its_note(self, provider_val):
+        # These do have something to say: whether a default key suffices, and which
+        # env var moves the endpoint.
+        card = next(c for c in _PROVIDER_CARDS if c["provider_val"] == provider_val)
+        out = _render(_build_input_screen(card, "x" * 40, width=100, height=30))
+        assert "Scope:" in out
+
+    @pytest.mark.parametrize("provider_val", sorted(OPENAI_COMPATIBLE))
+    def test_scope_note_is_not_truncated_at_80_columns(self, provider_val):
+        # The note sits on one centred line; too long and Rich clips it with an
+        # ellipsis, taking the env var name with it. 80 is four columns under the
+        # app's own floor (_MIN_WIDTH) on purpose — headroom, not the real frame.
+        card = next(c for c in _PROVIDER_CARDS if c["provider_val"] == provider_val)
+        out = _render(_build_input_screen(card, "x" * 40, width=80, height=24))
+        assert "…" not in out
 
     def test_registry_entries_complete(self):
         for env_var, entry in TOKEN_HELP.items():
@@ -1516,3 +1559,167 @@ class TestConnectionErrorRedaction:
         assert ok is False
         assert key not in message
         assert message.startswith("Connection error:")
+
+
+class TestOpenAiWireVerification:
+    """The six vendors share one branch in each of the four verification chains."""
+
+    def _specs(self):
+        from yeaboi.llm_providers import OPENAI_COMPATIBLE
+
+        return list(OPENAI_COMPATIBLE.values())
+
+    _MODELS = {
+        "data": [
+            {"id": "chat-new", "created": 300},
+            {"id": "chat-old", "created": 100},
+            {"id": "text-embedding-3", "created": 900},
+            {"id": "whisper-large-v3", "created": 900},
+        ]
+    }
+
+    def test_key_verified_against_the_vendors_own_host(self, monkeypatch):
+        import httpx
+
+        for spec in self._specs():
+            seen: list[str] = []
+            monkeypatch.setattr(httpx, "get", lambda url, **kw: (seen.append(url), _FakeResponse(200, self._MODELS))[1])
+            ok, msg = _verify_api_key(_card(spec.key), "k" * 40)
+            assert (ok, msg) == (True, "Key verified"), spec.key
+            assert seen == [f"{spec.base_url}/models"], spec.key
+
+    @pytest.mark.parametrize("status", [400, 401, 403])
+    def test_rejected_key_is_a_definite_rejection(self, monkeypatch, status):
+        # 400 is in the set because that is what api.x.ai answers a bad key with
+        # ("Incorrect API key provided"); without it Grok's most common setup
+        # mistake surfaced as "Unexpected response: 400".
+        import httpx
+
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: _FakeResponse(status))
+        for spec in self._specs():
+            assert _verify_api_key(_card(spec.key), "k" * 40) == (False, INVALID_KEY)
+            # …and the model check must not report a bad key as "verified".
+            assert _verify_model(_card(spec.key), "k" * 40, "anything") == (False, INVALID_KEY)
+
+    def test_discovery_drops_non_chat_families_but_keeps_vendor_ids(self, monkeypatch):
+        # The OpenAI filter allowlists gpt-/o1/o3 prefixes; using it here would
+        # discard every id these vendors return.
+        import httpx
+
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: _FakeResponse(200, self._MODELS))
+        for spec in self._specs():
+            assert fetch_available_models(_card(spec.key), "k" * 40) == ["chat-new", "chat-old"]
+
+    def test_model_membership_decides(self, monkeypatch):
+        import httpx
+
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: _FakeResponse(200, self._MODELS))
+        card = _card("xai")
+        assert _verify_model(card, "k" * 40, "chat-new") == (True, "Model verified")
+        assert _verify_model(card, "k" * 40, "no-such-model")[0] is False
+
+    def test_vendor_that_lists_nothing_is_soft_accepted(self, monkeypatch):
+        # Same call the wizard would otherwise block on; mirrors how Bedrock
+        # soft-accepts inference profiles it cannot enumerate.
+        import httpx
+
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: _FakeResponse(200, {"data": []}))
+        ok, msg = _verify_model(_card("zai"), "k" * 40, "glm-5.2")
+        assert ok is True
+        assert "does not list models" in msg
+
+    def test_unexpected_status_is_not_reported_as_a_bad_key(self, monkeypatch):
+        import httpx
+
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: _FakeResponse(503))
+        ok, msg = _verify_api_key(_card("mistral"), "k" * 40)
+        assert (ok, msg) == (False, "Unexpected response: 503")
+        assert msg != INVALID_KEY
+
+    def test_base_url_override_is_honoured(self, monkeypatch):
+        import httpx
+
+        monkeypatch.setenv("MISTRAL_BASE_URL", "https://gateway.internal/v1")
+        seen: list[str] = []
+        monkeypatch.setattr(httpx, "get", lambda url, **kw: (seen.append(url), _FakeResponse(200, {"data": []}))[1])
+        _verify_api_key(_card("mistral"), "k" * 40)
+        assert seen == ["https://gateway.internal/v1/models"]
+
+    def test_key_format_floors_suit_each_vendor(self):
+        # xAI keys are long; Mistral and Z.ai have no prefix to check, so a
+        # strict 30-char floor would reject perfectly good keys.
+        assert _validate_key(_card("xai"), "xai-" + "a" * 50)[0] == "valid_format"
+        assert _validate_key(_card("xai"), "xai-short")[0] == "too_short"
+        assert _validate_key(_card("mistral"), "m" * 32)[0] == "valid_format"
+        assert _validate_key(_card("deepseek"), "wrong-" + "a" * 40)[0] == "bad_prefix"
+
+
+class TestProviderScreenWindowing:
+    """Eleven providers no longer fit the frame, so the list has to window.
+
+    The frame does not clip: a body taller than its budget pushes the progress
+    bar off the bottom of the terminal. These are the properties that stop that
+    regression coming back the next time a provider is added.
+    """
+
+    def _screen(self, selected: int, width: int, height: int) -> str:
+        from rich.console import Console
+
+        from yeaboi.ui.provider_select.screens._screens import _build_select_screen
+
+        console = Console(file=StringIO(), width=width, height=height, highlight=False)
+        console.print(_build_select_screen(selected, width=width, height=height))
+        return console.file.getvalue()
+
+    @pytest.mark.parametrize("size", [(80, 24), (100, 30), (120, 40), (84, 44)])
+    def test_the_selected_provider_is_always_on_screen(self, size):
+        # The panel clips rather than overflows, so an unwindowed list fails
+        # silently: pick the last provider and its name is simply not drawn.
+        from yeaboi.ui.shared._ascii_font import render_ascii_text
+
+        width, height = size
+        for selected, card in enumerate(_PROVIDER_CARDS):
+            rendered = self._screen(selected, width, height)
+            art = render_ascii_text(card["name"])[0].strip()
+            assert art in rendered, f"{width}x{height}: {card['name']} not drawn when selected"
+
+    @pytest.mark.parametrize("size", [(80, 24), (100, 30), (120, 40), (84, 44)])
+    def test_the_progress_footer_survives_every_selection(self, size):
+        # A body taller than its budget pushes the step bar out of the frame.
+        width, height = size
+        for selected in range(len(_PROVIDER_CARDS)):
+            assert "LLM Provider" in self._screen(selected, width, height), (
+                f"{width}x{height} sel={selected}: progress bar clipped off the frame"
+            )
+
+    def test_selection_is_always_inside_the_window(self):
+        from yeaboi.ui.provider_select.screens._screens import _fit_window
+
+        for height in range(20, 60):
+            body = max(3, (height - 4) - 9 - 2)
+            for selected in range(len(_PROVIDER_CARDS)):
+                window, _hidden = _fit_window(len(_PROVIDER_CARDS), selected, body, 3)
+                assert selected in window, f"h={height} sel={selected} fell outside {list(window)}"
+
+    def test_hidden_count_is_shown_and_disappears_when_all_fit(self):
+        assert "more" in self._screen(0, 100, 24)
+        # A terminal tall enough for all eleven shows no hint.
+        assert "more" not in self._screen(0, 100, 60)
+
+    def test_window_covers_every_provider_as_the_selection_moves(self):
+        from yeaboi.ui.provider_select.screens._screens import _fit_window
+
+        reachable: set[int] = set()
+        for selected in range(len(_PROVIDER_CARDS)):
+            window, _ = _fit_window(len(_PROVIDER_CARDS), selected, 25, 3)
+            reachable |= set(window)
+        assert reachable == set(range(len(_PROVIDER_CARDS)))
+
+    def test_model_list_shares_the_same_window_helper(self):
+        # One implementation, so the two lists cannot drift apart.
+        from yeaboi.ui.provider_select.screens._screens import _fit_window
+
+        assert _fit_window(3, 0, 25, 3) == (range(0, 3), 0)
+        window, hidden = _fit_window(20, 10, 25, 3)
+        assert hidden == 20 - len(window)
+        assert 10 in window

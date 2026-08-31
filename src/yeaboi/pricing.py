@@ -10,8 +10,8 @@ False, so callers can surface honesty flags instead of silently guessing.
 
 Matching is longest-prefix over a normalised model id (lowercased, provider
 prefixes like ``anthropic.``/``us.anthropic.`` stripped), which absorbs dated
-snapshots (``claude-sonnet-4-5-20250929``) and regional Bedrock ids without a
-row per variant.
+snapshots (``claude-sonnet-4-5-20250929``), regional Bedrock ids and Mistral's
+``-latest`` aliases without a row per variant.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 # Date the rate table below was last transcribed from provider pricing pages.
 # Surfaced on artifacts so stale numbers are visible rather than silent.
-PRICING_AS_OF = "2026-06-24"
+PRICING_AS_OF = "2026-08-31"
 
 # Anthropic cache economics (per the API docs): a 5-minute-TTL cache write
 # bills at 1.25x the input rate, a 1-hour write at 2x, and a cache read at
@@ -28,6 +28,9 @@ PRICING_AS_OF = "2026-06-24"
 _CACHE_READ_MULT = 0.10
 _CACHE_WRITE_5M_MULT = 1.25
 _CACHE_WRITE_1H_MULT = 2.0
+# These multipliers are Anthropic's and are applied to every row, but they
+# stay inert off Anthropic: only Claude Code session logs report a cache
+# token split, so every other provider prices with those counts at zero.
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,31 @@ _PRICES: dict[str, ModelPrice] = {
     "gemini-2.5-pro": ModelPrice(1.25, 10.0),
     "gemini-2.5-flash": ModelPrice(0.3, 2.5),
     "gemini-2.0-flash": ModelPrice(0.1, 0.4),
+    # xAI
+    "grok-4": ModelPrice(3.0, 15.0),
+    # DeepSeek — peak rates, so an estimate never under-reports (off-peak is
+    # roughly half, and which window a call landed in is not recorded).
+    "deepseek-v4-pro": ModelPrice(1.32, 3.96),
+    "deepseek-v4-flash": ModelPrice(0.44, 1.32),
+    # Moonshot
+    "kimi-k3": ModelPrice(3.0, 15.0),
+    "kimi-k2": ModelPrice(0.95, 4.0),
+    # Mistral
+    "mistral-large": ModelPrice(0.5, 1.5),
+    "mistral-small": ModelPrice(0.15, 0.6),
+    "magistral": ModelPrice(2.0, 5.0),
+    "codestral": ModelPrice(0.3, 0.9),
+    "ministral-8b": ModelPrice(0.15, 0.15),
+    "ministral-3b": ModelPrice(0.1, 0.1),
+    "pixtral": ModelPrice(2.0, 6.0),
+    # Alibaba Qwen
+    "qwen3-max": ModelPrice(2.0, 6.0),
+    "qwen-max": ModelPrice(2.0, 6.0),
+    "qwen-plus": ModelPrice(0.4, 1.2),
+    "qwen-flash": ModelPrice(0.05, 0.4),
+    # Z.ai
+    "glm-5": ModelPrice(0.6, 2.2),
+    "glm-4": ModelPrice(0.6, 2.2),
 }
 
 # Providers whose inference runs on the user's own hardware — no per-token bill.

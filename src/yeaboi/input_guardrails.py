@@ -22,6 +22,8 @@ import logging
 import re
 from typing import NamedTuple
 
+from yeaboi.llm_providers import OPENAI_COMPATIBLE
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -242,6 +244,7 @@ _CLASSIFIER_MODELS: dict[str, str] = {
     # second local model here would force Ollama to swap models in RAM on
     # every classifier call, which is far slower than just reusing the one
     # already loaded.
+    **{s.key: s.fast_model for s in OPENAI_COMPATIBLE.values() if s.fast_model},
 }
 
 _CLASSIFIER_PROMPT = """\

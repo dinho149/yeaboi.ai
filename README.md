@@ -82,7 +82,7 @@ Optional extras can still be requested at install time if you prefer:
 
 ```bash
 uv tool install "yeaboi[voice]"                # 🎤 dictation, pre-installed rather than on demand
-uv tool install "yeaboi[all-providers]"        # OpenAI, Google, and Bedrock providers
+uv tool install "yeaboi[all-providers]"        # OpenAI, Google, Bedrock, Ollama + the six OpenAI-wire vendors
 pipx install --python 3.12 --fetch-missing-python "yeaboi[voice]"   # equivalent with pipx
 ```
 
@@ -125,7 +125,7 @@ yeaboi --non-interactive --description @project-brief.txt --output html --team-s
 🤖 **Agents too, not just humans** _(beta)_ — a robotic-duck landing split opens the Agents family: what your AI coding agents cost, how much of that spend is recoverable, a daily digest of what they did, and a security audit of your agent setup — computed locally from Claude Code session logs, transcripts never leave your machine
 🔌 **37 tools** — GitHub, Azure DevOps, Jira, Confluence, Notion, local codebase scanning, and more
 📤 **5 export formats** — Markdown, HTML, JSON, Jira sync, Azure DevOps Boards sync
-🤖 **5 LLM providers** — Claude (default), GPT, Gemini, AWS Bedrock, or fully local & keyless with Ollama
+🤖 **11 LLM providers** — Claude (default), GPT, Gemini, Grok, DeepSeek, Kimi, Mistral, Qwen, GLM, AWS Bedrock, or fully local & keyless with Ollama
 🧩 **Every surface** — TUI, CLI subcommands, MCP server, and a Claude Code plugin, with feature parity enforced in CI
 💾 **Session persistence** — SQLite-backed sessions plus a saved-runs hub for past standups, retros, and reports
 🛡️ **Guardrails** — Input/output validation, human-in-the-loop review at every stage

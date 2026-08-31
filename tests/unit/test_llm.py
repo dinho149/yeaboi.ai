@@ -424,7 +424,7 @@ class TestGetLlmUnknownProvider:
 
     def test_unknown_provider_raises_value_error(self, monkeypatch):
         """An unrecognised LLM_PROVIDER must raise ValueError with clear guidance."""
-        monkeypatch.setenv("LLM_PROVIDER", "mistral")
+        monkeypatch.setenv("LLM_PROVIDER", "not-a-vendor")
         with pytest.raises(ValueError, match="Unknown LLM_PROVIDER"):
             get_llm()
 
@@ -1037,3 +1037,89 @@ class TestGetLlmAnthropicSubscription:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-123")
         payload = get_llm()._get_request_payload([SystemMessage("Be terse."), HumanMessage("hi")])
         assert payload["system"] == "Be terse."
+
+
+class TestGetLlmOpenAiWireVendors:
+    """The six vendors served by one ChatOpenAI branch (llm_providers.py)."""
+
+    @pytest.fixture(autouse=True)
+    def _clean(self, monkeypatch):
+        from yeaboi.llm_providers import OPENAI_COMPATIBLE
+
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        for spec in OPENAI_COMPATIBLE.values():
+            monkeypatch.delenv(spec.key_env, raising=False)
+            monkeypatch.delenv(spec.base_url_env, raising=False)
+
+    def _specs(self):
+        from yeaboi.llm_providers import OPENAI_COMPATIBLE
+
+        return list(OPENAI_COMPATIBLE.values())
+
+    def test_each_vendor_returns_chat_openai_at_its_own_base_url(self, monkeypatch):
+        pytest.importorskip("langchain_openai", reason="langchain-openai not installed")
+        from langchain_openai import ChatOpenAI
+
+        for spec in self._specs():
+            monkeypatch.setenv("LLM_PROVIDER", spec.key)
+            monkeypatch.setenv(spec.key_env, "k" * 40)
+            llm = get_llm()
+            assert isinstance(llm, ChatOpenAI), spec.key
+            assert str(llm.openai_api_base) == spec.base_url, spec.key
+            assert llm.model_name == spec.default_model, spec.key
+
+    def test_base_url_env_overrides_the_default_host(self, monkeypatch):
+        pytest.importorskip("langchain_openai", reason="langchain-openai not installed")
+        spec = self._specs()[0]
+        monkeypatch.setenv("LLM_PROVIDER", spec.key)
+        monkeypatch.setenv(spec.key_env, "k" * 40)
+        monkeypatch.setenv(spec.base_url_env, "https://gateway.internal/v1")
+        assert str(get_llm().openai_api_base) == "https://gateway.internal/v1"
+
+    def test_missing_key_names_the_env_var(self, monkeypatch):
+        pytest.importorskip("langchain_openai", reason="langchain-openai not installed")
+        for spec in self._specs():
+            monkeypatch.setenv("LLM_PROVIDER", spec.key)
+            with pytest.raises(OSError, match=f"{spec.key_env} is not set"):
+                get_llm()
+
+    def test_streams_usage_so_token_counts_are_recorded(self, monkeypatch):
+        # Without this opt-in a streamed turn records zero usage, exactly as it
+        # would for OpenAI itself.
+        pytest.importorskip("langchain_openai", reason="langchain-openai not installed")
+        spec = self._specs()[0]
+        monkeypatch.setenv("LLM_PROVIDER", spec.key)
+        monkeypatch.setenv(spec.key_env, "k" * 40)
+        assert get_llm().stream_usage is True
+
+    def test_missing_package_raises_import_error(self, monkeypatch):
+        import builtins
+
+        spec = self._specs()[0]
+        monkeypatch.setenv("LLM_PROVIDER", spec.key)
+        monkeypatch.setenv(spec.key_env, "k" * 40)
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "langchain_openai":
+                raise ImportError("No module named 'langchain_openai'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+        with pytest.raises(ImportError, match="langchain-openai is not installed"):
+            get_llm()
+
+    def test_defaults_and_fast_models_come_from_the_one_table(self):
+        # _PROVIDER_DEFAULTS is merged from the specs, so an id can never be
+        # written down twice and drift.
+        from yeaboi.agent.llm import _ANALYSIS_FAST_MODELS
+
+        for spec in self._specs():
+            assert _PROVIDER_DEFAULTS[spec.key] == spec.default_model
+            if spec.fast_model:
+                assert _ANALYSIS_FAST_MODELS[spec.key] == spec.fast_model
+
+    def test_unknown_provider_error_names_them(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "not-a-vendor")
+        with pytest.raises(ValueError, match="deepseek"):
+            get_llm()

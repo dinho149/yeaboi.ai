@@ -6,11 +6,27 @@ from io import StringIO
 import pytest
 from rich.console import Console
 
-from yeaboi.setup_wizard import _PROVIDERS, is_first_run, run_setup_wizard, save_config
+from yeaboi.setup_wizard import is_first_run, run_setup_wizard, save_config
+from yeaboi.ui.provider_select._constants import _PROVIDER_CARDS
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _card(provider_val: str) -> dict:
+    return next(c for c in _PROVIDER_CARDS if c["provider_val"] == provider_val)
+
+
+# The wizard's provider registry now lives on the cards; these tests address it
+# by the historical 1-5 numbering, so rebuild that mapping here.
+_PROVIDERS = {
+    "1": _card("anthropic"),
+    "2": _card("openai"),
+    "3": _card("google"),
+    "4": _card("bedrock"),
+    "5": _card("ollama"),
+}
 
 
 def _make_console() -> Console:

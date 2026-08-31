@@ -21,52 +21,9 @@ from yeaboi.ui.provider_select import select_provider
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Provider registry
-# ---------------------------------------------------------------------------
-
-# Each entry: display name, env var for the API key, value written to
-# LLM_PROVIDER, expected key prefix (for soft format validation), and
-# a URL hint so users know where to get the key.
-_PROVIDERS: dict[str, dict[str, str]] = {
-    "1": {
-        "name": "Anthropic (Claude)",
-        "env_var": "ANTHROPIC_API_KEY",
-        "provider_val": "anthropic",
-        "prefix": "sk-ant-",
-        "instructions": "Get yours at: https://console.anthropic.com → API Keys",
-    },
-    "2": {
-        "name": "OpenAI (GPT)",
-        "env_var": "OPENAI_API_KEY",
-        "provider_val": "openai",
-        "prefix": "sk-",
-        "instructions": "Get yours at: https://platform.openai.com → API keys",
-    },
-    "3": {
-        "name": "Google (Gemini)",
-        "env_var": "GOOGLE_API_KEY",
-        "provider_val": "google",
-        "prefix": "AIza",
-        "instructions": "Get yours at: https://aistudio.google.com → Get API key",
-    },
-    "4": {
-        "name": "AWS (Bedrock)",
-        "env_var": "AWS_REGION",
-        "provider_val": "bedrock",
-        "prefix": "",
-        "instructions": "Uses IAM credentials from instance role, ~/.aws/credentials, or env vars",
-    },
-    "5": {
-        "name": "Ollama (Local & Free — no API key)",
-        "env_var": "OLLAMA_BASE_URL",
-        "provider_val": "ollama",
-        "prefix": "",
-        "instructions": "Free, private, no API key. Install: https://ollama.com then run: ollama pull qwen3:8b",
-        # Not a secret — the local server URL; Enter accepts this default.
-        "default_input": "http://localhost:11434",
-    },
-}
+# The wizard's provider registry lives in ui/provider_select/_constants.py —
+# one table, so the wizard, the settings engine and the TUI cannot disagree
+# about which providers exist.
 
 
 def is_first_run() -> bool:
@@ -126,8 +83,10 @@ def _collect_provider(console: Console) -> dict[str, str]:
     if result is not None:
         return result
 
-    # User cancelled (q/Esc) — fall back to default (Anthropic)
-    return _PROVIDERS["1"]
+    # User cancelled (q/Esc) — fall back to the first card (Anthropic)
+    from yeaboi.ui.provider_select._constants import _PROVIDER_CARDS
+
+    return _PROVIDER_CARDS[0]
 
 
 def _collect_api_key(console: Console, provider: dict[str, str]) -> str | None:

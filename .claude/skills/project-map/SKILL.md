@@ -218,7 +218,8 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `GOOGLE_API_KEY` — required when `LLM_PROVIDER=google`
 - `AWS_REGION` — required when `LLM_PROVIDER=bedrock` (auto-detected from `~/.aws/config` when a profile is present)
 - `AWS_PROFILE` — optional, auto-detected from `~/.aws/config` (looks for profiles with `credential_source` or `role_arn`)
-- `LLM_PROVIDER` — `anthropic` (default), `openai`, `google`, `bedrock`, `ollama`
+- `LLM_PROVIDER` — `anthropic` (default), `openai`, `google`, `bedrock`, `ollama`, plus the OpenAI-wire vendors `xai`, `deepseek`, `moonshot`, `mistral`, `qwen`, `zai`
+- `XAI_API_KEY` / `DEEPSEEK_API_KEY` / `MOONSHOT_API_KEY` / `MISTRAL_API_KEY` / `DASHSCOPE_API_KEY` / `ZAI_API_KEY` — one per OpenAI-wire vendor; each also takes an optional `<VENDOR>_BASE_URL` (see `llm_providers.py`)
 - `LLM_MODEL` — optional model override for the selected provider
 - `OLLAMA_BASE_URL` — optional, base URL of the local Ollama server (default `http://localhost:11434`); no API key needed when `LLM_PROVIDER=ollama`
 - `OLLAMA_NUM_CTX` — optional, context window requested from the Ollama model (default 16384)

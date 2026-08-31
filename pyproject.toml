@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "yeaboi"
-version = "3.33.0"
+version = "3.34.0"
 description = "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports, plus cost and security posture for your AI coding agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,6 +43,9 @@ dependencies = [
     # langchain-openai and langchain-google-genai are optional; they are
     # lazy-imported in llm.py and only needed when LLM_PROVIDER is set to
     # "openai" or "google". Install all with: uv sync --extra all-providers
+    # The OpenAI-wire vendors (xAI, DeepSeek, Moonshot, Mistral, Qwen, Z.ai —
+    # see llm_providers.py) need no extra of their own: they are ChatOpenAI
+    # pointed at another host, so the `openai` extra already covers them.
     "langchain-anthropic",
     "rich",
     "prompt-toolkit",
