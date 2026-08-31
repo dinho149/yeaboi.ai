@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import time
 from dataclasses import dataclass, replace
 from importlib import resources
 
@@ -59,6 +61,7 @@ class ChangelogEntry:
 
     version: str = ""
     date: str = ""
+    headline: str = ""
     summary: str = ""
     highlights: tuple[ChangelogHighlight, ...] = ()
 
@@ -85,6 +88,12 @@ def _coerce_surfaces(raw: object) -> tuple[str, ...]:
     return tuple(dict.fromkeys(surfaces)) or ALL_SURFACES
 
 
+def _first_sentence(text: str) -> str:
+    """The text up to its first sentence end — the headline fallback for an old entry."""
+    head = re.split(r"(?<=[.!?])\s", text.strip(), maxsplit=1)[0].strip()
+    return head.rstrip(".")
+
+
 def _parse_entry(raw: object) -> ChangelogEntry | None:
     """Parse one raw JSON entry; None (skipped) when malformed."""
     if not isinstance(raw, dict) or not isinstance(raw.get("version"), str) or not raw.get("version"):
@@ -99,10 +108,14 @@ def _parse_entry(raw: object) -> ChangelogEntry | None:
                     surfaces=_coerce_surfaces(item.get("surfaces")),
                 )
             )
+    summary = raw.get("summary", "") if isinstance(raw.get("summary"), str) else ""
+    headline = raw.get("headline", "") if isinstance(raw.get("headline"), str) else ""
     return ChangelogEntry(
         version=raw["version"],
         date=raw.get("date", "") if isinstance(raw.get("date"), str) else "",
-        summary=raw.get("summary", "") if isinstance(raw.get("summary"), str) else "",
+        # An entry written before headlines existed still needs a card title.
+        headline=headline or _first_sentence(summary),
+        summary=summary,
         highlights=tuple(highlights),
     )
 
@@ -139,6 +152,71 @@ def filter_for_surface(entries: list[ChangelogEntry], surface: str) -> list[Chan
     return filtered
 
 
+def read_seen_version() -> str:
+    """The newest release the user has already read, or "" when they never have."""
+    from yeaboi.paths import get_changelog_seen_path
+
+    try:
+        raw = json.loads(get_changelog_seen_path().read_text(encoding="utf-8"))
+        version = raw.get("version", "") if isinstance(raw, dict) else ""
+        return version if isinstance(version, str) else ""
+    except FileNotFoundError:
+        return ""  # never opened the page — the ordinary first run, not a failure
+    except Exception:
+        logger.warning("changelog seen-version unreadable", exc_info=True)
+        return ""
+
+
+def write_seen_version(version: str) -> None:
+    """Record ``version`` as read. Best-effort — a failure only costs a repeat digest."""
+    from yeaboi.paths import get_changelog_seen_path
+
+    if not version:
+        return
+    try:
+        get_changelog_seen_path().write_text(json.dumps({"version": version, "at": time.time()}), encoding="utf-8")
+        logger.debug("changelog seen-version written: %s", version)
+    except Exception:
+        logger.warning("changelog seen-version not written", exc_info=True)
+
+
+def entries_since(entries: list[ChangelogEntry], version: str) -> list[ChangelogEntry]:
+    """The entries newer than ``version``, newest-first.
+
+    Empty when ``version`` is missing or unparseable — a first run has nothing to
+    catch up on, and an unreadable marker must never claim the whole ledger is new.
+    """
+    from yeaboi.update_check import parse_version
+
+    seen = parse_version(version)
+    if seen is None:
+        return []
+    newer = []
+    for entry in entries:
+        current = parse_version(entry.version)
+        if current is not None and current > seen:
+            newer.append(entry)
+    return newer
+
+
+def changelog_areas(entries: list[ChangelogEntry]) -> list[str]:
+    """The area tags present in ``entries``, in the mode grid's own order."""
+    present = {area for entry in entries for hl in entry.highlights for area in hl.areas}
+    return [area for area in AREA_COLORS if area in present]
+
+
+def filter_by_area(entries: list[ChangelogEntry], area: str) -> list[ChangelogEntry]:
+    """Keep only the entries and highlights carrying ``area``; empty area keeps all."""
+    if not area:
+        return entries
+    kept = []
+    for entry in entries:
+        highlights = tuple(hl for hl in entry.highlights if area in hl.areas)
+        if highlights:
+            kept.append(replace(entry, highlights=highlights))
+    return kept
+
+
 def build_changelog_text(entries: list[ChangelogEntry] | None = None) -> str:
     """Render the changelog as a copy-pasteable Markdown report.
 
@@ -156,6 +234,9 @@ def build_changelog_text(entries: list[ChangelogEntry] | None = None) -> str:
         if e.date:
             header += f" — {e.date}"
         lines.append(header)
+        if e.headline:
+            lines.append("")
+            lines.append(f"**{e.headline}**")
         if e.summary:
             lines.append("")
             lines.append(e.summary)

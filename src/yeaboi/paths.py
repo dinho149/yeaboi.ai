@@ -119,6 +119,7 @@ PROJECTS_FILE = DATA_DIR / "projects.json"
 REPORTING_THEMES_FILE = DATA_DIR / "reporting_themes.json"  # user-defined Reporting palettes
 REPORTING_PREFS_FILE = DATA_DIR / "reporting_prefs.json"  # persisted Reporting deck-style preferences
 VOICE_INSTALL_FILE = DATA_DIR / "voice_install.json"  # sticky "this machine cannot run dictation" verdicts
+CHANGELOG_SEEN_FILE = DATA_DIR / "changelog_seen.json"  # newest release the user has already read on the Changelog page
 
 # Legacy paths (for backward compatibility / migration)
 LEGACY_DB_PATH = ROOT_DIR / "sessions.db"
@@ -294,6 +295,16 @@ def get_voice_install_path() -> Path:
     """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     return VOICE_INSTALL_FILE
+
+
+def get_changelog_seen_path() -> Path:
+    """Return the path of the last-read changelog version file (may not exist yet).
+
+    Records the newest release the user has already seen on the Changelog page, so
+    the page can lead with what shipped since. Absent means "never opened it".
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return CHANGELOG_SEEN_FILE
 
 
 def _safe_key(key: str, fallback: str) -> str:

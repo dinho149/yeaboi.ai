@@ -145,6 +145,13 @@ def _decode_mouse(pty_pair, payload: bytes) -> str:
         t.cancel()
 
 
+def test_back_tab_decodes_to_shift_tab(pty_pair):
+    # Shift+Tab is CSI Z. Without a branch for it the sequence falls into the
+    # unknown-CSI drain and reaches the app as nothing at all, so a page that
+    # binds "shift+tab" silently has no backwards gesture at all.
+    assert _decode_mouse(pty_pair, b"\x1b[Z") == "shift+tab"
+
+
 def test_left_click_decodes_to_click_coordinates(pty_pair):
     # SGR left-button press \x1b[<0;12;5M → "click:12:5" (1-based col;row) so a
     # screen can hit-test the click against its layout (click-to-select a mode).

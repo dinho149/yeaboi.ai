@@ -37,6 +37,13 @@ class TestExportDirHelpers:
         monkeypatch.setattr(paths, "REPORTING_EXPORTS_DIR", tmp_path / "reporting")
         assert paths.get_reporting_export_dir("").name == "report"
 
+    def test_changelog_seen_path_under_data_dir(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr(paths, "CHANGELOG_SEEN_FILE", tmp_path / "data" / "changelog_seen.json")
+        p = paths.get_changelog_seen_path()
+        assert p == tmp_path / "data" / "changelog_seen.json"
+        assert p.parent.is_dir()  # data dir created, file itself may not exist yet
+
     def test_reporting_prefs_path_under_data_dir(self, monkeypatch, tmp_path):
         monkeypatch.setattr(paths, "DATA_DIR", tmp_path / "data")
         monkeypatch.setattr(paths, "REPORTING_PREFS_FILE", tmp_path / "data" / "reporting_prefs.json")
