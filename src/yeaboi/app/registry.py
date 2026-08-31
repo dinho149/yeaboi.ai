@@ -197,6 +197,7 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/feedback/options", routes_feedback.options),
     AppRoute("POST", "/api/feedback", routes_feedback.submit),
     AppRoute("POST", "/api/feedback/polish", routes_feedback.polish),
+    AppRoute("POST", "/api/feedback/attachments", routes_feedback.attach),
     AppRoute("GET", "/api/consent", routes_consent.pending),
     AppRoute("POST", "/api/consent/{req_id}", routes_consent.resolve),
     # -- dictation (the M11 surface) ------------------------------------------
