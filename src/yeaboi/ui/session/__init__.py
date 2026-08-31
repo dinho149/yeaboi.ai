@@ -209,17 +209,21 @@ def _run_session_body(
         graph_state: dict = {"messages": []}
         graph_state["_intake_mode"] = intake_mode
         try:
-            from yeaboi.projects.active import get_context_deps
+            from yeaboi.projects.active import get_active_project, get_context_deps
 
+            # The welcome screen's active project scopes this run's cross-mode
+            # reads, and its context toggles (Projects → Context) gate them —
+            # see agent/nodes._state_scope and _wants_dep.
+            if get_active_project():
+                graph_state["project_id"] = get_active_project()
+                logger.info("Planning session project: %s", graph_state["project_id"])
             if get_context_deps() is not None:
                 import json as _json
 
-                # The welcome screen's context toggles (Projects → Context)
-                # gate this run's cross-mode reads — see agent/nodes._wants_dep.
                 graph_state["context_deps"] = _json.dumps(sorted(get_context_deps()))
                 logger.info("Planning session context deps: %s", graph_state["context_deps"])
         except Exception:  # noqa: BLE001 — toggles are best-effort, never block a session
-            logger.debug("could not read context toggles", exc_info=True)
+            logger.debug("could not read the active project or context toggles", exc_info=True)
         try:
             from yeaboi.projects.active import get_context_deps as _get_deps
 

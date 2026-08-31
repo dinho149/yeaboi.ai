@@ -119,11 +119,11 @@ class TestSlashCommands:
 
     def test_every_terminal_verb_reaches_the_desktop_or_is_exempt(self, manifest):
         if not manifest["commands"]:
-            # With no chat surface there is no verb registry to mirror; the
-            # constant above is the reason. A half-registered list — some verbs
-            # answered, most not — is still a failure below.
-            assert DESKTOP_CHAT_RETIRED
-            return
+            # With no chat surface there is no verb registry to mirror. Skipped
+            # rather than passed, so the run reports the guard as off instead of
+            # green; it re-arms the moment the manifest carries one command, and
+            # a half-registered list is a failure below.
+            pytest.skip(DESKTOP_CHAT_RETIRED)
         answered = {command["tui"] for command in manifest["commands"]}
         exempt = {name.lstrip("/") for name in TERMINAL_ONLY}
         missing = self._terminal_verbs() - answered - exempt

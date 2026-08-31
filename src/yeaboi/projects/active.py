@@ -1,6 +1,6 @@
 """The TUI's active project — in-process controller state.
 
-Set from the welcome screen's project switcher (``p``); read by mode launch
+Set from the welcome screen's project switcher (``P``); read by mode launch
 sites when they invoke an engine, so a standup or report started from the
 menu runs scoped without every screen learning about projects. Deliberately
 process-local and unpersisted: the active project is a *session* choice, and

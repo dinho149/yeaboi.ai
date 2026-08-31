@@ -115,6 +115,17 @@ class TestSavedRunsHub:
             rows = store.get_all_history()
         assert rows and "id" in rows[0] and rows[0]["session_id"] == "sess-1"
 
+    def test_get_all_history_filters_by_session_ids(self, tmp_path):
+        other = RetroReport(session_id="sess-2", date="2026-07-12", cards=(RetroCard(text="x"),))
+        with RetroStore(tmp_path / "sessions.db") as store:
+            store.record_run(_report())
+            store.record_run(other)
+            assert {r["session_id"] for r in store.get_all_history(session_ids=("sess-1",))} == {"sess-1"}
+            # Filtered in SQL, so the limit counts the scoped rows, not the newest overall.
+            assert [r["session_id"] for r in store.get_all_history(limit=1, session_ids=("sess-1",))] == ["sess-1"]
+            # An empty tuple means no rows, never all rows.
+            assert store.get_all_history(session_ids=()) == []
+
     def test_get_run_by_id_round_trips_and_missing(self, tmp_path):
         with RetroStore(tmp_path / "sessions.db") as store:
             rid = store.record_run(_report())

@@ -186,15 +186,15 @@ def history_providers(
         # reason: a retro runs under whatever quick session was open that day,
         # so a same-session history is almost always empty. Project-first, so a
         # board for project X shows X's retros before anyone else's.
+        # Scoped in the query, so the 48-row window holds the project's own runs
+        # rather than whatever 48 happened to be newest team-wide.
+        scoped = scope.session_ids if scope is not None else None
         try:
             with _open() as store:
-                runs = store.get_all_history(limit=48)
+                runs = store.get_all_history(limit=48, session_ids=scoped)
         except Exception as exc:  # pragma: no cover - defensive; history is best-effort
             logger.warning("retro: could not list previous retros: %s", exc)
             return []
-        if scope is not None and scope.session_ids is not None:
-            allowed = set(scope.session_ids)
-            runs = [r for r in runs if r.get("session_id") in allowed]
         # Already newest-first; a *stable* sort on the project match keeps it
         # that way inside each group.
         if project_name:

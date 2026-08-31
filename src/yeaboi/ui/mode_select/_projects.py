@@ -18,7 +18,13 @@ import time
 
 from rich.console import Console
 
-from yeaboi.projects.active import get_active_project, get_context_deps, set_active_project, set_context_deps
+from yeaboi.projects.active import (
+    get_active_project,
+    get_context_deps,
+    is_solo_mode,
+    set_active_project,
+    set_context_deps,
+)
 from yeaboi.ui.mode_select.screens._screens_projects import (
     ACTIONS,
     CONTEXT_ACTIONS,
@@ -189,7 +195,13 @@ def run_context_page(
                 return
             if choice == "All on":
                 set_context_deps(None)
-                message = "Every source on — runs inherit the project default when one is set."
+                # Solo inherits the solo defaults, not everything — it has no
+                # retro mode, so saying "every source" there would be a lie.
+                message = (
+                    "Back to the Solo defaults — retro stays off."
+                    if is_solo_mode()
+                    else "Every source on — runs inherit the project default when one is set."
+                )
             elif choice == "Incognito":
                 set_context_deps(())
                 message = "Incognito — runs read no cross-mode context until this changes."

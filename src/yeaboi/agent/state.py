@@ -2441,6 +2441,14 @@ class ScrumState(_RequiredState, total=False):
     # When set, intake auto-fills Q6/Q8/Q9 from the profile and nodes
     # use this profile for team calibration. Empty string = no profile selected.
     analysis_profile_id: str
+    # The run's project link and context toggles, read by _state_scope/_wants_dep
+    # to narrow every cross-mode read. Both are seeded by the caller, never by a
+    # node. Declared as ScrumState fields so LangGraph doesn't strip them —
+    # undeclared keys never reach a node, which silently unscopes the whole run.
+    # project_id is '' when unscoped; context_deps is a JSON array of dep tokens,
+    # absent when every source is on.
+    project_id: str
+    context_deps: str
     # Existing team repositories the user accepted as prior art for this plan.
     # Only greenfield projects are offered them. Feeds the analyzer and feature
     # prompts, and renders as a Prior Art section in the summary and exports.

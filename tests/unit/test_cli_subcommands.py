@@ -1577,6 +1577,30 @@ class TestProjectCommand:
         assert _cmd_project(args, _console()) == 0
         assert get_project(project["project_id"], db_path=db)["settings"] == {"default_analysis_profile_id": "team-x"}
 
+    def test_set_defaults_sets_the_context_deps(self, tmp_path, monkeypatch):
+        from yeaboi.cli import _cmd_project, build_parser
+        from yeaboi.projects.engine import create_project, get_project
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        project = create_project("Apollo", db_path=db)
+        args = build_parser().parse_args(["project", "set-defaults", project["project_id"], "--context", "retro"])
+        assert _cmd_project(args, _console()) == 0
+        assert get_project(project["project_id"], db_path=db)["settings"] == {"default_context_deps": ["retro"]}
+
+    def test_set_defaults_with_no_flags_changes_nothing(self, tmp_path, monkeypatch):
+        from yeaboi.cli import _cmd_project, build_parser
+        from yeaboi.projects.engine import create_project, get_project
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        project = create_project("Apollo", db_path=db)
+        buf = io.StringIO()
+        args = build_parser().parse_args(["project", "set-defaults", project["project_id"]])
+        assert _cmd_project(args, _console(buf)) == 2
+        assert "Nothing to set" in buf.getvalue()
+        assert get_project(project["project_id"], db_path=db)["settings"] == {}
+
 
 class TestContextFlags:
     """--context/--incognito map onto the engines' context_deps."""

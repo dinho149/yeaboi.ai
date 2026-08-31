@@ -120,7 +120,7 @@ CAPABILITIES: dict[str, dict] = {
             "project_set_defaults",
         },
         "tui_mode": Exempt(
-            "a welcome-screen keycap (p) opening the project switcher, not a card — "
+            "a welcome-screen keycap (P) opening the project switcher, not a card — "
             "an eleventh card breaks the 84x40 layout, the ceremonies/niko argument"
         ),
         "cli": {"project"},
@@ -662,8 +662,8 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "project list": set(),
     "project show": set(),
     "project link": set(),
-    # --analysis-profile is one key of the engine's `defaults` dict.
-    "project set-defaults": {"analysis_profile"},
+    # --analysis-profile and --context are each one key of the engine's `defaults` dict.
+    "project set-defaults": {"analysis_profile", "context"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -707,7 +707,7 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
     },
     "project set-defaults": {
-        "defaults": "assembled from the per-key flags (--analysis-profile); a raw dict flag invites typos",
+        "defaults": "assembled from the per-key flags (--analysis-profile, --context); a raw dict flag invites typos",
     },
 }
 

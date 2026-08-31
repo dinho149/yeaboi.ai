@@ -1285,7 +1285,10 @@ def run_repl(
             _session_has_data = True
             try:
                 if not _session_created:
-                    _store.create_session(_session_id)
+                    # The run's project link, so a scoped Standup or Reporting
+                    # later finds this plan (graph state carries it; headless
+                    # passes its own).
+                    _store.create_session(_session_id, project_id=graph_state.get("project_id", "") or "")
                     _session_created = True
                 _store.save_state(_session_id, graph_state)
                 _pa = result.get("project_analysis")

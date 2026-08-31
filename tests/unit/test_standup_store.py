@@ -369,6 +369,16 @@ class TestSavedRunsHub:
             rows = store.get_all_history()
         assert rows and "id" in rows[0] and rows[0]["session_id"] == "s1"
 
+    def test_get_all_history_filters_by_session_ids(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-09"))
+            store.record_run(_make_report(date="2026-07-10", session_id="s2"))
+            assert {r["session_id"] for r in store.get_all_history(session_ids=("s1",))} == {"s1"}
+            # Filtered in SQL, so the limit counts the scoped rows, not the newest overall.
+            assert [r["session_id"] for r in store.get_all_history(limit=1, session_ids=("s1",))] == ["s1"]
+            # An empty tuple means no rows, never all rows.
+            assert store.get_all_history(session_ids=()) == []
+
     def test_get_run_by_id_round_trips_and_missing(self, db_path):
         report = _make_report(date="2026-07-10")
         with StandupStore(db_path) as store:

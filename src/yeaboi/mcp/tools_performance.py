@@ -168,8 +168,9 @@ def register(app) -> None:
         poker history, plus open action items from the previous 1:1. The result reports which
         sources were scanned and which were not. deep_scan=true additionally runs one capped live
         scan of the stretch no saved standup covered — it costs API calls and is slower. project_id
-        and context_deps are accepted for cross-mode uniformity and unused: performance data is
-        engineer-keyed.
+        and context_deps narrow the cross-mode evidence only: a switched-off source says so in its
+        coverage row. The engineer's own 1:1 history stays unscoped — it is engineer-keyed, and must
+        not shrink because a project is active.
 
         Performance mode is in beta — its output is not yet verified against real delivery data.
         Present it as a draft for the lead to edit, not a verdict."""
@@ -234,8 +235,9 @@ def register(app) -> None:
         framework (bundled default, or PERFORMANCE_FRAMEWORK_PATH). The result reports which
         sources were scanned and which were not — an unscanned source is unknown, not absent.
         deep_scan=true additionally runs one capped live scan of the uncovered stretch. project_id
-        and context_deps are accepted for cross-mode uniformity and unused: performance data is
-        engineer-keyed.
+        and context_deps narrow the cross-mode evidence and the ceremony summary only: a switched-off
+        source says so in its coverage row. The engineer's own review history stays unscoped — it is
+        engineer-keyed, and must not shrink because a project is active.
 
         Performance mode is in beta — its output is not yet verified against real delivery data.
         Present it as a draft for the lead to edit, not a verdict."""

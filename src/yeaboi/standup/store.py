@@ -1476,13 +1476,30 @@ class StandupStore:
                 out.append(entry)
         return out
 
-    def get_all_history(self, limit: int = 100) -> list[dict]:
-        """Return recent standup run metadata across ALL sessions (for cadence + the hub)."""
-        rows = self._conn.execute(
-            "SELECT id, session_id, run_at, standup_date, sprint_day, confidence_pct, status "
-            "FROM standup_history ORDER BY run_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    def get_all_history(self, limit: int = 100, session_ids: tuple[str, ...] | None = None) -> list[dict]:
+        """Return recent standup run metadata across ALL sessions (for cadence + the hub).
+
+        ``session_ids`` is the hard filter a ProjectScope resolves to; an empty
+        tuple means no rows, not all rows. Filtered in SQL so ``limit`` counts
+        the project's own runs — filtering after the limit would hide older ones
+        behind a window full of other projects'.
+        """
+        if session_ids is not None:
+            if not session_ids:
+                return []
+            slots = ", ".join("?" for _ in session_ids)
+            rows = self._conn.execute(
+                f"SELECT id, session_id, run_at, standup_date, sprint_day, confidence_pct, status "  # noqa: S608 — placeholders, not values
+                f"FROM standup_history WHERE session_id IN ({slots}) "
+                "ORDER BY run_at DESC LIMIT ?",
+                (*session_ids, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT id, session_id, run_at, standup_date, sprint_day, confidence_pct, status "
+                "FROM standup_history ORDER BY run_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [
             {
                 "id": r[0],

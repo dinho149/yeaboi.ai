@@ -836,6 +836,13 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="ID",
         help="Team profile a scoped plan seeds when the caller passes none",
     )
+    project_defaults_p.add_argument(
+        "--context",
+        default=None,
+        type=_context_spec,
+        metavar="SPEC",
+        help="Cross-mode sources a scoped run reads by default ('all', 'none', or a csv)",
+    )
 
     perf_p = subparsers.add_parser(
         "perf",
@@ -857,16 +864,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--project",
         default="",
         metavar="PROJ_ID",
-        help="Accepted for cross-mode uniformity; performance data is engineer-keyed, so this is a no-op",
+        help="Narrow the cross-mode evidence to one project; the engineer's own 1:1 history stays unscoped",
     )
     prep_p.add_argument(
         "--context",
         default=None,
         type=_context_spec,
         metavar="SPEC",
-        help="Accepted for cross-mode uniformity ('all', 'none', or a csv of sources); a no-op like --project",
+        help="Which cross-mode sources to read ('all', 'none', or a csv); a switched-off source says so",
     )
-    prep_p.add_argument("--incognito", action="store_true", help="Same as --context none (a no-op like --project)")
+    prep_p.add_argument("--incognito", action="store_true", help="Same as --context none")
     prep_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     prep_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
     prep_p.add_argument(
@@ -901,16 +908,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--project",
         default="",
         metavar="PROJ_ID",
-        help="Accepted for cross-mode uniformity; performance data is engineer-keyed, so this is a no-op",
+        help="Narrow the cross-mode evidence to one project; the engineer's own review history stays unscoped",
     )
     review_p.add_argument(
         "--context",
         default=None,
         type=_context_spec,
         metavar="SPEC",
-        help="Accepted for cross-mode uniformity ('all', 'none', or a csv of sources); a no-op like --project",
+        help="Which cross-mode sources to read ('all', 'none', or a csv); a switched-off source says so",
     )
-    review_p.add_argument("--incognito", action="store_true", help="Same as --context none (a no-op like --project)")
+    review_p.add_argument("--incognito", action="store_true", help="Same as --context none")
     review_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     review_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
     review_p.add_argument(
@@ -2458,6 +2465,13 @@ def _cmd_project(args: argparse.Namespace, console: Console) -> int:
     defaults: dict = {}
     if args.analysis_profile:
         defaults["default_analysis_profile_id"] = args.analysis_profile
+    if args.context is not None:
+        defaults["default_context_deps"] = args.context
+    if not defaults:
+        # Nothing to merge — say so rather than printing a success line for a
+        # call that changed nothing.
+        console.print("[yellow]Nothing to set — pass --analysis-profile and/or --context.[/yellow]")
+        return 2
     result = set_project_defaults(args.project_id, defaults)
     console.print(f"Defaults for {args.project_id}: {result['settings'] or '—'}")
     return 0
