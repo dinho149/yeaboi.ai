@@ -25,6 +25,17 @@ import pytest
 # committed ones — passing or failing for a reason nothing in the output names.
 os.environ.pop("YEABOI_WEB_STATIC", None)
 
+# Same reason, one line further down: `paths.ROOT_DIR` is resolved at import, so
+# this cannot be a fixture either. Without it the suite writes the developer's
+# REAL ~/.yeaboi/data/sessions.db, and two worktrees running `make test-fast` at
+# once corrupt each other's ledger through it.
+#
+# Derived from this file's path rather than from the worktree marker, so it holds
+# for a non-editable install and a raw source tree too. `setdefault`, so CI or a
+# make recipe can still choose. Credentials are untouched on purpose:
+# ~/.yeaboi/.env is pinned outside YEABOI_HOME and is shared by design.
+os.environ.setdefault("YEABOI_HOME", str(Path(__file__).resolve().parent.parent / ".pytest-home"))
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _sandbox_allows_test_dirs(tmp_path_factory):

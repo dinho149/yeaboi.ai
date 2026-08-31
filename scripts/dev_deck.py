@@ -29,10 +29,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from yeaboi.agent.state import DeliveredItem, DeliveryReport, SupportingSignal  # noqa: E402
+from yeaboi.config import get_deck_server_port  # noqa: E402
 from yeaboi.reporting.presentation import build_presentation_html  # noqa: E402
 from yeaboi.reporting.style import DeckStyle  # noqa: E402
 
-PORT = 5373
+PORT = get_deck_server_port()
 
 REPORT = DeliveryReport(
     period_label="Last month (~2 sprints)",

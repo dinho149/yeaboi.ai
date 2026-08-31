@@ -235,6 +235,57 @@ class TestNoCommandTrustsLocalMain:
         )
 
 
+class TestWorktreeIsolation:
+    """What a worktree owns alone, and what it deliberately shares.
+
+    Worktrees share one common gitdir, so a hook installed into `.git/hooks`
+    is installed for all of them, pinned to whichever venv wrote it last. These
+    pin the arrangement that replaced it — nothing else in the suite implies it,
+    because it lives in git config and a shell script.
+    """
+
+    HOOK = ROOT / ".githooks" / "pre-commit"
+    PROVISION = ROOT / "scripts" / "provision.sh"
+
+    def test_the_hook_is_tracked_and_executable(self):
+        """A generated hook leaves an unprovisioned worktree running nothing at all."""
+        assert self.HOOK.is_file(), "the per-worktree pre-commit hook is missing"
+        assert self.HOOK.stat().st_mode & 0o111, f"chmod +x {self.HOOK.relative_to(ROOT)}"
+
+    def test_the_hook_resolves_the_venv_from_the_tree_being_committed(self):
+        text = self.HOOK.read_text()
+        assert "--show-toplevel" in text, "the hook must find the worktree it is running in"
+        assert "/.venv/bin/pre-commit" in text
+        assert "/Users/" not in text, "a baked absolute path is the bug this replaced"
+
+    def test_provisioning_points_git_at_the_per_worktree_hooks(self):
+        text = self.PROVISION.read_text()
+        assert "core.hooksPath .githooks" in text, (
+            "the path is relative on purpose: git chdirs to the working-tree root before "
+            "running a hook, so one shared setting gives every worktree its own"
+        )
+        # Prose may name it; nothing may run it — it writes into the SHARED
+        # .git/hooks, which is exactly what broke.
+        runs = [ln for ln in text.splitlines() if "pre-commit install" in ln and not ln.lstrip().startswith("#")]
+        assert not runs, runs
+
+    def test_the_repair_target_sets_it_too(self):
+        """The main checkout never runs provision.sh."""
+        _, body = _recipe("pre-commit")
+        assert "core.hooksPath .githooks" in body
+
+    def test_the_generated_port_block_is_never_committed(self):
+        ignored = (ROOT / ".gitignore").read_text()
+        assert "/.worktree.env" in ignored, "a worktree's ports would follow it into every diff"
+
+    def test_credentials_stay_machine_global(self):
+        """Data is per-worktree; API keys are the user's, not the branch's."""
+        text = (ROOT / "src" / "yeaboi" / "paths.py").read_text()
+        assert "ENV_FILE = DEFAULT_ROOT_DIR" in text, (
+            "the bootstrap .env must not move with YEABOI_HOME — it is what can set it"
+        )
+
+
 class TestTheSharedTooling:
     """The plugin's commands speak to this repo only through Make and repo-notes."""
 

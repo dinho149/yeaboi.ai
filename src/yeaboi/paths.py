@@ -59,8 +59,37 @@ from pathlib import Path
 DEFAULT_ROOT_DIR = Path.home() / ".yeaboi"
 
 
+def _checkout_home() -> Path | None:
+    """The data home pinned by the source checkout this package is imported from.
+
+    Git worktrees share a machine but must not share one sessions.db, one
+    exports tree or one log tree. `wt.sh` writes `.worktree.env` into each
+    worktree it cuts; this reads the one key out of it.
+
+    `parents[2]` is the repo root for an editable install and `lib/pythonX.Y`
+    for a wheel, so a released install has no such file and cannot acquire one.
+    Never raises: this runs at import, before logging exists, and a malformed
+    file must degrade to the default rather than make the package unimportable.
+    """
+    try:
+        marker = Path(__file__).resolve().parents[2] / ".worktree.env"
+        for line in marker.read_text(encoding="utf-8").splitlines():
+            key, _, value = line.removeprefix("export ").partition("=")
+            if key.strip() == "YEABOI_HOME":
+                value = value.strip().strip("'\"")
+                return Path(value).expanduser() if value else None
+    except (OSError, IndexError):
+        pass
+    return None
+
+
 def _resolve_root() -> Path:
-    """Resolve the data home: $YEABOI_HOME when set, else ~/.yeaboi.
+    """Resolve the data home, most specific source first.
+
+    1. $YEABOI_HOME            — explicit: a shell, a make recipe, a test
+    2. <checkout>/.worktree.env — this worktree's own tree, so parallel
+       worktrees do not write one another's data
+    3. ~/.yeaboi
 
     Read once at import time — every constant below derives from ROOT_DIR, so
     changing the setting mid-run takes effect on the next start (the Settings
@@ -68,7 +97,9 @@ def _resolve_root() -> Path:
     resolution with a monkeypatched environment.
     """
     raw = os.getenv("YEABOI_HOME", "").strip()
-    return Path(raw).expanduser() if raw else DEFAULT_ROOT_DIR
+    if raw:
+        return Path(raw).expanduser()
+    return _checkout_home() or DEFAULT_ROOT_DIR
 
 
 ROOT_DIR = _resolve_root()

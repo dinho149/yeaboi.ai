@@ -326,8 +326,15 @@ class TestRecordingEnv:
         assert env["ANTHROPIC_API_KEY"] == "test-key-dry-run-only"
 
     def test_yeaboi_home_never_leaks_in(self, tmp_path, monkeypatch):
+        """The developer's real tree must not reach a recording — and nor must a worktree's.
+
+        This used to assert the variable was absent, which was the same thing
+        while unset meant ~/.yeaboi. It no longer is: unset now falls through to
+        the checkout's .worktree.env, so the recording has to pin the temp home
+        explicitly rather than by omission.
+        """
         monkeypatch.setenv("YEABOI_HOME", "/somewhere/real")
-        assert "YEABOI_HOME" not in record_demo._recording_env(tmp_path)
+        assert record_demo._recording_env(tmp_path)["YEABOI_HOME"] == str(tmp_path / ".yeaboi")
 
 
 class TestMain:

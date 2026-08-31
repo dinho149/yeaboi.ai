@@ -147,7 +147,16 @@ class TestGetDbPathPermissions:
 class TestResolveRoot:
     """YEABOI_HOME relocates the whole data tree (resolved once at import time)."""
 
-    def test_default_is_home_yeaboi(self, monkeypatch):
+    @pytest.fixture
+    def no_checkout_marker(self, monkeypatch):
+        """Ignore the worktree this suite is running inside.
+
+        These cases are about the env-var/default half of the resolution; the
+        checkout marker gets its own class below.
+        """
+        monkeypatch.setattr(paths, "_checkout_home", lambda: None)
+
+    def test_default_is_home_yeaboi(self, monkeypatch, no_checkout_marker):
         monkeypatch.delenv("YEABOI_HOME", raising=False)
         assert paths._resolve_root() == Path.home() / ".yeaboi"
 
@@ -160,7 +169,7 @@ class TestResolveRoot:
         monkeypatch.setenv("YEABOI_HOME", "~/yb-data")
         assert paths._resolve_root() == tmp_path / "yb-data"
 
-    def test_blank_override_ignored(self, monkeypatch):
+    def test_blank_override_ignored(self, monkeypatch, no_checkout_marker):
         monkeypatch.setenv("YEABOI_HOME", "   ")
         assert paths._resolve_root() == Path.home() / ".yeaboi"
 
@@ -168,6 +177,61 @@ class TestResolveRoot:
         # The bootstrap .env holds YEABOI_HOME itself, so it never moves.
         assert paths.ENV_FILE == paths.DEFAULT_ROOT_DIR / ".env"
         assert paths.DEFAULT_ROOT_DIR == Path.home() / ".yeaboi"
+
+
+class TestCheckoutHome:
+    """A worktree pins its own data home, so parallel worktrees do not share one.
+
+    `wt.sh` writes `.worktree.env` beside the source tree; `paths` is imported
+    before anything can load a dotenv, so this is the only place early enough
+    to read it.
+    """
+
+    def _marker(self, monkeypatch, tmp_path, body: str) -> None:
+        """Point _checkout_home() at a fake checkout root holding *body*."""
+        root = tmp_path / "checkout"
+        (root / "src" / "yeaboi").mkdir(parents=True)
+        (root / ".worktree.env").write_text(body)
+        monkeypatch.setattr(paths, "__file__", str(root / "src" / "yeaboi" / "paths.py"))
+
+    def test_the_marker_moves_the_root(self, monkeypatch, tmp_path):
+        self._marker(monkeypatch, tmp_path, "export YEABOI_HOME=/tmp/wt-home\n")
+        assert paths._checkout_home() == Path("/tmp/wt-home")
+
+    def test_a_bare_assignment_works_too(self, monkeypatch, tmp_path):
+        self._marker(monkeypatch, tmp_path, "YEABOI_HOME=/tmp/bare\n")
+        assert paths._checkout_home() == Path("/tmp/bare")
+
+    def test_an_explicit_env_var_still_wins(self, monkeypatch, tmp_path):
+        self._marker(monkeypatch, tmp_path, "export YEABOI_HOME=/tmp/wt-home\n")
+        monkeypatch.setenv("YEABOI_HOME", str(tmp_path / "explicit"))
+        assert paths._resolve_root() == tmp_path / "explicit"
+
+    def test_other_keys_are_ignored(self, monkeypatch, tmp_path):
+        self._marker(monkeypatch, tmp_path, "export RETRO_PORT=20100\nexport YEABOI_WT_SLOT=1\n")
+        assert paths._checkout_home() is None
+
+    def test_no_marker_means_no_opinion(self, monkeypatch, tmp_path):
+        root = tmp_path / "wheel-ish"
+        (root / "src" / "yeaboi").mkdir(parents=True)
+        monkeypatch.setattr(paths, "__file__", str(root / "src" / "yeaboi" / "paths.py"))
+        assert paths._checkout_home() is None
+
+    def test_an_unreadable_marker_never_raises(self, monkeypatch, tmp_path):
+        # This runs at import, before logging exists: a bad file must degrade
+        # to the default, not make the package unimportable.
+        root = tmp_path / "checkout"
+        (root / "src" / "yeaboi").mkdir(parents=True)
+        (root / ".worktree.env").mkdir()  # a directory where a file belongs
+        monkeypatch.setattr(paths, "__file__", str(root / "src" / "yeaboi" / "paths.py"))
+        assert paths._checkout_home() is None
+
+    def test_credentials_do_not_move_with_the_data(self, monkeypatch, tmp_path):
+        """The whole point: one set of API keys still serves every worktree."""
+        monkeypatch.delenv("YEABOI_HOME", raising=False)  # conftest pins one for the suite
+        self._marker(monkeypatch, tmp_path, "export YEABOI_HOME=/tmp/wt-home\n")
+        assert paths._resolve_root() == Path("/tmp/wt-home")
+        assert paths.ENV_FILE == Path.home() / ".yeaboi" / ".env"
 
 
 class TestMoveDataTree:

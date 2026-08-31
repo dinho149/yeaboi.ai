@@ -167,7 +167,10 @@ def _child_env(home: Path) -> dict[str, str]:
         # runs instead, which is a path worth fuzzing anyway.
         "PATH": f"{home / 'shims'}{os.pathsep}{os.environ.get('PATH', '')}",
     }
-    env.pop("YEABOI_HOME", None)
+    # Set, not popped: unset now falls through to the worktree's
+    # .worktree.env marker, which would land this run in the shared
+    # worktree tree instead of the temp HOME below it.
+    env["YEABOI_HOME"] = str(home / ".yeaboi")
     env.pop("ANTHROPIC_BASE_URL", None)
     return env
 

@@ -300,7 +300,10 @@ def _recording_env(home: Path) -> dict[str, str]:
         "YEABOI_NO_TUNNEL": "1",
         "YEABOI_TELEMETRY": "off",
     }
-    env.pop("YEABOI_HOME", None)
+    # Set, not popped: unset now falls through to the worktree's
+    # .worktree.env marker, which would land this run in the shared
+    # worktree tree instead of the temp HOME below it.
+    env["YEABOI_HOME"] = str(home / ".yeaboi")
     return env
 
 

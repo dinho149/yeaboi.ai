@@ -76,7 +76,7 @@ AREAS: tuple[Area, ...] = (
         # a sha) is `tests/unit/test_ship_gate.py`, which is in ALWAYS. CI's
         # `make tooling-check` covers the rest at runtime.
         "tooling",
-        src=(".tooling-rev", "scripts/tooling-sync.sh", "scripts/provision.sh"),
+        src=(".tooling-rev", "scripts/tooling-sync.sh", "scripts/provision.sh", ".githooks/"),
     ),
     Area(
         # The seam to yeaboi-site: the facts the website advertises about this

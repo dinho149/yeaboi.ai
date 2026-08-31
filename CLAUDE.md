@@ -57,7 +57,7 @@ Terminal GIFs: `make demo` re-records `demo.cast.gz` + `demo.gif` from a scripte
 
 ## Parallel Development (worktrees)
 
-Each feature gets its own git worktree under `<main checkout>/.claude/worktrees/<name>` with its own branch, `.env`, uv venv, and pre-commit hooks. Never develop two features in one checkout. A new worktree is cut from latest `origin/main`; an existing local branch is left untouched, and a branch that exists only on `origin` is checked out tracking the remote — rebase it with `/sync-main`.
+Each feature gets its own git worktree under `<main checkout>/.claude/worktrees/<name>` with its own branch, `.env`, uv venv, port block and `~/.yeaboi` data home (`.worktree.env`, generated at creation; `make wt-repair NAME=…` retrofits an older tree). Hooks are one tracked `.githooks/pre-commit` reached through a relative `core.hooksPath`, so each worktree runs its own venv's. **Shared on purpose**: one `.git` (hence one stash stack — use `make stash`/`make unstash`, never a bare `pop`) and one set of credentials in `~/.yeaboi/.env`. Never develop two features in one checkout. A new worktree is cut from latest `origin/main`; an existing local branch is left untouched, and a branch that exists only on `origin` is checked out tracking the remote — rebase it with `/sync-main`.
 
 The venv and pre-commit half is this repo's `scripts/provision.sh`, which the shared worktree script runs inside the new tree; the rest lives in **[yeaboi-tooling](https://github.com/yeaboi-ai/yeaboi-tooling)** (see *Shared tooling* below).
 
