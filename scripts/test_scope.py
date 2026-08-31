@@ -188,6 +188,7 @@ AREAS: tuple[Area, ...] = (
             # and the tracker sync modules its entries resolve to.
             "src/yeaboi/trackers.py",
             "src/yeaboi/linear_sync.py",
+            "src/yeaboi/trello_sync.py",
             "src/yeaboi/transcript.py",
             "src/yeaboi/json_exporter.py",
             "src/yeaboi/prd_exporter.py",
@@ -201,6 +202,7 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/prompts/*.py",
             "tests/unit/test_trackers.py",
             "tests/unit/test_linear_sync.py",
+            "tests/unit/test_trello_sync.py",
             "tests/unit/test_state.py",
             "tests/unit/test_sessions.py",
             "tests/unit/test_phases_*.py",

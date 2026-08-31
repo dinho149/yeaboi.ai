@@ -70,6 +70,12 @@ TOOL_RISK: dict[str, ToolRisk] = {
     "linear_create_epic": ToolRisk.WRITE,
     "linear_create_story": ToolRisk.WRITE,
     "linear_create_sprint": ToolRisk.WRITE,
+    # Trello
+    "trello_read_board": ToolRisk.READ,
+    "trello_fetch_active_sprint": ToolRisk.READ,
+    "trello_create_epic": ToolRisk.WRITE,
+    "trello_create_story": ToolRisk.WRITE,
+    "trello_create_sprint": ToolRisk.WRITE,
     # Confluence
     "confluence_search_docs": ToolRisk.READ,
     "confluence_read_page": ToolRisk.READ,

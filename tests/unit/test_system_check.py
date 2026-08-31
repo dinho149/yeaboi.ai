@@ -79,6 +79,7 @@ class TestReportShape:
             "confluence",
             "notion",
             "linear",
+            "trello",
             "slack",
             "git",
             "coding-agent",
@@ -164,6 +165,8 @@ _INTEGRATION_ENVS = (
     "CONFLUENCE_SPACE_KEY",
     "NOTION_TOKEN",
     "LINEAR_API_KEY",
+    "TRELLO_API_KEY",
+    "TRELLO_TOKEN",
     "SLACK_WEBHOOK_URL",
     "SLACK_BOT_TOKEN",
 )

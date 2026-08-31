@@ -317,6 +317,78 @@ def _linear_summary(result) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Trello
+# ---------------------------------------------------------------------------
+
+
+def _trello_configured() -> bool:
+    from yeaboi.trello_sync import is_trello_configured
+
+    return is_trello_configured()
+
+
+def _trello_velocity() -> dict | None:
+    """Trello has no points primitive, so there is no velocity to fetch.
+
+    Returning None sends intake to its team-size heuristic, exactly as a
+    tracker with no completed sprints would.
+    """
+    logger.debug("Trello has no velocity source — intake falls back to the heuristic")
+    return None
+
+
+def _trello_active_sprint() -> tuple[int | None, str | None, str]:
+    try:
+        from yeaboi.tools.trello import trello_fetch_active_sprint
+
+        result = trello_fetch_active_sprint.invoke({})
+        if result.startswith("Error"):
+            return None, None, result.removeprefix("Error: ")
+        data = json.loads(result)
+        return data["sprint_number"], data.get("start_date"), f"Active list: {data['sprint_name']}"
+    except Exception as exc:
+        logger.debug("Failed to fetch Trello list for sprint selection", exc_info=True)
+        return None, None, f"Trello connection failed: {exc}"
+
+
+def _trello_sprint_targets() -> tuple[list[dict], str]:
+    try:
+        from yeaboi.tools.trello import fetch_board_lists
+
+        targets = []
+        for row in fetch_board_lists():
+            name = str(row.get("name", ""))
+            match = re.search(r"(\d+)\s*$", name)
+            targets.append(
+                {
+                    "name": name,
+                    "external_id": str(row.get("id", "")),
+                    "state": "active",
+                    "start_date": None,
+                    "number": int(match.group(1)) if match else None,
+                }
+            )
+        return targets, f"{len(targets)} open list(s) on the board"
+    except Exception as exc:
+        logger.debug("Failed to fetch Trello list targets", exc_info=True)
+        return [], f"Trello connection failed: {exc}"
+
+
+def _trello_sync() -> Callable:
+    from yeaboi.trello_sync import sync_all_to_trello
+
+    return sync_all_to_trello
+
+
+def _trello_summary(result) -> dict:
+    return {
+        "epic": result.epic_label_id,
+        "sprints_created": dict(result.lists_created),
+        "sprints_updated": dict(result.lists_updated),
+    }
+
+
+# ---------------------------------------------------------------------------
 # The registry
 # ---------------------------------------------------------------------------
 
@@ -354,6 +426,16 @@ TRACKERS: dict[str, TrackerSpec] = {
         fetch_sprint_targets=lambda: _linear_sprint_targets(),
         sync_all=lambda: _linear_sync(),
         result_summary=lambda result: _linear_summary(result),
+    ),
+    "trello": TrackerSpec(
+        key="trello",
+        label="Trello",
+        is_configured=lambda: _trello_configured(),
+        fetch_velocity=lambda: _trello_velocity(),
+        fetch_active_sprint=lambda: _trello_active_sprint(),
+        fetch_sprint_targets=lambda: _trello_sprint_targets(),
+        sync_all=lambda: _trello_sync(),
+        result_summary=lambda result: _trello_summary(result),
     ),
 }
 

@@ -18,7 +18,7 @@ from typing import Any
 from rich.console import Console
 from rich.live import Live
 
-from yeaboi.provider_verification import _verify_azdevops, _verify_jira, _verify_linear
+from yeaboi.provider_verification import _verify_azdevops, _verify_jira, _verify_linear, _verify_trello
 from yeaboi.ui.provider_select._config import _save_progress
 from yeaboi.ui.provider_select._constants import _ISSUE_TRACKING_OPTIONS
 from yeaboi.ui.provider_select._nav import StepNav, nav_for_key
@@ -60,6 +60,7 @@ def _run_issue_tracking(
         {"name": "Jira", "color": "rgb(70,100,180)"},
         {"name": "Azure DevOps", "color": "rgb(70,100,180)"},
         {"name": "Linear", "color": "rgb(70,100,180)"},
+        {"name": "Trello", "color": "rgb(70,100,180)"},
         {"name": "Skip", "color": "rgb(70,100,180)"},
     ]
     tracker_selected = 0
@@ -218,6 +219,7 @@ def _run_issue_tracking(
                     "Jira": lambda vals: _verify_jira(vals[0], vals[1], vals[2]),
                     "Azure DevOps Boards": lambda vals: _verify_azdevops(vals[0], vals[1], vals[2]),
                     "Linear": lambda vals: _verify_linear(vals[0]),
+                    "Trello": lambda vals: _verify_trello(vals[0], vals[1]),
                 }
                 probe = verifiers[tracker_name]
                 cleaned = {i: it_values.get(i, "").strip() for i in range(it_n)}

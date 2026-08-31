@@ -450,6 +450,21 @@ def _tracker_sync_profile(tracker: str) -> dict | None:
                 ),
             },
         },
+        "trello": {
+            "label": "Trello",
+            "story_key_field": "trello_story_keys",
+            "task_key_field": "trello_task_keys",
+            "sprint_key_field": "trello_list_keys",
+            "epic_key_field": "trello_epic_label_id",
+            "task_label": "Checklist items",
+            "sprint_unit": "list",
+            "sprint_plural": "Lists",
+            "stage_sync": {
+                "story_writer": lambda: __import__("yeaboi.trello_sync", fromlist=["x"]).sync_stories_to_trello,
+                "task_decomposer": lambda: __import__("yeaboi.trello_sync", fromlist=["x"]).sync_tasks_to_trello,
+                "sprint_planner": lambda: __import__("yeaboi.trello_sync", fromlist=["x"]).sync_sprints_to_trello,
+            },
+        },
         "linear": {
             "label": "Linear",
             "story_key_field": "linear_story_keys",
@@ -619,6 +634,22 @@ def _handle_tracker_sync(
                     }
                     _issue = _j.create_issue(fields=_fields)
                     _ep_result_box[0] = _issue.key
+                except Exception as exc:
+                    from yeaboi.ui.session._utils import _classify_api_error
+
+                    _ep_result_box[1] = _classify_api_error(exc)
+            elif tracker == "trello":
+                try:
+                    from yeaboi.tools.trello import _resolve_board, _trello_request
+
+                    _board = _resolve_board()
+                    _created = _trello_request(
+                        "POST", "/labels", {"idBoard": _board["id"], "name": _ep_title[:50], "color": "purple"}
+                    )
+                    if isinstance(_created, dict) and _created.get("id"):
+                        _ep_result_box[0] = str(_created["id"])
+                    else:
+                        _ep_result_box[1] = "Trello did not create the label"
                 except Exception as exc:
                     from yeaboi.ui.session._utils import _classify_api_error
 

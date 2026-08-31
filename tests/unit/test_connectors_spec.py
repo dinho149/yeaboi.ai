@@ -196,7 +196,7 @@ class TestSections:
 # Trackers whose descriptor powers a write path (sprint-plan sync through
 # tools/ + *_sync.py, behind the human-review gate). Everything else must stay
 # read-only — a write path is a credential-scope conversation, not a default.
-_WRITE_CAPABLE = {"linear"}
+_WRITE_CAPABLE = {"linear", "trello"}
 
 
 @pytest.mark.parametrize("connector", ALL, ids=lambda c: c.key)

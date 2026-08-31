@@ -211,6 +211,7 @@ def save_graph_state(project_id: str, graph_state: dict[str, Any]) -> None:
         "last_review_feedback",
         "jira_epic_key",
         "linear_project_id",
+        "trello_epic_label_id",
         "_chat_greeting_done",
         "_chat_preamble",
         "_chat_fast_forward",
@@ -233,6 +234,9 @@ def save_graph_state(project_id: str, graph_state: dict[str, Any]) -> None:
         "linear_story_ids",
         "linear_task_keys",
         "linear_cycle_keys",
+        "trello_story_keys",
+        "trello_task_keys",
+        "trello_list_keys",
     ):
         if key in graph_state and graph_state[key]:
             serialized[key] = dict(graph_state[key])
@@ -423,6 +427,7 @@ def load_graph_state(project_id: str) -> dict[str, Any] | None:
         "last_review_feedback",
         "jira_epic_key",
         "linear_project_id",
+        "trello_epic_label_id",
         "_chat_greeting_done",
         "_chat_preamble",
         "_chat_fast_forward",
@@ -447,6 +452,9 @@ def load_graph_state(project_id: str) -> dict[str, Any] | None:
         "linear_story_ids",
         "linear_task_keys",
         "linear_cycle_keys",
+        "trello_story_keys",
+        "trello_task_keys",
+        "trello_list_keys",
     ):
         if key in raw and isinstance(raw[key], dict):
             graph_state[key] = raw[key]

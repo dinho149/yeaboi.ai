@@ -441,7 +441,8 @@ def register(app) -> None:
 
     @app.tool()
     async def plan_sync(ctx: Context, session_id: str = "", destination: str = "jira", target_sprint: str = "") -> dict:
-        """Push a saved plan into the user's issue tracker (destination: 'jira' or 'azdevops'):
+        """Push a saved plan into the user's issue tracker (destination: 'jira',
+        'azdevops', 'linear' or 'trello'):
         creates the epic, stories, tasks and sprints/iterations as REAL tickets on the
         configured board — always confirm with the user before calling. Idempotent: items
         created by an earlier sync are skipped, so a partial run can be safely retried.

@@ -26,6 +26,9 @@ _EXPECTED_WRITES = {
     "linear_create_epic",
     "linear_create_story",
     "linear_create_sprint",
+    "trello_create_epic",
+    "trello_create_story",
+    "trello_create_sprint",
 }
 
 
