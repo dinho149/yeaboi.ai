@@ -631,8 +631,8 @@ is what stands.
   "kind": "Bug", "area": "planning",
   "title": "Planning poker discards a vote",
   "description": "What I did, expected, and got instead.",
-  "image_paths": ["~/.yeaboi/attachments/feedback/image-a1b2c3d4.png"],
-  "text_paths": ["~/.yeaboi/attachments/feedback/text-e5f6a7b8.log"]
+  "image_paths": ["/Users/you/.yeaboi/attachments/feedback/poker-room-a1b2c3d4.png"],
+  "text_paths": ["/Users/you/.yeaboi/attachments/feedback/yeaboi-e5f6a7b8.log"]
 }
 ```
 
@@ -648,6 +648,10 @@ file on the machine. A path that passes the check but no longer exists is
 dropped, because the report is still worth filing. At most six attachments,
 across both lists.
 
+Paths are absolute, exactly as `attachments` returned them — a `~` is not
+expanded, and a path is checked against the kind its list names, so a `.png`
+sent in `text_paths` is a 400.
+
 `attachments` takes `{"name": "app.log", "mime": "text/plain", "data": "<base64>"}`
 and answers `{"path", "name", "kind", "bytes", "lines"}` — `kind` is `image` or
 `text`, and `lines` appears for text only. Base64 in JSON rather than multipart,
@@ -655,11 +659,18 @@ because there is no multipart parser on this server and the desktop's proxy
 sends JSON bodies only. An unaccepted mime is a 400 and an oversized file a 413;
 the ceilings are `max_image_bytes` and `max_text_bytes` from `options`.
 
+`name` is the reporter's own filename, and the file is **stored under it** with
+a short unique suffix (`app.log` → `app-3f2a91bc.log`), because the stored name
+is what the issue body shows.
+
 The two kinds reach GitHub differently, which is why they are two lists. Images
 cannot be uploaded through GitHub's REST API at all, so the body lists their
 local paths with a hint to drag them onto the issue. Text files are inlined into
 the body inside a collapsed `<details>` block, tail first — except on the browser
 path, whose 6 KB pre-filled URL cannot carry a log, where they are named instead.
+The inlined text is redacted and home-relativized first — it is the one thing a
+report publishes that the reporter did not type — and the whole inline share is
+capped well under GitHub's 65 536-character body limit.
 
 ## Consent
 

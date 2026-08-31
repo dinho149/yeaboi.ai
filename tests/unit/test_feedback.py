@@ -13,6 +13,7 @@ from yeaboi.feedback import (
     FEEDBACK_TYPES,
     MAX_INLINE_TEXT_CHARS,
     FeedbackResult,
+    attachment_filename,
     build_issue_body,
     build_issue_url,
     feedback_attachment_kind,
@@ -99,8 +100,39 @@ class TestTextAttachments:
         log.write_text("first line\nboom: it broke\n")
         body = build_issue_body("Bug", "general", "desc", None, [str(log)])
         assert "### Logs and files (1)" in body
-        assert "<summary>app.log — 3 lines</summary>" in body
+        assert "<summary>app.log — 2 lines</summary>" in body
         assert "boom: it broke" in body
+
+    def test_published_contents_are_redacted(self, tmp_path, monkeypatch):
+        # The one thing a report publishes that the reporter did not type, and
+        # it goes to a public repository.
+        # A value-layer secret rather than a token-shaped one, so the fixture
+        # itself is not a credential gitleaks has to be told to ignore.
+        monkeypatch.setenv("GITHUB_TOKEN", "not-a-real-credential-0123456789")
+        log = tmp_path / "app.log"
+        log.write_text("auth failed with not-a-real-credential-0123456789\n")
+        body = build_issue_body("Bug", "general", "desc", None, [str(log)])
+        assert "not-a-real-credential" not in body
+        assert "[REDACTED]" in body
+
+    def test_published_contents_lose_the_home_path(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+        log = tmp_path / "app.log"
+        log.write_text(f"could not open {tmp_path}/projects/secret.db\n")
+        body = build_issue_body("Bug", "general", "desc", None, [str(log)])
+        assert str(tmp_path) not in body
+        assert "~/projects/secret.db" in body
+
+    def test_the_inline_share_stays_under_github_s_body_limit(self, tmp_path):
+        # Six files at the per-file ceiling plus a full description would clear
+        # 65_536, which the token path answers with a 422.
+        paths = []
+        for i in range(6):
+            log = tmp_path / f"{i}.log"
+            log.write_text("x" * MAX_INLINE_TEXT_CHARS)
+            paths.append(str(log))
+        body = build_issue_body("Bug", "general", "d" * 20_000, None, paths)
+        assert len(body) < 65_536
 
     def test_only_the_tail_survives_a_long_log(self, tmp_path):
         log = tmp_path / "big.log"
@@ -146,6 +178,28 @@ class TestTextAttachments:
         log.write_text("abcdef")
         assert read_text_tail(str(log), 100) == ("abcdef", False)
         assert read_text_tail(str(log), 3) == ("def", True)
+
+
+class TestAttachmentFilename:
+    """The stored name is what the issue shows, so it keeps the reporter's."""
+
+    def test_keeps_the_name_and_makes_it_unique(self):
+        assert attachment_filename("app.log", "text/plain", "3f2a91bc") == "app-3f2a91bc.log"
+
+    def test_keeps_a_png_a_png(self):
+        assert attachment_filename("poker room.png", "image/png", "aa11") == "poker-room-aa11.png"
+
+    def test_a_suffix_that_disagrees_with_the_mime_is_replaced(self):
+        assert attachment_filename("shot.png", "text/plain", "aa11") == "shot-aa11.txt"
+
+    def test_a_name_that_survives_nothing_still_produces_a_file(self):
+        assert attachment_filename("../../", "text/plain", "aa11") == "file-aa11.txt"
+
+    def test_nothing_outside_the_safe_alphabet_survives(self):
+        # The stored name is interpolated into the issue body's HTML.
+        stored = attachment_filename('<img src=x onerror="alert(1)">.log', "text/plain", "aa11")
+        assert "<" not in stored and '"' not in stored
+        assert stored.endswith("-aa11.log")
 
 
 class TestBuildIssueUrl:
@@ -327,6 +381,40 @@ class TestPolishFeedback:
         polished, msg = polish_feedback("Bug", "general", "t", "d")
         assert polished is None
         assert "failed" in msg.lower()
+
+
+class TestPolishWithAttachments:
+    def test_an_attached_log_reaches_the_prompt(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (True, ""))
+        monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **k: object())
+        monkeypatch.setattr("yeaboi.agent.llm.track_usage", lambda _r: None)
+        seen = {}
+
+        def _invoke(llm, prompt, image_paths=None):
+            seen["prompt"] = prompt
+            return _FakeResp(json.dumps({"title": "T", "description": "D"}))
+
+        monkeypatch.setattr("yeaboi.agent.llm.invoke_with_images", _invoke)
+        log = tmp_path / "app.log"
+        log.write_text("boom: it broke\n")
+        polished, _ = polish_feedback("Bug", "general", "t", "d", None, [str(log)])
+        assert polished == ("T", "D")
+        assert "boom: it broke" in seen["prompt"]
+
+    def test_a_log_that_cannot_be_read_is_dropped_not_fatal(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (True, ""))
+        monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **k: object())
+        monkeypatch.setattr("yeaboi.agent.llm.track_usage", lambda _r: None)
+        seen = {}
+
+        def _invoke(llm, prompt, image_paths=None):
+            seen["prompt"] = prompt
+            return _FakeResp(json.dumps({"title": "T", "description": "D"}))
+
+        monkeypatch.setattr("yeaboi.agent.llm.invoke_with_images", _invoke)
+        polished, _ = polish_feedback("Bug", "general", "t", "d", None, [str(tmp_path / "gone.log")])
+        assert polished == ("T", "D")
+        assert "ATTACHED FILE (last lines" not in seen["prompt"]
 
 
 class TestFeedbackResultDataclass:

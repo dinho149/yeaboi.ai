@@ -30,9 +30,11 @@ maintainer-filed feedback auto-labels.
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import platform
+import re
 import urllib.parse
 import webbrowser
 from dataclasses import dataclass
@@ -71,10 +73,29 @@ FEEDBACK_TEXT_MIMES: dict[str, str] = {
     "application/json": ".json",
 }
 
+#: Every suffix the form stores, and the kind it belongs to. A stored file's
+#: own extension is what decides which list it may travel in.
+ACCEPTED_SUFFIXES: dict[str, str] = {
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".txt": "text",
+    ".log": "text",
+    ".md": "text",
+    ".csv": "text",
+    ".json": "text",
+}
+
 #: The largest text attachment accepted, and how much of it reaches the issue.
 #: Both are read from the *end* — a log's failure is at its tail.
 MAX_TEXT_ATTACHMENT_BYTES = 128 * 1024
 MAX_INLINE_TEXT_CHARS = 8_000
+
+#: The whole inline budget, shared between the files. GitHub refuses an issue
+#: body over 65_536 characters, and six files at the per-file ceiling plus a
+#: full-length description would clear it — on the token path that is a 422 and
+#: a fall back to the browser, which carries no logs at all.
+MAX_INLINE_TEXT_TOTAL = 30_000
 
 #: How much of a text attachment the AI Polish prompt sees. Smaller than the
 #: issue body's share: six full logs would be most of a context window.
@@ -82,6 +103,14 @@ MAX_POLISH_EXCERPT_CHARS = 2_000
 
 #: Attachments per report, across both kinds.
 MAX_ATTACHMENTS = 6
+
+
+def max_image_bytes() -> int:
+    """The image ceiling, which is the terminal's — one paste limit, one answer."""
+    from yeaboi.ui.shared._attachments import MAX_IMAGE_BYTES
+
+    return MAX_IMAGE_BYTES
+
 
 # GitHub 414s around ~8 KB URLs and some OS browser-open handlers choke earlier;
 # cap the pre-filled issues/new URL well below that.
@@ -126,6 +155,21 @@ def attachment_extension(mime: str) -> str:
     return FEEDBACK_IMAGE_MIMES.get(mime) or FEEDBACK_TEXT_MIMES[mime]
 
 
+def attachment_filename(name: str, mime: str, token: str) -> str:
+    """The name to store an attachment under: the reporter's, kept and made unique.
+
+    Only the stored name reaches the issue, so a maintainer should read
+    ``app-3f2a91bc.log`` rather than a bare uuid. ``name`` must already be a
+    basename; everything outside ``[A-Za-z0-9._-]`` is folded away, which is
+    also what makes it safe to interpolate into the body's HTML.
+    """
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(name).stem)[:40].strip("-.") or "file"
+    suffix = Path(name).suffix.lower()
+    if ACCEPTED_SUFFIXES.get(suffix) != feedback_attachment_kind(mime):
+        suffix = attachment_extension(mime)
+    return f"{stem}-{token}{suffix}"
+
+
 def _fence(text: str) -> str:
     """A code fence long enough to survive backticks inside ``text``."""
     fence = "```"
@@ -135,15 +179,28 @@ def _fence(text: str) -> str:
 
 
 def read_text_tail(path: str, limit: int = MAX_INLINE_TEXT_CHARS) -> tuple[str, bool]:
-    """The last ``limit`` characters of a text attachment, and whether it was cut."""
+    """The last ``limit`` characters of a text attachment, and whether it was cut.
+
+    Redacted and home-relativized on the way out. This is the one path in this
+    module that publishes bytes the reporter did not type — into a *public*
+    issue, and into an LLM prompt — so it gets the same two guarantees the log
+    files themselves get, and for the same reason.
+    """
     try:
         text = Path(path).read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         logger.warning("feedback: could not read text attachment %s: %s", path, exc)
         return "", False
-    if len(text) <= limit:
-        return text, False
-    return text[-limit:], True
+    cut = len(text) > limit
+    return _clean_text(text[-limit:] if cut else text), cut
+
+
+def _clean_text(text: str) -> str:
+    """Strip credentials and the reporter's username out of published content."""
+    from yeaboi.redaction import redact
+
+    home = str(Path.home())
+    return redact(text).replace(home, "~") if home else redact(text)
 
 
 def issue_title(kind: str, title: str) -> str:
@@ -164,12 +221,25 @@ def _text_section(paths: list[str], inline: bool) -> list[str]:
         lines += ["", "> Attached in the app, but too long to carry in a pre-filled URL — drag them onto this issue."]
         return lines
 
+    # The budget is the body's, not each file's: six files at the per-file
+    # ceiling would put the issue over GitHub's limit.
+    share = min(MAX_INLINE_TEXT_CHARS, max(1_000, MAX_INLINE_TEXT_TOTAL // len(paths)))
     for path in paths:
-        text, cut = read_text_tail(path)
-        count = text.count("\n") + 1 if text else 0
+        text, cut = read_text_tail(path, share)
+        count = len(text.splitlines())
         head = f"{Path(path).name} — last {count} lines" if cut else f"{Path(path).name} — {count} lines"
         fence = _fence(text)
-        lines += ["", "<details>", f"<summary>{head}</summary>", "", fence, text, fence, "", "</details>"]
+        lines += [
+            "",
+            "<details>",
+            f"<summary>{html.escape(head)}</summary>",
+            "",
+            fence,
+            text,
+            fence,
+            "",
+            "</details>",
+        ]
     return lines
 
 

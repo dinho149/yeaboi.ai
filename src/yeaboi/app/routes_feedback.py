@@ -53,8 +53,8 @@ def options(app, request: Request) -> Response:
         FEEDBACK_TYPES,
         MAX_ATTACHMENTS,
         MAX_TEXT_ATTACHMENT_BYTES,
+        max_image_bytes,
     )
-    from yeaboi.ui.shared._attachments import MAX_IMAGE_BYTES
 
     return json_response(
         {
@@ -67,7 +67,7 @@ def options(app, request: Request) -> Response:
             "has_github_token": bool(get_github_token()),
             "image_mimes": list(FEEDBACK_IMAGE_MIMES),
             "text_mimes": list(FEEDBACK_TEXT_MIMES),
-            "max_image_bytes": MAX_IMAGE_BYTES,
+            "max_image_bytes": max_image_bytes(),
             "max_text_bytes": MAX_TEXT_ATTACHMENT_BYTES,
             "max_attachments": MAX_ATTACHMENTS,
         }
@@ -87,11 +87,11 @@ def attach(app, request: Request) -> Response:
     from yeaboi.feedback import (
         MAX_TEXT_ATTACHMENT_BYTES,
         attachment_extension,
+        attachment_filename,
         feedback_attachment_kind,
-        read_text_tail,
+        max_image_bytes,
     )
     from yeaboi.paths import get_attachments_dir
-    from yeaboi.ui.shared._attachments import MAX_IMAGE_BYTES
 
     payload = request.json()
     mime = str(payload.get("mime", ""))
@@ -105,26 +105,27 @@ def attach(app, request: Request) -> Response:
     if not data:
         raise HTTPError(400, "no file was sent")
 
-    ceiling = MAX_IMAGE_BYTES if kind == "image" else MAX_TEXT_ATTACHMENT_BYTES
+    ceiling = max_image_bytes() if kind == "image" else MAX_TEXT_ATTACHMENT_BYTES
     if len(data) > ceiling:
         raise HTTPError(
             413,
             f"Too large ({len(data) / (1024 * 1024):.1f} MB, max {ceiling / (1024 * 1024):.1f} MB)",
         )
 
-    path = get_attachments_dir(_SCOPE) / f"{kind}-{uuid.uuid4().hex[:8]}{attachment_extension(mime)}"
+    # The stored name is the one the issue body shows, so it keeps the
+    # reporter's own — a maintainer reading `app-3f2a91bc.log` is the point.
+    name = _safe_name(payload.get("name"), f"attachment{attachment_extension(mime)}")
+    path = get_attachments_dir(_SCOPE) / attachment_filename(name, mime, uuid.uuid4().hex[:8])
     try:
         path.write_bytes(data)
     except OSError as exc:
         logger.error("failed to save feedback attachment to %s: %s", path, exc)
         raise HTTPError(500, "Could not save the attachment") from None
 
-    name = _safe_name(payload.get("name"), path.name)
     logger.info("feedback attachment saved: kind=%s bytes=%d mime=%s", kind, len(data), mime)
     reply = {"path": str(path), "name": name, "kind": kind, "bytes": len(data)}
     if kind == "text":
-        text, _ = read_text_tail(str(path), limit=MAX_TEXT_ATTACHMENT_BYTES)
-        reply["lines"] = text.count("\n") + 1 if text else 0
+        reply["lines"] = len(data.decode("utf-8", "replace").splitlines())
     return json_response(reply)
 
 
@@ -199,28 +200,38 @@ def _attachment_paths(payload: dict) -> tuple[list[str], list[str]]:
     """
     from pathlib import Path
 
-    from yeaboi.feedback import MAX_ATTACHMENTS
+    from yeaboi.feedback import ACCEPTED_SUFFIXES, MAX_ATTACHMENTS
     from yeaboi.paths import get_attachments_dir
+    from yeaboi.redaction import log_safe
 
     root = get_attachments_dir(_SCOPE).resolve()
     kept: list[list[str]] = [[], []]
+    seen: set[str] = set()
     total = 0
     for index, key in enumerate(("image_paths", "text_paths")):
         raw = payload.get(key) or []
         if not isinstance(raw, list):
             raise HTTPError(400, f"{key} must be a list of attachment paths")
+        want = "image" if key == "image_paths" else "text"
         for entry in raw:
-            path = Path(str(entry))
             try:
-                resolved = path.resolve()
+                # resolve() before relative_to(): it is what defeats a `..` and
+                # a symlink planted inside the directory alike.
+                resolved = Path(str(entry)).resolve()
                 resolved.relative_to(root)
             except (OSError, ValueError):
+                logger.warning("feedback: refused an attachment path outside %s: %s", root, log_safe(entry))
                 raise HTTPError(400, "an attachment path must be one this app returned") from None
+            if ACCEPTED_SUFFIXES.get(resolved.suffix.lower()) != want:
+                logger.warning("feedback: refused %s in %s", log_safe(resolved.name), key)
+                raise HTTPError(400, f"{resolved.name} is not a {want} attachment")
             total += 1
             if total > MAX_ATTACHMENTS:
                 raise HTTPError(400, f"too many attachments — {MAX_ATTACHMENTS} at most")
             # A file the person removed from disk between attaching and sending
             # is dropped, not an error: the report is still worth filing.
-            if resolved.is_file():
-                kept[index].append(str(resolved))
+            if str(resolved) in seen or not resolved.is_file():
+                continue
+            seen.add(str(resolved))
+            kept[index].append(str(resolved))
     return kept[0], kept[1]

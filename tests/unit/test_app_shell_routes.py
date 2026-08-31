@@ -222,8 +222,14 @@ class TestFeedbackAttachments:
         payload = body(self._attach(app, "text/plain", b"one\ntwo\n"))
         assert payload["kind"] == "text"
         assert payload["name"] == "app.log"
-        assert payload["lines"] == 3
+        assert payload["lines"] == 2
         assert Path(payload["path"]).read_bytes() == b"one\ntwo\n"
+
+    def test_the_stored_name_keeps_the_reporter_s(self, app, attachments):
+        # It is the stored name, not the reply's, that the issue body shows.
+        payload = body(self._attach(app, "text/plain", b"x"))
+        assert Path(payload["path"]).name.startswith("app-")
+        assert Path(payload["path"]).suffix == ".log"
 
     def test_a_screenshot_is_saved_without_a_line_count(self, app, attachments):
         payload = body(self._attach(app, "image/png", b"\x89PNG fake", name="shot.png"))
@@ -234,6 +240,7 @@ class TestFeedbackAttachments:
     def test_a_directory_in_the_name_never_reaches_the_issue(self, app, attachments):
         payload = body(self._attach(app, "text/plain", b"x", name="../../etc/passwd"))
         assert payload["name"] == "passwd"
+        assert Path(payload["path"]).parent == attachments
 
     def test_an_unsupported_type_is_refused(self, app, attachments):
         response = self._attach(app, "application/zip", b"PK\x03\x04")
@@ -270,7 +277,7 @@ class TestFeedbackAttachments:
             "/api/feedback",
             {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "text_paths": [saved]},
         )
-        assert seen == {"images": [], "texts": [saved]}
+        assert seen == {"images": [], "texts": [str(Path(saved).resolve())]}
 
     def test_a_path_outside_the_attachments_directory_is_refused(self, app, attachments, tmp_path, monkeypatch):
         # polish reads these files and sends them to a model, so this is the
@@ -326,8 +333,84 @@ class TestFeedbackAttachments:
         assert response.code == 200
         assert seen == {"texts": []}
 
+    def test_a_log_sent_as_an_image_is_refused(self, app, attachments):
+        # attach validates the mime; this is what stops a stored file being
+        # replayed into the wrong list, where it would reach a vision model.
+        saved = body(self._attach(app, "text/plain", b"boom\n"))["path"]
+        response = request(
+            app,
+            "POST",
+            "/api/feedback",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "image_paths": [saved]},
+        )
+        assert response.code == 400
+        assert "not a image attachment" in json.loads(response.body)["error"]
+
+    def test_a_screenshot_sent_as_a_log_is_refused(self, app, attachments):
+        saved = body(self._attach(app, "image/png", b"\x89PNG", name="shot.png"))["path"]
+        response = request(
+            app,
+            "POST",
+            "/api/feedback",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "text_paths": [saved]},
+        )
+        assert response.code == 400
+
+    def test_the_same_file_twice_is_attached_once(self, app, attachments, monkeypatch):
+        seen = {}
+
+        def _submit(kind, area, title, description, image_paths=None, text_paths=None):
+            seen.update(texts=text_paths)
+            from yeaboi.feedback import FeedbackResult
+
+            return FeedbackResult(ok=True, via="api", url="u", message="ok")
+
+        monkeypatch.setattr("yeaboi.feedback.submit_feedback", _submit)
+        saved = body(self._attach(app, "text/plain", b"boom\n"))["path"]
+        request(
+            app,
+            "POST",
+            "/api/feedback",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "text_paths": [saved, saved]},
+        )
+        assert seen["texts"] == [str(Path(saved).resolve())]
+
+    def test_polish_carries_the_attachments_too(self, app, attachments, monkeypatch):
+        # The route where the containment check is actually load-bearing: this
+        # is the call that reads the files and sends them to a model.
+        seen = {}
+
+        def _polish(kind, area, title, description, image_paths=None, text_paths=None):
+            seen.update(images=image_paths, texts=text_paths)
+            return None, "AI unavailable (no key)."
+
+        monkeypatch.setattr("yeaboi.feedback.polish_feedback", _polish)
+        saved = body(self._attach(app, "text/plain", b"boom\n"))["path"]
+        request(
+            app,
+            "POST",
+            "/api/feedback/polish",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "text_paths": [saved]},
+        )
+        assert seen == {"images": [], "texts": [str(Path(saved).resolve())]}
+
+    def test_polish_refuses_a_path_it_did_not_hand_out(self, app, attachments, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.feedback.polish_feedback",
+            lambda *a, **k: pytest.fail("nothing outside the attachments directory should be read"),
+        )
+        secret = tmp_path / "id_rsa"
+        secret.write_text("PRIVATE KEY")
+        response = request(
+            app,
+            "POST",
+            "/api/feedback/polish",
+            {"kind": "Bug", "area": "planning", "title": "t", "description": "d", "text_paths": [str(secret)]},
+        )
+        assert response.code == 400
+
     def test_more_than_the_ceiling_is_refused(self, app, attachments):
-        saved = body(self._attach(app, "text/plain", b"x"))["path"]
+        saved = [body(self._attach(app, "text/plain", b"x", name=f"{i}.log"))["path"] for i in range(7)]
         response = request(
             app,
             "POST",
@@ -337,7 +420,7 @@ class TestFeedbackAttachments:
                 "area": "planning",
                 "title": "t",
                 "description": "d",
-                "text_paths": [saved] * 7,
+                "text_paths": saved,
             },
         )
         assert response.code == 400
