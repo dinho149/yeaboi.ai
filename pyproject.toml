@@ -43,6 +43,9 @@ dependencies = [
     # langchain-openai and langchain-google-genai are optional; they are
     # lazy-imported in llm.py and only needed when LLM_PROVIDER is set to
     # "openai" or "google". Install all with: uv sync --extra all-providers
+    # The OpenAI-wire vendors (xAI, DeepSeek, Moonshot, Mistral, Qwen, Z.ai —
+    # see llm_providers.py) need no extra of their own: they are ChatOpenAI
+    # pointed at another host, so the `openai` extra already covers them.
     "langchain-anthropic",
     "rich",
     "prompt-toolkit",

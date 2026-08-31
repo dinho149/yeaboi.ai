@@ -26,7 +26,7 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END
 
 from yeaboi.agent.ceremony_history import gather_ceremony_context
-from yeaboi.agent.llm import get_llm, invoke_json, track_usage
+from yeaboi.agent.llm import get_llm, invoke_json, strip_think_tags, track_usage
 from yeaboi.agent.repo_signals import analyze_context, scan_repo_signals
 from yeaboi.agent.state import (
     DOD_ITEMS,
@@ -6173,8 +6173,10 @@ def _parse_analysis_response(
         A ProjectAnalysis instance.
     """
     try:
-        # Strip markdown code fences that LLMs sometimes wrap JSON in
-        text = raw.strip()
+        # Strip a leaked <think> block, then the markdown fences LLMs wrap JSON
+        # in. Reasoning left in place defeats the fence strip and the parse falls
+        # through to the deterministic fallback with no error.
+        text = strip_think_tags(raw).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
@@ -6904,8 +6906,10 @@ def _parse_features_response(raw: str, analysis: ProjectAnalysis) -> list[Featur
         A list of Feature instances.
     """
     try:
-        # Strip markdown code fences that LLMs sometimes wrap JSON in
-        text = raw.strip()
+        # Strip a leaked <think> block, then the markdown fences LLMs wrap JSON
+        # in. Reasoning left in place defeats the fence strip and the parse falls
+        # through to the deterministic fallback with no error.
+        text = strip_think_tags(raw).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
@@ -7876,8 +7880,10 @@ def _parse_stories_response(
         A list of UserStory instances.
     """
     try:
-        # Strip markdown code fences that LLMs sometimes wrap JSON in
-        text = raw.strip()
+        # Strip a leaked <think> block, then the markdown fences LLMs wrap JSON
+        # in. Reasoning left in place defeats the fence strip and the parse falls
+        # through to the deterministic fallback with no error.
+        text = strip_think_tags(raw).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
@@ -8729,8 +8735,10 @@ def _parse_tasks_response(raw: str, stories: list[UserStory]) -> list[Task]:
         A list of Task instances.
     """
     try:
-        # Strip markdown code fences that LLMs sometimes wrap JSON in
-        text = raw.strip()
+        # Strip a leaked <think> block, then the markdown fences LLMs wrap JSON
+        # in. Reasoning left in place defeats the fence strip and the parse falls
+        # through to the deterministic fallback with no error.
+        text = strip_think_tags(raw).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
@@ -9397,8 +9405,10 @@ def _parse_sprints_response(
         A list of Sprint instances.
     """
     try:
-        # Strip markdown code fences that LLMs sometimes wrap JSON in
-        text = raw.strip()
+        # Strip a leaked <think> block, then the markdown fences LLMs wrap JSON
+        # in. Reasoning left in place defeats the fence strip and the parse falls
+        # through to the deterministic fallback with no error.
+        text = strip_think_tags(raw).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):

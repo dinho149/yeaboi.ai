@@ -83,3 +83,34 @@ class TestEstimateCost:
     def test_haiku_and_fable(self):
         assert estimate_cost("claude-haiku-4-5", 1_000_000, 0).usd == 1.0
         assert estimate_cost("claude-fable-5", 1_000_000, 1_000_000).usd == 60.0
+
+
+class TestOpenAiWireVendors:
+    """Every model the six OpenAI-wire vendors ship must price at a real rate.
+
+    A missing row is silent: the model still runs, but every cost the Usage page
+    shows for it is the Sonnet-tier fallback with `known_model` False.
+    """
+
+    def test_every_shipped_preset_is_priced(self):
+        from yeaboi.llm_providers import OPENAI_COMPATIBLE
+
+        unpriced = [
+            model
+            for spec in OPENAI_COMPATIBLE.values()
+            for model in (*spec.presets, spec.default_model, spec.fast_model)
+            if model and not estimate_cost(model, 1_000_000, 0).known_model
+        ]
+        assert not unpriced, f"no pricing row matches: {sorted(set(unpriced))}"
+
+    def test_families_match_by_prefix(self):
+        # Dated and "-latest" variants must land on their family's row.
+        assert estimate_cost("grok-4.6", 1_000_000, 0).matched_prefix == "grok-4"
+        assert estimate_cost("mistral-large-latest", 1_000_000, 0).matched_prefix == "mistral-large"
+        assert estimate_cost("kimi-k2.7-code", 1_000_000, 0).matched_prefix == "kimi-k2"
+        assert estimate_cost("glm-5.2", 1_000_000, 0).matched_prefix == "glm-5"
+
+    def test_deepseek_flash_is_cheaper_than_pro(self):
+        flash = estimate_cost("deepseek-v4-flash", 1_000_000, 1_000_000).usd
+        pro = estimate_cost("deepseek-v4-pro", 1_000_000, 1_000_000).usd
+        assert 0 < flash < pro

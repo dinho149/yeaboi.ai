@@ -1221,7 +1221,9 @@ def get_llm_provider() -> str:
     """Return the active LLM provider name (lowercase).
 
     Set LLM_PROVIDER in .env to switch providers. Defaults to 'anthropic'.
-    Supported values: 'anthropic', 'openai', 'google', 'bedrock', 'ollama'.
+    Supported values: 'anthropic', 'openai', 'google', 'bedrock', 'ollama',
+    plus the OpenAI-wire vendors in llm_providers.py ('xai', 'deepseek',
+    'moonshot', 'mistral', 'qwen', 'zai').
     """
     return os.getenv("LLM_PROVIDER", "anthropic").lower()
 
@@ -1280,6 +1282,19 @@ def get_google_api_key() -> str | None:
     return os.getenv("GOOGLE_API_KEY") or None
 
 
+def get_provider_api_key(provider: str) -> str | None:
+    """Return the API key for any OpenAI-wire vendor, or None if not set.
+
+    One accessor rather than a getter per vendor — the key env lives on the
+    provider's row in llm_providers.py. Returns None for providers that are
+    not on that table (anthropic, google, bedrock, ollama have their own).
+    """
+    from yeaboi.llm_providers import spec
+
+    found = spec(provider)
+    return (os.getenv(found.key_env) or None) if found else None
+
+
 def get_ollama_base_url() -> str:
     """Return the base URL of the local Ollama server.
 
@@ -1331,6 +1346,11 @@ def is_llm_configured() -> tuple[bool, str]:
         # Local provider — no credentials to check. Server reachability is
         # verified at call time (a down server surfaces an actionable error).
         return (True, "")
+    from yeaboi.llm_providers import spec
+
+    vendor = spec(provider)
+    if vendor is not None:
+        return (bool(get_provider_api_key(provider)), f"{vendor.key_env} not set")
     return (bool(os.getenv("ANTHROPIC_API_KEY")), f"No API key configured for provider '{provider}'")
 
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from yeaboi.llm_providers import OPENAI_COMPATIBLE
+
 logger = logging.getLogger(__name__)
 
 # Shared Ollama failure copy — the same situation is reachable from both
@@ -26,6 +28,11 @@ _OLLAMA_PKG_MISSING = (
 INVALID_KEY = "Invalid API key"
 KEY_LACKS_PERMISSIONS = "Key lacks permissions"
 _DEFINITE_REJECTIONS = frozenset({INVALID_KEY, KEY_LACKS_PERMISSIONS})
+
+# What an OpenAI-wire vendor answers a bad key with on GET /models. 400 belongs
+# here because xAI uses it for "Incorrect API key provided" — and a GET with no
+# body has nothing else it could be complaining about.
+_WIRE_KEY_REJECTED = frozenset({400, 401, 403})
 
 
 def _connection_error(exc: Exception) -> str:
@@ -90,8 +97,11 @@ def _validate_key(provider: dict[str, Any], value: str) -> tuple[str, str]:
     if not value:
         return "empty", ""
 
-    min_lengths = {"sk-ant-": 40, "sk-": 30, "AIza": 30}
-    min_len = min_lengths.get(prefix, 30)
+    # Vendors with no prefix to check (Mistral, Z.ai) get a looser floor —
+    # there is nothing else to validate on, and a false 'too short' blocks a
+    # perfectly good key.
+    min_lengths = {"sk-ant-": 40, "sk-": 30, "AIza": 30, "xai-": 40}
+    min_len = min_lengths.get(prefix, 20)
 
     if not value.startswith(prefix):
         return "bad_prefix", f"Expected prefix: {prefix}..."
@@ -203,6 +213,16 @@ def _verify_api_key(provider: dict[str, Any], api_key: str) -> tuple[bool, str]:
                     return True, "Ollama server verified"
                 return True, "Server verified — no models installed yet; run: ollama pull qwen3:8b"
             return False, f"Unexpected response: {resp.status_code}"
+
+        elif provider_val in OPENAI_COMPATIBLE:
+            # Every OpenAI-wire vendor answers GET /models behind the same bearer,
+            # so one branch verifies all of them against their own base URL.
+            status, _ids = _openai_wire_models(provider_val, api_key, timeout=10)
+            if status == 200:
+                return True, "Key verified"
+            if status in _WIRE_KEY_REJECTED:
+                return False, INVALID_KEY
+            return False, f"Unexpected response: {status}"
 
     except Exception as e:
         err_str = str(e)
@@ -374,6 +394,22 @@ def _verify_model(provider: dict[str, Any], api_key: str, model: str) -> tuple[b
                 return True, "Model verified"
             return False, f"Model not pulled — run: ollama pull {model}"
 
+        elif provider_val in OPENAI_COMPATIBLE:
+            # GET /models/{id} is not universal across these vendors, so check
+            # membership in the list instead. A vendor that lists nothing is
+            # soft-accepted (same call the wizard would otherwise block on),
+            # mirroring how Bedrock soft-accepts inference profiles.
+            status, ids = _openai_wire_models(provider_val, api_key, timeout=10)
+            if status in _WIRE_KEY_REJECTED:
+                return False, INVALID_KEY
+            if status != 200:
+                return False, f"Unexpected response: {status}"
+            if not ids:
+                return True, "Key verified — provider does not list models"
+            if model in ids:
+                return True, "Model verified"
+            return False, "Unknown model for this account"
+
     except Exception as e:
         err_str = str(e)
         if provider_val == "ollama":
@@ -419,6 +455,12 @@ _OPENAI_NON_CHAT = (
 )
 
 
+def _is_non_chat(model_id: str) -> bool:
+    """Whether an id names an embedding/audio/image/moderation model."""
+    low = model_id.lower()
+    return any(x in low for x in _OPENAI_NON_CHAT)
+
+
 def _filter_openai_chat_models(entries: list[tuple[str, int]]) -> list[str]:
     """Newest-first chat/reasoning model ids from OpenAI's raw (id, created) list."""
     entries = sorted(entries, key=lambda t: t[1], reverse=True)
@@ -426,12 +468,36 @@ def _filter_openai_chat_models(entries: list[tuple[str, int]]) -> list[str]:
     seen: set[str] = set()
     for mid, _created in entries:
         low = mid.lower()
-        if any(x in low for x in _OPENAI_NON_CHAT):
+        if _is_non_chat(mid):
             continue
         if low.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-")) and mid not in seen:
             seen.add(mid)
             keep.append(mid)
     return keep
+
+
+def _openai_wire_models(provider_val: str, api_key: str, timeout: float = 8) -> tuple[int, list[str]]:
+    """``(status, model ids newest-first)`` from an OpenAI-wire vendor's /models.
+
+    The status travels with the ids because the three callers need to tell a
+    rejected key from a vendor that simply lists nothing. A non-200 yields an
+    empty list; transport failures raise, and every caller already wraps this.
+    """
+    import httpx
+
+    from yeaboi.llm_providers import base_url_for
+
+    resp = httpx.get(
+        f"{base_url_for(provider_val).rstrip('/')}/models",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        return resp.status_code, []
+    data = resp.json().get("data") or []
+    entries = [(m["id"], int(m.get("created", 0) or 0)) for m in data if isinstance(m, dict) and m.get("id")]
+    entries.sort(key=lambda t: t[1], reverse=True)
+    return 200, [mid for mid, _ in entries]
 
 
 def fetch_available_models(provider: dict[str, Any], api_key: str) -> list[str]:
@@ -502,6 +568,13 @@ def fetch_available_models(provider: dict[str, Any], api_key: str) -> list[str]:
                     if "embedding" not in mid and "aqa" not in mid:
                         out.append(mid)
             return out
+
+        if provider_val in OPENAI_COMPATIBLE:
+            # Deliberately not _filter_openai_chat_models: its allowlist of
+            # gpt-/o1/o3 prefixes would discard every id these vendors return.
+            # Exclude the non-chat families by substring instead.
+            _status, ids = _openai_wire_models(provider_val, api_key)
+            return [m for m in ids if not _is_non_chat(m)]
     except Exception:
         return []
     return []

@@ -1453,6 +1453,13 @@ def _collect_settings_data() -> dict:
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
         "GOOGLE_API_KEY",
+        # The OpenAI-wire vendors (llm_providers.py) — one API key each.
+        "XAI_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "MOONSHOT_API_KEY",
+        "MISTRAL_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "ZAI_API_KEY",
         # Ollama (local provider — server URL + requested context window)
         "OLLAMA_BASE_URL",
         "OLLAMA_NUM_CTX",

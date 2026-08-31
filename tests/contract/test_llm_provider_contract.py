@@ -226,6 +226,18 @@ def _gemini_bare_json(data: object) -> str:
     return json.dumps(data) + "\n\n"
 
 
+def _reasoning_json(data: object) -> str:
+    """Reasoning-vendor style: a <think> block, then fenced JSON.
+
+    Several of the OpenAI-wire vendors (llm_providers.py) are reasoning-first
+    models. Most return their chain of thought in a separate `reasoning_content`
+    field, but a Qwen/DeepSeek-family model served through a gateway can leak it
+    into `content` as <think>…</think> ahead of the answer.
+    """
+    think = "<think>\nFirst I will enumerate the features, then rank them.\n</think>"
+    return f"{think}\n```json\n{json.dumps(data, indent=2)}\n```"
+
+
 # ---------------------------------------------------------------------------
 # Claude (Anthropic) — JSON response parsing
 # ---------------------------------------------------------------------------
@@ -357,6 +369,48 @@ class TestGeminiResponseParsing:
         raw = _gemini_bare_json(_SPRINTS_LIST)
         result = _parse_sprints_response(raw, _make_stories(), velocity=20)
 
+        assert len(result) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Reasoning vendors (Grok / DeepSeek / Kimi / Qwen / GLM) — JSON parsing
+# ---------------------------------------------------------------------------
+
+
+class TestReasoningVendorResponseParsing:
+    """Contract: a leaked <think> block or a chatty preamble must not lose the JSON.
+
+    These six reach us through one ChatOpenAI branch, so their wire shape is
+    OpenAI's — already covered above. What is genuinely different is that they
+    reason out loud, and a parser that only tolerated a clean leading fence would
+    silently drop to its deterministic fallback on every call.
+    """
+
+    def test_analysis_survives_a_think_block(self):
+        result = _parse_analysis_response(
+            _reasoning_json(_ANALYSIS_DICT), _make_questionnaire(), team_size=5, velocity=20
+        )
+        assert result.project_name == "TaskFlow"
+        assert len(result.integrations) == 3
+
+    def test_features_survive_a_think_block(self):
+        # Assert the model's own titles, not just the count: the deterministic
+        # fallback also returns three features, so a count alone would pass
+        # while the model's answer was being silently thrown away.
+        result = _parse_features_response(_reasoning_json(_FEATURES_LIST), _make_analysis())
+        assert [f.title for f in result] == [f["title"] for f in _FEATURES_LIST]
+        assert result[2].priority == Priority.MEDIUM
+
+    def test_stories_survive_a_think_block(self):
+        result = _parse_stories_response(_reasoning_json(_STORIES_LIST), _make_features(), _make_analysis())
+        assert [s.id for s in result] == [s["id"] for s in _STORIES_LIST]
+
+    def test_tasks_survive_a_think_block(self):
+        result = _parse_tasks_response(_reasoning_json(_TASKS_LIST), _make_stories())
+        assert [t.title for t in result] == [t["title"] for t in _TASKS_LIST]
+
+    def test_sprints_survive_a_think_block(self):
+        result = _parse_sprints_response(_reasoning_json(_SPRINTS_LIST), _make_stories(), velocity=20)
         assert len(result) >= 1
 
 

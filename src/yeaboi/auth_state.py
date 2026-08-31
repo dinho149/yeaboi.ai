@@ -40,15 +40,9 @@ _reason = ""
 _verified_provider: tuple[str, str] | None = None
 
 # Display name per LLM_PROVIDER value, for messages like "Your Anthropic API key
-# looks invalid" — a lookup table because config.get_llm_provider() only ever
-# returns the raw env-var string.
-_PROVIDER_LABELS = {
-    "anthropic": "Anthropic",
-    "openai": "OpenAI",
-    "google": "Google",
-    "bedrock": "AWS Bedrock",
-    "ollama": "Ollama",
-}
+# looks invalid" — config.get_llm_provider() only ever returns the raw env-var
+# string. Derived from the wizard cards so a new provider is never unnamed.
+_PROVIDER_LABEL_OVERRIDES = {"google": "Google", "bedrock": "AWS Bedrock"}
 
 
 def mark_subscription_stale(reason: str = "") -> None:
@@ -161,9 +155,13 @@ class CredentialStatus:
 def provider_label(provider: str | None = None) -> str:
     """Display name for a provider value (defaults to the active provider)."""
     from yeaboi.config import get_llm_provider
+    from yeaboi.ui.provider_select._constants import _PROVIDER_CARDS
 
     provider = provider or get_llm_provider()
-    return _PROVIDER_LABELS.get(provider, provider)
+    if provider in _PROVIDER_LABEL_OVERRIDES:
+        return _PROVIDER_LABEL_OVERRIDES[provider]
+    card = next((c for c in _PROVIDER_CARDS if c["provider_val"] == provider), None)
+    return card["name"] if card else provider
 
 
 def _current_credential(provider: str) -> str:
@@ -195,7 +193,10 @@ def _current_credential(provider: str) -> str:
         return get_bedrock_region()
     if provider == "ollama":
         return get_ollama_base_url()
-    return ""
+    # Every OpenAI-wire vendor is pinged with the API key on its own row.
+    from yeaboi.config import get_provider_api_key
+
+    return get_provider_api_key(provider) or ""
 
 
 def clear_credential_cache() -> None:

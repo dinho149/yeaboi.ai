@@ -5,8 +5,9 @@
 
 Provider-agnostic LLM factory. The active provider is selected at runtime via
 the LLM_PROVIDER env var (default: "anthropic"). This means the agent works
-with Anthropic Claude, OpenAI GPT, or Google Gemini — swap by changing one
-env var, no code changes required.
+with Anthropic Claude, OpenAI GPT, Google Gemini, AWS Bedrock, local Ollama,
+or any of the OpenAI-wire vendors in llm_providers.py (Grok, DeepSeek, Kimi,
+Mistral, Qwen, GLM) — swap by changing one env var, no code changes required.
 
 Why lazy imports?
 Each provider requires its own langchain integration package. Lazy imports
@@ -22,6 +23,7 @@ from contextvars import ContextVar
 from langchain_core.language_models import BaseChatModel
 
 from yeaboi.config import get_llm_model, get_llm_provider
+from yeaboi.llm_providers import OPENAI_COMPATIBLE
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +223,9 @@ _PROVIDER_DEFAULTS: dict[str, str] = {
     # fits comfortably on a 16 GB machine. See README: "Local Mode (Ollama)"
     # for the full model trade-off table.
     "ollama": "qwen3:8b",
+    # The OpenAI-wire vendors carry their own defaults in llm_providers.py,
+    # so an id is never written down twice.
+    **{s.key: s.default_model for s in OPENAI_COMPATIBLE.values()},
 }
 
 # Lightweight cloud models for short, grounded Analysis-mode JSON coaching.
@@ -230,6 +235,7 @@ _ANALYSIS_FAST_MODELS: dict[str, str] = {
     "anthropic": "claude-haiku-4-5-20251001",
     "openai": "gpt-4o-mini",
     "google": "gemini-2.5-flash-lite",
+    **{s.key: s.fast_model for s in OPENAI_COMPATIBLE.values() if s.fast_model},
 }
 
 # Kept for backward compatibility — callers that imported DEFAULT_MODEL still work.
@@ -337,6 +343,8 @@ def get_llm(
     #   LLM_PROVIDER=anthropic  →  ChatAnthropic  (default)
     #   LLM_PROVIDER=openai     →  ChatOpenAI
     #   LLM_PROVIDER=google     →  ChatGoogleGenerativeAI
+    #   LLM_PROVIDER=xai|deepseek|moonshot|mistral|qwen|zai
+    #                           →  ChatOpenAI against the vendor's own base_url
     #
     # Model selection (highest priority wins):
     #   1. `model` argument passed directly to get_llm()
@@ -539,8 +547,40 @@ def get_llm(
         )
         return llm
 
+    if provider in OPENAI_COMPATIBLE:
+        # # See docs: "Architecture" — Model layer
+        # xAI, DeepSeek, Moonshot, Mistral, Qwen and Z.ai all speak the OpenAI
+        # wire protocol, so one ChatOpenAI pointed at the vendor's own host
+        # serves all of them — same class, same streaming, same usage metadata.
+        # Adding a vendor is a row in llm_providers.py, not a branch here.
+        try:
+            from langchain_openai import ChatOpenAI
+        except ImportError as e:
+            raise ImportError("langchain-openai is not installed. Run: uv add langchain-openai") from e
+
+        from yeaboi.config import get_provider_api_key
+        from yeaboi.llm_providers import base_url_for
+
+        spec = OPENAI_COMPATIBLE[provider]
+        api_key = get_provider_api_key(provider)
+        if not api_key:
+            raise OSError(f"{spec.key_env} is not set. Add it to your .env file.")
+        base_url = base_url_for(provider)
+        logger.info("LLM ready: provider=%s, model=%s, base_url=%s", provider, resolved_model, base_url)
+        return ChatOpenAI(
+            model=resolved_model,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=temperature,
+            timeout=request_timeout,
+            max_retries=0 if request_timeout is not None else 2,
+            # Same opt-in OpenAI needs: without it a streamed turn records no usage.
+            stream_usage=True,
+        )
+
     raise ValueError(
-        f"Unknown LLM_PROVIDER: {provider!r}. Valid options are: anthropic (default), openai, google, bedrock, ollama."
+        f"Unknown LLM_PROVIDER: {provider!r}. Valid options are: anthropic (default), "
+        f"openai, google, bedrock, ollama, {', '.join(OPENAI_COMPATIBLE)}."
     )
 
 

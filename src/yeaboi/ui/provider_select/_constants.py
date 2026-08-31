@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from yeaboi.llm_providers import OPENAI_COMPATIBLE
+
 # ---------------------------------------------------------------------------
 # Token help — where to create each credential token and the minimum scope it
 # needs. Single source of truth shared by the setup wizard (provider_select
@@ -51,6 +53,8 @@ TOKEN_HELP: dict[str, dict[str, str]] = {
         "url": "https://platform.tavus.io",
         "scope": "API key from the Tavus portal — powers avatar video in desktop calls",
     },
+    # The OpenAI-wire vendors carry their own console URL and scope note.
+    **{s.key_env: {"url": s.console_url, "scope": s.key_scope} for s in OPENAI_COMPATIBLE.values()},
 }
 
 # ---------------------------------------------------------------------------
@@ -173,6 +177,24 @@ _PROVIDER_CARDS: list[dict[str, Any]] = [
             "llama3.1:8b": "weaker JSON → more fallbacks · ~5 GB · fine on 16 GB RAM",
         },
     },
+]
+
+# The OpenAI-wire vendors render as ordinary API-key cards. Building them from
+# llm_providers.py rather than restating them keeps the env var, key prefix and
+# default model identical to what get_llm() will actually use.
+_PROVIDER_CARDS += [
+    {
+        "name": s.label,
+        "full_name": s.full_name,
+        "env_var": s.key_env,
+        "provider_val": s.key,
+        "prefix": s.key_prefix,
+        "tagline": s.tagline,
+        "instructions": f"Get yours at: {s.console_url}",
+        "color": "rgb(70,100,180)",
+        "models": {"default": s.default_model, "presets": list(s.presets)},
+    }
+    for s in OPENAI_COMPATIBLE.values()
 ]
 
 # Version control providers — GitHub only (Azure DevOps PAT is collected
