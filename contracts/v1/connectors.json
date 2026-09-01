@@ -84,6 +84,15 @@
       "managed_by": "connections"
     },
     {
+      "key": "launchdarkly",
+      "label": "LaunchDarkly",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(64,91,255)",
+      "glyph": "🚩",
+      "managed_by": "connections"
+    },
+    {
       "key": "linear",
       "label": "Linear",
       "family": "delivery",

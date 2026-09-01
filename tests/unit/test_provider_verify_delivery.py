@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from yeaboi.provider_verification import INVALID_KEY, _verify_linear, _verify_trello
+from yeaboi.provider_verification import INVALID_KEY, _verify_launchdarkly, _verify_linear, _verify_trello
 
 
 def _resp(status_code: int, body: dict | None = None) -> MagicMock:
@@ -20,6 +20,34 @@ def _resp(status_code: int, body: dict | None = None) -> MagicMock:
     r.content = b"{}"
     r.json.return_value = body if body is not None else {}
     return r
+
+
+class TestLaunchDarkly:
+    """The one probe here that goes through the connector HTTP guard."""
+
+    @pytest.fixture(autouse=True)
+    def _public_dns(self, monkeypatch):
+        monkeypatch.setattr("socket.getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))])
+
+    def test_it_lists_one_project_with_the_bare_token_header(self, monkeypatch):
+        capture = MagicMock(return_value=_resp(200))
+        monkeypatch.setattr("httpx.get", capture)
+        ok, msg = _verify_launchdarkly("ld-token")
+        assert (ok, msg) == (True, "LaunchDarkly verified")
+        assert capture.call_args.args[0] == "https://app.launchdarkly.com/api/v2/projects?limit=1"
+        # LaunchDarkly's scheme is the bare token, not Bearer.
+        assert capture.call_args.kwargs["headers"]["Authorization"] == "ld-token"
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_rejected_token_is_named(self, monkeypatch, status):
+        monkeypatch.setattr("httpx.get", MagicMock(return_value=_resp(status)))
+        assert _verify_launchdarkly("bad") == (False, INVALID_KEY)
+
+    def test_the_token_never_appears_in_the_failure(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", MagicMock(return_value=_resp(500)))
+        ok, msg = _verify_launchdarkly("super-secret-token")
+        assert ok is False
+        assert "super-secret-token" not in msg
 
 
 class TestLinear:

@@ -1151,6 +1151,28 @@ def _verify_statuspage(token: str, page_id: str) -> tuple[bool, str]:
     return True, "Statuspage verified"
 
 
+def _verify_launchdarkly(token: str) -> tuple[bool, str]:
+    """Verify a LaunchDarkly access token with the cheapest project read.
+
+    The host is fixed and LaunchDarkly's token rides the Authorization header
+    bare — no Bearer scheme.
+    """
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.launchdarkly import API_BASE
+
+    status, message = probe_status(
+        f"{API_BASE}/projects?limit=1",
+        headers={"Authorization": token},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "LaunchDarkly verified"
+
+
 def _verify_linear(token: str) -> tuple[bool, str]:
     """Verify a Linear API key with the cheapest authenticated query — the viewer.
 

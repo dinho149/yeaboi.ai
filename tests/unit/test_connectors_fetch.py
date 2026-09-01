@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from yeaboi.connectors import datadog, grafana, incidentio, pagerduty, sentry, statuspage
+from yeaboi.connectors import datadog, grafana, incidentio, launchdarkly, pagerduty, sentry, statuspage
 from yeaboi.connectors.fetching import FetchError
 from yeaboi.ops.events import OpsEvent
 
@@ -147,6 +147,22 @@ SENTRY_BODY = [
 ]
 
 
+LAUNCHDARKLY_BODY = {
+    "items": [
+        {
+            "_id": "ld-1",
+            "kind": "flag",
+            "name": "checkout-v2",
+            "title": f"A Person turned on the flag {LEAK_CANARY}",
+            "titleVerb": "turned on the flag",
+            "description": LEAK_CANARY,
+            "date": 1781082000000,  # 2026-06-10T09:00:00Z
+            "_links": {"site": {"href": "/acme/production/features/checkout-v2"}},
+        },
+        {"_id": "ld-2", "kind": "member", "name": "A Person", "date": 1781082000000},
+    ]
+}
+
 STATUSPAGE_BODY = [
     {
         "id": "inc-9",
@@ -184,6 +200,7 @@ def connected(monkeypatch):
         "SENTRY_BASE_URL": "",
         "STATUSPAGE_API_KEY": "sp-tok",
         "STATUSPAGE_PAGE_ID": "abc123",
+        "LAUNCHDARKLY_API_KEY": "ld-tok",
     }.items():
         monkeypatch.setenv(env, value)
 
@@ -347,6 +364,29 @@ class TestStatuspage:
         assert statuspage.fetch(START, END) == ()
 
 
+class TestLaunchDarkly:
+    def test_the_window_rides_the_request_in_epoch_ms(self, monkeypatch, connected):
+        capture = install(monkeypatch, LAUNCHDARKLY_BODY)
+        launchdarkly.fetch(START, END)
+        assert capture.url.startswith("https://app.launchdarkly.com/api/v2/auditlog?")
+        assert "after=1780272000000" in capture.url and "before=1781481600000" in capture.url
+        assert capture.headers["Authorization"] == "ld-tok"
+
+    def test_only_flag_entries_become_events(self, monkeypatch, connected):
+        install(monkeypatch, LAUNCHDARKLY_BODY)
+        found = launchdarkly.fetch(START, END)
+        # The member entry is dropped unread — no person reaches an event.
+        assert [e.ref for e in found] == ["ld-1"]
+        assert (found[0].kind, found[0].severity) == ("deploy", "info")
+        assert found[0].title == "Flag changed: checkout-v2"
+        assert found[0].url == "https://app.launchdarkly.com/acme/production/features/checkout-v2"
+        assert "A Person" not in repr(found)
+
+    def test_a_changed_shape_yields_nothing_rather_than_raising(self, monkeypatch, connected):
+        install(monkeypatch, {"items": "not a list"})
+        assert launchdarkly.fetch(START, END) == ()
+
+
 class TestFailures:
     """A vendor saying no must be a message, never a traceback or a credential."""
 
@@ -401,6 +441,7 @@ class TestNoBodyCrossesTheBoundary:
         (incidentio, INCIDENTIO_BODY),
         (sentry, SENTRY_BODY),
         (statuspage, STATUSPAGE_BODY),
+        (launchdarkly, LAUNCHDARKLY_BODY),
     ]
 
     @pytest.mark.parametrize(("module", "body"), CASES, ids=lambda v: getattr(v, "__name__", ""))
