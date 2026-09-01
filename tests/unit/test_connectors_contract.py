@@ -53,14 +53,15 @@ def test_every_row_carries_what_a_mark_needs():
     for row in ROWS:
         assert row["label"].strip(), f"{row['key']} has no label to fall back to"
         assert row["family"].strip(), f"{row['key']} has no family glyph to fall back to"
+        assert row["glyph"].strip(), f"{row['key']} carries no emoji to fall back to"
         assert ACCENT_RE.match(row["accent"]), f"{row['key']} accent {row['accent']!r} is not rgb(r,g,b)"
 
 
 def test_it_carries_no_presentation():
-    # Identifiers, labels, one accent and where configuring happens. A payload
-    # carries text and numbers, never markup — an SVG path here would put the
-    # desktop's icons in this repo.
-    allowed = {"key", "label", "family", "family_label", "accent", "managed_by"}
+    # Identifiers, labels, one accent, one emoji and where configuring happens.
+    # A payload carries text and numbers, never markup — an SVG path here would
+    # put the desktop's icons in this repo.
+    allowed = {"key", "label", "family", "family_label", "accent", "glyph", "managed_by"}
     for row in ROWS:
         assert set(row) == allowed, f"{row['key']} carries {sorted(set(row) - allowed)}"
         assert row["managed_by"] in ("connections", "credentials")

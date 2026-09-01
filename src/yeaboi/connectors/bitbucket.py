@@ -47,6 +47,7 @@ CONNECTOR = Connector(
     verify="_verify_bitbucket",
     fetch="fetch",
     docs_url="https://support.atlassian.com/bitbucket-cloud/docs/api-tokens/",
+    glyph="\U0001faa3",  # 🪣 — the bucket
     accent="rgb(0,82,204)",
     fields=(
         ConnectorField(

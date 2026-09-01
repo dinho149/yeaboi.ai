@@ -27,6 +27,7 @@ CONNECTOR = Connector(
     ),
     verify="_verify_linear",
     docs_url="https://linear.app/docs/api-and-webhooks",
+    glyph="\U0001f4d0",  # 📐 — linear geometry
     accent="rgb(94,106,210)",
     read_only=False,
     fields=(

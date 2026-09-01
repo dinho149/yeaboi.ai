@@ -29,6 +29,7 @@ CONNECTOR = Connector(
     ),
     verify="_verify_trello",
     docs_url="https://developer.atlassian.com/cloud/trello/guides/rest-api/api-introduction/",
+    glyph="\U0001f5c2️",  # 🗂️ — card dividers
     accent="rgb(0,121,191)",
     read_only=False,
     connected_when=("TRELLO_API_KEY", "TRELLO_TOKEN"),

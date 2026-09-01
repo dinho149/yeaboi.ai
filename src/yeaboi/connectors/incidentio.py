@@ -30,6 +30,7 @@ CONNECTOR = Connector(
     verify="_verify_incidentio",
     fetch="fetch",
     docs_url="https://docs.incident.io/api-reference",
+    glyph="\U0001f525",  # 🔥 — a live incident
     # The mark's own colour, read from the vendor's favicon.
     accent="rgb(242,85,51)",
     fields=(

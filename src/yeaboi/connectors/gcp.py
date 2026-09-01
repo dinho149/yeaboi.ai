@@ -57,6 +57,7 @@ CONNECTOR = Connector(
     verify="_verify_gcp",
     fetch="fetch",
     docs_url="https://cloud.google.com/iam/docs/service-account-impersonation",
+    glyph="\U0001f535",  # 🔵 — brand blue
     accent="rgb(66,133,244)",
     auth_env="GCP_AUTH_METHOD",
     auth_methods=(

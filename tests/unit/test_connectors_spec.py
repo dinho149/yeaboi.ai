@@ -47,6 +47,17 @@ class TestStyling:
         for c in ALL:
             assert c.mark.strip(), f"{c.key} renders no glyph"
 
+    def test_every_builtin_wears_its_own_glyph(self):
+        # A vendor emoji, not the family fallback — a shelf of identical family
+        # marks reads as one thing repeated.
+        for c in ALL:
+            assert c.glyph.strip(), f"{c.key} declares no glyph of its own"
+            assert c.glyph != FAMILIES[c.family], f"{c.key} wears the bare family glyph"
+
+    def test_glyphs_are_distinct_across_the_whole_catalog(self):
+        glyphs = [c.mark for c in ALL] + [c.mark for c in registry.legacy_entries()]
+        assert len(glyphs) == len(set(glyphs)), "two catalog entries share a glyph"
+
     def test_accents_are_distinct(self):
         # The point of an accent is that a catalog of several reads as several
         # things; two connectors sharing one defeats it.
@@ -272,6 +283,7 @@ class TestLegacyEntries:
         for entry in LEGACY:
             assert entry.family in FAMILIES, f"{entry.key} family {entry.family!r} is unknown"
             assert entry.mark.strip(), f"{entry.key} renders no glyph"
+            assert entry.glyph != FAMILIES[entry.family], f"{entry.key} wears the bare family glyph"
 
     def test_accents_are_distinct_across_the_whole_catalog(self):
         accents = [c.accent for c in ALL] + [c.accent for c in LEGACY]

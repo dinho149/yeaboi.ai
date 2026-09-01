@@ -34,7 +34,7 @@ from yeaboi.connectors.spec import FAMILY_LABELS
 
 logger = logging.getLogger(__name__)
 
-SCHEMA = 2
+SCHEMA = 3
 OUTPUT = Path(__file__).resolve().parents[1] / "contracts" / "v1" / "connectors.json"
 
 
@@ -56,6 +56,9 @@ def render() -> str:
                 "family": c.family,
                 "family_label": FAMILY_LABELS.get(c.family, c.family.title()),
                 "accent": c.accent,
+                # Since schema 3: the emoji a surface may fall back to when it
+                # has no logomark for the key.
+                "glyph": c.mark,
                 "managed_by": managed_by,
             }
             for connectors, managed_by in (

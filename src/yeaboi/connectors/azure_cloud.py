@@ -53,6 +53,7 @@ CONNECTOR = Connector(
     verify="_verify_azure_cloud",
     fetch="fetch",
     docs_url="https://learn.microsoft.com/entra/identity-platform/howto-create-service-principal-portal",
+    glyph="\U0001f537",  # 🔷 — brand diamond
     accent="rgb(0,120,212)",
     fields=(
         ConnectorField(

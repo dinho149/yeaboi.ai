@@ -42,6 +42,7 @@ LEGACY: tuple[Connector, ...] = (
             "approve. Set up under Settings ▸ Credentials or the setup wizard."
         ),
         docs_url="https://github.com/settings/tokens",
+        glyph="\U0001f419",  # 🐙 — the octocat
         accent="rgb(110,118,129)",
         fields=(
             ConnectorField(
@@ -65,6 +66,7 @@ LEGACY: tuple[Connector, ...] = (
             "Settings ▸ Credentials or the setup wizard."
         ),
         docs_url="https://id.atlassian.com/manage-profile/security/api-tokens",
+        glyph="\U0001f3ab",  # 🎫 — the ticket
         accent="rgb(38,132,255)",
         fields=(
             ConnectorField(env="JIRA_BASE_URL", label="Base URL", placeholder="https://your-org.atlassian.net"),
@@ -92,6 +94,7 @@ LEGACY: tuple[Connector, ...] = (
             "Settings ▸ Credentials or the setup wizard."
         ),
         docs_url="https://dev.azure.com",
+        glyph="\U0001f4cc",  # 📌 — boards
         accent="rgb(0,90,158)",
         fields=(
             ConnectorField(env="AZURE_DEVOPS_ORG_URL", label="Org URL", placeholder="https://dev.azure.com/your-org"),
@@ -116,6 +119,7 @@ LEGACY: tuple[Connector, ...] = (
             "set. Set up under Settings ▸ Credentials or the setup wizard."
         ),
         docs_url="https://id.atlassian.com/manage-profile/security/api-tokens",
+        glyph="\U0001f30a",  # 🌊 — the confluence
         accent="rgb(76,154,255)",
         fields=(
             ConnectorField(
@@ -148,6 +152,7 @@ LEGACY: tuple[Connector, ...] = (
             "Credentials or the setup wizard."
         ),
         docs_url="https://notion.so/my-integrations",
+        glyph="\U0001f5d2️",  # 🗒️ — the page
         accent="rgb(55,53,47)",
         fields=(
             ConnectorField(
@@ -172,6 +177,7 @@ LEGACY: tuple[Connector, ...] = (
             "Settings ▸ Credentials."
         ),
         docs_url="https://api.slack.com/apps",
+        glyph="✳️",  # the pinwheel logo shape
         accent="rgb(74,21,75)",
         fields=(
             ConnectorField(env="SLACK_WEBHOOK_URL", label="Webhook URL", secret=True, required=False),
@@ -197,6 +203,7 @@ LEGACY: tuple[Connector, ...] = (
             "nothing else it knows. Set up under Settings ▸ System ▸ Voice."
         ),
         docs_url="https://elevenlabs.io/app/settings/api-keys",
+        glyph="\U0001f5e3️",  # 🗣️ — spoken voice
         accent="rgb(28,28,28)",
         fields=(
             ConnectorField(
@@ -219,6 +226,7 @@ LEGACY: tuple[Connector, ...] = (
             "the lines being spoken. Set up under Settings ▸ System ▸ Voice."
         ),
         docs_url="https://platform.tavus.io",
+        glyph="\U0001f3ac",  # 🎬 — avatar video
         accent="rgb(255,79,100)",
         fields=(
             ConnectorField(

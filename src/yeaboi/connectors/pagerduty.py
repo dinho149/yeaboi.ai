@@ -28,6 +28,7 @@ CONNECTOR = Connector(
     verify="_verify_pagerduty",
     fetch="fetch",
     docs_url="https://support.pagerduty.com/main/docs/api-access-keys",
+    glyph="\U0001f4df",  # 📟 — the pager
     accent="rgb(6,172,105)",
     fields=(
         ConnectorField(

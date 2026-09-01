@@ -30,6 +30,7 @@ CONNECTOR = Connector(
     verify="_verify_grafana",
     fetch="fetch",
     docs_url="https://grafana.com/docs/grafana/latest/administration/service-accounts/",
+    glyph="\U0001f4ca",  # 📊 — dashboards
     accent="rgb(242,131,32)",
     fields=(
         ConnectorField(

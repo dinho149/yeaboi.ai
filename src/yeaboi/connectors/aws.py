@@ -60,6 +60,7 @@ CONNECTOR = Connector(
     verify="_verify_aws",
     fetch="fetch",
     docs_url="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html",
+    glyph="\U0001f7e7",  # 🟧 — brand orange
     accent="rgb(255,153,0)",
     auth_env="AWS_AUTH_METHOD",
     auth_methods=(

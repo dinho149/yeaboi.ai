@@ -1,5 +1,5 @@
 {
-  "$schema_version": 2,
+  "$schema_version": 3,
   "$generated_by": "scripts/gen_connectors_contract.py",
   "connectors": [
     {
@@ -8,6 +8,7 @@
       "family": "observability",
       "family_label": "Observability",
       "accent": "rgb(147,111,218)",
+      "glyph": "🐶",
       "managed_by": "connections"
     },
     {
@@ -16,6 +17,7 @@
       "family": "observability",
       "family_label": "Observability",
       "accent": "rgb(242,131,32)",
+      "glyph": "📊",
       "managed_by": "connections"
     },
     {
@@ -24,6 +26,7 @@
       "family": "incidents",
       "family_label": "Incidents & on-call",
       "accent": "rgb(242,85,51)",
+      "glyph": "🔥",
       "managed_by": "connections"
     },
     {
@@ -32,6 +35,7 @@
       "family": "incidents",
       "family_label": "Incidents & on-call",
       "accent": "rgb(6,172,105)",
+      "glyph": "📟",
       "managed_by": "connections"
     },
     {
@@ -40,6 +44,7 @@
       "family": "errors",
       "family_label": "Error tracking",
       "accent": "rgb(106,84,164)",
+      "glyph": "🛡️",
       "managed_by": "connections"
     },
     {
@@ -48,6 +53,7 @@
       "family": "cloud",
       "family_label": "Cloud",
       "accent": "rgb(255,153,0)",
+      "glyph": "🟧",
       "managed_by": "connections"
     },
     {
@@ -56,6 +62,7 @@
       "family": "cloud",
       "family_label": "Cloud",
       "accent": "rgb(66,133,244)",
+      "glyph": "🔵",
       "managed_by": "connections"
     },
     {
@@ -64,6 +71,7 @@
       "family": "cloud",
       "family_label": "Cloud",
       "accent": "rgb(0,120,212)",
+      "glyph": "🔷",
       "managed_by": "connections"
     },
     {
@@ -72,6 +80,7 @@
       "family": "delivery",
       "family_label": "Delivery tracking",
       "accent": "rgb(94,106,210)",
+      "glyph": "📐",
       "managed_by": "connections"
     },
     {
@@ -80,6 +89,7 @@
       "family": "delivery",
       "family_label": "Delivery tracking",
       "accent": "rgb(0,121,191)",
+      "glyph": "🗂️",
       "managed_by": "connections"
     },
     {
@@ -88,6 +98,7 @@
       "family": "code",
       "family_label": "Code",
       "accent": "rgb(0,82,204)",
+      "glyph": "🪣",
       "managed_by": "connections"
     },
     {
@@ -96,6 +107,7 @@
       "family": "code",
       "family_label": "Code",
       "accent": "rgb(226,67,41)",
+      "glyph": "🦊",
       "managed_by": "connections"
     },
     {
@@ -104,6 +116,7 @@
       "family": "delivery",
       "family_label": "Delivery tracking",
       "accent": "rgb(0,90,158)",
+      "glyph": "📌",
       "managed_by": "credentials"
     },
     {
@@ -112,6 +125,7 @@
       "family": "delivery",
       "family_label": "Delivery tracking",
       "accent": "rgb(38,132,255)",
+      "glyph": "🎫",
       "managed_by": "credentials"
     },
     {
@@ -120,6 +134,7 @@
       "family": "code",
       "family_label": "Code",
       "accent": "rgb(110,118,129)",
+      "glyph": "🐙",
       "managed_by": "credentials"
     },
     {
@@ -128,6 +143,7 @@
       "family": "docs",
       "family_label": "Docs",
       "accent": "rgb(76,154,255)",
+      "glyph": "🌊",
       "managed_by": "credentials"
     },
     {
@@ -136,6 +152,7 @@
       "family": "docs",
       "family_label": "Docs",
       "accent": "rgb(55,53,47)",
+      "glyph": "🗒️",
       "managed_by": "credentials"
     },
     {
@@ -144,6 +161,7 @@
       "family": "chat",
       "family_label": "Chat",
       "accent": "rgb(74,21,75)",
+      "glyph": "✳️",
       "managed_by": "credentials"
     },
     {
@@ -152,6 +170,7 @@
       "family": "media",
       "family_label": "Voice & video",
       "accent": "rgb(28,28,28)",
+      "glyph": "🗣️",
       "managed_by": "credentials"
     },
     {
@@ -160,6 +179,7 @@
       "family": "media",
       "family_label": "Voice & video",
       "accent": "rgb(255,79,100)",
+      "glyph": "🎬",
       "managed_by": "credentials"
     }
   ]

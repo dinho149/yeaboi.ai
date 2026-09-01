@@ -19,9 +19,8 @@ from dataclasses import dataclass
 #: has one colour vocabulary rather than two.
 ACCENT_RE = re.compile(r"^rgb\((\d{1,3}),(\d{1,3}),(\d{1,3})\)$")
 
-#: The families a connector can belong to, and the glyph one falls back to when
-#: a vendor mark cannot be shipped. The terminal ALWAYS uses the family glyph —
-#: a logo is not a thing a terminal can draw.
+#: The families a connector can belong to, and the glyph a connector falls back
+#: to when it declares none of its own.
 FAMILIES: dict[str, str] = {
     "observability": "\U0001f4c8",  # 📈
     "incidents": "\U0001f6a8",  # 🚨

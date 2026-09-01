@@ -49,6 +49,7 @@ CONNECTOR = Connector(
     verify="_verify_gitlab",
     fetch="fetch",
     docs_url="https://docs.gitlab.com/user/profile/personal_access_tokens/",
+    glyph="\U0001f98a",  # 🦊 — the fox
     accent="rgb(226,67,41)",
     fields=(
         ConnectorField(

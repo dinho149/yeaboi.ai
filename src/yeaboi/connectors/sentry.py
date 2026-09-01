@@ -37,6 +37,7 @@ CONNECTOR = Connector(
     verify="_verify_sentry",
     fetch="fetch",
     docs_url="https://docs.sentry.io/account/auth-tokens/",
+    glyph="\U0001f6e1️",  # 🛡️ — the sentry
     accent="rgb(106,84,164)",
     fields=(
         ConnectorField(

@@ -48,6 +48,7 @@ CONNECTOR = Connector(
     verify="_verify_datadog",
     fetch="fetch",
     docs_url="https://docs.datadoghq.com/account_management/api-app-keys/",
+    glyph="\U0001f436",  # 🐶 — the dog
     accent="rgb(147,111,218)",
     fields=(
         ConnectorField(
