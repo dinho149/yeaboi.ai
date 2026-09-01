@@ -99,17 +99,6 @@ class TestTerminalOnly:
 # ---------------------------------------------------------------------------
 
 
-# The desktop ships no chat surface at all: the standalone planning chat folded
-# into the project flow (blueprint → one-shot generation), and the interactive
-# conversation returns with the ChatSession-in-project work. An empty commands
-# registry is the honest encoding of that state — reverse this constant when
-# the chat comes back.
-DESKTOP_CHAT_RETIRED = (
-    "the standalone planning chat folded into the project flow; one-shot generation "
-    "replaced the pipeline, and the interactive chat returns with the ChatSession-in-project work"
-)
-
-
 class TestSlashCommands:
     @staticmethod
     def _terminal_verbs() -> set[str]:
@@ -118,12 +107,6 @@ class TestSlashCommands:
         return {command.name for command in COMMANDS}
 
     def test_every_terminal_verb_reaches_the_desktop_or_is_exempt(self, manifest):
-        if not manifest["commands"]:
-            # With no chat surface there is no verb registry to mirror. Skipped
-            # rather than passed, so the run reports the guard as off instead of
-            # green; it re-arms the moment the manifest carries one command, and
-            # a half-registered list is a failure below.
-            pytest.skip(DESKTOP_CHAT_RETIRED)
         answered = {command["tui"] for command in manifest["commands"]}
         exempt = {name.lstrip("/") for name in TERMINAL_ONLY}
         missing = self._terminal_verbs() - answered - exempt
@@ -223,8 +206,8 @@ class TestPlanningIsWholeOnTheDesktop:
         desktop had a window for none of them.
         """
         paths = {route["path"] for route in manifest["routes"]}
-        assert "/projects/:id/plan" in paths, (
+        assert "/team/planning/plan" in paths, (
             "the desktop has no page for a finished plan — plan_get/plan_export/plan_publish/plan_sync "
             f"would have no window to be called from\n{_HOW_TO}"
         )
-        assert "/projects/:id/plan" in CAPABILITIES["planning"]["desktop"]
+        assert "/team/planning/plan" in CAPABILITIES["planning"]["desktop"]

@@ -73,10 +73,13 @@ class FeatureTip:
 # lands on the right card.
 _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     # No mode_key: projects open from the welcome screen's `P` keycap, not a card.
+    # TUI-only, like the capability: the tip names a keycap, and the desktop has
+    # no projects surface to send anyone to (CAPABILITIES marks it exempt there).
     FeatureTip(
         "projects",
         "\U0001f5c2️ Tip: Press P to pick a project — scoped runs feed each other's context",
         is_new=True,
+        surfaces=("tui",),
     ),
     FeatureTip(
         "team-analysis",
@@ -168,12 +171,15 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     # Capabilities without a dedicated home-screen card (tui_mode Exempt) — they
     # still rotate to aid discovery, just with no jump target.
-    # TUI-only: on the desktop, saved plans surface through each project's plan
-    # panel (CAPABILITIES marks sessions exempt there), so no desktop tip.
     FeatureTip(
         "sessions",
         "\U0001f5c2️ Tip: every plan is saved — resume any past session with --resume",
         surfaces=("tui",),
+    ),
+    FeatureTip(
+        "sessions",
+        "\U0001f5c2️ Tip: every plan is saved — reopen any past run from Saved plans",
+        surfaces=("desktop",),
     ),
     # No desktop route (CAPABILITIES marks it exempt there), so no desktop tip.
     FeatureTip(
