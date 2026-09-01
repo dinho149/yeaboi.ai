@@ -100,9 +100,7 @@ CAPABILITIES: dict[str, dict] = {
             "--architecture-spike",
         },
         "skill": "plan-sprint",
-        # Planning folded into the desktop's project flow: the blueprint is
-        # the intake and /projects/:id/plan renders the finished plan.
-        "desktop": {"/projects/:id/blueprint", "/projects/:id/plan"},
+        "desktop": {"/team/planning", "/team/planning/chat", "/team/planning/plan"},
     },
     "projects": {
         "engines": {
@@ -128,7 +126,11 @@ CAPABILITIES: dict[str, dict] = {
             "a scoping primitive, not a guided workflow — modes gain --project/project_id, "
             "and agents call the project_* tools directly"
         ),
-        "desktop": {"/projects", "/projects/:id"},
+        "desktop": Exempt(
+            "no desktop surface yet: `yeaboi app` exposes no /api/projects* routes, so the window "
+            "would have nothing to call. The desktop's own /projects is the planning platform's — "
+            "uuid4 rows on a different backend, not this store's proj-<8hex> ids"
+        ),
     },
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
@@ -136,10 +138,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("sessions are surfaced inside the planning-mode screens, no dedicated card"),
         "cli": {"--list-sessions", "--resume", "--clear-sessions"},
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
-        "desktop": Exempt(
-            "saved plans surface through each project's plan panel (the iteration carries its "
-            "session id) — a raw session browser would be a second door to the same room"
-        ),
+        "desktop": {"/team/planning/sessions"},
     },
     "standup": {
         "engines": {
@@ -272,7 +271,7 @@ CAPABILITIES: dict[str, dict] = {
         # carrying a milestone that has shipped: the intake tile needs a
         # roadmap path that is not TUI-only, and no surface has one yet — the
         # same gap the four rows above already track.
-        "desktop": {"/projects/new/from-roadmap"},
+        "desktop": {"/team/planning/roadmap"},
     },
     "anonymize": {
         # Post-processing action, not a mode of its own: an "Anonymize" button on every
