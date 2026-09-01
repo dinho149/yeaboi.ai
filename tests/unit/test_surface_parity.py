@@ -94,6 +94,7 @@ CAPABILITIES: dict[str, dict] = {
             "--questionnaire",
             "--export-questionnaire",
             "--export-only",
+            "--solo",
             "--mode",
             "--prior-art",
             "--ac-format",

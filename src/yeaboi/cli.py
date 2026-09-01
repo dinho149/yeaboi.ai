@@ -373,6 +373,14 @@ def build_parser() -> argparse.ArgumentParser:
         "Combine with --quick or --questionnaire for fully non-interactive runs.",
     )
 
+    # The Solo world from the command line: one developer, no roster.
+    parser.add_argument(
+        "--solo",
+        action="store_true",
+        default=False,
+        help="Run as one developer: team questions default to you, standups and reports are yours alone.",
+    )
+
     parser.add_argument(
         "--prior-art",
         action="append",
@@ -637,6 +645,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SOURCE",
         help="Doc platforms to pull supporting doc-update context from (default: all configured)",
     )
+    report_p.add_argument(
+        "--solo",
+        action="store_true",
+        help="A one-person report: first-person narrative, never 'the team' (the Solo world)",
+    )
     report_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings/empty report)")
     report_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     report_p.add_argument(
@@ -664,6 +677,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     standup_p.add_argument(
         "--incognito", action="store_true", help="No cross-mode context (same as --context none; wins if both given)"
+    )
+    standup_p.add_argument(
+        "--solo",
+        action="store_true",
+        help="A one-person standup: your own activity only, first-person summary (the Solo world)",
     )
     standup_p.add_argument("--deliver", action="store_true", help="Send to the configured channels (default: print)")
     standup_p.add_argument(
@@ -1560,6 +1578,7 @@ def _run_headless(args: argparse.Namespace) -> None:
         non_interactive=True,
         output_format=output_format,
         prior_art=args.prior_art,
+        solo=bool(getattr(args, "solo", False)),
     )
 
 
@@ -1610,12 +1629,12 @@ def _run_standup(args: argparse.Namespace) -> int:
     if getattr(args, "standup_interactive", False):
         from yeaboi.standup.interactive import run_interactive_standup
 
-        return run_interactive_standup(session_id, channels=channels)
+        return run_interactive_standup(session_id, channels=channels, solo=bool(getattr(args, "solo", False)))
 
     try:
         from yeaboi.standup.engine import run_standup
 
-        report = run_standup(session_id, channels=channels, deliver=True)
+        report = run_standup(session_id, channels=channels, deliver=True, solo=bool(getattr(args, "solo", False)))
         warn = f" ({len(report.warnings)} notice(s))" if report.warnings else ""
         print(
             f"Standup delivered for session '{session_id}' (day {report.sprint_day}/{report.sprint_total_days}){warn}."
@@ -2223,6 +2242,7 @@ def _cmd_report(args: argparse.Namespace, console: Console) -> int:
         period_label_override=args.label,
         theme=args.theme,
         sources=sources,
+        solo=args.solo,
     )
     for warning in report.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
@@ -2302,6 +2322,7 @@ def _cmd_standup_inner(args: argparse.Namespace, console: Console) -> int:
         azdo_repositories=args.azdo_repositories,
         documentation_sources=args.documentation_sources,
         review_transcripts=args.review_transcripts,
+        solo=args.solo,
     )
     for warning in report.warnings:
         print(f"⚠ {warning}", file=sys.stderr)

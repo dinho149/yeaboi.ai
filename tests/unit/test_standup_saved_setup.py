@@ -119,6 +119,21 @@ class TestSavedSetupSummary:
 
         assert _rows("s1") is None
 
+    def test_solo_skips_the_roster_gate(self, store):
+        # A Solo run is self-only by construction: an unconfigured roster is
+        # not a reason to ask, and the summary says so instead of naming people.
+        _save(store, roster_configured=False, team_members=[])
+
+        result = mode_select._standup_saved_setup("s1", solo=True)
+        assert result is not None
+        assert result[1] == [("Trackers", "Jira"), ("Members", "just you")]
+
+    def test_solo_still_needs_a_tracker(self, store, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "")
+        _save(store, roster_configured=False, team_members=[])
+
+        assert mode_select._standup_saved_setup("s1", solo=True) is None
+
     def test_no_tracker_in_env_asks(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "")
         _save(store)

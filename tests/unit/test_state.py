@@ -1400,3 +1400,21 @@ class TestPracticeSignal:
 
         assert MemberUpdate().practices == ()
         assert StandupReport().practice_rollup == ()
+
+
+class TestSoloState:
+    def test_scrum_state_declares_solo(self):
+        from yeaboi.agent.state import ScrumState
+
+        assert "solo" in ScrumState.__annotations__
+
+    def test_standup_report_solo_round_trips_and_defaults_off(self):
+        import json as _json
+
+        from yeaboi.standup.store import _dict_to_standup_report, _standup_report_to_json
+
+        solo = StandupReport(date="2026-07-10", team_summary="I shipped it.", solo=True)
+        assert _dict_to_standup_report(_json.loads(_standup_report_to_json(solo))).solo is True
+        assert StandupReport().solo is False
+        # A report stored before the field existed still deserialises.
+        assert _dict_to_standup_report({"date": "2026-07-10"}).solo is False

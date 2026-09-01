@@ -330,3 +330,13 @@ class TestImagesFollowTheirChips:
         )
         b"".join(resp.stream)
         assert self._sent(graph) == []
+
+
+class TestSoloConversations:
+    def test_solo_true_seeds_the_state_key(self, app):
+        open_chat(app, solo=True)
+        assert app.saved["proj-1"]["solo"] is True
+
+    def test_the_default_is_a_team_conversation(self, app):
+        open_chat(app)
+        assert "solo" not in app.saved["proj-1"]

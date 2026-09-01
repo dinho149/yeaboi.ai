@@ -303,8 +303,10 @@ class TestStandupCommand:
             review_transcripts,
             project_id,
             context_deps,
+            solo,
         ):
             captured.update(
+                solo=solo,
                 session_id=session_id,
                 project_id=project_id,
                 context_deps=context_deps,
@@ -329,6 +331,7 @@ class TestStandupCommand:
         args = build_parser().parse_args(["standup", "--deliver", "--channels", "slack", "--days", "2"])
         assert _cmd_standup(args, _console()) == 0
         assert captured == {
+            "solo": False,
             "session_id": "sid",
             "project_id": "",
             "context_deps": None,
@@ -1653,3 +1656,38 @@ class TestContextFlags:
         with pytest.raises(SystemExit):
             build_parser().parse_args(["report", "--context", "retro,bogus"])
         assert "unknown context source" in capsys.readouterr().err
+
+
+class TestSoloFlags:
+    def test_standup_solo_reaches_the_engine(self, monkeypatch):
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.run_standup", lambda sid, **kw: seen.update(kw) or StandupReport(team_summary="me")
+        )
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        args = build_parser().parse_args(["standup", "--solo"])
+        assert _cmd_standup(args, _console()) == 0
+        assert seen["solo"] is True
+
+    def test_report_solo_reaches_the_engine(self, monkeypatch):
+        from dataclasses import dataclass
+
+        @dataclass
+        class _Report:
+            warnings: tuple = ()
+            delivered_items: tuple = ()
+
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.reporting.engine.run_delivery_report", lambda period, **kw: seen.update(kw) or _Report()
+        )
+        monkeypatch.setattr("yeaboi.reporting.render.format_report_rich", lambda r: "")
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        args = build_parser().parse_args(["report", "--solo", "--format", "json"])
+        monkeypatch.setattr("yeaboi.cli._json_dump", lambda r: "{}")
+        assert _cmd_report(args, _console()) == 0
+        assert seen["solo"] is True
+
+    def test_the_flag_is_off_by_default(self):
+        assert build_parser().parse_args(["standup"]).solo is False
+        assert build_parser().parse_args(["report"]).solo is False

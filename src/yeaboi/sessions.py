@@ -180,6 +180,7 @@ _SCALAR_KEYS = {
     "context_sources",
     "project_id",
     "context_deps",
+    "solo",
     "_chat_greeting_done",
     "_chat_preamble",
     "_chat_fast_forward",

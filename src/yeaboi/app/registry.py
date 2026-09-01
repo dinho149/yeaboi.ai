@@ -34,6 +34,7 @@ from yeaboi.app import (
     routes_settings,
     routes_share,
     routes_ship,
+    routes_solo,
     routes_standup,
     routes_voice,
 )
@@ -64,6 +65,9 @@ ROUTES: tuple[AppRoute, ...] = (
     # deliberately never gated behind one — the privacy page must always answer.
     AppRoute("GET", "/api/meta/privacy", routes_meta.privacy),
     AppRoute("GET", "/api/system/check", routes_meta.system_check),
+    # Chrome like tips: the Solo home's "where am I" strip is a construct of
+    # the welcome screen, not a capability, so no row owns it.
+    AppRoute("GET", "/api/solo/today", routes_solo.today),
     AppRoute("GET", "/api/tools", routes_meta.tools),
     AppRoute("POST", "/api/tool/{name}", routes_meta.call_tool),
     AppRoute("GET", "/api/events", routes_meta.events),

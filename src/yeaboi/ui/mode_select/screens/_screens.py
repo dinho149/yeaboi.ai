@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import textwrap
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import rich.box
 from rich.align import Align
@@ -25,6 +25,9 @@ from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.shared._components import PAD, build_badge, build_page_panel
 from yeaboi.ui.shared._mascot import render_head, render_head_shades
 from yeaboi.ui.shared._tips import TIP_ROTATE_SECONDS
+
+if TYPE_CHECKING:
+    from yeaboi.solo.today import TodaySnapshot
 
 # Tip-change quack: the beak toggles for the first _QUACK_SECONDS of each tip
 # window at _QUACK_HZ (so a couple of open/close cycles), then holds still.
@@ -302,7 +305,8 @@ _MIN_WIDTH = 84
 # bottom-left version row all fit in 40. An eleventh card is what pushes that
 # row off — which is why Niko and Ceremonies are keycaps (see
 # :func:`_build_version_row`). Below this the "size up" duck shows instead of a
-# clipped menu.
+# clipped menu. The seven-card Solo menu leaves eleven rows free at this floor,
+# which is where its Today strip (:func:`_today_rows`, 7 rows) goes.
 _MIN_HEIGHT = 40
 
 # The bottom-right duck companion + its speech-bubble tip need extra room: the
@@ -501,7 +505,7 @@ _TIP_KEY = (210, 210, 220)  # the "t" keycap glyph
 _TIP_BETA = BETA_RGB
 
 
-def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0) -> list[Text]:
+def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0, world: str = "") -> list[Text]:
     """Build the bottom tip block: a rotating, cross-fading tip + a control row.
 
     Returns two centred rows so the mode list above stays vertically stable
@@ -515,6 +519,8 @@ def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0) -> list[Text]:
 
     When tips are hidden, both rows aren't blank: the second keeps a quiet
     ``t show tips`` hint so the feature is always discoverable/recoverable.
+    ``world`` narrows the rotation to the landing world's own tips; the loop's
+    ``g`` handler must resolve with the same world (see :func:`resolve_index`).
     """
     from yeaboi.config import is_tips_enabled
     from yeaboi.ui.shared._tips import resolve_index, tip_at, tip_brightness
@@ -529,8 +535,8 @@ def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0) -> list[Text]:
         )
         return [Text(""), show_hint]
 
-    idx = resolve_index(shimmer_tick, tip_offset)
-    tip = tip_at(idx)
+    idx = resolve_index(shimmer_tick, tip_offset, world=world)
+    tip = tip_at(idx, world=world)
     b = tip_brightness(shimmer_tick)
 
     body_style = lerp_color(b, _TIP_BG, _TIP_BODY)
@@ -651,6 +657,104 @@ def _build_update_box(*, cols: int) -> Panel | None:
     )
 
 
+# The Solo welcome's Today strip: a bordered four-line box (plus a spacer under
+# it) when the menu leaves room, a single summary line when it leaves a little,
+# nothing when it leaves none. The row counts are the layout contract shared
+# with ``mode_at_row``/``selected_title_offset`` through :func:`_today_rows`.
+_TODAY_FULL_ROWS = 7  # 4 lines + 2 borders + 1 spacer
+_TODAY_COMPACT_ROWS = 2  # 1 line + 1 spacer
+_TODAY_LINES = 4
+_TODAY_ACCENT = (210, 168, 80)  # SOLO_THEME.accent, as a triple for the reveal lerp
+_TODAY_TREND = {"improving": "↑", "steady": "→", "declining": "↓"}
+
+
+def _today_rows(today: TodaySnapshot | None, *, body_area: int, cards_h: int) -> int:
+    """Rows the Today strip takes above the cards — the one place the rule lives.
+
+    ``body_area`` is the height the card block centres in and ``cards_h`` what
+    the cards themselves use; the strip only ever takes what is left over, so a
+    small terminal degrades to the compact line and then to nothing rather than
+    pushing a card off the screen.
+    """
+    if today is None:
+        return 0
+    free = body_area - cards_h
+    if free >= _TODAY_FULL_ROWS:
+        return _TODAY_FULL_ROWS
+    if free >= _TODAY_COMPACT_ROWS:
+        return _TODAY_COMPACT_ROWS
+    return 0
+
+
+def _today_lines(today: TodaySnapshot) -> list[str]:
+    """The strip's four sentences, empty states included — plain text, one per row."""
+    if today.standup_date:
+        yesterday = f"☀ Yesterday: {today.standup_summary or 'a standup ran, with nothing to summarise'}"
+        if today.standup_blockers:
+            yesterday += f" — blocked: {today.standup_blockers}"
+    else:
+        yesterday = "☀ no standup yet — press Enter on Standup"
+    if today.sprint_total_days:
+        trend = _TODAY_TREND.get(today.confidence_trend, "")
+        sprint = f"◷ Sprint day {today.sprint_day}/{today.sprint_total_days}"
+        if today.confidence_label:
+            sprint += f" · {today.confidence_label} ({today.confidence_pct}%)"
+        if trend:
+            sprint += f" {trend}"
+    else:
+        sprint = "◷ no sprint context yet"
+    if today.next_story_id or today.next_story_title:
+        nxt = f"▶ Next: {today.next_story_id} {today.next_story_title}".rstrip()
+        if today.next_sprint_name:
+            nxt += f" · {today.next_sprint_name}"
+    elif today.plan_session_id:
+        nxt = "▶ your plan has no sprint stories yet"
+    else:
+        nxt = "▶ no plan yet — press Enter on Planning"
+    if today.spend_sessions:
+        approx = "" if today.spend_known else "~"
+        agents = f"⚙ Agents this week: {approx}${today.spend_usd:.2f} across {today.spend_sessions} session"
+        agents += "s" if today.spend_sessions != 1 else ""
+    else:
+        agents = "⚙ no agent sessions logged this week"
+    return [yesterday, sprint, nxt, agents]
+
+
+def _build_today_strip(today: TodaySnapshot, *, cols: int, rows: int, reveal: float = 1.0) -> list[RenderableType]:
+    """Render the strip at the height :func:`_today_rows` granted (0 → nothing).
+
+    Full: a rounded box in the Solo accent titled ``today``, four ellipsised
+    lines. Compact: the first three sentences on one line. Both fade with
+    ``reveal`` (the 2b exit fades it out with the tip bubble). No I/O — the
+    snapshot already carries final strings, so this is safe to call per frame.
+    """
+    if rows <= 0:
+        return []
+    body_style = lerp_color(reveal, _TIP_BG, _TIP_BODY)
+    accent = lerp_color(reveal, _TIP_BG, _TODAY_ACCENT)
+    lines = _today_lines(today)
+    indent = len(_PAD)
+    if rows < _TODAY_FULL_ROWS:
+        # Numbers first, prose last: the ellipsis eats the tail, and yesterday's
+        # summary is the one sentence that survives being cut short.
+        line = Text(no_wrap=True, overflow="ellipsis")
+        line.append(_PAD)
+        line.append("today ", style=f"bold {accent}")
+        line.append(" · ".join(part[2:] for part in (lines[1], lines[2], lines[0])), style=body_style)
+        return [line, Text("")]
+    body = Group(*[Text(line, style=body_style, no_wrap=True, overflow="ellipsis") for line in lines[:_TODAY_LINES]])
+    box = Panel(
+        body,
+        box=rich.box.ROUNDED,
+        border_style=accent,
+        padding=(0, 1),
+        width=max(12, cols - indent),
+        title="today",
+        title_align="left",
+    )
+    return [Padding(box, (0, 0, 0, indent)), Text("")]
+
+
 # What the version row costs beyond its own text: the panel's two borders plus
 # two columns of padding each side (build_page_panel's ``padding=(1, 2, 0, 2)``).
 _VERSION_ROW_CHROME = 6
@@ -758,6 +862,8 @@ def _build_mode_screen(
     compose: dict | None = None,
     cards: list[dict[str, Any]] | None = None,
     mascot: str = "duck",
+    today: TodaySnapshot | None = None,
+    world: str = "",
 ) -> Panel:
     """Build the full-screen mode selection layout.
 
@@ -770,6 +876,9 @@ def _build_mode_screen(
     companion sprite beside it ("duck" for Solo/Team, "robo" for Agents). Only the
     *source* of the rows changes — every layout constant stays identical, and
     ``mode_at_row``/``selected_title_offset`` must be passed the same ``cards``.
+    today: the Solo welcome's snapshot; when given, the Today strip sits above
+    the first card (``mode_at_row``/``selected_title_offset`` take it too).
+    world: the landing world whose tips rotate here ("" = every world's).
     """
     cards = _MODE_CARDS if cards is None else cards
     show = visible if visible is not None else list(range(len(cards)))
@@ -823,11 +932,28 @@ def _build_mode_screen(
             body_h += 1
             row_base += 1
 
+    # The Today strip goes ABOVE the first card — "where am I" before "what do I
+    # want to do". Its rows are added to body_h after the card loop so the sweep
+    # diagonal (row_base) is untouched; the box itself waits until the sweep has
+    # landed, and fades out with the tip bubble on the 2b exit.
+    inner_h = height - 3  # top border + top pad + bottom border (no bottom pad)
+    body_area = max(0, inner_h - _MUSIC_POCKET_ROWS - 1) if show_companion else max(0, inner_h - 3)
+    strip_rows = _today_rows(today, body_area=body_area, cards_h=body_h)
+    if strip_rows and today is not None:
+        if sweep_front is not None:
+            strip: list = [Text("") for _ in range(strip_rows)]
+        else:
+            strip = _build_today_strip(
+                today, cols=left_w, rows=strip_rows, reveal=1.0 if extras_reveal is None else extras_reveal
+            )
+        body = [*strip, *body]
+        body_h += strip_rows
+
     # Discoverability tip. _build_tip_rows returns two rows: [tip text, controls].
     # On wide terminals the tip *text* moves into the duck's speech bubble
     # (bottom-right) and only the control hints stay pinned at the bottom; on
     # narrower terminals both rows stay pinned at the bottom as before.
-    tip_rows = _build_tip_rows(shimmer_tick, tip_offset=tip_offset)
+    tip_rows = _build_tip_rows(shimmer_tick, tip_offset=tip_offset, world=world)
 
     # Bottom-right update box (above the duck's tip bubble) when a newer release
     # exists and there's room for the companion lane — it's more pressing than a
@@ -921,17 +1047,25 @@ def _build_mode_screen(
 
 
 def mode_at_row(
-    selected: int, *, width: int, height: int, row: int, col: int, cards: list[dict[str, Any]] | None = None
+    selected: int,
+    *,
+    width: int,
+    height: int,
+    row: int,
+    col: int,
+    cards: list[dict[str, Any]] | None = None,
+    today: TodaySnapshot | None = None,
 ) -> int | None:
     """Map a 1-based terminal (row, col) click to a mode-card index, or None.
 
     Reproduces the vertical layout maths of :func:`_build_mode_screen` so a click
     anywhere on a mode's title/description block resolves to that mode. Rows above
-    or below the (vertically-centred) mode list — the tip and version rows — and
-    clicks inside the right-hand duck lane return None. Kept in lock-step with the
-    builder: the layout constants (panel border + top padding, ``body_h``, the
-    companion split, the 2 tip rows + 1 version row) must match exactly.
-    Pass the same ``cards`` the builder was given (default ``_MODE_CARDS``).
+    or below the (vertically-centred) mode list — the tip and version rows, the
+    Today strip — and clicks inside the right-hand duck lane return None. Kept in
+    lock-step with the builder: the layout constants (panel border + top padding,
+    ``body_h``, the companion split, the 2 tip rows + 1 version row, and the
+    Today strip's rows from :func:`_today_rows`) must match exactly. Pass the
+    same ``cards`` and ``today`` the builder was given.
     """
     n = len(_MODE_CARDS if cards is None else cards)
     show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
@@ -949,15 +1083,17 @@ def mode_at_row(
     inner_h = height - 3  # top border + top pad + bottom border (no bottom pad)
     if show_companion:
         # grid = inner_h − music pocket (2) − version row (1); modes centre in it.
-        grid_h = max(0, inner_h - _MUSIC_POCKET_ROWS - 1)
-        mid_top = max(0, (grid_h - body_h) // 2)
+        body_area = max(0, inner_h - _MUSIC_POCKET_ROWS - 1)
     else:
         body_area = max(0, inner_h - 3)  # 2 tip rows + 1 version row pinned below
-        mid_top = max(0, (body_area - body_h) // 2)
+    strip_rows = _today_rows(today, body_area=body_area, cards_h=body_h)
+    body_h += strip_rows
+    mid_top = max(0, (body_area - body_h) // 2)
 
     # Panel top border (1) + top padding (1) → the content group's first row is at
-    # 1-based terminal row 3; the mode block starts mid_top rows into it.
-    y = 3 + mid_top
+    # 1-based terminal row 3; the mode block starts mid_top rows into it, below
+    # the Today strip when there is one.
+    y = 3 + mid_top + strip_rows
     for i in range(n):
         block = 2 + (3 if i == selected else 0)
         sep = 1 if i < n - 1 else 0
@@ -967,7 +1103,14 @@ def mode_at_row(
     return None
 
 
-def selected_title_offset(selected: int, *, width: int, height: int, cards: list[dict[str, Any]] | None = None) -> int:
+def selected_title_offset(
+    selected: int,
+    *,
+    width: int,
+    height: int,
+    cards: list[dict[str, Any]] | None = None,
+    today: TodaySnapshot | None = None,
+) -> int:
     """Return the ``top_offset`` (blank content rows above the title) at which the
     currently-selected mode's title sits in :func:`_build_mode_screen`.
 
@@ -977,7 +1120,7 @@ def selected_title_offset(selected: int, *, width: int, height: int, cards: list
     vertical maths of :func:`_build_mode_screen`/:func:`mode_at_row` exactly (same
     ``body_h``, companion split, and centring), so the first slide frame lands the
     title on the same row it occupied a frame earlier. Pass the same ``cards``
-    the builder was given (default ``_MODE_CARDS``).
+    and ``today`` the builder was given.
     """
     n = len(_MODE_CARDS if cards is None else cards)
     show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
@@ -991,15 +1134,17 @@ def selected_title_offset(selected: int, *, width: int, height: int, cards: list
 
     inner_h = height - 3  # top border + top pad + bottom border (no bottom pad)
     if show_companion:
-        grid_h = max(0, inner_h - _MUSIC_POCKET_ROWS - 1)  # music pocket + version row
-        mid_top = max(0, (grid_h - body_h) // 2)
+        body_area = max(0, inner_h - _MUSIC_POCKET_ROWS - 1)  # music pocket + version row
     else:
         body_area = max(0, inner_h - 3)  # 2 tip rows + 1 version row pinned below
-        mid_top = max(0, (body_area - body_h) // 2)
+    strip_rows = _today_rows(today, body_area=body_area, cards_h=body_h)
+    body_h += strip_rows
+    mid_top = max(0, (body_area - body_h) // 2)
 
     # Every mode before the selected one contributes title(2) + separator(1) = 3
-    # rows (none of them is selected, so no description block).
-    return mid_top + 3 * selected
+    # rows (none of them is selected, so no description block); the Today strip
+    # sits above them all.
+    return mid_top + strip_rows + 3 * selected
 
 
 _COMPANION_CAPTION_ROWS = 1  # the "n  ask niko" line under the mascot

@@ -553,3 +553,34 @@ class TestReportContextDeps:
         _patch_llm(monkeypatch, json.dumps({"headline": "h", "executive_summary": "s"}))
         report = engine.run_delivery_report("last_sprint", project_id=pid, context_deps=["plan"], db_path=db_path)
         assert report.project_name == "Apollo"
+
+
+class TestSoloReport:
+    def test_solo_fallback_is_first_person(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=_items(2))
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        report = engine.run_delivery_report("last_sprint", session_id="", db_path=db_path, solo=True)
+        assert report.executive_summary.startswith("I completed 2 tracked items")
+        assert "The team" not in report.executive_summary
+
+    def test_team_fallback_still_says_the_team(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=_items(2))
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        report = engine.run_delivery_report("last_sprint", session_id="", db_path=db_path)
+        assert report.executive_summary.startswith("The team completed 2 tracked items")
+
+    def test_solo_reaches_the_prompt(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=_items(1))
+        _patch_llm(monkeypatch, json.dumps({"headline": "h", "executive_summary": "I shipped it."}))
+        seen: dict = {}
+        from yeaboi.prompts import reporting as prompts
+
+        real = prompts.get_delivery_report_prompt
+
+        def spy(**kw):
+            seen["solo"] = kw.get("solo")
+            return real(**kw)
+
+        monkeypatch.setattr(prompts, "get_delivery_report_prompt", spy)
+        engine.run_delivery_report("last_sprint", session_id="", db_path=db_path, solo=True)
+        assert seen["solo"] is True

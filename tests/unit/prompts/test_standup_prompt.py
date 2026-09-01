@@ -189,3 +189,22 @@ class TestProduction:
     def test_the_model_is_told_the_window_is_wider(self):
         text = _prompt(production=_PRODUCTION, production_window="the last 14 days")
         assert "a WIDER window than this standup covers" in text
+
+
+class TestSoloVariant:
+    def test_solo_is_first_person(self):
+        p = _prompt(solo=True, members=[{"name": "Me", "activity": [], "self_report": ""}])
+        assert "I work alone" in p
+        assert "FIRST PERSON" in p
+        assert "each team member" not in p
+        assert "name members with blockers" not in p
+
+    def test_solo_keeps_the_json_shape(self):
+        p = _prompt(solo=True)
+        assert '"team_summary": "..."' in p
+        assert '"members": [{"name": "..."' in p
+
+    def test_default_is_still_team_voiced(self):
+        p = _prompt()
+        assert "each team member" in p
+        assert "I work alone" not in p

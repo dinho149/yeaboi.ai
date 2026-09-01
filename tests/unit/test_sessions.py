@@ -282,6 +282,13 @@ class TestProjectIdStateRoundTrip:
 
 
 class TestContextDepsStateRoundTrip:
+    def test_solo_survives_save_and_load(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test")
+            store.save_state("s1", {"messages": [], "solo": True})
+            loaded = store.load_state("s1")
+        assert loaded["solo"] is True
+
     def test_context_deps_survives_save_and_load(self, tmp_path):
         with SessionStore(tmp_path / "sessions.db") as store:
             store.create_session("s1", "Test")

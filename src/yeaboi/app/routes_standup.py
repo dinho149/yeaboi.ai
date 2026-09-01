@@ -106,6 +106,7 @@ def set_schedule(app, request: Request) -> Response:
     remind_after = int(payload.get("remind_after", 0))
     if remind_after not in REMINDER_PRESETS:
         raise HTTPError(400, f"remind_after must be one of {', '.join(str(p) for p in REMINDER_PRESETS)}")
+    solo = bool(payload.get("solo", False))
     message = apply_schedule(
         session_id,
         enabled=bool(payload.get("enabled")),
@@ -114,6 +115,7 @@ def set_schedule(app, request: Request) -> Response:
         lead_minutes=int(payload.get("lead_minutes", 10)),
         delivery_channels=channels,
         remind_after=remind_after,
+        solo=solo,
     )
     return json_response({"message": message, "schedule": current_schedule(session_id)})
 
@@ -125,16 +127,17 @@ def run(app, request: Request) -> Response:
     if not session_id:
         raise HTTPError(400, "session_id is required")
     deliver = bool(payload.get("deliver", False))
+    solo = bool(payload.get("solo", False))
     op = app.ops.create()
-    logger.info("Standup run start: session=%s deliver=%s", session_id, deliver)
+    logger.info("Standup run start: session=%s deliver=%s solo=%s", session_id, deliver, solo)
     return Response(
         content_type="application/x-ndjson",
-        stream=_lines(_run(app, op, session_id, deliver)),
+        stream=_lines(_run(app, op, session_id, deliver, solo)),
         headers=(("X-Accel-Buffering", "no"),),
     )
 
 
-def _run(app, op, session_id: str, deliver: bool) -> Iterator[dict]:
+def _run(app, op, session_id: str, deliver: bool, solo: bool = False) -> Iterator[dict]:
     from yeaboi.mcp.runtime import _ENGINE_LOCK
 
     events: queue.Queue = queue.Queue()
@@ -149,6 +152,7 @@ def _run(app, op, session_id: str, deliver: bool) -> Iterator[dict]:
                 result[0] = run_standup(
                     session_id,
                     deliver=deliver,
+                    solo=solo,
                     # A preview must not post to Slack on its way to the screen.
                     dry_run=not deliver,
                     on_progress=lambda phase: events.put({"type": "progress", "phase": phase}),

@@ -143,3 +143,17 @@ class TestReminderPresets:
 
     def test_zero_stays_off(self):
         assert schedule.nearest_reminder_preset(0) == 0
+
+
+class TestSoloSchedule:
+    def test_solo_rides_on_the_installed_job_not_the_config(self, tmp_path, jobs, monkeypatch):
+        import yeaboi.ceremonies.scheduler as scheduler
+
+        seen: list = []
+        monkeypatch.setattr(scheduler, "install_schedule", lambda *a, **k: seen.append(k.get("solo")) or "installed")
+        db = tmp_path / "s.db"
+        _apply(db, solo=True)
+        _apply(db)
+        assert seen == [True, False]
+        with StandupStore(db) as store:
+            assert "solo" not in (store.load_config(SESSION) or {})

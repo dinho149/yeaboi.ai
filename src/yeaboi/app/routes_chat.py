@@ -52,7 +52,10 @@ def create(app, request: Request) -> Response:
     intake_mode = str(payload.get("intake_mode", ""))
     if intake_mode not in ("", "small_project", "smart"):
         raise HTTPError(400, "intake_mode must be 'small_project' or 'smart'")
-    chat = app.chats.create(description, intake_mode=intake_mode)
+    solo = bool(payload.get("solo", False))
+    if solo:
+        logger.info("Chat create: solo intake")
+    chat = app.chats.create(description, intake_mode=intake_mode, solo=solo)
     app.chats.save(chat)
     return json_response(_view(chat), code=201)
 

@@ -10,7 +10,9 @@ description: "Generate a business-friendly delivery report of the team's complet
 
 2. **Generate.** Call `report_delivery` with that `period`. It pulls completed
    tickets from the configured tracker (Jira/Azure DevOps) and produces an
-   executive narrative, outcome themes, metrics, and highlights.
+   executive narrative, outcome themes, metrics, and highlights. Pass
+   `solo: true` when the user is running their own delivery with no team —
+   the narrative is written in the first person.
 
 3. **Present it stakeholder-ready.** Lead with the executive summary, then the
    themes with their delivered items, then metrics and highlights. Keep the

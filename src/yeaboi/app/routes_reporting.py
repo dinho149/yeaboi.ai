@@ -199,7 +199,13 @@ def run(app, request: Request) -> Response:
     if setup.needs_window(period) and not (window_start and window_end):
         raise HTTPError(400, "a custom range needs both window_start and window_end")
     op = app.ops.create()
-    logger.info("Reporting run start: period=%s window=%s→%s", period, window_start or "—", window_end or "—")
+    logger.info(
+        "Reporting run start: period=%s window=%s→%s solo=%s",
+        period,
+        window_start or "—",
+        window_end or "—",
+        bool(payload.get("solo", False)),
+    )
     return Response(
         content_type="application/x-ndjson",
         stream=_lines(_run(app, op, payload, period, window_start, window_end)),
@@ -271,6 +277,7 @@ def _run(app, op, payload: dict, period: str, window_start: str, window_end: str
                     period_label_override=str(payload.get("period_label_override", "")),
                     theme=str(payload.get("theme") or "midnight"),
                     sources=payload.get("sources"),
+                    solo=bool(payload.get("solo", False)),
                     on_progress=progress.put,
                     cancel_event=op.cancel,
                 )

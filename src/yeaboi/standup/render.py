@@ -17,6 +17,12 @@ from rich.text import Text
 from yeaboi.agent.state import StandupReport
 from yeaboi.standup import collector
 
+
+def summary_heading(report: StandupReport) -> str:
+    """The narrative's heading: a solo report has no team to summarise."""
+    return "Summary" if getattr(report, "solo", False) else "Team summary"
+
+
 logger = logging.getLogger(__name__)
 
 # Emoji markers per confidence label — used in plaintext (Slack/email) output.
@@ -143,7 +149,7 @@ def format_standup_lines(report: StandupReport) -> list[str]:
     quiet, active, overview_of, category_lines_of = _denoise(report)
 
     if report.team_summary:
-        lines.append("Team summary:")
+        lines.append(f"{summary_heading(report)}:")
         lines.append(f"  {report.team_summary}")
         lines.append("")
 
@@ -267,7 +273,7 @@ def format_standup_rich(report: StandupReport, *, accent: str = "rgb(200,100,180
         body.append(Text(""))
 
     if report.team_summary:
-        body.append(Text("Team summary", style=f"bold {accent}"))
+        body.append(Text(summary_heading(report), style=f"bold {accent}"))
         body.append(Text(f"  {report.team_summary}"))
         body.append(Text(""))
 

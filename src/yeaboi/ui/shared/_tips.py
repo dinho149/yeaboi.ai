@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from yeaboi.beta import BETA_LABEL
-from yeaboi.surfaces import ALL_SURFACES, VALID_SURFACES
+from yeaboi.surfaces import ALL_SURFACES, ALL_WORLDS, VALID_SURFACES, VALID_WORLDS
 
 # Seconds each tip stays on screen before the next one rotates in.
 TIP_ROTATE_SECONDS = 6.0
@@ -56,6 +56,10 @@ class FeatureTip:
     everywhere, and only a tip that names a gesture — a keycap, a CLI flag, a
     control that exists in one window and not the other — needs splitting. Two
     tips may share a ``key`` and differ only by surface (see ``niko``).
+
+    ``worlds`` are the landing worlds the tip is true in. Untagged means all of
+    them; a tip that names a room full of teammates (a live retro board, planning
+    poker, a 1:1) is tagged Team-only so the Solo welcome never rotates it.
     """
 
     key: str
@@ -64,6 +68,7 @@ class FeatureTip:
     is_new: bool = False
     is_beta: bool = False
     surfaces: tuple[str, ...] = ALL_SURFACES
+    worlds: tuple[str, ...] = ALL_WORLDS
 
 
 # Feature tips — one per user-facing capability. Each is short (one line) and
@@ -124,12 +129,14 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "retro-board",
         "\U0001f504 Tip: Retro runs a live board — teammates add cards from a browser, AI drafts actions",
         mode_key="retro",
+        worlds=("team",),
     ),
     FeatureTip(
         "scrum-poker",
         "\U0001f0cf Tip: Poker runs live planning poker — teammates vote from a browser, points save to your board",
         mode_key="poker",
         is_new=True,
+        worlds=("team",),
     ),
     FeatureTip(
         "performance",
@@ -140,6 +147,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         # so a caveat written into the prose renders inconsistently across the
         # two surfaces where a flag renders the same on both.
         is_beta=True,
+        worlds=("team",),
     ),
     FeatureTip(
         "reporting",
@@ -220,6 +228,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "slack-inbound",
         "\U0001f4ac Tip: react \u23f8 \U0001f44d \U0001f44e or reply in a Slack thread — yeaboi reads it back",
         is_new=True,
+        worlds=("team",),
     ),
     FeatureTip(
         "output-sharing",
@@ -230,6 +239,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "artifact-editing",
         "✏️ Tip: teammates can correct a shared report in the browser — every change is attributed",
         is_new=True,
+        worlds=("team",),
     ),
     # The Agents family — cards live on the Agents menu (_AGENT_CARDS); the `g`
     # jump switches category when the tip fires from another menu.
@@ -420,20 +430,24 @@ def get_tips() -> tuple[FeatureTip, ...]:
     )
 
 
-def tips_for_surface(surface: str) -> tuple[FeatureTip, ...]:
+def tips_for_surface(surface: str, *, world: str = "") -> tuple[FeatureTip, ...]:
     """Return the tips that are true on ``surface``, in rotation order.
 
-    Not memoised on purpose: the cost :func:`get_tips` exists to avoid is the
-    availability probe, which stays behind its own memo, and filtering the
+    ``world`` narrows the rotation to the tips true in that landing world; the
+    default keeps every world's, which is what the gallery and the parity checks
+    read. Not memoised on purpose: the cost :func:`get_tips` exists to avoid is
+    the availability probe, which stays behind its own memo, and filtering the
     assembled tuple per frame is free.
 
-    Raises on an unknown surface rather than returning nothing: a typo would
-    otherwise leave a screen with an empty rotation, and :func:`tip_at` divides
-    by the length.
+    Raises on an unknown surface or world rather than returning nothing: a typo
+    would otherwise leave a screen with an empty rotation, and :func:`tip_at`
+    divides by the length.
     """
     if surface not in VALID_SURFACES:
         raise ValueError(f"unknown surface {surface!r}; expected one of {sorted(VALID_SURFACES)}")
-    return tuple(tip for tip in get_tips() if surface in tip.surfaces)
+    if world and world not in VALID_WORLDS:
+        raise ValueError(f"unknown world {world!r}; expected one of {sorted(VALID_WORLDS)}")
+    return tuple(tip for tip in get_tips() if surface in tip.surfaces and (not world or world in tip.worlds))
 
 
 def build_tips_text() -> str:
@@ -464,42 +478,47 @@ def build_tips_text() -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def tip_count() -> int:
+def tip_count(*, world: str = "") -> int:
     """Number of tips in the terminal's rotation (used to render position dots)."""
-    return len(tips_for_surface("tui"))
+    return len(tips_for_surface("tui", world=world))
 
 
-def tip_at(index: int) -> FeatureTip:
-    """Return the terminal tip at ``index`` (wrapped modulo the tip count)."""
-    tips = tips_for_surface("tui")
+def tip_at(index: int, *, world: str = "") -> FeatureTip:
+    """Return the terminal tip at ``index`` (wrapped modulo the tip count).
+
+    Pass the same ``world`` :func:`resolve_index` was given, or the index names a
+    different tip from the one on screen.
+    """
+    tips = tips_for_surface("tui", world=world)
     return tips[index % len(tips)]
 
 
-def resolve_index(tick: float, offset: int = 0, rotate_seconds: float = TIP_ROTATE_SECONDS) -> int:
+def resolve_index(tick: float, offset: int = 0, rotate_seconds: float = TIP_ROTATE_SECONDS, *, world: str = "") -> int:
     """Return the tip index to show at ``tick`` seconds, shifted by ``offset``.
 
     Auto-rotation advances the index every ``rotate_seconds`` off ``tick``. The
     home loop adds a manual ``offset`` (bumped by the [ / ] browse keys): it just
     relabels which tip occupies each rotation window, so browsing moves through
     the list *and auto-rotation keeps running* from the new position — no pause,
-    no pinned index that could get stuck.
+    no pinned index that could get stuck. ``world`` picks the rotation the index
+    counts through (see :func:`tips_for_surface`).
     """
-    tips = tips_for_surface("tui")
+    tips = tips_for_surface("tui", world=world)
     if not tips:  # pragma: no cover - defensive; the list is always populated
         return 0
     period = rotate_seconds if rotate_seconds > 0 else TIP_ROTATE_SECONDS
     return (int(max(0.0, tick) / period) + offset) % len(tips)
 
 
-def current_tip(tick: float, rotate_seconds: float = TIP_ROTATE_SECONDS) -> tuple[int, FeatureTip]:
+def current_tip(tick: float, rotate_seconds: float = TIP_ROTATE_SECONDS, *, world: str = "") -> tuple[int, FeatureTip]:
     """Return ``(index, tip)`` for the tip visible at ``tick`` seconds.
 
     ``tick`` is the monotonic elapsed time already threaded through the render
     loop. The tip advances every ``rotate_seconds``; the index wraps around the
     tip list so rotation is continuous.
     """
-    idx = resolve_index(tick, 0, rotate_seconds)
-    return idx, tip_at(idx)
+    idx = resolve_index(tick, 0, rotate_seconds, world=world)
+    return idx, tip_at(idx, world=world)
 
 
 # Fraction of each rotation window spent fading in (and, symmetrically, out).

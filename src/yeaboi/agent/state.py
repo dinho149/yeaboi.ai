@@ -587,6 +587,7 @@ class StandupReport:
     unmet_sources: tuple[str, ...] = ()
     category_coverage: tuple[tuple[str, str], ...] = ()  # category -> covered/partial/failed/not_configured
     my_name: str = ""  # the standup user's resolved display name (drives the "My Update" row)
+    solo: bool = False  # a one-person run: one card, first-person summary; renderers voice from this
     warnings: tuple[str, ...] = ()  # surfaced problems (missing API key, source 401/403) — shown, never silent
     images: tuple[str, ...] = ()  # screenshot paths pasted into "My Update" — embedded in exports
     # Reader-authored additions; see Annotation. Defaulted so a report stored
@@ -2464,6 +2465,11 @@ class ScrumState(_RequiredState, total=False):
     # absent when every source is on.
     project_id: str
     context_deps: str
+    # True for a Solo-world run: the intake plans for one developer (team
+    # questions default, no member picker). Seeded by the caller like
+    # project_id, and declared for the same reason.
+    # See docs: "Memory & State" — StateGraph keeps only declared keys
+    solo: bool
     # Existing team repositories the user accepted as prior art for this plan.
     # Only greenfield projects are offered them. Feeds the analyzer and feature
     # prompts, and renders as a Prior Art section in the summary and exports.

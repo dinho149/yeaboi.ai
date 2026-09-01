@@ -64,6 +64,7 @@ def get_delivery_report_prompt(
     period_label: str,
     sprint_names: list[str],
     supporting_signals: list[dict] | None = None,
+    solo: bool = False,
 ) -> str:
     """Build the delivery-report prompt: completed tickets → business narrative.
 
@@ -74,15 +75,17 @@ def get_delivery_report_prompt(
         sprint_names: the sprint name(s) that fell in the window (best-effort).
         supporting_signals: optional SupportingSignal dicts (code/docs activity from
             the same period) — corroborating reference only, never report subject.
+        solo: a one-person report — written in the first person, never "the team".
     """
     evidence = _items_block(delivered_items)
     sprints = ", ".join(s for s in sprint_names if s) or "(sprint names unavailable)"
     project = project_name or "the product"
     count = len(delivered_items)
 
+    who = "I" if solo else "the team"
     ask = (
         "You are a delivery lead writing an update FOR THE BUSINESS — non-technical "
-        f"stakeholders — about what the team delivered on {project} during {period_label.lower()}. "
+        f"stakeholders — about what {who} delivered on {project} during {period_label.lower()}. "
         "Turn the completed tickets below into a clear, confident, outcome-focused summary "
         "that a product or executive audience can read in two minutes."
     )
@@ -101,7 +104,13 @@ def get_delivery_report_prompt(
         '"headline", "summary", "metrics", "themes", "highlights", "thanks". '
         "Choose emojis that fit the actual work (e.g. 🔐 for security, ⚡ for performance).\n"
         "- Keep it concise and skimmable. No markdown fences.\n"
-        "- Supporting signals (if present) are context, NOT deliverables: never create a theme, "
+        + (
+            "- Write in the FIRST PERSON ('I shipped…', 'I delivered…'): this is one developer's own "
+            "delivery. Never say 'the team' or 'we' — there is no team.\n"
+            if solo
+            else ""
+        )
+        + "- Supporting signals (if present) are context, NOT deliverables: never create a theme, "
         "highlight, or claim from them. You may add at most one corroborating clause to the "
         "executive summary (e.g. 'backed by 24 merged pull requests and 5 documentation updates').\n"
         "- Return ONLY a JSON object of the exact shape:\n"

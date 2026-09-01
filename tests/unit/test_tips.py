@@ -353,3 +353,63 @@ def test_tips_for_an_unknown_surface_raise():
     # and tip_at divides by the length.
     with pytest.raises(ValueError, match="unknown surface"):
         tips_for_surface("fax-machine")
+
+
+# ---------------------------------------------------------------------------
+# Worlds — the Solo welcome never rotates a tip about a room full of teammates
+# ---------------------------------------------------------------------------
+
+
+class TestWorlds:
+    TEAM_ONLY = {"retro-board", "scrum-poker", "performance", "slack-inbound", "artifact-editing"}
+
+    def test_untagged_tips_reach_every_world(self):
+        from yeaboi.surfaces import ALL_WORLDS
+
+        assert FeatureTip("x", "y").worlds == ALL_WORLDS
+
+    def test_solo_rotation_has_no_team_only_tips(self, monkeypatch):
+        _clear_cache()
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+        solo = tips_for_surface("tui", world="solo")
+        assert solo, "the Solo rotation must never be empty"
+        assert not {t.key for t in solo} & self.TEAM_ONLY
+        # Everything else — including the Agents tips, which jump worlds — stays.
+        assert {"planning", "standup", "reporting", "agent-usage"} <= {t.key for t in solo}
+        _clear_cache()
+
+    def test_team_rotation_is_the_full_terminal_list(self, monkeypatch):
+        _clear_cache()
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+        assert tips_for_surface("tui", world="team") == tips_for_surface("tui")
+        _clear_cache()
+
+    def test_the_team_only_tips_are_tagged(self):
+        tagged = {t.key for t in _tips._FEATURE_TIPS if t.worlds == ("team",)}
+        assert tagged == self.TEAM_ONLY
+
+    def test_every_world_has_a_rotation(self, monkeypatch):
+        from yeaboi.surfaces import ALL_WORLDS
+
+        _clear_cache()
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+        for world in ALL_WORLDS:
+            assert tip_count(world=world) > 1, world
+        _clear_cache()
+
+    def test_an_unknown_world_raises(self):
+        with pytest.raises(ValueError, match="unknown world"):
+            tips_for_surface("tui", world="humans")
+
+    def test_index_and_tip_agree_within_a_world(self, monkeypatch):
+        # The `g` handler resolves the index and reads the tip with one world;
+        # the two must name the same tip, or the jump opens the wrong feature.
+        _clear_cache()
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+        solo = tips_for_surface("tui", world="solo")
+        for offset in range(len(solo)):
+            idx = resolve_index(0.0, offset, world="solo")
+            assert tip_at(idx, world="solo") == solo[offset]
+        idx, tip = current_tip(TIP_ROTATE_SECONDS * 3, world="solo")
+        assert tip == solo[idx]
+        _clear_cache()

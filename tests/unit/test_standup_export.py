@@ -1523,3 +1523,11 @@ class TestProductionExport:
 
         assert "production" not in nav_keys(_report())
         assert "production" in nav_keys(_report(ops_signals=_OPS))
+
+
+class TestSoloExport:
+    def test_a_solo_report_has_no_team_summary_heading(self):
+        md = build_standup_markdown(_report(solo=True))
+        assert "## Summary" in md
+        assert "Team Summary" not in md
+        assert "## Team Summary" in build_standup_markdown(_report())

@@ -75,6 +75,7 @@ def _standup_run(
     review_transcripts: bool,
     project_id: str,
     context_deps: list | None,
+    solo: bool,
 ):
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.standup.engine import run_standup
@@ -84,6 +85,7 @@ def _standup_run(
         resolved,
         project_id=project_id,
         context_deps=context_deps,
+        solo=solo,
         review_transcripts=review_transcripts,
         deliver=deliver,
         days=days or None,
@@ -458,6 +460,7 @@ def register(app) -> None:
         review_transcripts: bool = True,
         project_id: str = "",
         context_deps: list[str] | None = None,
+        solo: bool = False,
     ) -> dict:
         """Run a Daily Standup: collect team activity (Jira/AzDO/GitHub/git/docs), score sprint
         confidence, and summarize per member. Returns the report for you to present; deliver=true
@@ -478,7 +481,9 @@ def register(app) -> None:
         context come from the project's latest plan; blank inherits the session's own link.
         context_deps toggles the run's cross-mode context sources (retro, standup, plan,
         performance, analysis): null inherits the saved config then the project default,
-        an empty list is an incognito run (no cross-mode context; the session still persists)."""
+        an empty list is an incognito run (no cross-mode context; the session still persists).
+        solo=true runs it for one person (the Solo world): self-only roster, no tracker roster
+        discovery, first-person summary; team_members is ignored."""
         return await run_engine(
             ctx,
             _standup_run,
@@ -498,6 +503,7 @@ def register(app) -> None:
             review_transcripts,
             project_id,
             context_deps,
+            solo,
         )
 
     @app.tool()

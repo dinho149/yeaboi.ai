@@ -534,3 +534,15 @@ class TestCeremonyJobs:
 
     def test_installed_ceremonies_is_empty_when_there_are_none(self, macos):
         assert scheduler.installed_ceremonies("s1") == []
+
+
+class TestSoloJob:
+    def test_solo_appends_the_flag_to_the_standup_job_only(self, monkeypatch):
+        monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/usr/local/bin/yeaboi")
+        assert scheduler._executable_args("sess-1", solo=True)[-1] == "--solo"
+        assert "--solo" not in scheduler._executable_args("sess-1")
+        assert "--solo" not in scheduler._executable_args("sess-1", scheduler.JOB_TRANSCRIPT_REMINDER, solo=True)
+
+    def test_the_cron_line_carries_it(self, monkeypatch):
+        monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/usr/local/bin/yeaboi")
+        assert scheduler._cron_command("sess-1", scheduler.JOB_STANDUP, solo=True).endswith("--solo")

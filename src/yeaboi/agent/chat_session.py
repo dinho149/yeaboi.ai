@@ -455,14 +455,15 @@ def clear_review_state(state: dict) -> None:
         state.pop(key, None)
 
 
-def start_state(description: str, *, intake_mode: str = "") -> dict:
+def start_state(description: str, *, intake_mode: str = "", solo: bool = False) -> dict:
     """The state a fresh conversation starts from.
 
     The greeting and the size pick belong to ``_chat_preamble``, never to
     ``messages`` — project_intake reads ``messages[0]`` as the description, so
     anything else in front of it would be planned instead of the project. An
     unstated size is classified from the description, exactly as the chat's
-    greeting does.
+    greeting does. ``solo`` seeds the Solo-world key so the intake plans for
+    one developer.
     """
     from yeaboi.agent.chat_intake import GREETING_TEXT, resolve_intake_mode
 
@@ -470,8 +471,8 @@ def start_state(description: str, *, intake_mode: str = "") -> dict:
     if not mode:
         mode = resolve_intake_mode(description)[0] or "smart"
     label = "Small" if mode == "small_project" else "Large"
-    logger.info("Chat session opened: mode=%s description_len=%d", mode, len(description))
-    return {
+    logger.info("Chat session opened: mode=%s solo=%s description_len=%d", mode, solo, len(description))
+    state = {
         "messages": [],
         "questionnaire": None,
         "_intake_mode": mode,
@@ -487,6 +488,9 @@ def start_state(description: str, *, intake_mode: str = "") -> dict:
             {"role": "ai", "text": f"Sounds like a {label} plan — switch any time with /small · /large."},
         ],
     }
+    if solo:
+        state["solo"] = True
+    return state
 
 
 # --------------------------------------------------------------- the session

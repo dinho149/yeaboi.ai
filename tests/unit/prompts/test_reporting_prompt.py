@@ -56,3 +56,20 @@ class TestDeliveryReportPrompt:
         # Signals only append to the context — everything before the block is identical.
         assert with_signals.startswith(without)
         assert "P-2 Harden pipeline (Closed)" in with_signals
+
+
+class TestSoloVariant:
+    def test_solo_is_first_person_and_never_says_the_team(self):
+        p = get_delivery_report_prompt(
+            delivered_items=[], project_name="Atlas", period_label="Last sprint", sprint_names=[], solo=True
+        )
+        assert "what I delivered on Atlas" in p
+        assert "FIRST PERSON" in p
+        assert "what the team delivered" not in p
+
+    def test_default_is_team_voiced(self):
+        p = get_delivery_report_prompt(
+            delivered_items=[], project_name="Atlas", period_label="Last sprint", sprint_names=[]
+        )
+        assert "what the team delivered on Atlas" in p
+        assert "FIRST PERSON" not in p

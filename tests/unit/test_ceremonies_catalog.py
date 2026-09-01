@@ -113,3 +113,12 @@ class TestEngineKwargs:
     def test_a_fixed_flag_cannot_be_overridden_by_a_declared_arg(self):
         kwargs = catalog.engine_kwargs(self._mode("standup"), (("deliver", "true"),), session_id="s1")
         assert kwargs["deliver"] is False
+
+
+class TestSoloParam:
+    def test_standup_and_report_declare_just_me(self):
+        for key in ("standup", "report"):
+            mode = catalog.lookup(key)
+            assert mode is not None
+            assert catalog.engine_kwargs(mode, (("solo", "true"),), session_id="s1")["solo"] is True
+            assert catalog.engine_kwargs(mode, (), session_id="s1")["solo"] is False

@@ -59,7 +59,7 @@ class TestMetaRoutes:
         assert not [t for t in payload["tips"] if "--" in t["text"] or "press " in t["text"]]
         # Pin the shape: a field added to FeatureTip lands on the wire for free,
         # so the contract doc only stays true if something notices.
-        assert set(payload["tips"][0]) == {"key", "text", "mode_key", "is_new", "is_beta", "surfaces"}
+        assert set(payload["tips"][0]) == {"key", "text", "mode_key", "is_new", "is_beta", "surfaces", "worlds"}
 
     def test_changelog_serves_entries(self, app):
         payload = json.loads(request(app, "GET", "/api/meta/changelog").body)

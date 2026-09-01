@@ -211,16 +211,18 @@ def _fallback_report(
     generated_at: str,
     supporting_signals: tuple = (),
     ops_signals: tuple = (),
+    solo: bool = False,
 ) -> DeliveryReport:
     """Deterministic delivery report when the LLM is unavailable — counts + evidence."""
     n = len(items)
+    who = "I" if solo else "The team"
     headline = (
         f"{n} item{'s' if n != 1 else ''} delivered for {project_name or 'the product'} — {period_label.lower()}."
         if n
         else f"No completed work found for {project_name or 'the product'} in this period."
     )
     summary = (
-        f"The team completed {n} tracked item{'s' if n != 1 else ''} during {period_label.lower()}. "
+        f"{who} completed {n} tracked item{'s' if n != 1 else ''} during {period_label.lower()}. "
         "A written business narrative could not be generated automatically — the delivered items are listed below."
         if n
         else "No completed tickets were found in the selected window."
@@ -294,12 +296,14 @@ def run_delivery_report(
     period_label_override: str = "",
     theme: str = "midnight",
     sources: dict | None = None,
+    solo: bool = False,
     on_progress=None,
     cancel_event=None,
 ) -> DeliveryReport:
     """Generate a business-friendly delivery report for ``period``.
 
-    Gathers the team's completed tickets over the window, computes headline metrics,
+    ``solo`` writes the narrative in the first person — a one-person report never
+    says "the team". Gathers the completed tickets over the window, computes headline metrics,
     then runs one LLM "design" call to write the executive narrative, group the work
     into outcome themes, and pick section emojis. Persists + auto-exports the report.
 
@@ -342,6 +346,8 @@ def run_delivery_report(
         period_label_override = f"{window_start} → {window_end or period_end}"
     period_label = period_label_override or activity_mod.PERIOD_LABELS.get(period, "Last month (~2 sprints)")
     logger.info("run_delivery_report: period=%s session=%s window=%s", period, session_id, use_window)
+    if solo:
+        logger.info("run_delivery_report: solo run — first-person narrative")
 
     _emit(on_progress, "Loading session state")
     state = _load_state(session_id, db_path)
@@ -453,6 +459,7 @@ def run_delivery_report(
             generated_at=period_end,
             supporting_signals=supporting_signals,
             ops_signals=ops_signals,
+            solo=solo,
         )
     else:
         from yeaboi.prompts.reporting import get_delivery_report_prompt
@@ -465,6 +472,7 @@ def run_delivery_report(
             period_label=period_label,
             sprint_names=list(sprint_names),
             supporting_signals=[asdict(s) for s in supporting_signals],
+            solo=solo,
         )
         parsed, llm_warnings = _invoke_llm(prompt)
         warnings = warnings + llm_warnings
@@ -482,6 +490,7 @@ def run_delivery_report(
                 generated_at=period_end,
                 supporting_signals=supporting_signals,
                 ops_signals=ops_signals,
+                solo=solo,
             )
         else:
             report = DeliveryReport(

@@ -12,7 +12,7 @@ class TestHeadlessFallback:
         monkeypatch.setattr(interactive.sys.stdout, "isatty", lambda: False)
         calls = {}
 
-        def fake_run(session_id, channels=None, deliver=True, db_path=None, today=None):
+        def fake_run(session_id, channels=None, deliver=True, solo=False, db_path=None, today=None):
             calls["ran"] = session_id
             return StandupReport(session_id=session_id)
 

@@ -416,6 +416,26 @@ class TestEngineTools:
         assert payload["data"]["session_id"] == "new-abcd1234-2026-07-20"
         assert payload["data"]["stories"]
 
+    def test_plan_generate_forwards_solo(self, seeded_session, provider_mode, monkeypatch):
+        from yeaboi.sessions import SessionStore
+
+        seen: dict = {}
+
+        def fake_pipeline(questionnaire, *, on_progress=None, **kwargs):
+            seen.update(kwargs)
+            from yeaboi.paths import get_db_path
+
+            with SessionStore(get_db_path()) as store:
+                state = store.load_state("new-abcd1234-2026-07-20")
+            state["_session_id"] = "new-abcd1234-2026-07-20"
+            return state
+
+        monkeypatch.setattr("yeaboi.agent.headless.run_planning_pipeline", fake_pipeline)
+        assert call_tool("plan_generate", {"description": "A todo app", "solo": True})["ok"] is True
+        assert seen["solo"] is True
+        call_tool("plan_generate", {"description": "A todo app"})
+        assert seen["solo"] is False
+
     def test_plan_generate_requires_description(self, tmp_db, provider_mode):
         payload = call_tool("plan_generate", {"description": "   "})
         assert payload["ok"] is False

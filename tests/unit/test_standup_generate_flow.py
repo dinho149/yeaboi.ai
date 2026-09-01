@@ -40,7 +40,7 @@ def test_generate_confirms_team_before_update_and_engine(monkeypatch):
         calls.append("documentation")
         return True, "Documentation scope saved."
 
-    def _generate(session_id, on_progress=None):
+    def _generate(session_id, on_progress=None, *, solo=False):
         calls.append("engine")
         return "Generated."
 
@@ -217,7 +217,7 @@ class TestSavedSetupGate:
 
     def _wire(self, monkeypatch, calls, *, rows, choice, source="s1"):
         saved = None if rows is None else (source, rows)
-        monkeypatch.setattr(mode_select, "_standup_saved_setup", lambda _session: saved)
+        monkeypatch.setattr(mode_select, "_standup_saved_setup", lambda _session, **_kwargs: saved)
         monkeypatch.setattr(
             mode_select,
             "_run_standup_saved_setup_confirm",
@@ -242,7 +242,7 @@ class TestSavedSetupGate:
         monkeypatch.setattr(
             mode_select,
             "_standup_generate",
-            lambda session_id, on_progress=None: calls.append("engine") or "Generated.",
+            lambda session_id, on_progress=None, **_kwargs: calls.append("engine") or "Generated.",
         )
 
     def test_use_saved_skips_every_picker(self, monkeypatch):
