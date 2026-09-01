@@ -903,6 +903,29 @@ class TestStateGraphCompatibility:
         graph = StateGraph(ScrumState)
         assert graph is not None
 
+    def test_scope_keys_reach_a_node(self):
+        """project_id/context_deps must survive the graph, not just the input dict.
+
+        LangGraph drops keys the state schema does not declare, so an undeclared
+        scope key silently unscopes every cross-mode read inside the run.
+        """
+        from langgraph.graph import END
+
+        seen = {}
+
+        def probe(state):
+            seen.update(project_id=state.get("project_id"), context_deps=state.get("context_deps"))
+            return {}
+
+        graph = StateGraph(ScrumState)
+        graph.add_node("probe", probe)
+        graph.set_entry_point("probe")
+        graph.add_edge("probe", END)
+        out = graph.compile().invoke({"messages": [], "project_id": "p-1", "context_deps": '["retro"]'})
+
+        assert seen == {"project_id": "p-1", "context_deps": '["retro"]'}
+        assert (out["project_id"], out["context_deps"]) == ("p-1", '["retro"]')
+
 
 # ── _merge_dicts reducer ────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ contract change — update both sides and this file in the same PR.
 stdout, then nothing else ever:
 
 ```
-YEABOI_APP_READY {"pid":12345,"schema":30,"token":"…","url":"http://127.0.0.1:52341","version":"3.25.0"}
+YEABOI_APP_READY {"pid":12345,"schema":31,"token":"…","url":"http://127.0.0.1:52341","version":"3.25.0"}
 ```
 
 - JSON keys: `url`, `token`, `pid`, `schema` (sessions.py `CURRENT_SCHEMA_VERSION`),
@@ -33,7 +33,7 @@ The token never appears in URLs. Missing/wrong token → `401 {"error":"unauthor
 |---|---|---|
 | GET | `/api/health` | unauthenticated; `{ok, pid, version, schema}` |
 | GET | `/api/meta/version` | `{version, schema_version, python, platform}` |
-| GET | `/api/meta/capabilities` | the TUI card inventory verbatim: `{categories, modes, agents, intake}` |
+| GET | `/api/meta/capabilities` | the TUI card inventory verbatim: `{categories, solo, modes, agents, intake}` — `modes` is the Team menu, `solo` the Solo menu |
 | GET | `/api/meta/tips` | `{tips: [{key, text, mode_key, is_new, is_beta, surfaces}]}` |
 | GET | `/api/meta/changelog` | `{entries: [{version, date, headline, summary, highlights[{text, areas, surfaces}]}], areas: [{name, color}]}` |
 | GET | `/api/meta/privacy` | `{headline, statement: [str…], groups: [{key, title}], switches: [{key, env, on_value}], egress: [{key, group, what, where, when, default, off_switch}]}` — the privacy statement and egress-disclosure table, serialized verbatim from `yeaboi.privacy` (the copy owner every surface renders). Carries no capability and is never gated behind one: disclosure must always answer |
@@ -196,7 +196,7 @@ nothing to confirm.
 *archives* rather than purges: a conversation is a record of what the user was
 told. The terminal's saved-conversations hub does the permanent delete.
 
-`route` on `send` is where the user is (`/agents/usage`, `/humans/retro`) and
+`route` on `send` is where the user is (`/agents/usage`, `/team/retro`) and
 colours the answer toward that screen. Omit it rather than guessing — Niko says
 it does not know which screen rather than inventing one. `user_name` is what to
 call them; the shell reads it from its own identity file.
@@ -246,9 +246,9 @@ The two run-and-read modes. Their read-only pieces are MCP tools already
 | GET | `/api/standup/schedule` | query `session_id` → the saved schedule plus the installed reminder offset |
 | POST | `/api/standup/schedule` | body `{session_id, enabled, time, weekdays, lead_minutes, delivery_channels, remind_after}` → `{message, schedule}`; saves the config **and** installs or removes the OS jobs |
 | GET | `/api/analysis/options` | what a setup wizard may offer on this machine |
-| POST | `/api/analysis/steps` | a partial selection → `{steps, grid, run}`: which steps still apply, the component rows they may offer, and the payload the answers would run |
+| POST | `/api/analysis/steps` | a partial selection → `{steps, grid, run}`: which steps still apply, the component rows they may offer, and the payload the answers would run. `solo: true` in the answers marks a Solo-world wizard: the `members` step never applies and stale member picks coerce out of `run` |
 | GET | `/api/analysis/profiles` | the saved team profiles |
-| GET | `/api/analysis/result/{team_id}` | one stored profile plus the cards it earned; 404 when unknown |
+| GET | `/api/analysis/result/{team_id}` | one stored profile plus the cards it earned; 404 when unknown. `?solo=1` drops the Team Members card from `cards` |
 | POST | `/api/analysis/run` | the setup wizard's payload → a chunked NDJSON run |
 
 The **standup dashboard** is
@@ -421,7 +421,16 @@ that the window never runs past today, are one answer on every surface.
 
 A **run** streams `op`, `progress`, then `done: {report, delivered}`; cancelling
 the op raises at the next stage boundary, before anything is persisted, and the
-stream ends `cancelled`.
+stream ends `cancelled`. The run body also takes an optional `project_id`
+(a `proj-<8hex>` projects-table row id): a scoped run frames itself with
+that project's latest sprint plan; blank inherits the session's own link. It
+also takes an optional `context_deps` (a list drawn from retro, standup, plan,
+performance, analysis): the run's context-source toggles — omitted/null
+inherits the project default, `[]` is an incognito run (no cross-mode
+context). The standup run needs neither field — its session is the scope (an
+unlinked session runs team-wide, exactly as before projects existed), and its
+toggles live in the session's saved standup config (`standup_config_set`'s
+`context_deps`).
 
 `/api/reporting/fit` answers `{extra_slides, style}`. `extra_slides: 0` means
 there is nothing to ask — the style that comes back is the one to export with.

@@ -15,6 +15,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from yeaboi.projects.scope import ProjectScope
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +76,16 @@ def _live_progress(jira_project: str, azdo_project: str) -> dict:
     return {}
 
 
-def gather(state: dict, *, jira_project: str = "", azdo_project: str = "") -> SprintContext:
-    """Assemble a SprintContext from saved plan state + live tracker progress."""
+def gather(
+    state: dict, *, jira_project: str = "", azdo_project: str = "", scope: ProjectScope | None = None
+) -> SprintContext:
+    """Assemble a SprintContext from saved plan state + live tracker progress.
+
+    ``scope`` is accepted for signature uniformity; the caller already chose
+    which plan ``state`` to pass (a scoped standup substitutes the project's
+    latest planning state), so nothing here reads it yet.
+    """
+    del scope  # the state argument carries the scoping decision
     state = state or {}
     length = state.get("sprint_length_weeks") or 2
     try:

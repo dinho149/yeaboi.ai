@@ -162,9 +162,9 @@ class TestTheTurn:
         assert result == {"type": "tool_result", "tool_name": "ship_status", "ok": False, "error": "no runs yet"}
 
     def test_navigate_reaches_the_wire(self, app, scripted):
-        scripted([engine.Navigate("/humans/retro"), engine.Assistant("There.")])
+        scripted([engine.Navigate("/team/retro"), engine.Assistant("There.")])
         lines = turn(app, open_conversation(app))
-        assert {"type": "navigate", "route": "/humans/retro"} in lines
+        assert {"type": "navigate", "route": "/team/retro"} in lines
 
     def test_the_engines_own_done_is_not_a_second_terminator(self, app, scripted):
         scripted([engine.Assistant("ok"), engine.Done("c1")])

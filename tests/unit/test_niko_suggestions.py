@@ -82,17 +82,19 @@ class TestScreenFor:
         assert suggestions.screen_for("/agents/usage") == {"capability": "agent-usage", "title": "Agent Usage"}
 
     def test_a_deeper_path_inherits_its_prefix(self):
-        assert suggestions.screen_for("/humans/retro/board/anything")["capability"] == "retro-board"
+        assert suggestions.screen_for("/team/retro/board/anything")["capability"] == "retro-board"
 
     def test_the_longest_prefix_wins(self):
-        assert suggestions.screen_for("/humans/planning/chat")["capability"] == "planning"
+        # /ceremonies and /ceremonies/slack both match; the deeper row's
+        # capability must win.
+        assert suggestions.screen_for("/ceremonies/slack/anything")["capability"] == "slack-inbound"
 
     def test_an_unknown_route_resolves_to_nothing_rather_than_guessing(self):
         assert suggestions.screen_for("/teleport") == {"capability": "", "title": ""}
 
     def test_a_partial_segment_is_not_a_prefix_match(self):
-        # "/humans/retrospective" must not inherit "/humans/retro".
-        assert suggestions.screen_for("/humans/retrospective")["capability"] != "retro-board"
+        # "/team/retrospective" must not inherit "/team/retro".
+        assert suggestions.screen_for("/team/retrospective")["capability"] != "retro-board"
 
 
 class TestForRoute:
@@ -100,7 +102,7 @@ class TestForRoute:
         ("route", "expected"),
         [
             ("/agents/usage", "agents cost"),
-            ("/humans/ship/run", "waiting on me"),
+            ("/team/ship/run", "waiting on me"),
             ("/ceremonies", "scheduled"),
             ("/provenance", "decide"),
         ],
@@ -108,9 +110,9 @@ class TestForRoute:
     def test_a_screen_gets_its_own_chips(self, route, expected):
         assert any(expected in chip["label"].lower() for chip in suggestions.for_route(route))
 
-    def test_a_humans_screen_with_no_chips_falls_back_to_the_section(self):
-        chips = suggestions.for_route("/humans/planning/sessions/unmapped")
-        assert chips and chips == suggestions.for_route("/humans/planning/sessions/unmapped")
+    def test_a_team_screen_with_no_chips_falls_back_to_the_section(self):
+        chips = suggestions.for_route("/team/planning/sessions/unmapped")
+        assert chips and chips == suggestions.for_route("/team/planning/sessions/unmapped")
 
     def test_an_unknown_route_gets_the_default_rather_than_nothing(self):
         assert suggestions.for_route("/teleport") == suggestions.DEFAULT[: suggestions.MAX_CHIPS]

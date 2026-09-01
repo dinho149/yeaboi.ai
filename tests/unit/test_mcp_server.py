@@ -24,6 +24,11 @@ from yeaboi.mcp.server import create_app  # noqa: E402
 EXPECTED_TOOLS = {
     "artifact_edit_apply",
     "niko_ask",
+    "project_create",
+    "project_list",
+    "project_get",
+    "project_link_session",
+    "project_set_defaults",
     "ceremonies_list",
     "ceremonies_history",
     "artifact_edit_history",
@@ -1248,6 +1253,22 @@ class TestStandupConfigTools:
         payload = call_tool("standup_config_set", {"habit_ai_match": "sometimes"})
         assert payload["ok"] is False
         assert "habit_ai_match" in payload["error"]["message"]
+
+    def test_config_set_context_deps_grammar(self, seeded_session):
+        # '' = unchanged; csv narrows; 'none' = incognito; 'inherit' resets.
+        call_tool("standup_config_set", {"time": "09:15"})
+        assert call_tool("standup_config_get", {})["data"]["config"]["context_deps"] is None
+        config = call_tool("standup_config_set", {"context_deps": "retro,plan"})["data"]["config"]
+        assert config["context_deps"] == ["retro", "plan"]
+        # A merge that omits the field keeps the saved toggles.
+        assert call_tool("standup_config_set", {"enabled": True})["data"]["config"]["context_deps"] == ["retro", "plan"]
+        assert call_tool("standup_config_set", {"context_deps": "none"})["data"]["config"]["context_deps"] == []
+        assert call_tool("standup_config_set", {"context_deps": "inherit"})["data"]["config"]["context_deps"] is None
+
+    def test_config_set_rejects_a_context_deps_typo(self, seeded_session):
+        payload = call_tool("standup_config_set", {"context_deps": "retro,bogus"})
+        assert payload["ok"] is False
+        assert "unknown context source" in payload["error"]["message"]
 
 
 class TestServerEntry:

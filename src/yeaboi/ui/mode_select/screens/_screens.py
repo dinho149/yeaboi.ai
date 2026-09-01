@@ -123,9 +123,78 @@ _MODE_CARDS: list[dict[str, Any]] = [
 ]
 
 # ---------------------------------------------------------------------------
-# Agents mode definitions — the second category on the landing split. Kept as a
+# Solo mode definitions — the first category on the landing split. Keys are
+# deliberately SHARED with _MODE_CARDS (same dispatch chains, saved-session
+# hubs, capabilities and colours); only the copy differs — solo-voiced, "your
+# history" rather than "your team's". Kept as copies, not references: the
+# welcome tests pin exact renders against each list, and a dict shared across
+# menus invites silent drift. No retro/poker (they host live multi-participant
+# boards) and no performance (it reviews *someone else* by construction).
+# ---------------------------------------------------------------------------
+
+_SOLO_CARDS: list[dict[str, Any]] = [
+    {
+        "key": "team-analysis",
+        "title": "Analysis",
+        "description": "Analyse your board history to learn your velocity, estimation patterns, and delivery signals.",
+        "available": True,
+        "color": "rgb(100,180,100)",
+    },
+    {
+        "key": "project-planning",
+        "title": "Planning",
+        "description": "Decompose your project into epics, user stories, tasks, and a sprint plan.",
+        "available": True,
+        "color": "rgb(110,140,220)",
+    },
+    {
+        "key": "daily-standup",
+        "title": "Standup",
+        "description": "Run your daily standup: what you did, sprint-day confidence, and a summary you can send.",
+        "available": True,
+        "color": "rgb(200,100,180)",
+    },
+    {
+        "key": "reporting",
+        "title": "Reporting",
+        "description": "Summarise your delivered work for the business — last sprint or month, as slides, HTML or MD.",
+        "available": True,
+        "color": "rgb(140,120,230)",
+    },
+    {
+        "key": "ship",
+        "title": "Ship",
+        "description": "Hand any epic, story or task to a coding agent: isolated branch, your approval, then a PR.",
+        # Beta for the same reason as the Team card — see _MODE_CARDS.
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(235,140,60)",
+    },
+    {
+        "key": "usage",
+        "title": "Usage",
+        "description": "View API token usage, session history, and cost estimates.",
+        "available": True,
+        "color": "rgb(220,160,60)",
+        # A local dashboard over the usage DB — no LLM call, so no credential gate.
+        "llm": False,
+    },
+    {
+        "key": "settings",
+        "title": "Settings",
+        "description": "Manage API keys, LLM provider, and board configuration.",
+        "available": True,
+        "color": "rgb(160,160,180)",
+        # Makes no LLM call, and is where a broken key gets fixed — gating it
+        # would lock the user out of the only screen that helps them.
+        "llm": False,
+    },
+]
+
+# ---------------------------------------------------------------------------
+# Agents mode definitions — the third category on the landing split. Kept as a
 # SEPARATE list, never merged into _MODE_CARDS: the welcome tests pin exact
-# renders and hardcoded indices against _MODE_CARDS, and the two menus are
+# renders and hardcoded indices against _MODE_CARDS, and the menus are
 # separate screens sharing one builder (_build_mode_screen(cards=...)).
 # ---------------------------------------------------------------------------
 
@@ -655,6 +724,7 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False, show_compa
         ("a", "all tips", False),
         ("s", "schedule", True),
         ("n", "niko", True),
+        ("P", "projects", True),
         ("p", "privacy", True),
         ("k", "system check", True),
     ):
@@ -697,7 +767,7 @@ def _build_mode_screen(
     sweep_skip: index of one title to leave fully shown while the sweep reveals the
     rest — used by the return transition (the mode you came from is already home).
     cards / mascot: the card list this menu shows (default ``_MODE_CARDS``) and the
-    companion sprite beside it ("duck" for Humans, "robo" for Agents). Only the
+    companion sprite beside it ("duck" for Solo/Team, "robo" for Agents). Only the
     *source* of the rows changes — every layout constant stays identical, and
     ``mode_at_row``/``selected_title_offset`` must be passed the same ``cards``.
     """

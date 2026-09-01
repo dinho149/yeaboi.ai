@@ -51,6 +51,7 @@ def visible_card_order(
     *,
     has_code_health: bool = False,
     analysis_features: list[str] | tuple[str, ...] | None = None,
+    solo: bool = False,
 ) -> tuple[str, ...]:
     """Which cards to show, composing delivery cards with the global ones.
 
@@ -58,11 +59,12 @@ def visible_card_order(
     delivery ``profile`` for the active tracker; ``ai-adoption`` iff the global
     Code scan ran; ``documentation`` iff the global Docs scan ran. The overview
     and the detail navigation share this, so a selection index and the rendered
-    card list can never drift apart.
+    card list can never drift apart. ``solo`` drops the Team Members card —
+    the one inherently multi-person card — from a run over your own history.
     """
     order: list[str] = []
     if profile is not None:
-        order.extend(k for k in DELIVERY_CARD_ORDER if k != "insights")
+        order.extend(k for k in DELIVERY_CARD_ORDER if k != "insights" and not (solo and k == "team"))
     features = set(analysis_features or ())
     explicit = analysis_features is not None
     # code-health first: it's deterministic, so it sits with the regular cards,
@@ -106,10 +108,11 @@ def component_presence(
     }
 
 
-def cards(profile, **kw) -> list[dict]:
+def cards(profile, *, solo: bool = False, **kw) -> list[dict]:
     """The visible cards as ``[{key, title}]`` — the desktop's card list.
 
-    Takes the same keywords as :func:`component_presence`.
+    Takes the same keywords as :func:`component_presence`, plus ``solo``
+    (forwarded to :func:`visible_card_order`).
     """
     features = kw.get("analysis_features")
     present = component_presence(profile, **kw)
@@ -119,5 +122,6 @@ def cards(profile, **kw) -> list[dict]:
         present["docs"],
         has_code_health=present["code_health"],
         analysis_features=features,
+        solo=solo,
     )
     return [{"key": key, "title": CARD_TITLES[key]} for key in order]

@@ -160,3 +160,131 @@ class TestArchitectureRoundTrip:
         task = _dict_to_task({"id": "T-1", "story_id": "US-1", "title": "t", "description": "d"})
         assert task.label is TaskLabel.CODE
         assert task.test_plan == ""
+
+
+class TestProjectsMigration:
+    """Migration v31 — the projects table and sessions_meta.project_id."""
+
+    def _v30_db(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(
+            """CREATE TABLE sessions_meta (
+                   session_id          TEXT PRIMARY KEY,
+                   project_name        TEXT NOT NULL DEFAULT '',
+                   created_at          TEXT NOT NULL,
+                   last_modified       TEXT NOT NULL,
+                   last_node_completed TEXT NOT NULL DEFAULT '',
+                   session_state       TEXT NOT NULL DEFAULT '',
+                   session_mode        TEXT NOT NULL DEFAULT 'planning'
+               );
+               CREATE TABLE schema_info (schema_version INT NOT NULL);"""
+        )
+        conn.execute("INSERT INTO schema_info VALUES (30)")
+        conn.execute("INSERT INTO sessions_meta (session_id, created_at, last_modified) VALUES ('old-1', 't', 't')")
+        conn.commit()
+        conn.close()
+        return db
+
+    def _columns(self, db, table):
+        conn = sqlite3.connect(str(db))
+        try:
+            return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        finally:
+            conn.close()
+
+    def test_v30_db_gains_table_column_and_index(self, tmp_path):
+        db = self._v30_db(tmp_path)
+        with SessionStore(db) as store:
+            assert store.schema_mismatch is False
+        assert "project_id" in self._columns(db, "sessions_meta")
+        conn = sqlite3.connect(str(db))
+        try:
+            names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master")}
+            assert "projects" in names
+            assert "idx_sessions_meta_project" in names
+            # Pre-existing rows read as unscoped, not NULL.
+            (pid,) = conn.execute("SELECT project_id FROM sessions_meta WHERE session_id = 'old-1'").fetchone()
+            assert pid == ""
+        finally:
+            conn.close()
+
+    def test_reopen_is_idempotent(self, tmp_path):
+        db = self._v30_db(tmp_path)
+        SessionStore(db).close()
+        with SessionStore(db) as store:
+            assert store.schema_mismatch is False
+
+
+class TestSessionProjectLink:
+    def test_create_session_defaults_to_unscoped(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test")
+            assert store.session_project_id("s1") == ""
+
+    def test_create_session_persists_project_id(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test", project_id="proj-11112222")
+            assert store.session_project_id("s1") == "proj-11112222"
+
+    def test_set_session_project_links_and_unlinks(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test")
+            store.set_session_project("s1", "proj-11112222")
+            assert store.session_project_id("s1") == "proj-11112222"
+            store.set_session_project("s1", "")
+            assert store.session_project_id("s1") == ""
+
+    def test_unknown_session_reads_as_unscoped(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            assert store.session_project_id("nope") == ""
+
+    def test_session_ids_for_project_filters_and_orders(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("plan-a", project_id="proj-11112222")
+            store.create_session("analysis-a", mode="analysis", project_id="proj-11112222")
+            store.create_session("plan-other", project_id="proj-33334444")
+            store.create_session("plan-unscoped")
+            # Distinct timestamps so the newest-first ordering is decidable.
+            for i, sid in enumerate(("plan-a", "analysis-a")):
+                store._conn.execute(
+                    "UPDATE sessions_meta SET last_modified = ? WHERE session_id = ?",
+                    (f"2026-08-0{i + 1}T00:00:00+00:00", sid),
+                )
+            assert store.session_ids_for_project("proj-11112222") == ["analysis-a", "plan-a"]
+            assert store.session_ids_for_project("proj-11112222", mode="planning") == ["plan-a"]
+            assert store.session_ids_for_project("proj-99990000") == []
+
+
+class TestPruneSparesProjects:
+    def test_only_unscoped_stale_sessions_are_pruned(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("stale-unscoped")
+            store.create_session("stale-linked", project_id="proj-11112222")
+            store.create_session("fresh-unscoped")
+            for sid in ("stale-unscoped", "stale-linked"):
+                store._conn.execute(
+                    "UPDATE sessions_meta SET last_modified = ? WHERE session_id = ?",
+                    ("2020-01-01T00:00:00+00:00", sid),
+                )
+            assert store.prune_old_sessions(30) == 1
+            remaining = {row["session_id"] for row in store.list_sessions()}
+            assert remaining == {"stale-linked", "fresh-unscoped"}
+
+
+class TestProjectIdStateRoundTrip:
+    def test_project_id_survives_save_and_load(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test", project_id="proj-11112222")
+            store.save_state("s1", {"messages": [], "project_id": "proj-11112222"})
+            loaded = store.load_state("s1")
+        assert loaded["project_id"] == "proj-11112222"
+
+
+class TestContextDepsStateRoundTrip:
+    def test_context_deps_survives_save_and_load(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            store.create_session("s1", "Test")
+            store.save_state("s1", {"messages": [], "context_deps": '["retro", "plan"]'})
+            loaded = store.load_state("s1")
+        assert loaded["context_deps"] == '["retro", "plan"]'

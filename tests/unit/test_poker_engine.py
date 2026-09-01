@@ -216,8 +216,9 @@ class TestCrossModeContext:
         monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no API key"))
         called = {}
 
-        def _gather(ticket, *, project_name=""):
+        def _gather(ticket, *, project_name="", scope=None):
             called["project_name"] = project_name
+            called["scope"] = scope
             from yeaboi.poker.context import PokerEstimationContext
 
             return PokerEstimationContext()
@@ -225,6 +226,24 @@ class TestCrossModeContext:
         monkeypatch.setattr("yeaboi.poker.context.gather_poker_context", _gather)
         engine.get_poker_perspective(_ticket(), {"Alex": "5"}, project_name="Login")
         assert called["project_name"] == "Login"
+        assert called["scope"] is None
+
+    def test_scope_is_forwarded_to_the_gather(self, monkeypatch):
+        from yeaboi.projects.scope import ProjectScope
+
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no API key"))
+        called = {}
+
+        def _gather(ticket, *, project_name="", scope=None):
+            called["scope"] = scope
+            from yeaboi.poker.context import PokerEstimationContext
+
+            return PokerEstimationContext()
+
+        monkeypatch.setattr("yeaboi.poker.context.gather_poker_context", _gather)
+        scope = ProjectScope("", None, frozenset())
+        engine.get_poker_perspective(_ticket(), {"Alex": "5"}, scope=scope)
+        assert called["scope"] is scope
 
     def test_fallback_note_includes_history_lines(self):
         note = engine._build_fallback_note({"Alex": "5", "Sam": "5"}, _history_context())

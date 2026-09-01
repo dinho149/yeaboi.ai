@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS standup_config (
     habit_detection   TEXT NOT NULL DEFAULT 'on',
     habit_rules       TEXT NOT NULL DEFAULT '',
     habit_ai_match    TEXT NOT NULL DEFAULT 'on',
+    context_deps      TEXT NOT NULL DEFAULT '',
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
 );
@@ -528,6 +529,10 @@ class StandupStore:
                ADD COLUMN habit_rules TEXT NOT NULL DEFAULT ''""",
             """ALTER TABLE standup_config
                ADD COLUMN habit_ai_match TEXT NOT NULL DEFAULT 'on'""",
+            # Context-source toggles (projects/scope.py): a JSON list of dep
+            # tokens; '' inherits the project default, '[]' is incognito.
+            """ALTER TABLE standup_config
+               ADD COLUMN context_deps TEXT NOT NULL DEFAULT ''""",
             # Edit-provenance columns (sessions.py v21/v26): a v21 version-number
             # collision could leave a DB stamped past 21 without them, and
             # several entry points (--standup-run, the MCP tools) open this
@@ -598,6 +603,7 @@ class StandupStore:
         habit_detection: str = "on",
         habit_rules: str = "",
         habit_ai_match: str = "on",
+        context_deps: list[str] | None = None,
     ) -> None:
         """Insert or update the standup schedule/delivery config for a session.
 
@@ -618,7 +624,9 @@ class StandupStore:
         (standup/habits.py), and ``habit_ai_match`` switches off the
         language-model pass that excuses a change belonging to a ticket it never
         names (standup/adjudicate.py) — a separate switch because it is the only
-        part of practice detection that spends money.
+        part of practice detection that spends money. ``context_deps`` is the
+        session's context-source toggles (``None`` inherits the project
+        default, ``[]`` is incognito — see projects/scope.py).
 
         **This is a full upsert with defaulted keywords**, so a caller that omits
         a field resets it. Every call site must pass through the values it read.
@@ -651,8 +659,8 @@ class StandupStore:
                     documentation_sources, documentation_scope_configured,
                     automation_markers, automation_handling,
                     transcript_dir, transcript_review_enabled,
-                    habit_detection, habit_rules, habit_ai_match, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    habit_detection, habit_rules, habit_ai_match, context_deps, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
                    enabled = excluded.enabled,
                    time = excluded.time,
@@ -681,6 +689,7 @@ class StandupStore:
                    habit_detection = excluded.habit_detection,
                    habit_rules = excluded.habit_rules,
                    habit_ai_match = excluded.habit_ai_match,
+                   context_deps = excluded.context_deps,
                    updated_at = excluded.updated_at""",
             (
                 session_id,
@@ -711,6 +720,7 @@ class StandupStore:
                 habit_detection or "on",
                 habit_rules,
                 habit_ai_match or "on",
+                "" if context_deps is None else json.dumps(context_deps),
                 now,
                 now,
             ),
@@ -752,7 +762,8 @@ class StandupStore:
             "code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured, "
             "documentation_sources, documentation_scope_configured, automation_markers, automation_handling, "
             "transcript_dir, transcript_review_enabled, "
-            "habit_detection, habit_rules, habit_ai_match, github_owners, github_excluded_repositories "
+            "habit_detection, habit_rules, habit_ai_match, github_owners, github_excluded_repositories, "
+            "context_deps "
             "FROM standup_config WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -827,6 +838,9 @@ class StandupStore:
             "habit_detection": row[23] or "on",
             "habit_rules": row[24] or "",
             "habit_ai_match": row[25] or "on",
+            # None = inherit (project default / all-on); a list is the saved
+            # toggle set, [] being incognito.
+            "context_deps": _json_list(row[28]) if row[28] else None,
         }
 
     # ── Self-reported updates ─────────────────────────────────────────────
@@ -1177,12 +1191,26 @@ class StandupStore:
     #    Planning / Analysis with the team's recent standups. standup_history has
     #    no project_name column, so these are recency-based (team-wide).
 
-    def get_recent_reports(self, limit: int = 10) -> list[StandupReport]:
-        """Return recent StandupReports across ALL sessions, newest first."""
-        rows = self._conn.execute(
-            "SELECT report_json FROM standup_history WHERE status = 'success' ORDER BY run_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    def get_recent_reports(self, limit: int = 10, session_ids: tuple[str, ...] | None = None) -> list[StandupReport]:
+        """Return recent StandupReports across ALL sessions, newest first.
+
+        ``session_ids`` is the hard filter a ProjectScope resolves to; an
+        empty tuple means no rows, not all rows.
+        """
+        if session_ids is not None:
+            if not session_ids:
+                return []
+            slots = ", ".join("?" for _ in session_ids)
+            rows = self._conn.execute(
+                f"SELECT report_json FROM standup_history WHERE session_id IN ({slots}) "  # noqa: S608 — placeholders, not values
+                "AND status = 'success' ORDER BY run_at DESC LIMIT ?",
+                (*session_ids, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT report_json FROM standup_history WHERE status = 'success' ORDER BY run_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         reports: list[StandupReport] = []
         for row in rows:
             if not row[0]:
@@ -1448,13 +1476,30 @@ class StandupStore:
                 out.append(entry)
         return out
 
-    def get_all_history(self, limit: int = 100) -> list[dict]:
-        """Return recent standup run metadata across ALL sessions (for cadence + the hub)."""
-        rows = self._conn.execute(
-            "SELECT id, session_id, run_at, standup_date, sprint_day, confidence_pct, status "
-            "FROM standup_history ORDER BY run_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    def get_all_history(self, limit: int = 100, session_ids: tuple[str, ...] | None = None) -> list[dict]:
+        """Return recent standup run metadata across ALL sessions (for cadence + the hub).
+
+        ``session_ids`` is the hard filter a ProjectScope resolves to; an empty
+        tuple means no rows, not all rows. Filtered in SQL so ``limit`` counts
+        the project's own runs — filtering after the limit would hide older ones
+        behind a window full of other projects'.
+        """
+        if session_ids is not None:
+            if not session_ids:
+                return []
+            slots = ", ".join("?" for _ in session_ids)
+            rows = self._conn.execute(
+                f"SELECT id, session_id, run_at, standup_date, sprint_day, confidence_pct, status "  # noqa: S608 — placeholders, not values
+                f"FROM standup_history WHERE session_id IN ({slots}) "
+                "ORDER BY run_at DESC LIMIT ?",
+                (*session_ids, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT id, session_id, run_at, standup_date, sprint_day, confidence_pct, status "
+                "FROM standup_history ORDER BY run_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [
             {
                 "id": r[0],

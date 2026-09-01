@@ -565,8 +565,10 @@ class TestAiEndpoint:
             "evidence": ["5-pt stories avg 4.2 days"],
             "from_llm": True,
         }
-        # The worker scopes the cross-mode history gather to this session's project.
+        # The worker scopes the cross-mode history gather to this session's
+        # project and forwards the board's ProjectScope (context toggles).
         assert seen["project_name"] == b.project_name
+        assert "scope" in seen and seen["scope"] is b.scope
 
     def test_double_click_guard(self, running_server, monkeypatch):
         srv, b = running_server

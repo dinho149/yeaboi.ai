@@ -35,6 +35,7 @@ from yeaboi.ui.shared._components import (
     build_scrollbar,
     calc_viewport,
     ceremonies_title,
+    render_to_lines,
 )
 from yeaboi.ui.shared._scroll import publish_geometry
 
@@ -111,22 +112,6 @@ def _spend_cell(ceremony: Ceremony, spent: float, theme) -> Text:
     return _cell(f"${spent:.2f} / ${ceremony.monthly_cap_usd:.0f}", style)
 
 
-def _render_to_lines(renderable, render_w: int, left_pad: str) -> list:
-    """Flatten a renderable to one ``Text`` per rendered row.
-
-    A multi-row table breaks the "one body entry == one rendered row" assumption
-    the viewport math depends on, and an unflattened one renders at full height
-    regardless of the window — which pushes the action buttons off the bottom of
-    a fixed-height Panel. Same helper, same reason, as the usage page's grid.
-    """
-    from rich.console import Console as _Console
-
-    console = _Console(width=render_w, height=400)
-    with console.capture() as capture:
-        console.print(renderable)
-    return [Text.from_ansi(left_pad + line) for line in capture.get().splitlines()]
-
-
 def _build_rows(
     ceremonies: list[Ceremony],
     last_runs: dict[str, CeremonyRun | None],
@@ -169,7 +154,7 @@ def _build_rows(
             _spend_cell(ceremony, spend.get(ceremony.name, 0.0), theme),
         )
     indent = "  "
-    return [Text(""), *_render_to_lines(table, max(24, width - 4 - len(indent) - 2), indent)]
+    return [Text(""), *render_to_lines(table, max(24, width - 4 - len(indent) - 2), indent)]
 
 
 def _build_ceremonies_screen(

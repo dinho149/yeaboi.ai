@@ -282,6 +282,8 @@ def run_delivery_report(
     session_id: str = "",
     jira_project: str = "",
     azdo_project: str = "",
+    project_id: str = "",
+    context_deps: list[str] | None = None,
     db_path=None,
     today: date | None = None,
     window_start: str = "",
@@ -303,6 +305,13 @@ def run_delivery_report(
         period: one of activity's PERIOD_* constants (last_week / last_sprint /
             last_month / quarter / window).
         session_id: session to pull sprint length / project name from (best-effort).
+        project_id: project to scope by ("" inherits the session's own link).
+            A scoped report frames itself with the project's latest sprint
+            plan instead of the session's own saved state.
+        context_deps: context-source toggles for this run (see
+            ``projects.scope.CONTEXT_DEP_TOKENS``). ``None`` inherits the
+            project default; an empty list is an incognito run. The ``plan``
+            dep gates the sprint-plan framing above.
         window_start / window_end: explicit ISO date range (quarter or custom-window
             report). When ``window_start`` is set the look-back window is derived
             from it instead of ``period``.
@@ -334,6 +343,16 @@ def run_delivery_report(
 
     _emit(on_progress, "Loading session state")
     state = _load_state(session_id, db_path)
+    # Planning→reporting edge: a scoped run frames itself with the project's
+    # latest sprint plan, mirroring run_standup.
+    from yeaboi.projects.scope import latest_planning_state, resolve_scope
+
+    scope = resolve_scope(project_id, session_id, context_deps=context_deps, db_path=db_path)
+    if scope is not None and scope.wants("plan"):
+        planned = latest_planning_state(scope, db_path=db_path)
+        if planned is not None:
+            logger.info("run_delivery_report: sprint framing from project %s plan %s", scope.project_id, planned[0])
+            state = planned[1]
     project_name = str(state.get("project_name", "") or "")
     _check_cancel(cancel_event)
 

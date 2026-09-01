@@ -72,6 +72,12 @@ class FeatureTip:
 # ``mode_key`` (when set) MUST be a _MODE_CARDS key so the jump-into-feature key
 # lands on the right card.
 _FEATURE_TIPS: tuple[FeatureTip, ...] = (
+    # No mode_key: projects open from the welcome screen's `P` keycap, not a card.
+    FeatureTip(
+        "projects",
+        "\U0001f5c2️ Tip: Press P to pick a project — scoped runs feed each other's context",
+        is_new=True,
+    ),
     FeatureTip(
         "team-analysis",
         "\U0001f50d Tip: Analysis reads your board for velocity, estimation & delivery signals",
@@ -162,20 +168,17 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     # Capabilities without a dedicated home-screen card (tui_mode Exempt) — they
     # still rotate to aid discovery, just with no jump target.
+    # TUI-only: on the desktop, saved plans surface through each project's plan
+    # panel (CAPABILITIES marks sessions exempt there), so no desktop tip.
     FeatureTip(
         "sessions",
         "\U0001f5c2️ Tip: every plan is saved — resume any past session with --resume",
         surfaces=("tui",),
     ),
-    FeatureTip(
-        "sessions",
-        "\U0001f5c2️ Tip: every plan is saved — reopen any past run from Saved plans",
-        surfaces=("desktop",),
-    ),
     # No desktop route (CAPABILITIES marks it exempt there), so no desktop tip.
     FeatureTip(
         "team-learning",
-        "\U0001f9e0 Tip: yeaboi learns your team's velocity & estimation patterns over time",
+        "\U0001f9e0 Tip: yeaboi learns your velocity & estimation patterns over time",
         surfaces=("tui",),
     ),
     FeatureTip(
@@ -220,7 +223,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_new=True,
     ),
     # The Agents family — cards live on the Agents menu (_AGENT_CARDS); the `g`
-    # jump switches category when the tip fires from the Humans menu.
+    # jump switches category when the tip fires from another menu.
     FeatureTip(
         "agent-usage",
         "\U0001f916 Tip: Agents → Usage shows what your AI agents cost — per model, project and day",

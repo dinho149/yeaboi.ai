@@ -269,3 +269,153 @@ class TestCarryForwardInGenerate:
         # Open item is handed to the LLM as STILL_OPEN context; the resolved one isn't.
         assert "in progress work" in captured["prompt"]
         assert "done thing" not in captured["prompt"]
+
+
+class TestCarriedActionItemsScope:
+    def test_scope_filters_to_the_projects_sessions(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("proj-sess", date="2026-07-01"))
+            # Newer, but belongs to another project's session — must not win.
+            store.record_run(
+                RetroReport(
+                    session_id="other-sess",
+                    date="2026-07-09",
+                    cards=(RetroCard(id="o1", grid="action_items", text="other project's item", author="AI"),),
+                )
+            )
+        scope = ProjectScope("proj-11112222", ("proj-sess",))
+        carried = engine.carried_action_items_for_session("cur", db_path=db, scope=scope)
+        assert [c.text for c in carried] == ["ship the docs"]
+
+    def test_empty_scope_carries_nothing(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("prev"))
+        scope = ProjectScope("proj-11112222", ())
+        assert engine.carried_action_items_for_session("cur", db_path=db, scope=scope) == ()
+
+
+class TestStandupBlockerCards:
+    def _seed_standup_report(self, db, session_id, blockers):
+        from dataclasses import asdict
+
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+        from yeaboi.standup.store import StandupStore
+
+        report = StandupReport(
+            date="2026-07-10",
+            session_id=session_id,
+            member_updates=tuple(MemberUpdate(name=n, blockers=b) for n, b in blockers),
+        )
+        with StandupStore(db) as store:
+            store._conn.execute(
+                "INSERT INTO standup_history "
+                "(session_id, run_at, standup_date, sprint_day, confidence_pct, report_json, status) "
+                "VALUES (?, ?, ?, 1, 80, ?, 'success')",
+                (session_id, "2026-07-10T09:00:00+00:00", "2026-07-10", json.dumps(asdict(report))),
+            )
+
+    def test_scoped_board_gets_badged_blocker_cards(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed_standup_report(db, "proj-sess", [("Alice", "waiting on review"), ("Bob", "")])
+        self._seed_standup_report(db, "other-sess", [("Eve", "other project blocker")])
+        scope = ProjectScope("proj-11112222", ("proj-sess",))
+        cards = engine.standup_blocker_cards(scope, db_path=db)
+        assert [c.text for c in cards] == ["[Standup] Alice: waiting on review"]
+        assert cards[0].status == "pending" and cards[0].origin == "carryover"
+
+    def test_dedupes_against_existing_carried_cards(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        self._seed_standup_report(db, "proj-sess", [("Alice", "waiting on review")])
+        existing = (RetroCard(id="c1", grid="action_items", text="[Standup] Alice: waiting on review"),)
+        scope = ProjectScope("proj-11112222", ("proj-sess",))
+        assert engine.standup_blocker_cards(scope, db_path=db, existing=existing) == ()
+
+    def test_unscoped_board_gets_none(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        self._seed_standup_report(db, "proj-sess", [("Alice", "waiting on review")])
+        assert engine.standup_blocker_cards(None, db_path=db) == ()
+
+
+class TestCarryRespectsTheRetroToggle:
+    def test_retro_dep_off_carries_nothing_even_unscoped(self, tmp_path):
+        # The scope object is the sentinel: an unscoped incognito run (no
+        # project, session_ids=None) must still suppress the carry-forward.
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("prev"))
+        scope = ProjectScope("", None, frozenset())
+        assert engine.carried_action_items_for_session("cur", project_name="Apollo", db_path=db, scope=scope) == ()
+
+    def test_retro_dep_on_still_carries(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("prev"))
+        scope = ProjectScope("", None, frozenset({"retro"}))
+        carried = engine.carried_action_items_for_session("cur", db_path=db, scope=scope)
+        assert [c.text for c in carried] == ["ship the docs"]
+
+
+class TestHistoryProviders:
+    def _seed(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        with RetroStore(db) as store:
+            store.record_run(_prior_report("proj-sess", project_name="Alpha", date="2026-07-01"))
+            store.record_run(_prior_report("other-sess", project_name="Beta", date="2026-07-09"))
+        return db
+
+    def test_unscoped_listing_matches_scope_none(self, tmp_path):
+        db = self._seed(tmp_path)
+        listing_bare, one_bare = engine.history_providers(db_path=db)
+        listing_none, one_none = engine.history_providers(db_path=db, scope=None)
+        assert listing_bare() == listing_none()
+        first_id = listing_bare()[0]["id"]
+        assert one_bare(first_id) == one_none(first_id)
+
+    def test_retro_dep_off_reports_no_history(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = self._seed(tmp_path)
+        listing, one = engine.history_providers(db_path=db, scope=ProjectScope("", None, frozenset()))
+        assert listing() == []
+        run_id = engine.history_providers(db_path=db)[0]()[0]["id"]
+        assert one(run_id) is None
+
+    def test_session_scope_filters_the_listing(self, tmp_path):
+        from yeaboi.projects.scope import ProjectScope
+
+        db = self._seed(tmp_path)
+        scope = ProjectScope("proj-11112222", ("proj-sess",))
+        listing, _one = engine.history_providers(db_path=db, scope=scope)
+        runs = listing()
+        assert [r["session_id"] for r in runs] == ["proj-sess"]
+
+    def test_a_foreign_id_cannot_be_fetched_through_a_scoped_reader(self, tmp_path):
+        # The listing hides foreign runs; the id endpoint must not be a bypass.
+        from yeaboi.projects.scope import ProjectScope
+
+        db = self._seed(tmp_path)
+        all_runs = engine.history_providers(db_path=db)[0]()
+        foreign = next(r["id"] for r in all_runs if r["session_id"] == "other-sess")
+        own = next(r["id"] for r in all_runs if r["session_id"] == "proj-sess")
+        _listing, one = engine.history_providers(db_path=db, scope=ProjectScope("p", ("proj-sess",)))
+        assert one(foreign) is None
+        assert one(own) is not None
+
+    def test_a_broken_store_is_a_board_with_no_past(self, tmp_path):
+        listing, one = engine.history_providers(db_path=tmp_path / "not-a-dir" / "nope.db")
+        assert listing() == []
+        assert one(1) is None

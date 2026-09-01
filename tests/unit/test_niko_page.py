@@ -47,11 +47,11 @@ class TestTurnsFrom:
                 NikoMessage(
                     role="assistant",
                     content="there",
-                    tool_calls=(NikoToolCall(name="navigate", ok=True, result={"route": "/humans/retro"}),),
+                    tool_calls=(NikoToolCall(name="navigate", ok=True, result={"route": "/team/retro"}),),
                 )
             ]
         )
-        assert rows[0]["route"] == "/humans/retro"
+        assert rows[0]["route"] == "/team/retro"
 
     def test_a_refused_navigate_offers_no_route(self):
         rows = _turns_from(

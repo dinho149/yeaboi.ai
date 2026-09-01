@@ -840,11 +840,20 @@ def _phase_pipeline(
                 _ep_examples = None
                 _ep_profile = None
 
-                # Try to load profile — from explicit selection or auto-detect
+                # Try to load profile — from explicit selection or auto-detect.
+                # The analysis toggle gates both paths: auto-detect would find a
+                # profile even with no id, so an off dep must skip the load.
                 try:
-                    from yeaboi.agent.nodes import _load_profile_by_id, _load_team_examples, _load_team_profile
+                    from yeaboi.agent.nodes import (
+                        _load_profile_by_id,
+                        _load_team_examples,
+                        _load_team_profile,
+                        _wants_dep,
+                    )
 
-                    if _ep_profile_id:
+                    if not _wants_dep(graph_state, "analysis"):
+                        _ep_profile_id = ""
+                    elif _ep_profile_id:
                         _ep_profile, _ep_examples = _load_profile_by_id(_ep_profile_id)
                     else:
                         # Auto-detect from configured trackers (for resumed sessions)

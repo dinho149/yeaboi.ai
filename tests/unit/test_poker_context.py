@@ -229,7 +229,7 @@ class TestGatherPokerContext:
         ctx = gather_poker_context({"source": "jira", "key": "PROJ-1", "summary": "x", "assignee": "Alex"})
         assert ctx.is_empty
 
-    def test_seeded_stores_produce_sections(self, tmp_path, monkeypatch):
+    def _seed_all(self, tmp_path, monkeypatch):
         db = self._seed_db(tmp_path, monkeypatch)
         from yeaboi.reporting.store import ReportingStore
         from yeaboi.sessions import SessionStore
@@ -265,6 +265,12 @@ class TestGatherPokerContext:
                     ),
                 )
             )
+        return db
+
+    _TICKET = {"source": "jira", "key": "PROJ-123", "summary": "Improve user login rate limit", "assignee": "Alex"}
+
+    def test_seeded_stores_produce_sections(self, tmp_path, monkeypatch):
+        self._seed_all(tmp_path, monkeypatch)
 
         ctx = gather_poker_context(
             {"source": "jira", "key": "PROJ-123", "summary": "Improve user login rate limit", "assignee": "Alex"},
@@ -296,6 +302,64 @@ class TestGatherPokerContext:
             {"source": "jira", "key": "PROJ-1", "summary": "Fix user login rate limit", "assignee": "Alex"}
         )
         assert any("similar story" in ln for ln in ctx.planning_lines)  # other sources still gathered
+
+
+class TestGatherContextDeps:
+    """Context toggles on the poker gather — each tokened source obeys its dep,
+    the untokened delivery read only goes silent under full incognito."""
+
+    _seed_db = TestGatherPokerContext._seed_db
+    _seed_all = TestGatherPokerContext._seed_all
+    _TICKET = TestGatherPokerContext._TICKET
+
+    def _scope(self, deps):
+        from yeaboi.projects.scope import ProjectScope
+
+        return ProjectScope("", None, None if deps is None else frozenset(deps))
+
+    def test_scope_none_matches_no_scope(self, tmp_path, monkeypatch):
+        self._seed_all(tmp_path, monkeypatch)
+        bare = gather_poker_context(dict(self._TICKET), project_name="Login")
+        with_none = gather_poker_context(dict(self._TICKET), project_name="Login", scope=None)
+        all_on = gather_poker_context(dict(self._TICKET), project_name="Login", scope=self._scope(None))
+        assert bare == with_none == all_on
+
+    def test_analysis_off_drops_the_profile(self, tmp_path, monkeypatch):
+        self._seed_all(tmp_path, monkeypatch)
+        deps = {"retro", "standup", "plan", "performance"}
+        ctx = gather_poker_context(dict(self._TICKET), project_name="Login", scope=self._scope(deps))
+        assert not ctx.calibration_lines and not ctx.calibration_by_value
+        assert not any("pts/sprint" in ln for ln in ctx.team_lines)
+        assert any("waiting on API keys" in ln for ln in ctx.assignee_lines)  # standup untouched
+
+    def test_standup_off_drops_assignee_and_confidence(self, tmp_path, monkeypatch):
+        self._seed_all(tmp_path, monkeypatch)
+        deps = {"retro", "plan", "performance", "analysis"}
+        ctx = gather_poker_context(dict(self._TICKET), project_name="Login", scope=self._scope(deps))
+        assert ctx.assignee_lines == ()
+        assert not any("confidence" in ln for ln in ctx.team_lines)
+        assert any("PROJ-87" in ln for ln in ctx.delivery_lines)  # delivery untouched
+
+    def test_plan_off_drops_similar_stories(self, tmp_path, monkeypatch):
+        self._seed_all(tmp_path, monkeypatch)
+        deps = {"retro", "standup", "performance", "analysis"}
+        ctx = gather_poker_context(dict(self._TICKET), project_name="Login", scope=self._scope(deps))
+        assert ctx.planning_lines == ()
+
+    def test_incognito_gathers_nothing(self, tmp_path, monkeypatch):
+        self._seed_all(tmp_path, monkeypatch)
+        ctx = gather_poker_context(dict(self._TICKET), project_name="Login", scope=self._scope(()))
+        assert ctx.is_empty and ctx.summary_md == ""
+
+    def test_session_scope_narrows_the_planning_scan(self, tmp_path, monkeypatch):
+        from yeaboi.projects.scope import ProjectScope
+
+        self._seed_all(tmp_path, monkeypatch)
+        scope = ProjectScope("proj-11112222", ("some-other-session",), None)
+        ctx = gather_poker_context(dict(self._TICKET), project_name="Login", scope=scope)
+        assert ctx.planning_lines == ()  # "plan-1" is outside the scope
+        wide = gather_poker_context(dict(self._TICKET), project_name="Login")
+        assert any("similar story" in ln for ln in wide.planning_lines)
 
     def test_context_is_frozen(self):
         with pytest.raises(dataclasses.FrozenInstanceError):

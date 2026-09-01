@@ -74,6 +74,7 @@ USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)")
 # Slate, deliberately the quietest accent on the menu: this page schedules the
 # other modes rather than being one, and a loud hue would compete with them.
 CEREMONIES_THEME = Theme(accent="rgb(120,150,175)", accent_bright="rgb(160,195,225)")
+PROJECTS_THEME = Theme(accent="rgb(150,170,90)", accent_bright="rgb(190,215,120)")
 SETTINGS_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
 STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)")
 RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)")
@@ -91,16 +92,19 @@ FEEDBACK_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220
 # App chrome like the changelog: neutral silver, no mode owns these pages.
 PRIVACY_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
 SYSTEM_CHECK_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
-# The two sides of the landing split. HUMANS_THEME is the Theme default palette
-# named, so the existing modes are unchanged; AGENTS_THEME opens the family's
-# "machine" palette, distinct per mode like the human modes: steel blue for the
-# category card, cyan/mint/rose per mode below it. The landing split reads its
-# card accents from these two — a card that hardcoded the same rgb() triples
-# would drift the moment either palette moved.
+# The three worlds of the landing split. TEAM_THEME is the Theme default
+# palette named, so the existing modes are unchanged; SOLO_THEME is a warm
+# amber for the one-duck world (distinct from Niko's duck gold and Usage's
+# ochre); AGENTS_THEME opens the family's "machine" palette, distinct per mode
+# like the team modes: steel blue for the category card, cyan/mint/rose per
+# mode below it. The landing split reads its card accents from these three — a
+# card that hardcoded the same rgb() triples would drift the moment a palette
+# moved.
 # The pre-mode credential gate. Alert rose, shared with Agent Security by
 # coincidence of meaning ("something is wrong here"), not by ownership.
 LLM_GATE_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
-HUMANS_THEME = Theme()
+SOLO_THEME = Theme(accent="rgb(210,168,80)", accent_bright="rgb(245,200,110)")
+TEAM_THEME = Theme()
 AGENTS_THEME = Theme(accent="rgb(90,160,210)", accent_bright="rgb(130,200,255)")
 AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,255)")
 AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,245,205)")
@@ -146,6 +150,15 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Jira": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Azure DevOps": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Configure": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Projects page. "Set active" is the affirmative action (green like Accept);
+    # Archive is amber (reversible, but it hides the row).
+    "Set active": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Archive": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
+    # Context sub-page: All on restores every source (green); Incognito switches
+    # them all off, deliberate but reversible, so it wears the amber.
+    "Context": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "All on": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Incognito": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     # Ceremonies page. "Run now" is the affirmative action (green like Accept);
     # Pause/Resume are neutral, because neither is the destructive one.
     "Run now": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
@@ -371,6 +384,11 @@ def usage_title(shimmer_tick: float | None = None, *, width: int | None = None) 
 def ceremonies_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Ceremonies ASCII title (slate accent). Optionally shimmering."""
     return build_ascii_title("Ceremonies", "rgb(120,150,175)", shimmer_tick=shimmer_tick, width=width)
+
+
+def projects_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Projects ASCII title (olive accent). Optionally shimmering."""
+    return build_ascii_title("Projects", "rgb(150,170,90)", shimmer_tick=shimmer_tick, width=width)
 
 
 def settings_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
@@ -798,6 +816,23 @@ def calc_viewport(height: int, *, header_h: int = 7, action_h: int = 4) -> int:
     """
     inner_h = max(0, height - 4)
     return max(3, inner_h - header_h - action_h)
+
+
+def render_to_lines(renderable, render_w: int, left_pad: str = "") -> list:
+    """Flatten a renderable to one ``Text`` per rendered row.
+
+    A multi-row renderable (a Table, a grid of boxes) breaks the "one body entry
+    == one rendered row" assumption :func:`calc_viewport` and the scroll math
+    depend on: it counts as a single entry while drawing many, so the page
+    overshoots its viewport and ``build_page_panel``'s fixed height crops the
+    action buttons off the bottom. Pass any such block through this first.
+    """
+    from rich.console import Console as _Console
+
+    console = _Console(width=render_w, height=400)
+    with console.capture() as capture:
+        console.print(renderable)
+    return [Text.from_ansi(left_pad + line) for line in capture.get().splitlines()]
 
 
 # Minimum terminal size for the TUI to function

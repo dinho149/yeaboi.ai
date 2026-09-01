@@ -222,6 +222,8 @@ def run_one_on_one_prep(
     jira_project: str = "",
     azdo_project: str = "",
     deep_scan: bool = False,
+    project_id: str = "",
+    context_deps: list[str] | None = None,
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -238,12 +240,20 @@ def run_one_on_one_prep(
     covered; it costs API calls, so it is off by default. ``on_progress`` takes
     one lifecycle event per phase (see ``analysis/progress.py``) so a caller can
     draw a live checklist; it is an injection seam, never a behaviour switch.
+    ``project_id``/``context_deps`` resolve the run's ProjectScope, which gates
+    the evidence gather's cross-mode reads (standup/analysis/retro by token,
+    poker/delivery under full incognito). This engine's own PerformanceStore
+    reads stay engineer-keyed and unscoped: a person's history must not shrink
+    because a project is active (see projects/scope.py).
     """
+    from yeaboi.projects.scope import resolve_scope
+
     today = today or date.today()
     date_str = today.isoformat()
     db_path = _resolve_db_path(db_path)
     logger.info("run_one_on_one_prep: engineer=%s session=%s deep_scan=%s", engineer, session_id, deep_scan)
 
+    scope = resolve_scope(project_id, session_id, context_deps=context_deps, db_path=db_path)
     state = _load_state(session_id, db_path)
     evidence = evidence_mod.gather_engineer_evidence(
         engineer,
@@ -255,6 +265,7 @@ def run_one_on_one_prep(
         deep_scan=deep_scan,
         db_path=db_path,
         on_progress=on_progress,
+        scope=scope,
     )
     activity = evidence.activity
 
@@ -664,6 +675,8 @@ def run_six_month_review(
     azdo_project: str = "",
     period_months: int = 6,
     deep_scan: bool = False,
+    project_id: str = "",
+    context_deps: list[str] | None = None,
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -677,14 +690,21 @@ def run_six_month_review(
     framework, then asks the LLM for a structured review. Persists the review.
 
     ``deep_scan`` permits one capped live scan for the stretch no saved standup
-    covered; it costs API calls, so it is off by default.
+    covered; it costs API calls, so it is off by default. ``project_id`` and
+    ``context_deps`` resolve the run's ProjectScope, which gates the evidence
+    gather's cross-mode reads and the team ceremony read below; this engine's
+    own PerformanceStore reads stay engineer-keyed and unscoped (see
+    projects/scope.py).
     """
+    from yeaboi.projects.scope import resolve_scope
+
     today = today or date.today()
     period_end = today.isoformat()
     period_start = (today - timedelta(days=period_months * 30)).isoformat()
     db_path = _resolve_db_path(db_path)
     logger.info("run_six_month_review: engineer=%s period=%s..%s", engineer, period_start, period_end)
 
+    scope = resolve_scope(project_id, session_id, context_deps=context_deps, db_path=db_path)
     state = _load_state(session_id, db_path)
 
     with PerformanceStore(db_path) as store:
@@ -703,6 +723,7 @@ def run_six_month_review(
         deep_scan=deep_scan,
         db_path=db_path,
         on_progress=on_progress,
+        scope=scope,
     )
     delivery = evidence.activity
 
@@ -712,7 +733,7 @@ def run_six_month_review(
     try:
         from yeaboi.agent.ceremony_history import gather_ceremony_context
 
-        ceremony_summary = gather_ceremony_context(state.get("project_name", "")).summary_md
+        ceremony_summary = gather_ceremony_context(state.get("project_name", ""), scope=scope).summary_md
     except Exception as e:  # noqa: BLE001 — ceremony context is best-effort
         logger.warning("run_six_month_review: ceremony context failed: %s", e)
         ceremony_failed = True

@@ -21,16 +21,19 @@ import logging
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from yeaboi.agent.state import RetroCard, RetroReport
 from yeaboi.retro.board import CARRIED_OPEN_STATUSES, RetroBoard
+
+if TYPE_CHECKING:
+    from yeaboi.projects.scope import ProjectScope
 
 logger = logging.getLogger(__name__)
 
 
 def carried_action_items_for_session(
-    session_id: str, *, project_name: str = "", db_path: Path | None = None
+    session_id: str, *, project_name: str = "", db_path: Path | None = None, scope: ProjectScope | None = None
 ) -> tuple[RetroCard, ...]:
     """Return the previous retro's action items for review, reset to ``pending``.
 
@@ -55,16 +58,22 @@ def carried_action_items_for_session(
 
     # See CLAUDE.md — Retro action-item carry-forward loop (mirrors Performance 1:1s)
     """
-    from dataclasses import replace
-
+    if scope is not None and not scope.wants("retro"):
+        return ()
     try:
         from yeaboi.paths import get_db_path
         from yeaboi.retro.store import RetroStore
 
         path = db_path or get_db_path()
+        session_ids = scope.session_ids if scope is not None else None
         with RetroStore(path) as store:
             # Project-first, newest-first across ALL sessions (see docstring).
-            reports = store.get_recent_reports(limit=5, project_name=project_name)
+            # A session-narrowed scope replaces the name bias with a hard filter.
+            reports = store.get_recent_reports(
+                limit=5,
+                project_name=project_name if session_ids is None else "",
+                session_ids=session_ids,
+            )
     except Exception as exc:  # pragma: no cover - defensive; carry-forward is best-effort
         logger.warning("retro: could not load carried action items (session=%s): %s", session_id, exc)
         return ()
@@ -80,6 +89,48 @@ def carried_action_items_for_session(
     prior_report = reports[0] if reports else None
     if prior_report is None:
         return ()
+    return _carried_from_report(prior_report)
+
+
+def standup_blocker_cards(
+    scope: ProjectScope | None, *, db_path: Path | None = None, existing: tuple[RetroCard, ...] = ()
+) -> tuple[RetroCard, ...]:
+    """The standup→retro edge: the project's recent blockers as review cards.
+
+    Returns dismissible ``pending`` cards (text badged ``[Standup]``), deduped
+    against the ``existing`` carried cards they are seeded beside. Unscoped
+    boards (``scope=None``) get none — the team-wide board keeps its
+    carry-forward-only seeding. Never raises.
+    """
+    from yeaboi.projects.scope import recent_standup_blockers
+
+    blockers = recent_standup_blockers(scope, db_path=db_path)
+    if not blockers:
+        return ()
+    seen = {c.text.strip().lower() for c in existing}
+    cards: list[RetroCard] = []
+    for i, blocker in enumerate(blockers):
+        text = f"[Standup] {blocker}"
+        if text.lower() in seen:
+            continue
+        cards.append(
+            RetroCard(
+                id=f"standup-{i}",
+                grid="action_items",
+                text=text,
+                author="Standup",
+                origin="carryover",
+                status="pending",
+            )
+        )
+    if cards:
+        logger.info("retro: %d standup blocker card(s) for project %s", len(cards), scope.project_id if scope else "")
+    return tuple(cards)
+
+
+def _carried_from_report(prior_report: RetroReport) -> tuple[RetroCard, ...]:
+    from dataclasses import replace
+
     # Source = last retro's action_items grid PLUS any items it explicitly kept open in
     # its own review column (its carried_action_items with a still-open status). The
     # latter matters when the team marked something "Carried Over" but never clicked
@@ -97,16 +148,15 @@ def carried_action_items_for_session(
         combined.append(c)
     carried = tuple(replace(c, origin="carryover", status="pending") for c in combined)
     logger.info(
-        "retro: %d carried-over action item(s) available from session %s (current=%s)",
+        "retro: %d carried-over action item(s) available from session %s",
         len(carried),
         prior_report.session_id,
-        session_id,
     )
     return carried
 
 
 def history_providers(
-    *, project_name: str = "", db_path: Path | None = None
+    *, project_name: str = "", db_path: Path | None = None, scope: ProjectScope | None = None
 ) -> tuple[Callable[[], list[dict]], Callable[[int], dict | None]]:
     """Readers the browser board uses to step back through previous retros.
 
@@ -114,9 +164,14 @@ def history_providers(
     retro is persisted in, and a board with nothing behind it (a dev fixture, a
     retro run outside a session) simply reports no history.
 
+    ``scope`` narrows both readers: with the ``retro`` dependency off they
+    report nothing, and a session-scoped run only sees (and can only fetch by
+    id) the scope's own retros.
+
     Both are best-effort — a store that cannot be read is a board with no past,
     never a board that fails to load.
     """
+    from yeaboi.projects.scope import wants
 
     def _open() -> Any:
         from yeaboi.paths import get_db_path
@@ -125,13 +180,18 @@ def history_providers(
         return RetroStore(db_path or get_db_path())
 
     def listing() -> list[dict]:
+        if not wants(scope, "retro"):
+            return []
         # Across sessions, like the carry-forward reader above and for the same
         # reason: a retro runs under whatever quick session was open that day,
         # so a same-session history is almost always empty. Project-first, so a
         # board for project X shows X's retros before anyone else's.
+        # Scoped in the query, so the 48-row window holds the project's own runs
+        # rather than whatever 48 happened to be newest team-wide.
+        scoped = scope.session_ids if scope is not None else None
         try:
             with _open() as store:
-                runs = store.get_all_history(limit=48)
+                runs = store.get_all_history(limit=48, session_ids=scoped)
         except Exception as exc:  # pragma: no cover - defensive; history is best-effort
             logger.warning("retro: could not list previous retros: %s", exc)
             return []
@@ -142,12 +202,17 @@ def history_providers(
         return runs[:24]
 
     def one(run_id: int) -> dict | None:
+        if not wants(scope, "retro"):
+            return None
         try:
             with _open() as store:
                 report = store.get_run_by_id(run_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("retro: could not read retro id=%s: %s", run_id, exc)
             return None
+        if report and scope is not None and scope.session_ids is not None:
+            if report.session_id not in scope.session_ids:
+                return None
         return report_payload(report) if report else None
 
     return listing, one

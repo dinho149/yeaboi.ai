@@ -67,17 +67,20 @@ def steps(app, request: Request) -> Response:
     components = answers.get("components") or {}
     depth = str(answers.get("depth", setup.DEFAULT_DEPTH))
     model_offered = bool(answers.get("model_offered"))
+    solo = bool(answers.get("solo"))
     applicable = [
         step
         for step in setup.STEPS
-        if setup.step_applies(step, features=features, components=components, depth=depth, model_offered=model_offered)
+        if setup.step_applies(
+            step, features=features, components=components, depth=depth, model_offered=model_offered, solo=solo
+        )
     ]
     roster_fallback = answers.get("roster_fallback") or setup.available_trackers()
     return json_response(
         {
             "steps": applicable,
             "grid": setup.filtered_grid(answers.get("grid") or setup.available_grid(), features),
-            "run": setup.run_config(answers, roster_fallback=roster_fallback, model_offered=model_offered),
+            "run": setup.run_config(answers, roster_fallback=roster_fallback, model_offered=model_offered, solo=solo),
         }
     )
 
@@ -102,6 +105,7 @@ def result(app, request: Request) -> Response:
     from yeaboi.team_profile import TeamProfileStore
 
     team_id = request.params.get("team_id", "")
+    solo = request.query.get("solo") in ("1", "true")
     db_path = get_db_path()
     profile, examples = (None, None)
     if db_path.exists():
@@ -114,7 +118,7 @@ def result(app, request: Request) -> Response:
             "team_id": team_id,
             # A stored profile carries no top-level signals — the global scans
             # were persisted onto it, which is where the cards read them.
-            "cards": dashboard.cards(profile, examples=examples),
+            "cards": dashboard.cards(profile, examples=examples, solo=solo),
             "profile": to_jsonable(profile),
             "examples": to_jsonable(examples or {}),
         }

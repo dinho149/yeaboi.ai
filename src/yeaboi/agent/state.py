@@ -2275,6 +2275,10 @@ class QuestionnaireState:
     # _repo_context is, so the summary path can reach it without threading
     # graph state through eleven call sites.
     _analysis_profile_id: str = ""
+    # Transient: whether this run's context toggles allow analysis reads at all.
+    # A blank _analysis_profile_id still auto-detects from configured trackers,
+    # so the prior-art step needs an explicit off switch, not just an empty id.
+    _analysis_enabled: bool = True
     # Transient: active sprint number from Jira (e.g. 104). Used to compute
     # the start date offset when the user selects a future sprint (e.g. Sprint 107).
     # Set during Q27 processing; None when Jira is not configured.
@@ -2437,6 +2441,14 @@ class ScrumState(_RequiredState, total=False):
     # When set, intake auto-fills Q6/Q8/Q9 from the profile and nodes
     # use this profile for team calibration. Empty string = no profile selected.
     analysis_profile_id: str
+    # The run's project link and context toggles, read by _state_scope/_wants_dep
+    # to narrow every cross-mode read. Both are seeded by the caller, never by a
+    # node. Declared as ScrumState fields so LangGraph doesn't strip them —
+    # undeclared keys never reach a node, which silently unscopes the whole run.
+    # project_id is '' when unscoped; context_deps is a JSON array of dep tokens,
+    # absent when every source is on.
+    project_id: str
+    context_deps: str
     # Existing team repositories the user accepted as prior art for this plan.
     # Only greenfield projects are offered them. Feeds the analyzer and feature
     # prompts, and renders as a Prior Art section in the summary and exports.

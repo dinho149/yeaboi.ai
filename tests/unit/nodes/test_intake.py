@@ -3907,3 +3907,45 @@ class TestGapModeSkipDefaults:
         qs.answers = {2: "a", 3: "b", 4: "c"}
         qs.skipped_questions.add(6)
         assert 6 not in _find_essential_gaps(qs, SMART_ESSENTIALS)
+
+
+class TestAnalysisToggleInIntake:
+    """The analysis context toggle beats a seeded profile id: with analysis off,
+    intake never reads the profile and the prior-art stash stays disabled."""
+
+    @pytest.fixture(autouse=True)
+    def _hermetic(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.agent.nodes._check_vague_answer", lambda q, a, n=0: None)
+        monkeypatch.setattr("yeaboi.agent.nodes._load_user_context", lambda *a, **kw: (None, {}))
+        monkeypatch.setattr("yeaboi.agent.nodes._extract_answers_from_description", lambda desc: {})
+
+    def _run(self, monkeypatch, extra_state):
+        from yeaboi.agent import nodes
+
+        loads: list = []
+        monkeypatch.setattr(nodes, "_load_profile_by_id", lambda pid: loads.append(pid) or (None, None))
+        state = {
+            "messages": [HumanMessage(content="Building a todo app for task management")],
+            "_intake_mode": "smart",
+            "analysis_profile_id": "jira-DEMO-1",
+            **extra_state,
+        }
+        result = project_intake(state)
+        return result["questionnaire"], loads
+
+    def test_analysis_off_drops_the_profile_and_never_loads_it(self, monkeypatch):
+        qs, loads = self._run(monkeypatch, {"context_deps": '["retro"]'})
+        assert loads == []
+        assert qs._analysis_profile_id == ""
+        assert qs._analysis_enabled is False
+
+    def test_incognito_behaves_the_same(self, monkeypatch):
+        qs, loads = self._run(monkeypatch, {"context_deps": "[]"})
+        assert loads == []
+        assert qs._analysis_profile_id == "" and qs._analysis_enabled is False
+
+    def test_without_toggles_the_profile_still_seeds_intake(self, monkeypatch):
+        qs, loads = self._run(monkeypatch, {})
+        assert loads == ["jira-DEMO-1"]  # the Q6/Q8/Q9 auto-fill read
+        assert qs._analysis_profile_id == "jira-DEMO-1"
+        assert qs._analysis_enabled is True

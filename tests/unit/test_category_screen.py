@@ -1,4 +1,4 @@
-"""Tests for the Humans/Agents landing split (_screens_category.py)."""
+"""Tests for the Solo/Team/Agents landing split (_screens_category.py)."""
 
 import pytest
 from rich.console import Console
@@ -57,12 +57,18 @@ def _render(width=110, height=40, selected=0, **kwargs) -> str:
 
 
 class TestCards:
-    def test_two_categories_in_order(self):
-        assert [c["key"] for c in _CATEGORY_CARDS] == ["humans", "agents"]
+    def test_three_categories_in_order(self):
+        assert [c["key"] for c in _CATEGORY_CARDS] == ["solo", "team", "agents"]
 
     def test_core_keys_present(self):
         for card in _CATEGORY_CARDS:
             assert {"key", "title", "verb", "capabilities", "color", "bright", "dim", "tint", "mascot"} <= set(card)
+
+    def test_solo_and_agents_are_the_beta_worlds(self):
+        from yeaboi.beta import BETA_LABEL
+
+        badged = {card["key"] for card in _CATEGORY_CARDS if card.get("badge") == BETA_LABEL}
+        assert badged == {"solo", "agents"}
 
 
 class TestRender:
@@ -80,7 +86,7 @@ class TestRender:
         shaded = ",".join(
             str(round(c * _MASCOT_SHADE + t * (1.0 - _MASCOT_SHADE))) for c, t in zip(steel, _SHADE_TOWARD, strict=True)
         )
-        resting = _render(selected=0)  # humans live, so the robo is at the back
+        resting = _render(selected=0)  # solo live, so the robo is at the back
         assert "140;160;178" not in resting
         assert shaded.replace(",", ";") in resting, shaded
 
@@ -88,21 +94,21 @@ class TestRender:
         out = _render(width=100, height=30)
         assert out.count("\n") == 30
 
-    def test_selected_half_carries_full_accent(self):
-        left = _render(selected=0)
-        right = _render(selected=1)
-        assert left != right
-
+    def test_selected_card_carries_full_accent(self):
         def _rgb(css):
             return css.removeprefix("rgb(").removesuffix(")").replace(",", ";")
 
         # No frame and no wash any more: the live card is marked by its wordmark
-        # burning bright and by its mascot having walked to the front.
-        humans, agents = (_rgb(c["bright"]) for c in _CATEGORY_CARDS)
-        assert agents in right and agents not in left
-        assert humans in left and humans not in right
-        for tint in ("15;24;32", "17;28;20"):
-            assert tint not in left and tint not in right, tint
+        # burning bright and by its mascot having walked to the front. Each
+        # card's bright appears only in the render where that card is selected.
+        renders = [_render(selected=i) for i in range(len(_CATEGORY_CARDS))]
+        brights = [_rgb(c["bright"]) for c in _CATEGORY_CARDS]
+        for i, bright in enumerate(brights):
+            for j, out in enumerate(renders):
+                assert (bright in out) == (i == j), (i, j)
+        for out in renders:
+            for tint in ("15;24;32", "17;28;20", "30;25;15"):
+                assert tint not in out, tint
 
     def test_the_resting_mascot_stands_further_back(self):
         # Depth, not just dimming: the resting duck is the smaller trace and
@@ -198,9 +204,9 @@ class TestRender:
 
         def right_half(styled):
             plain = re.sub(r"\x1b\[[0-9;]*m", "", styled)
-            return "\n".join(row[len(row) // 2 :] for row in plain.splitlines())
+            return "\n".join(row[2 * len(row) // 3 :] for row in plain.splitlines())
 
-        # Humans selected → the agents half keeps its own, slower clock: it has
+        # Solo selected → the agents third keeps its own, slower clock: it has
         # an idle hop, but it does not flap frame for frame the way the live one
         # does. Ticks a quarter apart land in the same beat of it.
         a = _settled(selected=0, shimmer_tick=0.0)
@@ -244,7 +250,7 @@ class TestRender:
         # on its own still appears — in "Watch your AI agents work".)
         for line in plain.split("\n"):
             if "─" in line:
-                assert "humans" not in line and "agents" not in line, line
+                assert "solo" not in line and "team" not in line and "agents" not in line, line
         # And the cards themselves draw none. Counted on the CARD, not on the
         # page: the page's frame count depends on what else the chrome has been
         # asked to draw (an update box, a drawer), which is not this test's
@@ -257,6 +263,22 @@ class TestRender:
                 with console.capture() as cap:
                     console.print(_card_half(card, selected=selected, shimmer_tick=0.0, intro=1.0))
                 assert "╭" not in cap.get(), (card["key"], selected)
+
+    def test_beta_worlds_wear_the_chip(self):
+        import re
+
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", _render(width=110))
+        chip_rows = [line for line in plain.splitlines() if "BETA" in line]
+        assert chip_rows, "no BETA chip rendered"
+        # Two chips on one row — solo's and agents'; the team card carries none
+        # (its column between them stays blank).
+        assert chip_rows[0].count("BETA") == 2
+
+    def test_the_chip_enters_with_the_wordmark(self):
+        import re
+
+        early = re.sub(r"\x1b\[[0-9;]*m", "", _render(width=110, intro=0.0))
+        assert "BETA" not in early
 
     def test_headline_and_hints(self):
         out = _render_chromed()
@@ -272,7 +294,7 @@ class TestRender:
 
         early = re.sub(r"\x1b\[[0-9;]*m", "", _render(intro=0.0))
         assert "34;158;122" in _render(intro=0.0)  # the duck is here
-        assert "HUMANS" not in early.replace(" ", "")  # his name is not
+        assert "SOLO" not in early.replace(" ", "")  # his name is not
         assert "working with today?" in _render_chromed(intro=0.0)  # the question is
         # Both sets of rows are reserved, so the card height never jumps.
         assert early.count("\n") == 40
@@ -294,15 +316,28 @@ class TestRender:
 
 
 class TestHitTest:
-    def test_left_half_is_humans(self):
+    def test_left_third_is_solo(self):
         assert category_at_pos(100, 30, row=15, col=10) == 0
 
-    def test_right_half_is_agents(self):
-        assert category_at_pos(100, 30, row=15, col=90) == 1
+    def test_middle_third_is_team(self):
+        assert category_at_pos(100, 30, row=15, col=50) == 1
 
-    def test_midpoint_boundary(self):
-        assert category_at_pos(100, 30, row=15, col=50) == 0
-        assert category_at_pos(100, 30, row=15, col=51) == 1
+    def test_right_third_is_agents(self):
+        assert category_at_pos(100, 30, row=15, col=90) == 2
+
+    def test_region_boundaries_match_the_shared_bounds(self):
+        # The hit test and the builder read the same _category_bounds, so the
+        # boundary sits exactly one gutter past each card's last column.
+        from yeaboi.ui.mode_select.screens._screens_category import _GUTTER_COLS, _category_bounds
+
+        bounds = _category_bounds(100)
+        for i, (_start, end) in enumerate(bounds[:-1]):
+            assert category_at_pos(100, 30, row=15, col=end + _GUTTER_COLS) == i
+            assert category_at_pos(100, 30, row=15, col=end + _GUTTER_COLS + 1) == i + 1
+
+    def test_the_far_edges_count_for_the_outer_cards(self):
+        assert category_at_pos(100, 30, row=15, col=1) == 0
+        assert category_at_pos(100, 30, row=15, col=100) == 2
 
     def test_border_and_hint_rows_are_dead(self):
         assert category_at_pos(100, 30, row=1, col=50) is None
@@ -327,7 +362,7 @@ class TestSeedFrame:
     the tail of the splash — the flicker at the splash → landing-split boundary.
     """
 
-    def _seed(self, category="humans", width=110, height=40):
+    def _seed(self, category="team", width=110, height=40):
         from yeaboi.ui.mode_select import _landing_first_frame
 
         return _landing_first_frame(category, width=width, height=height)
@@ -369,7 +404,82 @@ class TestSeedFrame:
     def test_it_opens_on_the_remembered_category(self):
         from yeaboi.ui.mode_select.screens._screens_category import category_index
 
-        assert category_index("humans") == 0
-        assert category_index("agents") == 1
-        # An unknown key must not raise — a hand-edited config lands on Humans.
+        assert category_index("solo") == 0
+        assert category_index("team") == 1
+        assert category_index("agents") == 2
+        # An unknown key must not raise — a hand-edited config lands on Solo.
+        # (get_last_category sanitises before the key gets here.)
         assert category_index("nonsense") == 0
+
+
+class TestFlock:
+    """The Team card's trio — composed sprites, same footprint as the solo hero."""
+
+    def test_the_flock_shares_the_full_body_footprint(self):
+        from yeaboi.ui.shared._mascot import flock_cells, full_cells
+
+        flock = flock_cells(0)
+        full = full_cells(0)
+        assert len(flock[0]) == len(full[0]) == 34
+        assert len(flock) < len(full)  # minis are shorter; the card pads above
+
+    def test_the_head_trio_shares_the_mini_footprint(self):
+        from yeaboi.ui.shared._mascot import flock_head_cells, mini_cells
+
+        heads = flock_head_cells(0)
+        mini = mini_cells(0)
+        assert len(heads[0]) == len(mini[0]) == 22
+
+    def test_the_team_card_arrives_as_a_trio(self):
+        # Wider ink than one mini duck, and different ink from the solo hero at
+        # the same width — the trio is what marks the Team world.
+        blocks = "▀▄█"
+
+        def _sprite(card):
+            from yeaboi.ui.mode_select.screens._screens_category import reset_category_walk
+
+            reset_category_walk()
+            console = Console(width=60, force_terminal=False)
+            with console.capture() as cap:
+                console.print(_card_half(card, selected=True, shimmer_tick=0.0, intro=1.0))
+            rows = cap.get().split("\n")
+            return [r for r in rows[: _MASCOT_ROWS + 2] if any(ch in blocks for ch in r)]
+
+        solo = _sprite(_CATEGORY_CARDS[0])
+        team = _sprite(_CATEGORY_CARDS[1])
+        assert solo != team
+
+    def test_the_front_head_quacks(self):
+        from yeaboi.ui.shared._mascot import flock_head_cells
+
+        assert flock_head_cells(0) != flock_head_cells(2)
+
+
+class TestTipJumpTarget:
+    """The cross-category jump rule: shared keys land on Team, never Solo."""
+
+    def test_a_retro_tip_from_solo_lands_on_team(self):
+        from yeaboi.ui.mode_select import _MODE_CARDS, _SOLO_CARDS, _tip_jump_target
+
+        cat, j = _tip_jump_target("retro", _SOLO_CARDS)
+        assert cat == "team"
+        assert _MODE_CARDS[j]["key"] == "retro"
+
+    def test_a_shared_key_from_agents_lands_on_team(self):
+        from yeaboi.ui.mode_select import _AGENT_CARDS, _MODE_CARDS, _tip_jump_target
+
+        cat, j = _tip_jump_target("daily-standup", _AGENT_CARDS)
+        assert cat == "team"
+        assert _MODE_CARDS[j]["key"] == "daily-standup"
+
+    def test_an_agent_tip_from_team_lands_on_agents(self):
+        from yeaboi.ui.mode_select import _AGENT_CARDS, _MODE_CARDS, _tip_jump_target
+
+        cat, j = _tip_jump_target("agent-security", _MODE_CARDS)
+        assert cat == "agents"
+        assert _AGENT_CARDS[j]["key"] == "agent-security"
+
+    def test_an_unknown_key_jumps_nowhere(self):
+        from yeaboi.ui.mode_select import _MODE_CARDS, _tip_jump_target
+
+        assert _tip_jump_target("astrology", _MODE_CARDS) is None

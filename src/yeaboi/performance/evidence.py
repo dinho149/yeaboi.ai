@@ -97,6 +97,10 @@ _MAX_LINE = 220  # per-line truncation of free text
 _MAX_EVIDENCE_ROWS = 24  # structured rows kept per evidence group
 _MAX_GAP_DAYS = 45  # hard ceiling on a live gap-fill scan
 
+# Coverage detail for a source the run's context toggles switched off — the
+# anti-inference rule: silence must say why, never read as an idle period.
+_TOGGLED_OFF = "Switched off by this run's context toggles."
+
 
 @dataclass(frozen=True)
 class SourceCoverage:
@@ -601,16 +605,26 @@ def gather_engineer_evidence(
     deep_scan: bool = False,
     db_path=None,
     on_progress=None,
+    scope=None,
 ) -> EngineerEvidence:
     """Read every mode's history for one engineer. Never raises.
 
     Saved stores are read first (free); ``deep_scan`` additionally permits one
     capped live multi-source collection over the stretch no saved standup covered.
 
+    ``scope`` applies the run's context toggles: standup/analysis/retro obey
+    their dep tokens (a switched-off source settles its coverage row saying so,
+    so silence never reads as an idle period), the untokened poker/delivery
+    reads go quiet only under full incognito, and a session-scoped run narrows
+    the standup/retro reads. The live gap-fill borrows the saved standup config,
+    so it rides the ``standup`` toggle too.
+
     ``on_progress``: optional callable taking one lifecycle event per source
     (see ``analysis/progress.py``), so a caller can draw a live checklist. Each
     source reports ``running`` and then whatever its own SourceCoverage row says.
     """
+    from yeaboi.projects.scope import incognito, wants
+
     state = state or {}
     logger.info(
         "gather_engineer_evidence: engineer=%s period=%s..%s deep_scan=%s",
@@ -694,23 +708,29 @@ def gather_engineer_evidence(
 
     # ── Standup — per-member code, docs, self-reports, blockers, practices. ──
     _emit(on_progress, SOURCE_STANDUP, "running")
-    try:
-        from yeaboi.standup.store import StandupStore
+    if not wants(scope, "standup"):
+        coverage.append(SourceCoverage(SOURCE_STANDUP, NOT_CONFIGURED, _TOGGLED_OFF))
+        coverage.append(SourceCoverage(SOURCE_CODE, NOT_CONFIGURED, _TOGGLED_OFF))
+        coverage.append(SourceCoverage(SOURCE_DOCUMENTATION, NOT_CONFIGURED, _TOGGLED_OFF))
+    else:
+        try:
+            from yeaboi.standup.store import StandupStore
 
-        with StandupStore(db_path) as store:
-            reports = [
-                r
-                for r in store.get_recent_reports(_MAX_STANDUP_RUNS)
-                if _in_period(getattr(r, "date", ""), period_start, period_end)
-            ]
-        standup_stats = _standup_lines(reports, aliases)
-        standup_lines = standup_stats["standup"][:_MAX_STANDUP_LINES]
-        code_lines = standup_stats["code"][:_MAX_CODE_LINES]
-        doc_lines = standup_stats["documentation"][:_MAX_DOC_LINES]
-        practice_lines = standup_stats["practices"][:_MAX_PRACTICE_LINES]
-    except Exception:  # noqa: BLE001 — evidence is best-effort; never abort the run
-        logger.debug("performance evidence: standup read failed (non-fatal)", exc_info=True)
-        coverage.append(SourceCoverage(SOURCE_STANDUP, FAILED, "The standup history could not be read."))
+            session_ids = scope.session_ids if scope is not None else None
+            with StandupStore(db_path) as store:
+                reports = [
+                    r
+                    for r in store.get_recent_reports(_MAX_STANDUP_RUNS, session_ids=session_ids)
+                    if _in_period(getattr(r, "date", ""), period_start, period_end)
+                ]
+            standup_stats = _standup_lines(reports, aliases)
+            standup_lines = standup_stats["standup"][:_MAX_STANDUP_LINES]
+            code_lines = standup_stats["code"][:_MAX_CODE_LINES]
+            doc_lines = standup_stats["documentation"][:_MAX_DOC_LINES]
+            practice_lines = standup_stats["practices"][:_MAX_PRACTICE_LINES]
+        except Exception:  # noqa: BLE001 — evidence is best-effort; never abort the run
+            logger.debug("performance evidence: standup read failed (non-fatal)", exc_info=True)
+            coverage.append(SourceCoverage(SOURCE_STANDUP, FAILED, "The standup history could not be read."))
 
     if standup_stats:
         runs = standup_stats["runs"]
@@ -723,146 +743,172 @@ def gather_engineer_evidence(
 
     # ── Analysis — delivery stats + practice hygiene + AI markers. ───────────
     _emit(on_progress, SOURCE_ANALYSIS, "running")
-    try:
-        analysis_lines, analysis_metrics, profiles_seen = _read_analysis(db_path, aliases, jira_project, azdo_project)
-        metrics.extend(analysis_metrics)
-        # A profile that exists and names somebody else is an attribution gap,
-        # not an unconfigured source — the same distinction every other source
-        # here draws, and the reason ``partial`` is in the vocabulary at all.
-        if analysis_lines:
-            analysis_state, analysis_detail = COVERED, "Team analysis metrics for this engineer."
-        elif profiles_seen:
-            analysis_state = PARTIAL
-            analysis_detail = (
-                f"{profiles_seen} saved team analysis profile(s), none carrying a row for this engineer "
-                "— an attribution gap, not an idle period."
+    if not wants(scope, "analysis"):
+        coverage.append(SourceCoverage(SOURCE_ANALYSIS, NOT_CONFIGURED, _TOGGLED_OFF))
+    else:
+        try:
+            analysis_lines, analysis_metrics, profiles_seen = _read_analysis(
+                db_path, aliases, jira_project, azdo_project
             )
-        else:
-            analysis_state, analysis_detail = NOT_CONFIGURED, "No saved team analysis to read."
-        coverage.append(SourceCoverage(SOURCE_ANALYSIS, analysis_state, analysis_detail))
-    except Exception:  # noqa: BLE001
-        logger.debug("performance evidence: analysis read failed (non-fatal)", exc_info=True)
-        coverage.append(SourceCoverage(SOURCE_ANALYSIS, FAILED, "The team analysis profile could not be read."))
+            metrics.extend(analysis_metrics)
+            # A profile that exists and names somebody else is an attribution gap,
+            # not an unconfigured source — the same distinction every other source
+            # here draws, and the reason ``partial`` is in the vocabulary at all.
+            if analysis_lines:
+                analysis_state, analysis_detail = COVERED, "Team analysis metrics for this engineer."
+            elif profiles_seen:
+                analysis_state = PARTIAL
+                analysis_detail = (
+                    f"{profiles_seen} saved team analysis profile(s), none carrying a row for this engineer "
+                    "— an attribution gap, not an idle period."
+                )
+            else:
+                analysis_state, analysis_detail = NOT_CONFIGURED, "No saved team analysis to read."
+            coverage.append(SourceCoverage(SOURCE_ANALYSIS, analysis_state, analysis_detail))
+        except Exception:  # noqa: BLE001
+            logger.debug("performance evidence: analysis read failed (non-fatal)", exc_info=True)
+            coverage.append(SourceCoverage(SOURCE_ANALYSIS, FAILED, "The team analysis profile could not be read."))
     _emit_coverage(on_progress, coverage, SOURCE_ANALYSIS)
 
     # ── Retro — their cards, their action items, their attendance. ───────────
     _emit(on_progress, SOURCE_RETRO, "running")
-    try:
-        from yeaboi.retro.store import RetroStore
+    if not wants(scope, "retro"):
+        coverage.append(SourceCoverage(SOURCE_RETRO, NOT_CONFIGURED, _TOGGLED_OFF))
+    else:
+        try:
+            from yeaboi.retro.store import RetroStore
 
-        with RetroStore(db_path) as store:
-            reports = [
-                r
-                for r in store.get_recent_reports(_MAX_RETRO_RUNS, str(state.get("project_name", "")))
-                if _in_period(getattr(r, "date", ""), period_start, period_end)
-            ]
-        lines, participated, total = _retro_lines(reports, aliases)
-        retro_lines = lines[:_MAX_RETRO_LINES]
-        if participated and total:
-            retro_lines.insert(0, f"Took part in {participated} of {total} retro(s) in this period.")
-        if total:
-            metrics.append(
-                PerfMetric(
-                    key="retros_attended",
-                    label="Retros attended",
-                    value=float(participated),
-                    denominator=float(total),
-                    group="ceremony",
-                    source=SOURCE_RETRO,
+            session_ids = scope.session_ids if scope is not None else None
+            # The project-name sort bias only applies to a team-wide read; a hard
+            # session filter replaces it (same rule as gather_ceremony_context).
+            project_bias = str(state.get("project_name", "")) if session_ids is None else ""
+            with RetroStore(db_path) as store:
+                reports = [
+                    r
+                    for r in store.get_recent_reports(_MAX_RETRO_RUNS, project_bias, session_ids=session_ids)
+                    if _in_period(getattr(r, "date", ""), period_start, period_end)
+                ]
+            lines, participated, total = _retro_lines(reports, aliases)
+            retro_lines = lines[:_MAX_RETRO_LINES]
+            if participated and total:
+                retro_lines.insert(0, f"Took part in {participated} of {total} retro(s) in this period.")
+            if total:
+                metrics.append(
+                    PerfMetric(
+                        key="retros_attended",
+                        label="Retros attended",
+                        value=float(participated),
+                        denominator=float(total),
+                        group="ceremony",
+                        source=SOURCE_RETRO,
+                    )
                 )
-            )
-        state_ = COVERED if participated else (PARTIAL if total else NOT_CONFIGURED)
-        coverage.append(SourceCoverage(SOURCE_RETRO, state_, _coverage_detail(state_, "retro", participated, total)))
-    except Exception:  # noqa: BLE001
-        logger.debug("performance evidence: retro read failed (non-fatal)", exc_info=True)
-        coverage.append(SourceCoverage(SOURCE_RETRO, FAILED, "The retro history could not be read."))
+            state_ = COVERED if participated else (PARTIAL if total else NOT_CONFIGURED)
+            detail = _coverage_detail(state_, "retro", participated, total)
+            coverage.append(SourceCoverage(SOURCE_RETRO, state_, detail))
+        except Exception:  # noqa: BLE001
+            logger.debug("performance evidence: retro read failed (non-fatal)", exc_info=True)
+            coverage.append(SourceCoverage(SOURCE_RETRO, FAILED, "The retro history could not be read."))
     _emit_coverage(on_progress, coverage, SOURCE_RETRO)
 
     # ── Poker — how their estimates track where the team lands. ──────────────
+    # No dep token of its own — silenced only by a full-incognito run.
     _emit(on_progress, SOURCE_POKER, "running")
-    try:
-        from yeaboi.poker.store import PokerStore
+    if incognito(scope):
+        coverage.append(SourceCoverage(SOURCE_POKER, NOT_CONFIGURED, _TOGGLED_OFF))
+    else:
+        try:
+            from yeaboi.poker.store import PokerStore
 
-        with PokerStore(db_path) as store:
-            rows = store.get_all_history(_MAX_POKER_RUNS)
-            reports = []
-            for row in rows:
-                if not _in_period(str(row.get("poker_date", "")), period_start, period_end):
-                    continue
-                report = store.get_run_by_id(int(row.get("id", 0)))
-                if report is not None:
-                    reports.append(report)
-        lines, voted, total, attended = _poker_lines(reports, aliases)
-        poker_lines = lines[:_MAX_POKER_LINES]
-        if total:
-            metrics.append(
-                PerfMetric(
-                    key="poker_sessions",
-                    label="Estimation sessions joined",
-                    value=float(attended),
-                    denominator=float(total),
-                    group="ceremony",
-                    source=SOURCE_POKER,
-                    detail=f"Voted on {voted} ticket(s).",
+            with PokerStore(db_path) as store:
+                rows = store.get_all_history(_MAX_POKER_RUNS)
+                reports = []
+                for row in rows:
+                    if not _in_period(str(row.get("poker_date", "")), period_start, period_end):
+                        continue
+                    report = store.get_run_by_id(int(row.get("id", 0)))
+                    if report is not None:
+                        reports.append(report)
+            lines, voted, total, attended = _poker_lines(reports, aliases)
+            poker_lines = lines[:_MAX_POKER_LINES]
+            if total:
+                metrics.append(
+                    PerfMetric(
+                        key="poker_sessions",
+                        label="Estimation sessions joined",
+                        value=float(attended),
+                        denominator=float(total),
+                        group="ceremony",
+                        source=SOURCE_POKER,
+                        detail=f"Voted on {voted} ticket(s).",
+                    )
+                )
+            state_ = COVERED if voted else (PARTIAL if total else NOT_CONFIGURED)
+            coverage.append(
+                SourceCoverage(
+                    SOURCE_POKER,
+                    state_,
+                    f"Voted on {voted} ticket(s) across {total} session(s)."
+                    if voted
+                    else _coverage_detail(state_, "poker", 0, total),
                 )
             )
-        state_ = COVERED if voted else (PARTIAL if total else NOT_CONFIGURED)
-        coverage.append(
-            SourceCoverage(
-                SOURCE_POKER,
-                state_,
-                f"Voted on {voted} ticket(s) across {total} session(s)."
-                if voted
-                else _coverage_detail(state_, "poker", 0, total),
-            )
-        )
-    except Exception:  # noqa: BLE001
-        logger.debug("performance evidence: poker read failed (non-fatal)", exc_info=True)
-        coverage.append(SourceCoverage(SOURCE_POKER, FAILED, "The poker history could not be read."))
+        except Exception:  # noqa: BLE001
+            logger.debug("performance evidence: poker read failed (non-fatal)", exc_info=True)
+            coverage.append(SourceCoverage(SOURCE_POKER, FAILED, "The poker history could not be read."))
     _emit_coverage(on_progress, coverage, SOURCE_POKER)
 
     # ── Reporting — what actually shipped under their name. ──────────────────
+    # No dep token of its own — silenced only by a full-incognito run.
     _emit(on_progress, SOURCE_DELIVERY, "running")
-    try:
-        from yeaboi.reporting.store import ReportingStore
+    if incognito(scope):
+        coverage.append(SourceCoverage(SOURCE_DELIVERY, NOT_CONFIGURED, _TOGGLED_OFF))
+    else:
+        try:
+            from yeaboi.reporting.store import ReportingStore
 
-        with ReportingStore(db_path) as store:
-            report = store.get_latest_report()
-        delivered = getattr(report, "delivered_items", ()) or ()
-        shipped = [i for i in delivered if identity.matches(getattr(i, "assignee", ""), aliases)]
-        delivery_lines = _delivery_lines(delivered, aliases)[:_MAX_DELIVERY_LINES]
-        if shipped:
-            metrics.append(
-                PerfMetric(
-                    key="shipped_items",
-                    label="Items shipped",
-                    value=float(len(shipped)),
-                    group="delivery",
-                    source=SOURCE_DELIVERY,
+            with ReportingStore(db_path) as store:
+                report = store.get_latest_report()
+            delivered = getattr(report, "delivered_items", ()) or ()
+            shipped = [i for i in delivered if identity.matches(getattr(i, "assignee", ""), aliases)]
+            delivery_lines = _delivery_lines(delivered, aliases)[:_MAX_DELIVERY_LINES]
+            if shipped:
+                metrics.append(
+                    PerfMetric(
+                        key="shipped_items",
+                        label="Items shipped",
+                        value=float(len(shipped)),
+                        group="delivery",
+                        source=SOURCE_DELIVERY,
+                    )
                 )
-            )
-            groups.append(_delivery_group(shipped))
-        # Three different facts, three different words. ``shipped``, not the
-        # display list: ``delivery_lines`` is capped for the prompt, and counting
-        # the cap is how a tile saying 23 ended up beside a sentence saying 8.
-        if shipped:
-            delivery_state, delivery_detail = COVERED, f"{len(shipped)} shipped item(s) credited to this engineer."
-        elif delivered:
-            delivery_state = PARTIAL
-            delivery_detail = (
-                f"{len(delivered)} shipped item(s) in the latest delivery report, none credited to this "
-                "engineer — an attribution gap, not an idle period."
-            )
-        else:
-            delivery_state, delivery_detail = NOT_CONFIGURED, "No delivery report to read."
-        coverage.append(SourceCoverage(SOURCE_DELIVERY, delivery_state, delivery_detail))
-    except Exception:  # noqa: BLE001
-        logger.debug("performance evidence: reporting read failed (non-fatal)", exc_info=True)
-        coverage.append(SourceCoverage(SOURCE_DELIVERY, FAILED, "The delivery report could not be read."))
+                groups.append(_delivery_group(shipped))
+            # Three different facts, three different words. ``shipped``, not the
+            # display list: ``delivery_lines`` is capped for the prompt, and counting
+            # the cap is how a tile saying 23 ended up beside a sentence saying 8.
+            if shipped:
+                delivery_state, delivery_detail = COVERED, f"{len(shipped)} shipped item(s) credited to this engineer."
+            elif delivered:
+                delivery_state = PARTIAL
+                delivery_detail = (
+                    f"{len(delivered)} shipped item(s) in the latest delivery report, none credited to this "
+                    "engineer — an attribution gap, not an idle period."
+                )
+            else:
+                delivery_state, delivery_detail = NOT_CONFIGURED, "No delivery report to read."
+            coverage.append(SourceCoverage(SOURCE_DELIVERY, delivery_state, delivery_detail))
+        except Exception:  # noqa: BLE001
+            logger.debug("performance evidence: reporting read failed (non-fatal)", exc_info=True)
+            coverage.append(SourceCoverage(SOURCE_DELIVERY, FAILED, "The delivery report could not be read."))
     _emit_coverage(on_progress, coverage, SOURCE_DELIVERY)
 
     # ── Live gap-fill — only when asked, only over what nothing covered. ─────
-    if deep_scan:
+    if deep_scan and not wants(scope, "standup"):
+        # The live scan borrows the saved standup config (and hits the network),
+        # so it rides the standup toggle.
+        _emit(on_progress, PHASE_GAP_SCAN, "running")
+        _emit(on_progress, PHASE_GAP_SCAN, "no_data", detail=_TOGGLED_OFF)
+    elif deep_scan:
         _emit(on_progress, PHASE_GAP_SCAN, "running")
         extra_code, extra_docs, gap_note, gap_outcome = _gap_fill(
             aliases,

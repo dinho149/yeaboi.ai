@@ -263,6 +263,8 @@ def _run(app, op, payload: dict, period: str, window_start: str, window_end: str
                 result_box[0] = run_delivery_report(
                     period,
                     session_id=str(payload.get("session_id", "")),
+                    project_id=str(payload.get("project_id", "")),
+                    context_deps=payload.get("context_deps"),
                     window_start=window_start,
                     window_end=window_end,
                     sprint_names=tuple(payload.get("sprint_names") or ()),

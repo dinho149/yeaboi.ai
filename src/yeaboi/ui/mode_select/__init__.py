@@ -56,6 +56,7 @@ from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     _MIN_WIDTH,
     _MODE_CARDS,
     _OFFLINE_CARDS,
+    _SOLO_CARDS,
     _SWEEP_ROW_WEIGHT,
     _build_mode_screen,
     _build_slide_frame,
@@ -341,6 +342,24 @@ def _confirm_ticket_generation(
         elif k in ("esc", "q"):
             logger.info("Analysis: ticket generation declined (esc)")
             return False
+
+
+def _record_project_profile(profile) -> None:
+    """The analysis→planning edge: an active project remembers the profile its
+    analysis produced, so the next scoped plan seeds it automatically."""
+    from yeaboi.projects.active import get_active_project
+
+    project_id = get_active_project()
+    team_id = getattr(profile, "team_id", "") if profile else ""
+    if not project_id or not team_id:
+        return
+    try:
+        from yeaboi.projects.engine import set_project_defaults
+
+        set_project_defaults(project_id, {"default_analysis_profile_id": team_id})
+        logger.info("analysis: recorded profile %s as default for project %s", team_id, project_id)
+    except Exception:
+        logger.warning("analysis: could not record the project's default profile", exc_info=True)
 
 
 def _run_preview_flow(
@@ -705,6 +724,7 @@ def _run_preview_flow(
     global _ana_sid  # noqa: PLW0603
     if not _ana_sid:
         try:
+            from yeaboi.projects.active import get_active_project
             from yeaboi.sessions import SessionStore, make_session_id
 
             _ana_sid = make_session_id()
@@ -713,8 +733,10 @@ def _run_preview_flow(
                     _ana_sid,
                     project_name=getattr(ta_profile, "project_key", "") if ta_profile else "",
                     mode="analysis",
+                    project_id=get_active_project(),
                 )
             logger.info("Created analysis session for preview: %s", _ana_sid)
+            _record_project_profile(ta_profile)
         except Exception:
             logger.debug("Failed to create analysis session", exc_info=True)
 
@@ -2685,9 +2707,17 @@ def _collect_standup_data(message: str = "") -> dict:
 def _standup_generate(session_id: str, on_progress=None) -> str:
     """Run a standup for preview (no delivery) and return a status message."""
     try:
+        from yeaboi.projects.active import get_active_project, get_context_deps
         from yeaboi.standup.engine import run_standup
 
-        report = run_standup(session_id, deliver=False, dry_run=True, on_progress=on_progress)
+        report = run_standup(
+            session_id,
+            deliver=False,
+            dry_run=True,
+            on_progress=on_progress,
+            project_id=get_active_project(),
+            context_deps=get_context_deps(),
+        )
         warn = f" · {len(report.warnings)} notice(s)" if report.warnings else ""
         logger.info(
             "standup: generated report — day %s/%s, %d notice(s) (session=%s)",
@@ -4137,6 +4167,7 @@ _STANDUP_SETUP_FIELDS = (
     "documentation_scope_configured",
     "automation_markers",
     "automation_handling",
+    "context_deps",
 )
 
 
@@ -4476,6 +4507,7 @@ def _standup_team_configure(
             habit_detection=merged.get("habit_detection", "on"),
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
+            context_deps=merged.get("context_deps"),
         )
     logger.info(
         "standup team: saved session=%s sources=%s members=%d",
@@ -4762,6 +4794,7 @@ def _standup_code_configure(
             habit_detection=merged.get("habit_detection", "on"),
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
+            context_deps=merged.get("context_deps"),
         )
     logger.info(
         "standup code: saved session=%s sources=%s github_owners=%d github_repos=%d excluded=%d azdo_projects=%d",
@@ -4879,6 +4912,7 @@ def _standup_documentation_configure(
             habit_detection=merged.get("habit_detection", "on"),
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
+            context_deps=merged.get("context_deps"),
         )
     return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
 
@@ -5061,6 +5095,7 @@ def _standup_transcripts_configure(
             habit_detection=merged.get("habit_detection", "on"),
             habit_rules=merged.get("habit_rules", ""),
             habit_ai_match=merged.get("habit_ai_match", "on"),
+            context_deps=merged.get("context_deps"),
         )
     logger.info(
         "standup transcripts configured: session=%s dir=%s auto=%s",
@@ -5493,6 +5528,7 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             habit_detection=existing.get("habit_detection", "on"),
             habit_rules=existing.get("habit_rules", ""),
             habit_ai_match=existing.get("habit_ai_match", "on"),
+            context_deps=existing.get("context_deps"),
         )
     logger.info("standup identity: saved (session=%s)", session_id)
     return "Identity saved."
@@ -8508,6 +8544,7 @@ def _run_analysis_setup_wizard(
     roster_fallback: list[str],
     project_key: str = "",
     db_path=None,
+    solo: bool = False,
 ) -> dict | None:
     """Walk the Analysis setup steps with Esc-back navigation and state carry-over.
 
@@ -8566,10 +8603,13 @@ def _run_analysis_setup_wizard(
             components=state["components"],
             depth=state["depth"],
             model_offered=_model_offered(),
+            solo=solo,
         )
 
     def _config() -> dict:
-        return analysis_setup.run_config(state, roster_fallback=roster_fallback, model_offered=_model_offered())
+        return analysis_setup.run_config(
+            state, roster_fallback=roster_fallback, model_offered=_model_offered(), solo=solo
+        )
 
     def _members_step(direction: int) -> str:
         sources = (state["components"] or {}).get("delivery") or roster_fallback
@@ -8857,12 +8897,15 @@ def _run_team_analysis_results(
             examples=examples,
             analysis_features=analysis_features,
         )
+        from yeaboi.projects.active import is_solo_mode
+
         order = visible_card_order(
             profile,
             present["code"],
             present["docs"],
             has_code_health=present["code_health"],
             analysis_features=analysis_features,
+            solo=is_solo_mode(),
         )
 
         # When anonymized, render from a masked copy of the profile (and its sample
@@ -9477,19 +9520,27 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
 
     def _run_action(label: str, engineer: str) -> None:
         """Run one AI/notes action for the selected engineer (blocks briefly)."""
+        # The active project + Context toggles scope the engines' cross-mode
+        # evidence/ceremony reads, like every other launch site.
+        from yeaboi.projects.active import get_active_project, get_context_deps
         from yeaboi.ui.mode_select.screens._screens_secondary import (
             PERF_COMPLETE_PHASES,
             PERF_PREP_PHASES,
             PERF_REVIEW_PHASES,
         )
 
+        _perf_deps = get_context_deps()
+        _perf_ctx = {
+            "project_id": get_active_project(),
+            "context_deps": None if _perf_deps is None else list(_perf_deps),
+        }
         try:
             if label == "1:1 Prep":
                 from yeaboi.performance.engine import run_one_on_one_prep
 
                 prep = _generate(
                     lambda on_progress: run_one_on_one_prep(
-                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress
+                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress, **_perf_ctx
                     ),
                     heading=f"1:1 Prep — {engineer}",
                     phases=PERF_PREP_PHASES,
@@ -9527,7 +9578,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
 
                 review = _generate(
                     lambda on_progress: run_six_month_review(
-                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress
+                        engineer, session_id=session_id, db_path=_ana_dbp, on_progress=on_progress, **_perf_ctx
                     ),
                     heading=f"6-Month Review — {engineer}",
                     phases=PERF_REVIEW_PHASES,
@@ -9832,6 +9883,19 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     session_id = base["session_id"]
     session_name = base["session_name"]
 
+    def _active_project() -> str:
+        # Read at generate time, not page entry — the switcher can change it
+        # while this page is open.
+        from yeaboi.projects.active import get_active_project
+
+        return get_active_project()
+
+    def _active_context() -> tuple[str, ...] | None:
+        # Same read-at-generate-time rule as _active_project.
+        from yeaboi.projects.active import get_context_deps
+
+        return get_context_deps()
+
     q_label, q_start, q_end = quarter_bounds()
     periods = [(o["key"], o["label"], o["description"]) for o in report_setup.period_options()]
     # Loaded once per page entry — custom palettes come from reporting_themes.json;
@@ -10092,6 +10156,8 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             return run_delivery_report(
                 period_key,
                 session_id=session_id,
+                project_id=_active_project(),
+                context_deps=_active_context(),
                 db_path=_ana_dbp,
                 theme=state["theme"],
                 sources=state["sources"],
@@ -10116,6 +10182,8 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             return run_delivery_report(
                 PERIOD_QUARTER,
                 session_id=session_id,
+                project_id=_active_project(),
+                context_deps=_active_context(),
                 db_path=_ana_dbp,
                 window_start=window_start,
                 window_end=window_end,
@@ -10178,6 +10246,8 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             return run_delivery_report(
                 PERIOD_WINDOW,
                 session_id=session_id,
+                project_id=_active_project(),
+                context_deps=_active_context(),
                 db_path=_ana_dbp,
                 window_start=start_iso,
                 window_end=end_iso,
@@ -10699,6 +10769,14 @@ def _pick_analysis_profile(
     raises (a picker failure just means no profile).
     """
     if not board_configured:
+        return ""
+    from yeaboi.projects.active import get_context_deps
+
+    _deps = get_context_deps()
+    if _deps is not None and "analysis" not in _deps:
+        # The Context toggles switched analysis off for this run — offering a
+        # profile that would then be dropped is worse than not asking.
+        logger.info("analysis dep off — skipping the analysis-profile picker")
         return ""
     selected_profile_id = ""
     try:
@@ -11326,8 +11404,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         return
 
     from yeaboi.config import get_retro_server_port
+    from yeaboi.projects.scope import resolve_scope
     from yeaboi.retro.board import RetroBoard, board_to_report
-    from yeaboi.retro.engine import carried_action_items_for_session, history_providers
+    from yeaboi.retro.engine import carried_action_items_for_session, history_providers, standup_blocker_cards
     from yeaboi.retro.server import RetroServer
     from yeaboi.retro.store import RetroStore
 
@@ -11335,14 +11414,24 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # Seed last sprint's action items for review before the server starts, so the
     # first browser poll already shows the "Last sprint's actions" column. Best-effort:
     # carried_action_items_for_session returns () when there's no prior retro.
-    carried = carried_action_items_for_session(session_id, project_name=project_name, db_path=_ana_dbp)
+    # A project-linked session hard-filters the carry to its own project and adds
+    # the project's recent standup blockers as dismissible review cards.
+    from yeaboi.projects.active import get_active_project, get_context_deps
+
+    _retro_scope = resolve_scope(get_active_project(), session_id, context_deps=get_context_deps(), db_path=_ana_dbp)
+    carried = carried_action_items_for_session(
+        session_id, project_name=project_name, db_path=_ana_dbp, scope=_retro_scope
+    )
+    carried = (*carried, *standup_blocker_cards(_retro_scope, db_path=_ana_dbp, existing=carried))
     if carried:
         board.seed_carried(list(carried))
         logger.info("retro: seeded %d carried-over action item(s) (session=%s)", len(carried), session_id)
     server = RetroServer(board, port=get_retro_server_port())
     # Previous retros, for the board's back arrow. Read lazily, so a store that
     # cannot be opened costs a board with no history rather than a board.
-    server.history_list, server.history_report = history_providers(project_name=project_name, db_path=_ana_dbp)
+    server.history_list, server.history_report = history_providers(
+        project_name=project_name, db_path=_ana_dbp, scope=_retro_scope
+    )
     try:
         server.start()
         logger.info("retro: server started on port %s (session=%s)", server.port, session_id)
@@ -12092,13 +12181,19 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     from yeaboi.poker.board import PokerBoard, board_to_report
     from yeaboi.poker.server import PokerServer
     from yeaboi.poker.store import PokerStore
+    from yeaboi.projects.active import get_active_project, get_context_deps
+    from yeaboi.projects.scope import resolve_scope
 
+    # The AI perspective's cross-mode gather honors the active project and the
+    # Context toggles, like the retro board's carry-forward above.
+    _poker_scope = resolve_scope(get_active_project(), session_id, context_deps=get_context_deps())
     board = PokerBoard(
         session_id,
         project_name=project_name,
         source=setup["source"],
         scope_label=setup["scope_label"],
         tickets=setup["tickets"],
+        scope=_poker_scope,
     )
     server = PokerServer(board, port=get_poker_server_port())
     try:
@@ -12428,7 +12523,7 @@ def _sweep_menu_in(
     leaves that one title fully shown throughout (used after the return slide, when
     the mode you came from is already home and only the rest scroll in). A no-op
     wipe (straight to the final frame) when the terminal is too small.
-    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
+    ``cards``/``mascot`` pick the menu (Team default, Agents when passed).
     """
     _iw, _ih = console.size
     if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
@@ -12498,7 +12593,7 @@ def _slide_menu_in(
     Phase 2 hands off to the diagonal wipe (``_sweep_menu_in`` with ``sweep_skip``)
     so every OTHER title reveals top-left → bottom-right while the one you picked
     stays put. A no-op (straight to the final frame) when the terminal is too small.
-    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
+    ``cards``/``mascot`` pick the menu (Team default, Agents when passed).
     """
     _card_list = _MODE_CARDS if cards is None else cards
     w, h = console.size
@@ -12538,9 +12633,9 @@ def _run_category_screen(
     read_key,
     supports_timeout: bool,
     *,
-    preselected: str = "humans",
+    preselected: str = "team",
 ) -> str | None:
-    """Phase 0 — the Humans/Agents landing split. Returns a category key or
+    """Phase 0 — the landing split. Returns a category key or
     None to quit.
 
     Always shown on a fresh load (the last-used category is *preselected*,
@@ -12576,8 +12671,10 @@ def _run_category_screen(
             )
         )
         key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
-        if key in ("left", "right", "up", "down", "tab"):
-            selected = 1 - selected
+        if key in ("left", "up"):
+            selected = (selected - 1) % len(_CATEGORY_CARDS)
+        elif key in ("right", "down", "tab"):
+            selected = (selected + 1) % len(_CATEGORY_CARDS)
         elif key == "enter":
             chosen = _CATEGORY_CARDS[selected]["key"]
             logger.info("category chosen: %s", chosen)
@@ -13164,6 +13261,32 @@ SAVED_SESSION_HUBS = {
     "ship": _run_ship_hub,
 }
 
+#: Which menu (card list + companion mascot) each landing category opens.
+#: The one place the category key picks a menu — the Phase-0/Phase-1 loop and
+#: the tip jump all read this instead of hand-rolling ternaries.
+_CATEGORY_MENUS: dict[str, tuple[list[dict], str]] = {
+    "solo": (_SOLO_CARDS, "duck"),
+    "team": (_MODE_CARDS, "duck"),
+    "agents": (_AGENT_CARDS, "robo"),
+}
+
+
+def _tip_jump_target(mode_key: str, cards: list[dict]) -> tuple[str, int] | None:
+    """Where a cross-category tip jump lands: ``(category, card index)`` or None.
+
+    Team is searched first: Solo's keys are a subset of Team's, so a shared key
+    jumped from any other menu lands on the Team menu — and a retro/poker tip
+    fired while browsing Solo correctly jumps to the world that has the card.
+    """
+    for cat in ("team", "agents", "solo"):
+        other, _mascot = _CATEGORY_MENUS[cat]
+        if other is cards:
+            continue
+        j = next((i for i, m in enumerate(other) if m["key"] == mode_key), None)
+        if j is not None and other[j]["available"]:
+            return cat, j
+    return None
+
 
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
@@ -13186,10 +13309,11 @@ def select_mode(
     # shows; the last choice is persisted and *preselected* on the next launch
     # (never auto-skipped). Esc from a menu returns here; q quits.
     from yeaboi.config import get_last_category, set_last_category
+    from yeaboi.projects.active import set_solo_mode
 
     category = get_last_category()
-    cards: list[dict] = _MODE_CARDS if category == "humans" else _AGENT_CARDS
-    mascot = "duck" if category == "humans" else "robo"
+    set_solo_mode(category == "solo")
+    cards, mascot = _CATEGORY_MENUS[category]
     _category_pending = True  # show the split on the first pass through the loop
     _back_to_category = False
 
@@ -13254,7 +13378,7 @@ def select_mode(
             _returning = _skip_fade_in
             _skip_fade_in = False
 
-            # ── Phase 0: the Humans/Agents landing split ─────────────────────
+            # ── Phase 0: the landing split ───────────────────────────────────
             # Shown on a fresh load and whenever Esc backs out of a menu; a
             # return from a sub-page keeps its category and skips straight to
             # the menu transition below.
@@ -13266,8 +13390,8 @@ def select_mode(
                 if _pick != category:
                     set_last_category(_pick)
                 category = _pick
-                cards = _MODE_CARDS if category == "humans" else _AGENT_CARDS
-                mascot = "duck" if category == "humans" else "robo"
+                set_solo_mode(category == "solo")
+                cards, mascot = _CATEGORY_MENUS[category]
                 n = len(cards)
                 selected = 0
                 # A category pick always sweeps its menu in fresh.
@@ -13422,14 +13546,13 @@ def select_mode(
                             logger.info("tip jump to mode: %s", _tip.mode_key)
                             selected = _j
                             break
-                        _other = _AGENT_CARDS if cards is _MODE_CARDS else _MODE_CARDS
-                        _j = next((i for i, m in enumerate(_other) if m["key"] == _tip.mode_key), None)
-                        if _j is not None and _other[_j]["available"]:
-                            category = "agents" if _other is _AGENT_CARDS else "humans"
+                        _target = _tip_jump_target(_tip.mode_key, cards)
+                        if _target is not None:
+                            category, _j = _target
+                            set_solo_mode(category == "solo")
                             logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
                             set_last_category(category)
-                            cards = _other
-                            mascot = "duck" if category == "humans" else "robo"
+                            cards, mascot = _CATEGORY_MENUS[category]
                             n = len(cards)
                             selected = _j
                             break
@@ -13454,6 +13577,17 @@ def select_mode(
                     from yeaboi.ui.mode_select._ceremonies import run_ceremonies_page
 
                     run_ceremonies_page(console, live, read_key, _FRAME_TIME, _supports_timeout, dry_run=dry_run)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    select_time = time.monotonic()
+                elif key == "P":
+                    # Projects — the switcher for which project scoped runs read
+                    # their context through. A keycap rather than a mode card for
+                    # the same screen-budget reason as `s` and `n`; shifted because
+                    # lowercase `p` is the Privacy page.
+                    logger.info("projects opened from mode select")
+                    from yeaboi.ui.mode_select._projects import run_projects_page
+
+                    run_projects_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
                     select_time = time.monotonic()
                 elif key == "n":
@@ -14213,6 +14347,7 @@ def select_mode(
                             roster_fallback=available_trackers(),
                             project_key="",
                             db_path=_ana_dbp,
+                            solo=(category == "solo"),
                         )
                         if _ta_setup is None:
                             _ana_restart = True
@@ -14448,6 +14583,7 @@ def select_mode(
                                     subtitle=_ta_sub,
                                 ):
                                     from yeaboi.agent.nodes import _format_team_calibration
+                                    from yeaboi.projects.active import get_active_project as _gap
                                     from yeaboi.sessions import SessionStore as _AStore
                                     from yeaboi.sessions import make_session_id
 
@@ -14458,7 +14594,9 @@ def select_mode(
                                                 _ana_sid,
                                                 _ta_profile.project_key if _ta_profile else "",
                                                 mode="analysis",
+                                                project_id=_gap(),
                                             )
+                                        _record_project_profile(_ta_profile)
                                     except Exception:
                                         pass
 
@@ -15629,7 +15767,7 @@ def select_mode(
                         # Step 2: Slide Planning title from top down to its 3-item
                         # layout position. In the last ~40% of the slide, fade in
                         # the other two mode titles so they appear as Planning lands.
-                        chosen = _MODE_CARDS[selected]
+                        chosen = cards[selected]
                         base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
                         base_style = f"bold rgb({base_r},{base_g},{base_b})"
                         others = [i for i in range(n) if i != selected]
@@ -15925,6 +16063,7 @@ def select_mode(
                         roster_fallback=_delivery_grid,
                         project_key=_ta_project_key,
                         db_path=_ana_dbp,
+                        solo=(category == "solo"),
                     )
                     if _ta_setup is None:
                         _restart_project_list = True

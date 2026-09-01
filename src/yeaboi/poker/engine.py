@@ -144,6 +144,7 @@ def get_poker_perspective(
     project_name: str = "",
     context=None,
     debate_transcript: str = "",
+    scope=None,
 ) -> dict:
     """One LLM call commenting on a revealed vote spread. Never raises.
 
@@ -157,6 +158,8 @@ def get_poker_perspective(
         debate_transcript: the transcribed low-vs-high duel debate ("" when no
             duel ran). Passed through to the prompt, where the model is asked
             to judge which argument was stronger.
+        scope: an optional ``ProjectScope`` applying the run's context toggles
+            to the gather; ignored when ``context`` is injected.
 
     Returns ``{"note": str, "suggested_points": float | None, "confidence": str,
     "evidence": [str, ...], "llm_mode": "llm" | "fallback", "warnings": [str, ...]}``
@@ -179,7 +182,7 @@ def get_poker_perspective(
     if context is None:
         from yeaboi.poker.context import gather_poker_context
 
-        context = gather_poker_context(ticket or {}, project_name=project_name)
+        context = gather_poker_context(ticket or {}, project_name=project_name, scope=scope)
 
     def _fallback(warning: str) -> dict:
         note = _build_fallback_note(votes, context)

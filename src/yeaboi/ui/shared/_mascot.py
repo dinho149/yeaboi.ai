@@ -312,6 +312,47 @@ def mini_cells(frame: int = 0, *, flip: bool = False, mascot: str = "duck") -> l
     return _pack_cells(grid)
 
 
+def _at_x(grid: tuple[str, ...], x: int, total: int) -> tuple[str, ...]:
+    """Pad a pixel grid to ``total`` columns with the sprite starting at ``x``."""
+    return tuple("." * x + row + "." * (total - x - len(row)) for row in grid)
+
+
+def flock_cells(
+    frame: int = 0, *, count: int = 3, stride: int = 6, mascot: str = "duck"
+) -> list[list[tuple[str, str | None]]]:
+    """A row of ``count`` mini mascots as one cell grid — the Team card's trio.
+
+    Each neighbour stands ``stride`` pixels along, wings offset a few frames so
+    the group isn't flapping in lock-step, and the middle one is painted last so
+    it stands in front where the sprites overlap. At the defaults the trio is
+    22 + 2×6 = 34 pixels wide — the same footprint as the full-body sprite.
+    """
+    base, wing, glasses = _MINI_GRIDS.get(mascot, _MINI_GRIDS["duck"])
+    total = len(base[0]) + stride * (count - 1)
+    order = [i for i in range(count) if i != count // 2] + [count // 2]
+    layers = []
+    for i in order:
+        f = (frame + i * 3) % FRAMES
+        grid = _compose(base, _shift(wing, MINI_WING_OFF[f]), glasses)
+        layers.append(_at_x(grid, i * stride, total))
+    return _pack_cells(_compose(*layers))
+
+
+def flock_head_cells(
+    frame: int = 0, *, count: int = 3, stride: int = 3, mascot: str = "duck"
+) -> list[list[tuple[str, str | None]]]:
+    """The trio as overlapped heads — the Team card's crowd when a full-width
+    flock doesn't fit. At the defaults it is 16 + 2×3 = 22 pixels wide, the same
+    footprint as the mini sprite. The front head quacks on the ``frame`` clock so
+    the crowd reads as alive rather than a decal."""
+    head, quack = _HEADS.get(mascot, _HEADS["duck"])[:2]
+    total = len(head[0]) + stride * (count - 1)
+    order = [i for i in range(count) if i != count // 2] + [count // 2]
+    front = count // 2
+    layers = [_at_x(quack if i == front and frame % 4 < 2 else head, i * stride, total) for i in order]
+    return _pack_cells(_compose(*layers))
+
+
 def render_full(frame: int, *, mascot: str = "duck") -> Group:
     """Full-body idle duck: wing-flap + glasses-bob for the given frame."""
     f = frame % FRAMES

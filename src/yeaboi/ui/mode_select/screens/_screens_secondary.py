@@ -449,12 +449,17 @@ def _build_team_analysis_screen(
         examples=examples,
         analysis_features=analysis_features,
     )
+    from yeaboi.projects.active import is_solo_mode
+
+    # The results loop reads the same rule (its selection index and this
+    # rendered order share visible_card_order), so the two cannot drift.
     ctx.visible_order = visible_card_order(
         profile,
         present["code"],
         present["docs"],
         has_code_health=present["code_health"],
         analysis_features=analysis_features,
+        solo=is_solo_mode(),
     )
 
     if view == "overview":
@@ -4120,6 +4125,8 @@ def _build_all_tips_screen(
     theme = CHANGELOG_THEME
     title = tips_title(shimmer_tick, width=width)
     sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=_PAD + "  ")
+    # The Team menu carries every shared card key (Solo's keys are a subset),
+    # so it is the one list this gallery needs to resolve a tip's mode title.
     cards = {card["key"]: card for card in _MODE_CARDS}
     gold = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
     beta_c = f"rgb({BETA_RGB[0]},{BETA_RGB[1]},{BETA_RGB[2]})"

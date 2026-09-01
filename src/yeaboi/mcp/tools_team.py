@@ -173,7 +173,8 @@ def register(app) -> None:
         members re-scopes each delivery tracker's velocity/contributors and is mandatory scope
         for code analysis, e.g. {"jira": ["Alice","Bob"]}. Code results contain only matched
         selected-user commits, authored PRs, activity, and changed files; a blank or unmatched
-        scope never falls back to whole-team code. Discover names with team_roster."""
+        scope never falls back to whole-team code. Discover names with team_roster.
+        A solo-world run is simply members=None — whole-history, no roster narrowing."""
         import asyncio
 
         try:

@@ -2,6 +2,26 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.38.0",
+      "date": "2026-08-31",
+      "headline": "Work by project and pick your working world",
+      "summary": "Every mode now scopes to your active project, narrowing standup, retro and reporting to that work alone. The landing shows three working worlds: Team for groups, Solo for shipping solo, Agents for monitoring your coding bots.",
+      "highlights": [
+        {
+          "text": "Scope standup, retro, poker, performance and reporting to a single project",
+          "areas": ["planning"]
+        },
+        {
+          "text": "Three landing worlds: Team for sprints, Solo for shipping, Agents for monitoring",
+          "areas": ["general"]
+        },
+        {
+          "text": "Toggle data sources off with incognito mode for sensitive analysis",
+          "areas": ["settings"]
+        }
+      ]
+    },
+    {
       "version": "3.37.0",
       "date": "2026-08-31",
       "headline": "Attach screenshots and logs to your feedback",

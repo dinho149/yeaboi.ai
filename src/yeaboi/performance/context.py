@@ -19,6 +19,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from yeaboi.projects.scope import ProjectScope
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +51,18 @@ def _bullets(items) -> str:
     return "\n".join(f"  - {it}" for it in items)
 
 
-def gather_performance_context() -> PerformanceContext:
+def gather_performance_context(*, scope: ProjectScope | None = None) -> PerformanceContext:
     """Read the team's recent 1:1 actions + reviews and distil them (team-wide).
 
+    ``scope`` never narrows by session: performance data is keyed by engineer,
+    not project — an engineer's history must not shrink because a project is
+    active. Its ``performance`` context toggle IS honoured, though: a run with
+    the dep off gets an empty context.
     Graceful: a missing DB / empty tables / any error yields an empty context, so
     planning and analysis behave exactly as before Performance mode existed.
     """
+    if scope is not None and not scope.wants("performance"):
+        return PerformanceContext()
     try:
         from yeaboi.config import get_sessions_db
         from yeaboi.performance.store import PerformanceStore

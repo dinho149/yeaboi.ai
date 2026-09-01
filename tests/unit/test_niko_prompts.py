@@ -12,9 +12,9 @@ from yeaboi.prompts.niko import get_niko_system_prompt, get_niko_title_prompt
 
 
 class TestIdentity:
-    def test_it_names_both_audiences(self):
+    def test_it_names_all_three_audiences(self):
         prompt = get_niko_system_prompt()
-        assert "Humans" in prompt and "Agents" in prompt
+        assert "Solo" in prompt and "Team" in prompt and "Agents" in prompt
 
     def test_it_names_the_modes_a_user_would_ask_about(self):
         prompt = get_niko_system_prompt().lower()
@@ -49,8 +49,8 @@ class TestTheReadOnlyPromise:
 
 class TestContext:
     def test_the_route_and_its_capability_land_in_the_prompt(self):
-        prompt = get_niko_system_prompt(route="/humans/retro", capability="retro-board", screen_title="Retro")
-        assert "/humans/retro" in prompt
+        prompt = get_niko_system_prompt(route="/team/retro", capability="retro-board", screen_title="Retro")
+        assert "/team/retro" in prompt
         assert "retro-board" in prompt
         assert "Retro" in prompt
 

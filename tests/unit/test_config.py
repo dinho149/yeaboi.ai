@@ -1024,35 +1024,51 @@ class TestVoiceExtraMarker:
 class TestLastCategory:
     """The landing split's persisted category preselection."""
 
-    def test_default_is_humans(self, monkeypatch):
+    def test_default_is_team(self, monkeypatch):
         monkeypatch.delenv("YEABOI_LAST_CATEGORY", raising=False)
         from yeaboi.config import get_last_category
 
-        assert get_last_category() == "humans"
+        assert get_last_category() == "team"
 
     def test_round_trip(self, monkeypatch, tmp_path):
         from yeaboi import config as cfg
 
-        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "humans")
+        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "team")
         monkeypatch.setattr(cfg, "get_config_file", lambda: tmp_path / ".env")
         cfg.set_last_category("agents")
         assert os.environ["YEABOI_LAST_CATEGORY"] == "agents"
         assert cfg.get_last_category() == "agents"
         assert "YEABOI_LAST_CATEGORY" in (tmp_path / ".env").read_text()
 
+    def test_solo_round_trips(self, monkeypatch, tmp_path):
+        from yeaboi import config as cfg
+
+        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "team")
+        monkeypatch.setattr(cfg, "get_config_file", lambda: tmp_path / ".env")
+        cfg.set_last_category("solo")
+        assert cfg.get_last_category() == "solo"
+
+    def test_legacy_humans_maps_to_team(self, monkeypatch):
+        # Older releases persisted "humans"; it must read as "team", not fall
+        # back to the default by way of the unknown-value guard.
+        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "humans")
+        from yeaboi.config import get_last_category
+
+        assert get_last_category() == "team"
+
     def test_unknown_value_falls_back(self, monkeypatch):
         monkeypatch.setenv("YEABOI_LAST_CATEGORY", "robots!!")
         from yeaboi.config import get_last_category
 
-        assert get_last_category() == "humans"
+        assert get_last_category() == "team"
 
     def test_setter_rejects_unknown(self, monkeypatch, tmp_path):
         from yeaboi import config as cfg
 
-        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "humans")
+        monkeypatch.setenv("YEABOI_LAST_CATEGORY", "team")
         monkeypatch.setattr(cfg, "get_config_file", lambda: tmp_path / ".env")
         cfg.set_last_category("nonsense")
-        assert cfg.get_last_category() == "humans"
+        assert cfg.get_last_category() == "team"
         assert not (tmp_path / ".env").exists()
 
 

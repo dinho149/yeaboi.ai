@@ -63,7 +63,9 @@ class TestSchemaVersion:
         # an owner's expansion.
         # v30 adds planning_prior_art_feedback, the global ledger of which
         # existing repos the user ruled out as prior art.
-        assert CURRENT_SCHEMA_VERSION == 30
+        # v31 adds the projects table and sessions_meta.project_id, the
+        # identity that links sessions across modes.
+        assert CURRENT_SCHEMA_VERSION == 31
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""

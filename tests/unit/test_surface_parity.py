@@ -100,7 +100,35 @@ CAPABILITIES: dict[str, dict] = {
             "--architecture-spike",
         },
         "skill": "plan-sprint",
-        "desktop": {"/humans/planning", "/humans/planning/chat", "/humans/planning/plan"},
+        # Planning folded into the desktop's project flow: the blueprint is
+        # the intake and /projects/:id/plan renders the finished plan.
+        "desktop": {"/projects/:id/blueprint", "/projects/:id/plan"},
+    },
+    "projects": {
+        "engines": {
+            ("yeaboi.projects.engine", "create_project"),
+            ("yeaboi.projects.engine", "list_projects"),
+            ("yeaboi.projects.engine", "get_project"),
+            ("yeaboi.projects.engine", "link_session"),
+            ("yeaboi.projects.engine", "set_project_defaults"),
+        },
+        "mcp_tools": {
+            "project_create",
+            "project_list",
+            "project_get",
+            "project_link_session",
+            "project_set_defaults",
+        },
+        "tui_mode": Exempt(
+            "a welcome-screen keycap (P) opening the project switcher, not a card — "
+            "an eleventh card breaks the 84x40 layout, the ceremonies/niko argument"
+        ),
+        "cli": {"project"},
+        "skill": Exempt(
+            "a scoping primitive, not a guided workflow — modes gain --project/project_id, "
+            "and agents call the project_* tools directly"
+        ),
+        "desktop": {"/projects", "/projects/:id"},
     },
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
@@ -108,7 +136,10 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": Exempt("sessions are surfaced inside the planning-mode screens, no dedicated card"),
         "cli": {"--list-sessions", "--resume", "--clear-sessions"},
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
-        "desktop": {"/humans/planning/sessions"},
+        "desktop": Exempt(
+            "saved plans surface through each project's plan panel (the iteration carries its "
+            "session id) — a raw session browser would be a second door to the same room"
+        ),
     },
     "standup": {
         "engines": {
@@ -140,10 +171,10 @@ CAPABILITIES: dict[str, dict] = {
         },
         "skill": "standup",
         "desktop": {
-            "/humans/standup",
-            "/humans/standup/setup",
-            "/humans/standup/schedule",
-            "/humans/standup/review",
+            "/team/standup",
+            "/team/standup/setup",
+            "/team/standup/schedule",
+            "/team/standup/review",
         },
     },
     "reporting": {
@@ -154,7 +185,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "reporting",
         "cli": {"report"},
         "skill": "delivery-report",
-        "desktop": {"/humans/reporting", "/humans/reporting/new", "/humans/reporting/style"},
+        "desktop": {"/team/reporting", "/team/reporting/new", "/team/reporting/style"},
     },
     "performance": {
         "engines": {
@@ -172,7 +203,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "performance",
         "cli": {"perf"},
         "skill": "performance",
-        "desktop": {"/humans/performance", "/humans/performance/engineer"},
+        "desktop": {"/team/performance", "/team/performance/engineer"},
     },
     "scrum-poker": {
         # get_poker_perspective: the one LLM call (AI take on a revealed vote
@@ -183,16 +214,19 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "poker",
         "cli": {"poker"},  # history read-back + export; the live voting board stays TUI-hosted
         "skill": Exempt("live voting session is TUI-hosted by design; history stays readable via poker_history"),
-        "desktop": {"/humans/poker", "/humans/poker/new", "/humans/poker/board"},
+        "desktop": {"/team/poker", "/team/poker/new", "/team/poker/board"},
     },
     "retro-board": {
         # carried_action_items_for_session: the headless carry-forward load (prior
         # retro's action items) the TUI/browser adapt for the review column.
+        # standup_blocker_cards: its project-scoped sibling — the standup→retro
+        # edge, seeding a scoped board with the project's recent blockers.
         # history_providers/report_payload: the board's step-back through previous
         # retros — the same runs `retro_history` already reads, shaped as cards.
         "engines": {
             ("yeaboi.retro.engine", "generate_action_items"),
             ("yeaboi.retro.engine", "carried_action_items_for_session"),
+            ("yeaboi.retro.engine", "standup_blocker_cards"),
             ("yeaboi.retro.engine", "history_providers"),
             ("yeaboi.retro.engine", "report_payload"),
         },
@@ -200,7 +234,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "retro",
         "cli": {"retro"},  # history read-back + export; the live board itself stays TUI-hosted
         "skill": Exempt("live board is TUI-only by design; history stays readable via retro_history"),
-        "desktop": {"/humans/retro", "/humans/retro/board"},
+        "desktop": {"/team/retro", "/team/retro/board"},
     },
     "team-learning": {
         "engines": Exempt("lives in tools/team_learning.py as @tool functions — covered by test_tools_registry"),
@@ -220,7 +254,7 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "team-analysis",
         "cli": {"analyze", "--learn"},
         "skill": "team-analysis",
-        "desktop": {"/humans/analysis", "/humans/analysis/new", "/humans/analysis/results"},
+        "desktop": {"/team/analysis", "/team/analysis/new", "/team/analysis/results"},
     },
     "roadmap": {
         # Landed on main (TUI-only) before both this parity framework and the
@@ -238,7 +272,7 @@ CAPABILITIES: dict[str, dict] = {
         # carrying a milestone that has shipped: the intake tile needs a
         # roadmap path that is not TUI-only, and no surface has one yet — the
         # same gap the four rows above already track.
-        "desktop": {"/humans/planning/roadmap"},
+        "desktop": {"/projects/new/from-roadmap"},
     },
     "anonymize": {
         # Post-processing action, not a mode of its own: an "Anonymize" button on every
@@ -445,7 +479,7 @@ CAPABILITIES: dict[str, dict] = {
         # or a task, nor split an epic into stacked PRs. A route-set check
         # cannot see a narrowing inside a route, so it is named here and in
         # contracts/v1/app_http.md.
-        "desktop": {"/humans/ship", "/humans/ship/run"},
+        "desktop": {"/team/ship", "/team/ship/run"},
     },
 }
 
@@ -481,6 +515,11 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "provenance_audit": ("yeaboi.provenance.engine", "run_provenance_audit"),
     "provenance_trace": ("yeaboi.provenance.engine", "trace_entity"),
     "niko_ask": ("yeaboi.niko.engine", "ask"),
+    "project_create": ("yeaboi.projects.engine", "create_project"),
+    "project_list": ("yeaboi.projects.engine", "list_projects"),
+    "project_get": ("yeaboi.projects.engine", "get_project"),
+    "project_link_session": ("yeaboi.projects.engine", "link_session"),
+    "project_set_defaults": ("yeaboi.projects.engine", "set_project_defaults"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
@@ -548,21 +587,39 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
     "ship run": ("yeaboi.ship.engine", "run_ship"),
     "ship resume": ("yeaboi.ship.engine", "resume_ship"),
+    "project create": ("yeaboi.projects.engine", "create_project"),
+    "project list": ("yeaboi.projects.engine", "list_projects"),
+    "project show": ("yeaboi.projects.engine", "get_project"),
+    "project link": ("yeaboi.projects.engine", "link_session"),
+    "project set-defaults": ("yeaboi.projects.engine", "set_project_defaults"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
 CLI_RENAMES: dict[str, dict[str, str]] = {
-    "report": {"session": "session_id", "label": "period_label_override"},
-    "standup": {"session": "session_id"},
+    "report": {
+        "session": "session_id",
+        "label": "period_label_override",
+        "project": "project_id",
+        "context": "context_deps",
+    },
+    "standup": {"session": "session_id", "project": "project_id", "context": "context_deps"},
     # --transcript/--date carry explicit dest= in cli.py, so only --session
     # needs a rename here.
     "standup-review": {"session": "session_id"},
-    "perf prep": {"session": "session_id"},
+    "perf prep": {"session": "session_id", "project": "project_id", "context": "context_deps"},
     "perf complete": {"session": "session_id"},
-    "perf review": {"session": "session_id", "months": "period_months"},
+    "perf review": {
+        "session": "session_id",
+        "months": "period_months",
+        "project": "project_id",
+        "context": "context_deps",
+    },
     "ship run": {"session": "session_id", "check": "check_command"},
     "ship resume": {"check": "check_command"},
+    "project link": {"session": "session_id"},
     "analyze": {
+        # NOT project_id: analysis's --project is the tracker key (Jira/AzDO),
+        # a different id space from the projects table's proj-<8hex> ids.
         "project": "project_key",
         "sprints": "sprint_count",
         "depth": "analysis_depth",
@@ -577,12 +634,14 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
 CLI_ONLY_DESTS: dict[str, set[str]] = {
     # source/code_sources/documentation_sources are assembled into the engine's
     # `sources` dict (component → source list), mirroring analyze's components flags.
-    "report": {"format", "strict", "source", "code_sources", "documentation_sources"},
+    # incognito is sugar over context_deps=[] (see _cli_context_deps), not an engine param.
+    "report": {"format", "strict", "source", "code_sources", "documentation_sources", "incognito"},
     "standup": {
         "format",
         "strict",
         "schedule",
         "list_members",
+        "incognito",
     },  # schedule/list-members are adapters, not run_standup params
     # file-issues drives the separate file_transcript_issues entry point;
     # list-gaps is a store read. `paths` is the bare positional form of
@@ -590,15 +649,21 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     # produces) — the handler folds it into transcript_paths, and a lone "-" into
     # transcript_text.
     "standup-review": {"format", "strict", "file_issues", "list_gaps", "paths"},
-    "perf prep": {"strict"},
+    "perf prep": {"strict", "incognito"},
     "perf complete": {"strict"},
-    "perf review": {"strict"},
+    "perf review": {"strict", "incognito"},
     "agents cost": {"format", "strict"},
     "agents standup": {"format", "strict"},
     "agents security": {"format", "strict"},
     # --split picks the entry point (run_ship_batch) rather than a run_ship param.
     "ship run": {"format", "strict", "split"},
     "ship resume": {"format", "strict"},
+    "project create": set(),
+    "project list": set(),
+    "project show": set(),
+    "project link": set(),
+    # --analysis-profile and --context are each one key of the engine's `defaults` dict.
+    "project set-defaults": {"analysis_profile", "context"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -640,6 +705,9 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
     "ship resume": {
         "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
         "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
+    },
+    "project set-defaults": {
+        "defaults": "assembled from the per-key flags (--analysis-profile, --context); a raw dict flag invites typos",
     },
 }
 
@@ -773,17 +841,29 @@ class TestMcpTools:
 
 class TestTuiModes:
     def test_mode_cards_registered(self):
-        # The union of both category menus — Humans (_MODE_CARDS) and Agents
-        # (_AGENT_CARDS) — must equal the registered tui_mode column.
-        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
+        # The union of every category menu — Solo (_SOLO_CARDS), Team
+        # (_MODE_CARDS) and Agents (_AGENT_CARDS) — must equal the registered
+        # tui_mode column.
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS, _SOLO_CARDS
 
-        actual = {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
+        actual = {card["key"] for card in (*_SOLO_CARDS, *_MODE_CARDS, *_AGENT_CARDS)}
         registered = set(_non_exempt("tui_mode").values())
         assert actual == registered, (
-            f"_MODE_CARDS/_AGENT_CARDS keys vs CAPABILITIES differ.\n"
+            f"_SOLO_CARDS/_MODE_CARDS/_AGENT_CARDS keys vs CAPABILITIES differ.\n"
             f"  new unregistered cards: {sorted(actual - registered)}\n"
             f"  registered but card removed: {sorted(registered - actual)}\n{_HOW_TO}"
         )
+
+    def test_solo_cards_are_a_subset_of_the_team_menu(self):
+        # Solo introduces no capability of its own: every solo card shares a
+        # Team card's key (dispatch, hubs, tips and this registry all key on
+        # it), and the complement is exactly the deliberately team-only modes.
+        from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS, _SOLO_CARDS
+
+        solo = {card["key"] for card in _SOLO_CARDS}
+        team = {card["key"] for card in _MODE_CARDS}
+        assert solo <= team, sorted(solo - team)
+        assert team - solo == {"retro", "poker", "performance"}
 
 
 # ---------------------------------------------------------------------------

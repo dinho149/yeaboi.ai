@@ -369,6 +369,16 @@ class TestSavedRunsHub:
             rows = store.get_all_history()
         assert rows and "id" in rows[0] and rows[0]["session_id"] == "s1"
 
+    def test_get_all_history_filters_by_session_ids(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-09"))
+            store.record_run(_make_report(date="2026-07-10", session_id="s2"))
+            assert {r["session_id"] for r in store.get_all_history(session_ids=("s1",))} == {"s1"}
+            # Filtered in SQL, so the limit counts the scoped rows, not the newest overall.
+            assert [r["session_id"] for r in store.get_all_history(limit=1, session_ids=("s1",))] == ["s1"]
+            # An empty tuple means no rows, never all rows.
+            assert store.get_all_history(session_ids=()) == []
+
     def test_get_run_by_id_round_trips_and_missing(self, db_path):
         report = _make_report(date="2026-07-10")
         with StandupStore(db_path) as store:
@@ -1279,3 +1289,54 @@ class TestConflictsRoundTrip:
             )
             loaded = store.get_latest_report("s1")
         assert loaded.conflicts == ()
+
+
+class TestScopedRecentReports:
+    """The session_ids hard filter a ProjectScope resolves to."""
+
+    def test_none_is_the_legacy_read(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(session_id="s1"))
+            store.record_run(_make_report(session_id="s2", date="2026-07-11"))
+            legacy = store.get_recent_reports(limit=5)
+            explicit = store.get_recent_reports(limit=5, session_ids=None)
+        assert [r.session_id for r in legacy] == [r.session_id for r in explicit]
+        assert len(legacy) == 2
+
+    def test_filters_to_the_given_sessions_and_skips_failures(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(session_id="s1"))
+            store.record_run(_make_report(session_id="s2", date="2026-07-11"))
+            store.record_run(_make_report(session_id="s2", date="2026-07-12"), status="error")
+            scoped = store.get_recent_reports(limit=5, session_ids=("s2",))
+        assert [r.session_id for r in scoped] == ["s2"]
+
+    def test_empty_scope_means_no_rows(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(session_id="s1"))
+            assert store.get_recent_reports(limit=5, session_ids=()) == []
+
+
+class TestContextDepsColumn:
+    def test_round_trips_none_list_and_incognito(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        with StandupStore(db) as store:
+            base = dict(enabled=False, time="10:00", weekdays="1-5", delivery_channels=["terminal"])
+            store.save_config("inherit", **base)
+            store.save_config("subset", **base, context_deps=["retro", "plan"])
+            store.save_config("incognito", **base, context_deps=[])
+            assert (store.load_config("inherit") or {})["context_deps"] is None
+            assert (store.load_config("subset") or {})["context_deps"] == ["retro", "plan"]
+            assert (store.load_config("incognito") or {})["context_deps"] == []
+
+    def test_alter_heals_a_pre_column_table(self, tmp_path):
+        import sqlite3
+
+        db = tmp_path / "sessions.db"
+        with StandupStore(db) as store:
+            store.save_config("s1", enabled=True, time="09:00", weekdays="1-5", delivery_channels=["terminal"])
+        with sqlite3.connect(db) as conn:
+            conn.execute("ALTER TABLE standup_config DROP COLUMN context_deps")
+        with StandupStore(db) as store:
+            loaded = store.load_config("s1") or {}
+        assert loaded["context_deps"] is None

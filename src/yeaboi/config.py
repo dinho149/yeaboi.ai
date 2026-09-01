@@ -181,20 +181,23 @@ def set_tips_enabled(enabled: bool) -> None:
     logger.info("Tips %s (persisted to %s)", "enabled" if enabled else "disabled", config_file)
 
 
-# The landing split's two categories. Persisted so the next launch preselects
+# The landing split's three categories. Persisted so the next launch preselects
 # (never auto-skips) the category the user worked in last.
 LAST_CATEGORY_KEY = "YEABOI_LAST_CATEGORY"
-_VALID_CATEGORIES = ("humans", "agents")
+_VALID_CATEGORIES = ("solo", "team", "agents")
+# Values written by older releases, mapped on read; rewritten on the next set.
+_LEGACY_CATEGORIES = {"humans": "team"}
 
 
 def get_last_category() -> str:
-    """Return the last-chosen landing category ("humans"/"agents", default humans).
+    """Return the last-chosen landing category ("solo"/"team"/"agents", default team).
 
     Preselection only — the category screen always shows. Unknown values fall
-    back to "humans" so a hand-edited .env can't wedge the landing screen.
+    back to "team" so a hand-edited .env can't wedge the landing screen.
     """
-    value = os.getenv(LAST_CATEGORY_KEY, "humans").strip().lower()
-    return value if value in _VALID_CATEGORIES else "humans"
+    value = os.getenv(LAST_CATEGORY_KEY, "team").strip().lower()
+    value = _LEGACY_CATEGORIES.get(value, value)
+    return value if value in _VALID_CATEGORIES else "team"
 
 
 def set_last_category(category: str) -> None:

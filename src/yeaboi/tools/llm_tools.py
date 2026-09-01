@@ -135,6 +135,9 @@ def generate_acceptance_criteria(
     try:
         from yeaboi.agent.nodes import _load_team_profile
 
+        # Deliberately outside the context-toggle gates (projects/scope.py):
+        # a @tool has no graph state to read the toggles from, and this only
+        # picks an AC *style* — it quotes no team history into the output.
         ac_style = resolve_ac_style({}, _load_team_profile(""))
     except Exception:
         ac_style = resolve_ac_style({})

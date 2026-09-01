@@ -40,10 +40,11 @@ class TestMetaRoutes:
         assert set(payload) == {"version", "schema_version", "python", "platform"}
 
     def test_capabilities_serves_the_card_inventory(self, app):
-        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS, _SOLO_CARDS
 
         payload = json.loads(request(app, "GET", "/api/meta/capabilities").body)
-        assert set(payload) == {"categories", "modes", "agents", "intake"}
+        assert set(payload) == {"categories", "solo", "modes", "agents", "intake"}
+        assert [card["key"] for card in payload["solo"]] == [card["key"] for card in _SOLO_CARDS]
         assert [card["key"] for card in payload["modes"]] == [card["key"] for card in _MODE_CARDS]
         assert [card["key"] for card in payload["agents"]] == [card["key"] for card in _AGENT_CARDS]
 

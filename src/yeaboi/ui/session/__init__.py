@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import logging
 import threading
 import time
@@ -180,6 +181,37 @@ def _intake_complete(graph_state: dict) -> bool:
     return isinstance(qs, QuestionnaireState) and qs.completed and graph_state.get("pending_review") != "project_intake"
 
 
+def _scope_state_keys() -> tuple[dict, frozenset[str] | None]:
+    """The scope keys a TUI planning run seeds, plus its effective deps.
+
+    The welcome screen's active project scopes this run's cross-mode reads, and
+    its context toggles (Projects → Context) gate them. ``resolve_scope`` applies
+    the precedence: the session's toggles win, else the project's saved
+    ``default_context_deps``. The deps are seeded into the ``context_deps`` state
+    key because ``agent/nodes._wants_dep`` reads only that — resolving them in
+    ``_state_scope`` alone would gate half the run and leave the other half on.
+    Best-effort: a failure here never blocks a session.
+    """
+    keys: dict = {}
+    try:
+        from yeaboi.projects.active import get_active_project, get_context_deps
+        from yeaboi.projects.scope import resolve_scope
+
+        project = get_active_project()
+        if project:
+            keys["project_id"] = project
+            logger.info("Planning session project: %s", project)
+        scope = resolve_scope(project, context_deps=get_context_deps())
+        deps = scope.context_deps if scope is not None else None
+        if deps is not None:
+            keys["context_deps"] = json.dumps(sorted(deps))
+            logger.info("Planning session context deps: %s", keys["context_deps"])
+        return keys, deps
+    except Exception:  # noqa: BLE001 — toggles are best-effort, never block a session
+        logger.debug("could not read the active project or context toggles", exc_info=True)
+        return keys, None
+
+
 def _run_session_body(
     live,
     console,
@@ -208,6 +240,16 @@ def _run_session_body(
     else:
         graph_state: dict = {"messages": []}
         graph_state["_intake_mode"] = intake_mode
+        _seed, _deps = _scope_state_keys()
+        graph_state.update(_seed)
+        try:
+            if analysis_profile_id and _deps is not None and "analysis" not in _deps:
+                # The toggle beats an explicit pick: analysis off means no
+                # profile seed and no DoD extraction for this run.
+                logger.info("analysis dep off — dropping picked analysis profile %s", analysis_profile_id)
+                analysis_profile_id = ""
+        except Exception:  # noqa: BLE001
+            logger.debug("could not apply the analysis toggle", exc_info=True)
         if analysis_profile_id:
             graph_state["analysis_profile_id"] = analysis_profile_id
             # Extract custom DoD items from the analysis profile

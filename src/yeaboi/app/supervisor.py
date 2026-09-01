@@ -227,8 +227,9 @@ class BoardSupervisor:
     def start_retro(self) -> BoardSession:
         """Open a retro board for the latest session, seeded with carried actions."""
         from yeaboi.config import get_retro_server_port
+        from yeaboi.projects.scope import resolve_scope
         from yeaboi.retro.board import RetroBoard
-        from yeaboi.retro.engine import carried_action_items_for_session, history_providers
+        from yeaboi.retro.engine import carried_action_items_for_session, history_providers, standup_blocker_cards
         from yeaboi.retro.server import RetroServer
         from yeaboi.retro.setup import resolve_session
 
@@ -237,17 +238,20 @@ class BoardSupervisor:
             raise ValueError("no project session yet")
         board = RetroBoard(target.session_id, project_name=target.project_name, sprint_name=target.sprint_name)
         # Seeded before the server starts, so the first browser poll already
-        # shows the "Last sprint's actions" column.
+        # shows the "Last sprint's actions" column. A project-linked session
+        # scopes the carry and adds the project's recent standup blockers.
+        scope = resolve_scope(session_id=target.session_id, db_path=self.db_path)
         carried = carried_action_items_for_session(
-            target.session_id, project_name=target.project_name, db_path=self.db_path
+            target.session_id, project_name=target.project_name, db_path=self.db_path, scope=scope
         )
+        carried = (*carried, *standup_blocker_cards(scope, db_path=self.db_path, existing=carried))
         if carried:
             board.seed_carried(list(carried))
         server = RetroServer(board, port=get_retro_server_port())
         # Read lazily, so a store that cannot be opened costs a board with no
         # history rather than a board.
         server.history_list, server.history_report = history_providers(
-            project_name=target.project_name, db_path=self.db_path
+            project_name=target.project_name, db_path=self.db_path, scope=scope
         )
         server.start()
         session = BoardSession(
@@ -272,6 +276,7 @@ class BoardSupervisor:
         from yeaboi.config import get_poker_server_port
         from yeaboi.poker.board import PokerBoard
         from yeaboi.poker.server import PokerServer
+        from yeaboi.projects.scope import resolve_scope
         from yeaboi.retro.setup import resolve_session
 
         if not tickets:
@@ -280,12 +285,16 @@ class BoardSupervisor:
         # A poker session does not need a planning session to exist — fall back
         # to a stable quick-session id so history still records and groups.
         session_id = target.session_id or "quick-poker"
+        # Same scope the retro board resolves above: a project-linked session
+        # narrows the AI perspective's cross-mode gather.
+        scope = resolve_scope(session_id=target.session_id, db_path=self.db_path)
         board = PokerBoard(
             session_id,
             project_name=target.project_name if target else "",
             source=source,
             scope_label=scope_label,
             tickets=tickets,
+            scope=scope,
         )
         server = PokerServer(board, port=get_poker_server_port())
         server.start()

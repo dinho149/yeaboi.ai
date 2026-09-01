@@ -263,13 +263,26 @@ class RetroStore:
     #    Planning / Analysis with the team's recent retros regardless of which
     #    session they ran under. See docs: "Session Management".
 
-    def get_recent_reports(self, limit: int = 5, project_name: str = "") -> list[RetroReport]:
+    def get_recent_reports(
+        self, limit: int = 5, project_name: str = "", session_ids: tuple[str, ...] | None = None
+    ) -> list[RetroReport]:
         """Return recent RetroReports across ALL sessions, newest first.
 
         When ``project_name`` is given, rows matching it sort first (project-first),
         then by recency — so a plan for project X sees X's retros ahead of others'.
+        ``session_ids`` is the hard filter a ProjectScope resolves to: it replaces
+        the sort bias entirely, and an empty tuple means no rows, not all rows.
         """
-        if project_name:
+        if session_ids is not None:
+            if not session_ids:
+                return []
+            slots = ", ".join("?" for _ in session_ids)
+            rows = self._conn.execute(
+                f"SELECT report_json FROM retro_history WHERE session_id IN ({slots}) "  # noqa: S608 — placeholders, not values
+                "ORDER BY run_at DESC LIMIT ?",
+                (*session_ids, limit),
+            ).fetchall()
+        elif project_name:
             # (project_name = ?) is 1 for matches, 0 otherwise → matches sort first.
             rows = self._conn.execute(
                 "SELECT report_json FROM retro_history ORDER BY (project_name = ?) DESC, run_at DESC LIMIT ?",
@@ -290,13 +303,30 @@ class RetroStore:
                 logger.warning("Failed to deserialize a retro report: %s", exc)
         return reports
 
-    def get_all_history(self, limit: int = 100) -> list[dict]:
-        """Return recent retro run metadata across ALL sessions (for cadence + the hub)."""
-        rows = self._conn.execute(
-            "SELECT id, session_id, run_at, retro_date, project_name, card_count FROM retro_history "
-            "ORDER BY run_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    def get_all_history(self, limit: int = 100, session_ids: tuple[str, ...] | None = None) -> list[dict]:
+        """Return recent retro run metadata across ALL sessions (for cadence + the hub).
+
+        ``session_ids`` is the hard filter a ProjectScope resolves to; an empty
+        tuple means no rows, not all rows. Filtered in SQL so ``limit`` counts
+        the project's own runs — filtering after the limit would hide older ones
+        behind a window full of other projects'.
+        """
+        if session_ids is not None:
+            if not session_ids:
+                return []
+            slots = ", ".join("?" for _ in session_ids)
+            rows = self._conn.execute(
+                f"SELECT id, session_id, run_at, retro_date, project_name, card_count "  # noqa: S608 — placeholders, not values
+                f"FROM retro_history WHERE session_id IN ({slots}) "
+                "ORDER BY run_at DESC LIMIT ?",
+                (*session_ids, limit),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT id, session_id, run_at, retro_date, project_name, card_count "
+                "FROM retro_history ORDER BY run_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [
             {
                 "id": r[0],

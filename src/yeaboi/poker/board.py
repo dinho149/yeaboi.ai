@@ -162,11 +162,15 @@ class PokerBoard:
         source: str = "",
         scope_label: str = "",
         tickets: list[dict] | None = None,
+        scope=None,
     ) -> None:
         self.session_id = session_id
         self.project_name = project_name
         self.source = source
         self.scope_label = scope_label
+        # The run's ProjectScope (context toggles + session narrowing) for the
+        # AI perspective's history gather. Never serialized into a snapshot.
+        self.scope = scope
         self.created_at = _now_iso()
         self._tickets: list[dict] = []
         for t in tickets or []:

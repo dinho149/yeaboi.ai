@@ -65,17 +65,19 @@ def _guard(what: str, fn: Callable, /, *args, **kwargs) -> dict:
 
 @tool
 def list_capabilities() -> dict:
-    """List everything yeaboi can do: the Humans modes, the Agents family, and the
-    two categories they sit under. Use this when the user asks what yeaboi is,
+    """List everything yeaboi can do: the Solo and Team menus, the Agents family, and the
+    three categories they sit under. Use this when the user asks what yeaboi is,
     what it can do, where a feature lives, or what they should try next.
+    ``modes`` is the Team menu; ``solo`` is the Solo menu.
     """
 
     def _cards() -> dict:
-        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _INTAKE_CARDS, _MODE_CARDS
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _INTAKE_CARDS, _MODE_CARDS, _SOLO_CARDS
         from yeaboi.ui.mode_select.screens._screens_category import _CATEGORY_CARDS
 
         return {
             "categories": _CATEGORY_CARDS,
+            "solo": _SOLO_CARDS,
             "modes": _MODE_CARDS,
             "agents": _AGENT_CARDS,
             "intake": _INTAKE_CARDS,
@@ -108,7 +110,7 @@ def known_routes() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Humans
+# Team
 # ---------------------------------------------------------------------------
 
 
@@ -319,7 +321,7 @@ def provenance_trace(entity_id: str, depth: int = 2) -> dict:
 @tool
 def navigate(route: str) -> dict:
     """Take the user to a screen. Call this when the answer is "that lives over there"
-    — e.g. `/humans/retro` for a retro, `/agents/usage` for agent spend. The route
+    — e.g. `/team/retro` for a retro, `/agents/usage` for agent spend. The route
     must be one `list_routes` returned. This only moves the user; it starts nothing.
     """
     known = {row.get("path", "") for row in known_routes()}
