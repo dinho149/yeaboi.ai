@@ -6698,7 +6698,7 @@ class _EditableRow(Text):
 
 # Settings is a tabbed view. A few broad tabs group the config; this order drives
 # both the tab bar and the loop's Enter action (see settings_tab_action).
-_SETTINGS_TABS: list[str] = ["Credentials", "Integrations", "Sharing", "System"]
+_SETTINGS_TABS: list[str] = ["Credentials", "Catalog", "Sharing", "System"]
 
 # The heading sections each tab renders, in order. Storage is one row, so it
 # lives under System rather than owning a tab of its own.
@@ -6707,11 +6707,11 @@ _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
     # fields — it lives beside the other credentials because that is where a
     # user goes to see and edit what they have configured.
     "Credentials": ["provider", "jira", "azure", "github", "notion", "slack", "integrations"],
-    # Integrations is its own tab: the catalog is what a user scans to answer
-    # "what could yeaboi see", and burying it under Credentials would put it
-    # behind the one thing that is not optional. The section id stays
-    # "connections" — the rename is titles only.
-    "Integrations": ["connections"],
+    # The Catalog is its own tab: it is what a user scans to answer "what
+    # could yeaboi see", and burying it under Credentials would put it behind
+    # the one thing that is not optional. The section id stays "connections" —
+    # the rename is titles only.
+    "Catalog": ["connections"],
     # AWS credentials used to live here; they moved beside the provider that uses
     # them, so Bedrock has no section of its own any more.
     # Sharing is its own tab, not a System section: who can open a shared
@@ -6894,7 +6894,7 @@ _TAB_GAP = 3  # spaces between tab labels
 def settings_tab_action(active_tab: int) -> str:
     """Return what Enter does on a settings tab: 'loglevel' (System → cycles the log
     level), 'sharing' (Sharing → the Cloudflare Access wizard), 'connections'
-    (Integrations → opens the catalog browser) or 'setup' (Credentials →
+    (Catalog → opens the catalog browser) or 'setup' (Credentials →
     wizard). The data directory is no longer a tab action — it's the Storage
     box's row, opened like any other value.
 
@@ -6906,7 +6906,7 @@ def settings_tab_action(active_tab: int) -> str:
         return "loglevel"
     if label == "Sharing":
         return "sharing"
-    if label == "Integrations":
+    if label == "Catalog":
         return "connections"
     return "setup"
 
@@ -7654,7 +7654,7 @@ def _build_settings_screen(
         _heading("Integrations", wide=True)
         if not _linked:
             hint = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
-            hint.append("Nothing connected yet — browse the catalog on the Integrations tab", style=theme.muted)
+            hint.append("Nothing connected yet — browse the Catalog tab", style=theme.muted)
             _cur.append(hint)
         for _c in _linked:
             head = Text(justify="left", no_wrap=True, overflow="ellipsis")

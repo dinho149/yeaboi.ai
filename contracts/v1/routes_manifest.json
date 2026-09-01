@@ -194,7 +194,7 @@
     {
       "path": "/settings/connections",
       "capability": "connections",
-      "title": "Settings · Integrations"
+      "title": "Settings · Catalog"
     },
     {
       "path": "/settings/sharing",
@@ -343,7 +343,7 @@
     },
     {
       "route": "/settings/connections",
-      "title": "Integrations",
+      "title": "Catalog",
       "sections": [
         "connections"
       ]

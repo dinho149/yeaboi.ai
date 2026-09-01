@@ -27,7 +27,7 @@ API_BASE = "https://api.trello.com/1"
 
 _MISSING_CONFIG_MSG = (
     "Error: Trello is not configured. Add TRELLO_API_KEY and TRELLO_TOKEN "
-    "via Settings ▸ Integrations or `yeaboi connections add trello`."
+    "via Settings ▸ Catalog or `yeaboi connections add trello`."
 )
 
 _TIMEOUT = 15

@@ -26,7 +26,7 @@ API_URL = "https://api.linear.app/graphql"
 
 _MISSING_CONFIG_MSG = (
     "Error: Linear is not configured. Add LINEAR_API_KEY (and optionally LINEAR_TEAM_KEY) "
-    "via Settings ▸ Integrations or `yeaboi connections add linear`."
+    "via Settings ▸ Catalog or `yeaboi connections add linear`."
 )
 
 _TIMEOUT = 15

@@ -20,7 +20,7 @@ from yeaboi.ui.mode_select.screens._screens_secondary import (
     _build_settings_screen,
 )
 
-CATALOG_TAB = _SETTINGS_TABS.index("Integrations")
+CATALOG_TAB = _SETTINGS_TABS.index("Catalog")
 CREDENTIALS_TAB = _SETTINGS_TABS.index("Credentials")
 API_KEY = "dd-api-key-abcdefghijkl"
 APP_KEY = "dd-app-key-abcdefghijkl"
@@ -46,7 +46,7 @@ def _render(config_data: dict, *, width: int = 100, height: int = 160, tab: int 
 
 class TestTheTab:
     def test_the_catalog_is_its_own_tab_and_the_setup_view_lives_with_credentials(self):
-        assert _SETTINGS_TAB_SECTIONS["Integrations"] == ["connections"]
+        assert _SETTINGS_TAB_SECTIONS["Catalog"] == ["connections"]
         assert _SETTINGS_TAB_SECTIONS["Credentials"][-1] == "integrations"
 
     def test_the_zero_box_case_renders(self):
@@ -212,7 +212,7 @@ class TestNothingConnectedChangesNothing:
         assert not any(f.is_set for f in rows)
         assert not any(f.value for f in rows)
 
-    def test_enter_on_the_integrations_tab_does_not_launch_the_setup_wizard(self):
+    def test_enter_on_the_catalog_tab_does_not_launch_the_setup_wizard(self):
         # The tab action table falls through to the first-run wizard, so a tab
         # that does not name itself drops the user into "choose an LLM provider".
         from yeaboi.ui.mode_select.screens._screens_secondary import settings_tab_action

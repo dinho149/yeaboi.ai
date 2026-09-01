@@ -1,4 +1,4 @@
-"""The integrations catalog browser — Settings ▸ Integrations, behind Enter.
+"""The integrations catalog browser — Settings ▸ Catalog, behind Enter.
 
 Settings itself stays "hidden until connected": a user who has connected
 nothing reads no vendor name there unasked. This page is the other side of that
