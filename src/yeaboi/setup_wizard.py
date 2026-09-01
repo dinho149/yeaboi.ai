@@ -298,7 +298,7 @@ def _offer_catalog(console: Console) -> None:
         "Datadog, GitLab, PagerDuty and friends."
     )
     try:
-        reply = input("Browse the catalog now? [y/N] ").strip().lower()
+        reply = input("Browse integrations now? [y/N] ").strip().lower()
     except EOFError:
         return
     if reply not in ("y", "yes"):

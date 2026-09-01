@@ -172,7 +172,7 @@ def build_catalog_screen(
     total = len(payload["connectors"])
 
     subtitle = Text(justify="left", no_wrap=True, overflow="ellipsis")
-    subtitle.append(f"{PAD}Integrations catalog", style=f"bold {_THEME.accent_bright}")
+    subtitle.append(f"{PAD}Integrations", style=f"bold {_THEME.accent_bright}")
     subtitle.append(f"  {connected} of {total} connected", style=_THEME.muted)
     if filtering or filter_text:
         subtitle.append(f"  /{filter_text}", style=_THEME.warn if filtering else _THEME.dim)
