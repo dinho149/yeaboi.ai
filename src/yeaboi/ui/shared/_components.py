@@ -149,6 +149,8 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Leave": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Jira": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Azure DevOps": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "Linear": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "Trello": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Configure": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Projects page. "Set active" is the affirmative action (green like Accept);
     # Archive is amber (reversible, but it hides the row).
@@ -204,6 +206,8 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Reset": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     "PowerPoint": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Back": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Integrations catalog browser (Settings ▸ Catalog ▸ Enter).
+    "Connect": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     # Advisory action on the analysis review when a Small project looks bigger.
     "Switch to Large": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     # Ship mode (cargo-orange accent). Approve is the "go" green like Accept;

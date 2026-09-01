@@ -90,7 +90,16 @@ over this wire. Writes are allowlisted to the engine's field registry
 | POST | `/api/settings/data-dir` | body `{value, move?: bool}` → same write shape with `restart_required: true` |
 | POST | `/api/settings/provider/verify` | body `{provider, credential, model?}` → `{ok, message}` (network, up to ~8s) |
 | POST | `/api/settings/provider/models` | body `{provider, credential}` → `{models, default, hints}` (discovered-first merge) |
-| POST | `/api/settings/connection/verify` | body `{kind: github\|jira\|confluence\|notion\|elevenlabs\|tavus, token?, base_url?, email?, space_key?}` → `{ok, message}`; omitted fields fall back to saved values, so a stored credential can be re-checked without echoing it — but a stored token only travels to the stored host: a caller-supplied `base_url`/`email` requires `token` in the same request, and a supplied `base_url` must be https (400 otherwise; network, up to ~10s) |
+| POST | `/api/settings/connection/verify` | body `{kind, …fields}` → `{ok, message}`. `kind` is any `verify_kind` the `/api/connections` rows report — the legacy literals (`github`, `jira`, `confluence`, `notion`, `elevenlabs`, `tavus`) plus every descriptor-verified connector key (`datadog`, `grafana`, `sentry`, `gitlab`, `custom_*`, …), and the accepted field names are that kind's declared verify fields (e.g. `token`, `app_key`, `base_url`, `email`, `space_key`). Omitted fields fall back to saved values, so a stored credential can be re-checked without echoing it — but a stored secret only travels to the stored host: a caller-supplied `base_url`/`email` requires **every** secret verify field of that kind in the same request (Datadog: `token` and `app_key`), and a supplied `base_url` must be https (400 otherwise; network, up to ~10s) |
+| GET | `/api/connections` | the integration catalog: `{connectors: [{key, label, summary, detail, family, family_label, section, connected, read_only, managed_by, kind, docs_url, glyph, icon, accent, verify_kind, auth_env, auth_methods: [{key, label, summary, recommended, warning, setup_url, envs}], fields: [{env, label, secret, required, is_set, choices, default, placeholder, hint, help_url, help_scope, auth_method}]}], families, connected}`. `?all=1` is the browse view: every connector that could be added, plus the built-in integrations (GitHub, Jira, Azure DevOps Boards, Confluence, Notion, Slack, ElevenLabs, Tavus) as `managed_by: "credentials"` rows; the default lists only connected connector-layer rows — the view a Credentials-side "your integrations" panel renders. `kind` is a custom connection's kind (`api`/`webhook`/`mcp`); built-in and legacy rows send `""`. `icon` is a custom connection's uploaded icon — a server-validated `data:image/(png\|jpeg\|webp);base64,` URI, never SVG, decoded size ≤ 64KB; `""` everywhere else (built-in marks ship with the client). `managed_by` says where configuring happens — `"connections"` rows carry their own add flow (write the fields via `/api/settings/set`, then probe `verify_kind`), `"credentials"` rows deep-link to Settings ▸ Credentials/setup and their `verify_kind` is `""` when no probe exists (Slack, Azure DevOps). **Never carries a field value** — a field reports only whether it is set. `auth_methods` is empty for a connector with one way in, and a field's `auth_method` is empty when every method needs it; a client that ignores both keys renders exactly as it did before they existed. Exactly one method carries `recommended: true`, and every other carries a non-empty `warning` — a method yeaboi cannot bound says so on itself |
+| POST | `/api/connections/custom` | save one user-created connection. Body: descriptor JSON — `{key: "custom_…", label, family, summary, detail?, docs_url?, glyph, accent, kind: api\|webhook\|mcp, auth_scheme: bearer\|basic\|header, header_name?, probe_path, probe_ok_status, webhook_verify?: token\|hmac, events?: {path, items_key, kind, title_path, ref_path?, severity_path?, status_path?, url_path?, started_at_path?, service_path?}, extra_fields?: [{label, env_suffix, secret?, header_name?, hint?}], icon_data?}` — **never a credential** (values are typed afterwards through `/api/settings/set`, exactly like a built-in connector's fields). An `mcp` kind stores a streamable-HTTP MCP server URL and optional bearer token (derived envs, values typed afterwards via `/api/settings/set`), verifies with the MCP initialize + tools/list handshake, and gathers nothing. A `webhook` kind requires the events mapping, ignores the HTTP-shape fields, and mints its delivery secret server-side — returned once as `webhook_secret` on the created row (`/api/webhooks/{key}/url` can show it again). `extra_fields` (`api` kind only, ≤ 4) declares extra credentials/config beyond the auth scheme — a Datadog-style app key beside the api key: `env_suffix` is UPPER_SNAKE and derives the env (`YEABOI_CUSTOM_<KEY>_<SUFFIX>`), `secret` defaults true, and a `header_name` sends the value as that request header on probe and fetch. `icon_data` is an optional icon in the `icon` row key's data-URI shape (png/jpeg/webp only, never SVG, ≤ 64KB decoded — the validator refuses the rest). The runtime validator is the gate: every problem comes back joined in a 400 `{"error": …}`. Success returns the new catalog row in the `/api/connections` row shape (`managed_by: "connections"`) |
+| POST | `/api/connections/custom/draft` | body `{description}` → `{ok, draft, problems}`: one LLM pass from a plain-language service description to a candidate descriptor (same shape as the create body). Never saves — a draft with problems pre-fills the create form. The model proposes identity, look and shape only — any kind, `extra_fields` included; never a credential value, an env name, verify wiring or `icon_data` (network + one LLM call) |
+| POST | `/api/connections/custom/{key}/delete` | remove one user-created connection — the descriptor AND its stored env values in the same act (a definition-less credential is an orphan). `{deleted: key}`; 404 for a key that is not a custom connection |
+| GET | `/api/webhooks/status` | `{running, port, started_at, tunnel_url, connections: [{key, label, last_received_at}]}` — the inbound webhook receiver's state and per-connection delivery liveness (`last_received_at` is `""` while a connection waits for its first delivery). Offline: a local read, no probe |
+| POST | `/api/webhooks/start` | bind the loopback receiver (fixed port, default 8642, `YEABOI_WEBHOOK_PORT` overrides — a conflict is a 503, never a port walk: a webhook URL a user pasted into a vendor's console must stay true) in this process → the status shape. The receiver itself is a **separate loopback server** and never joins this wire's auth: its own auth is per-connection (`X-Yeaboi-Token`, or a Stripe-shaped `X-Yeaboi-Signature` HMAC with a ±5 min replay window) |
+| POST | `/api/webhooks/stop` | stop the receiver and any tunnel → the status shape |
+| POST | `/api/webhooks/share` | open a cloudflared quick tunnel to the receiver → the status shape with `tunnel_url` set. The hostname **rotates on every share and expires on its own** — fit for testing a sender, not a durable endpoint (503 when the tunnel cannot open; the local receiver keeps running) |
+| GET | `/api/webhooks/{key}/url` | `{key, url, tunnel_url, verify, header, secret, running, last_received_at}` — where one webhook connection's deliveries go and how they authenticate. **The one route that returns the secret whole**; showing it is a local, deliberate act, the same posture as a board's host URL. 404 for a key that is not a webhook connection |
 | GET | `/api/settings/access/state` | the Cloudflare Access doctor, offline: `{logged_in, cert_path, jwt_installed, missing_keys}`. Cheap by construction — it does **not** resolve the cloudflared binary, because doing so downloads ~38 MB on first use and re-hashes the cached copy every call; a missing binary surfaces from the share itself |
 | POST | `/api/settings/access/verify` | no body → `{ok, message}`. Runs the same preflight a board runs before publishing (`assume_mode`, so it answers before Share Mode is switched on); fetches the team's JWKS, so up to a few seconds of network |
 | POST | `/api/settings/signin/start` | spawn `claude setup-token` → `{started, message}` |
@@ -255,9 +264,12 @@ The **standup dashboard** is
 `{session_id, session_name, my_name, run_id, history, cards: [{key, title, member}], report, config, schedule, review, nudge, gap_issues, active: [name]}`.
 `history` is the saved-runs hub — every run this session has done, newest first.
 `cards` is the card vocabulary both surfaces share: `summary`, `my_update`,
-`team`, `member:<name>`, `conflicts`, `activity`, `gaps`, `schedule`,
-`notices` — computed per report, because a card with nothing in it would
-advertise a feature rather than report a result. `active` names the members
+`team`, `member:<name>`, `conflicts`, `production`, `activity`, `gaps`,
+`schedule`, `notices` — computed per report, because a card with nothing in it
+would advertise a feature rather than report a result. `production` carries
+`report.ops_signals`: bounded per-source counts over a WIDER window than the
+rest of the report, each signal stating its own `window_start`/`window_end`,
+and attributable to nobody — an ops signal has no author field to carry one. `active` names the members
 with attributed activity; a report saved before activity counts existed falls
 back to its summary text rather than reading as all-quiet.
 
@@ -273,8 +285,12 @@ second thing to drift. It carries the answers so far plus `model_offered`
 (whether a local model can be picked — the caller owns that probe).
 
 **Analysis options** is
-`{grid: {delivery, code, docs}, features: [{key, label}], features_available,
+`{grid: {delivery, code, docs, ops}, features: [{key, label}], features_available,
 steps, depths, default_depth, window_presets, default_window_days}`.
+The `ops` row is the connected monitoring connectors, so it is empty on every
+machine that has never connected one — which is what makes the `operational`
+feature unselectable rather than merely disappointing. Its result is team-wide
+counts and a per-30-day rate, never anything attributable to a person.
 The run body is the wizard's answers:
 `{source?, project_key?, team_name?, sprint_count?, features?, components?,
 members_map?, analysis_scope?, depth?, window_days?, model?}`.
@@ -431,6 +447,14 @@ context). The standup run needs neither field — its session is the scope (an
 unlinked session runs team-wide, exactly as before projects existed), and its
 toggles live in the session's saved standup config (`standup_config_set`'s
 `context_deps`).
+
+A delivery report carries `production`: one row per ops roll-up over the
+report's **own** period (`kind`, `source`, `family`, `count`, `resolved`,
+`severity`, `services`, `samples`, `window`) — the same row shape the standup
+payload uses, so one component draws both. Empty unless an ops vendor is
+connected, and never folded into the supporting-signals corroboration sentence:
+an incident qualifies delivery rather than supporting it. The deck's Production
+slide is an ordinary `list` slide, dropped by `include_production: false`.
 
 `/api/reporting/fit` answers `{extra_slides, style}`. `extra_slides: 0` means
 there is nothing to ask — the style that comes back is the one to export with.

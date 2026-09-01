@@ -22,29 +22,44 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+def _connector_secret_envs() -> frozenset[str]:
+    """The secrets the connector registry declares.
+
+    Derived rather than restated so a new connector cannot ship unmasked — the
+    descriptor is the only place its secrets are named.
+    """
+    from yeaboi.connectors import registry
+
+    return registry.secret_envs()
+
+
 #: env vars whose value is a credential: masked on read, write-only over a wire.
-SECRET_ENVS: frozenset[str] = frozenset(
-    {
-        "ANTHROPIC_API_KEY",
-        "CLAUDE_CODE_OAUTH_TOKEN",
-        "OPENAI_API_KEY",
-        "GOOGLE_API_KEY",
-        "XAI_API_KEY",
-        "DEEPSEEK_API_KEY",
-        "MOONSHOT_API_KEY",
-        "MISTRAL_API_KEY",
-        "DASHSCOPE_API_KEY",
-        "ZAI_API_KEY",
-        "JIRA_API_TOKEN",
-        "AZURE_DEVOPS_TOKEN",
-        "GITHUB_TOKEN",
-        "NOTION_TOKEN",
-        "SLACK_WEBHOOK_URL",
-        "SLACK_BOT_TOKEN",
-        "STANDUP_SMTP_PASSWORD",
-        "ELEVENLABS_API_KEY",
-        "TAVUS_API_KEY",
-    }
+SECRET_ENVS: frozenset[str] = (
+    frozenset(
+        {
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "OPENAI_API_KEY",
+            "GOOGLE_API_KEY",
+            "XAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "MOONSHOT_API_KEY",
+            "MISTRAL_API_KEY",
+            "DASHSCOPE_API_KEY",
+            "ZAI_API_KEY",
+            "JIRA_API_TOKEN",
+            "AZURE_DEVOPS_TOKEN",
+            "GITHUB_TOKEN",
+            "NOTION_TOKEN",
+            "SLACK_WEBHOOK_URL",
+            "SLACK_BOT_TOKEN",
+            "STANDUP_SMTP_PASSWORD",
+            "ELEVENLABS_API_KEY",
+            "TAVUS_API_KEY",
+        }
+    )
+    | _connector_secret_envs()
 )
 
 
@@ -221,6 +236,28 @@ def _build_fields() -> tuple[SettingField, ...]:
             choice_labels={"true": "enabled", "false": "disabled"},
             default="false",
         ),
+        # -- connections ----------------------------------------------------
+        # Derived from the connector registry rather than listed: a descriptor
+        # is the only place a connector's fields are named.
+        *_connector_fields(),
+    )
+
+
+def _connector_fields() -> tuple[SettingField, ...]:
+    """One :class:`SettingField` per connector field, from the descriptors."""
+    from yeaboi.connectors import registry
+
+    return tuple(
+        SettingField(
+            f.env,
+            f.label if len(c.fields) == 1 else f"{c.label} {f.label}",
+            c.section,
+            secret=f.secret,
+            choices=f.choices,
+            default=f.default,
+        )
+        for c in registry.all_connectors()
+        for f in c.fields
     )
 
 
@@ -234,6 +271,19 @@ def _fields() -> tuple[SettingField, ...]:
     return _FIELDS_CACHE
 
 
+def _invalidate_fields_cache() -> None:
+    """Rebuild the field registry on next read.
+
+    A user-created connection changes the write-allowlist and the masking
+    table at runtime — the one thing the import-time cache cannot see. The
+    custom store calls this after every save/delete. Underscored on purpose:
+    it is an infrastructure hook, not a settings capability, and the parity
+    suite force-registers every public name in this module.
+    """
+    global _FIELDS_CACHE
+    _FIELDS_CACHE = None
+
+
 #: section render order — mirrors the TUI's tab/section arrangement.
 SECTIONS: tuple[str, ...] = (
     "provider",
@@ -242,6 +292,7 @@ SECTIONS: tuple[str, ...] = (
     "github",
     "notion",
     "slack",
+    "connections",
     "sharing",
     "storage",
     "standup",
@@ -481,6 +532,54 @@ _CONNECTION_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
+def _connection_kinds() -> dict[str, tuple[tuple[str, str], ...]]:
+    """The legacy table plus every connector's derived one.
+
+    The legacy rows stay literal for now: the TUI still names those fields in
+    hand-written builders, and deriving both halves at once is a change that
+    cannot be reviewed in one piece.
+    """
+    from yeaboi.connectors import registry
+
+    return {**_CONNECTION_KINDS, **registry.connection_kinds()}
+
+
+def _verify_field_names() -> tuple[str, ...]:
+    """Every field name any connection kind accepts on a verify request.
+
+    The wire's allowlist, derived from the same table verification resolves
+    against, so a connector cannot declare a field the HTTP surface silently
+    refuses to carry.
+    """
+    return tuple(sorted({name for spec in _connection_kinds().values() for name, _ in spec}))
+
+
+def _connector_registry():
+    from yeaboi.connectors import registry
+
+    return registry
+
+
+def _verify_via_descriptor(connector, resolved: dict[str, str]) -> tuple[bool, str]:
+    """Call a connector's probe with the arguments its descriptor names.
+
+    ``verify_arg`` fields come from the resolved request; ``env_arg`` fields come
+    from the saved environment and never from the request. That split is the
+    exfiltration guard: every field that determines a host is an ``env_arg``, so
+    a caller cannot pair a stored token with a host of their choosing.
+    """
+    from yeaboi import provider_verification
+
+    probe = getattr(provider_verification, connector.verify)
+    kwargs = {f.verify_arg: resolved[f.verify_arg] for f in connector.fields if f.verify_arg}
+    kwargs.update({f.env_arg: os.environ.get(f.env, "").strip() for f in connector.fields if f.env_arg})
+    if connector.key.startswith("custom_"):
+        # The generic probe serves every custom connection — which one decides
+        # the auth scheme and probe path, so the key rides along.
+        kwargs["key"] = connector.key
+    return probe(**kwargs)
+
+
 def verify_connection(kind: str, fields: dict[str, str]) -> dict:
     """Live-check one optional integration's credentials.
 
@@ -499,7 +598,7 @@ def verify_connection(kind: str, fields: dict[str, str]) -> dict:
     """
     from yeaboi import provider_verification
 
-    spec = _CONNECTION_KINDS.get(kind)
+    spec = _connection_kinds().get(kind)
     if spec is None:
         raise ValueError(f"unknown connection kind: {kind}")
     resolved: dict[str, str] = {}
@@ -513,14 +612,24 @@ def verify_connection(kind: str, fields: dict[str, str]) -> dict:
         if not value:
             raise ValueError(f"{kind} verification needs {name}")
         resolved[name] = value
-    if "token" not in supplied and supplied & {"base_url", "email"}:
+    connector = _connector_registry().by_key(kind)
+    if connector is not None and connector.verify:
+        # The descriptor names which verify fields are secret; pairing a
+        # caller-supplied host with ANY stored secret would exfiltrate it.
+        secret_args = {f.verify_arg for f in connector.fields if f.verify_arg and f.secret}
+    else:
+        secret_args = {"token"}
+    if supplied & {"base_url", "email"} and not secret_args <= supplied:
+        missing = ", ".join(sorted(secret_args - supplied))
         raise ValueError(
-            f"{kind} verification with the stored token also uses the stored base_url and email — "
-            "supply the token to verify against other values"
+            f"{kind} verification with a stored secret also uses the stored base_url and email — "
+            f"supply the {missing} to verify against other values"
         )
     if "base_url" in supplied and not resolved["base_url"].startswith("https://"):
         raise ValueError(f"{kind} base_url must start with https://")
-    if kind == "github":
+    if connector is not None and connector.verify:
+        ok, message = _verify_via_descriptor(connector, resolved)
+    elif kind == "github":
         ok, message = provider_verification._verify_vc_token({"env_var": "GITHUB_TOKEN"}, resolved["token"])
     elif kind == "jira":
         ok, message = provider_verification._verify_jira(resolved["base_url"], resolved["email"], resolved["token"])

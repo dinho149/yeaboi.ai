@@ -1,5 +1,5 @@
 {
-  "$schema_version": 1,
+  "$schema_version": 2,
   "$generated_by": "scripts/gen_web_ui_contract.py",
   "accent_modes": [
     "analysis",
@@ -9,6 +9,33 @@
     "reporting",
     "retro",
     "standup"
+  ],
+  "connector_accents": [
+    "aws",
+    "azdevops",
+    "azure_cloud",
+    "bitbucket",
+    "circleci",
+    "confluence",
+    "datadog",
+    "elevenlabs",
+    "gcp",
+    "github",
+    "gitlab",
+    "grafana",
+    "incidentio",
+    "jenkins",
+    "jira",
+    "jsm_ops",
+    "launchdarkly",
+    "linear",
+    "notion",
+    "pagerduty",
+    "sentry",
+    "slack",
+    "statuspage",
+    "tavus",
+    "trello"
   ],
   "timing": {
     "refused_hold_sleep_ms": 1500

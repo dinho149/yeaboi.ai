@@ -94,6 +94,27 @@ def _denoise(report: StandupReport):
     return quiet, active, overview_of, category_lines_of
 
 
+def _production_lines(report: StandupReport) -> list[str]:
+    """The Production block, or nothing at all.
+
+    Nothing at all is the point: with no ops vendor connected there are no
+    signals, so this appends no heading, no line and no blank — a broadcast
+    surface must not carry a section announcing that a feature exists.
+    """
+    from yeaboi.standup import ops as standup_ops
+
+    signals = getattr(report, "ops_signals", ()) or ()
+    if not signals:
+        return []
+    window = signals[0].window_start[:10]
+    out = ["", f"Production (since {window}):" if window else "Production:"]
+    for signal in signals:
+        out.append(f"  - {standup_ops.signal_line(signal)}")
+        for sample in signal.samples[:3]:
+            out.append(f"      · {sample}")
+    return out
+
+
 def format_standup_lines(report: StandupReport) -> list[str]:
     """Return the standup as a list of plain-text lines (no ANSI)."""
     lines: list[str] = [
@@ -124,6 +145,12 @@ def format_standup_lines(report: StandupReport) -> list[str]:
     if report.team_summary:
         lines.append("Team summary:")
         lines.append(f"  {report.team_summary}")
+        lines.append("")
+
+    # Team-level state, so it reads before the per-person sections — and after
+    # the summary, which is the one place it may already have been mentioned.
+    if production := _production_lines(report):
+        lines.extend(production[1:])
         lines.append("")
 
     if active or quiet:
@@ -242,6 +269,13 @@ def format_standup_rich(report: StandupReport, *, accent: str = "rgb(200,100,180
     if report.team_summary:
         body.append(Text("Team summary", style=f"bold {accent}"))
         body.append(Text(f"  {report.team_summary}"))
+        body.append(Text(""))
+
+    production = _production_lines(report)
+    if production:
+        body.append(Text(production[1].rstrip(":"), style=f"bold {accent}"))
+        for line in production[2:]:
+            body.append(Text(line, style="dim" if line.lstrip().startswith("·") else ""))
         body.append(Text(""))
 
     # Same de-noise pass as the plaintext — the terminal an operator watches

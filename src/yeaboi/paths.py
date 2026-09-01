@@ -120,6 +120,7 @@ REPORTING_THEMES_FILE = DATA_DIR / "reporting_themes.json"  # user-defined Repor
 REPORTING_PREFS_FILE = DATA_DIR / "reporting_prefs.json"  # persisted Reporting deck-style preferences
 VOICE_INSTALL_FILE = DATA_DIR / "voice_install.json"  # sticky "this machine cannot run dictation" verdicts
 CHANGELOG_SEEN_FILE = DATA_DIR / "changelog_seen.json"  # newest release the user has already read on the Changelog page
+CUSTOM_CONNECTORS_FILE = DATA_DIR / "custom_connectors.json"  # user-created connection descriptors (never credentials)
 
 # Legacy paths (for backward compatibility / migration)
 LEGACY_DB_PATH = ROOT_DIR / "sessions.db"
@@ -272,6 +273,16 @@ def get_db_path() -> Path:
         return DB_PATH
 
     return DB_PATH
+
+
+def get_custom_connectors_path() -> Path:
+    """Return the path of the user-created connection descriptors (may not exist yet).
+
+    Descriptors only — every credential value lives in ~/.yeaboi/.env like any
+    other connector's.
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return CUSTOM_CONNECTORS_FILE
 
 
 def get_reporting_themes_path() -> Path:

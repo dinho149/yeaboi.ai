@@ -96,8 +96,110 @@ def connection_verify(app, request: Request) -> Response:
     from yeaboi.settings import engine
 
     kind = _required_str(payload, "kind")
-    fields = {k: "" if payload.get(k) is None else str(payload[k]) for k in ("token", "base_url", "email", "space_key")}
+    # The union of every kind's verify fields, DERIVED. A hand-written list here
+    # goes stale silently — a field it forgot is one a caller can never supply,
+    # and the engine falls back to the stored value with nothing to say so.
+    fields = {k: "" if payload.get(k) is None else str(payload[k]) for k in engine._verify_field_names()}
     return json_response(engine.verify_connection(kind, fields))
+
+
+def connections_list(app, request: Request) -> Response:
+    """``GET /api/connections`` — the integration catalog.
+
+    ``?all=1`` is the browse view: every connector that could be added, plus the
+    built-in integrations as ``managed_by:"credentials"`` rows; the default
+    lists only what is connected. Never carries a field value — each field
+    reports whether it is set and nothing more.
+    """
+    from yeaboi.connectors.engine import list_connections
+
+    show_all = str(request.query.get("all", "")).strip().lower() in ("1", "true", "yes")
+    family = str(request.query.get("family", "") or "")
+    return json_response(list_connections(family=family, connected_only=not show_all, include_legacy=show_all))
+
+
+def custom_connection_create(app, request: Request) -> Response:
+    """``POST /api/connections/custom`` — save one user-created connection.
+
+    The body is descriptor JSON only, never a credential; values are typed
+    afterwards through ``/api/settings/set`` like any connector's. The runtime
+    validator is the gate — its problems come back as the 400 message.
+    """
+    payload = request.json()
+    from yeaboi.connectors.engine import create_custom_connection
+
+    try:
+        return json_response(create_custom_connection(payload))
+    except ValueError as exc:
+        raise HTTPError(400, str(exc)) from None
+
+
+def custom_connection_draft(app, request: Request) -> Response:
+    """``POST /api/connections/custom/draft`` — one LLM pass from description to draft.
+
+    Never saves: ``{ok, draft, problems}`` comes back for the user to review,
+    and a draft with problems pre-fills the manual form instead of dead-ending.
+    """
+    payload = request.json()
+    description = _required_str(payload, "description")
+    from yeaboi.connectors.engine import draft_custom_connection
+
+    return json_response(draft_custom_connection(description))
+
+
+def custom_connection_delete(app, request: Request) -> Response:
+    """``POST /api/connections/custom/{key}/delete`` — remove descriptor AND stored values."""
+    from yeaboi.connectors.engine import delete_custom_connection
+
+    try:
+        return json_response(delete_custom_connection(request.params["key"]))
+    except ValueError as exc:
+        raise HTTPError(404, str(exc)) from None
+
+
+def webhooks_status(app, request: Request) -> Response:
+    """``GET /api/webhooks/status`` — receiver state and per-connection liveness. Offline."""
+    from yeaboi.connectors.webhooks.server import server_status
+
+    return json_response(server_status())
+
+
+def webhooks_start(app, request: Request) -> Response:
+    """``POST /api/webhooks/start`` — bind the loopback receiver in this process."""
+    from yeaboi.connectors.webhooks.server import start_server
+
+    try:
+        return json_response(start_server())
+    except OSError as exc:
+        raise HTTPError(503, f"could not bind the webhook port — {exc}") from None
+
+
+def webhooks_stop(app, request: Request) -> Response:
+    """``POST /api/webhooks/stop`` — stop the receiver (and any tunnel)."""
+    from yeaboi.connectors.webhooks.server import server_status, stop_server
+
+    stop_server()
+    return json_response(server_status())
+
+
+def webhooks_share(app, request: Request) -> Response:
+    """``POST /api/webhooks/share`` — open the quick tunnel; the URL rotates per share."""
+    from yeaboi.connectors.webhooks.server import server_status, start_share
+
+    url = start_share()
+    if not url:
+        raise HTTPError(503, "could not open the tunnel — the local receiver still runs")
+    return json_response(server_status())
+
+
+def webhook_url(app, request: Request) -> Response:
+    """``GET /api/webhooks/{key}/url`` — the ONE route that returns the secret whole."""
+    from yeaboi.connectors.webhooks.server import connection_url
+
+    info = connection_url(request.params["key"])
+    if info is None:
+        raise HTTPError(404, f"{request.params['key']!r} is not a webhook connection")
+    return json_response(info)
 
 
 def access_state(app, request: Request) -> Response:

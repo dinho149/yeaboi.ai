@@ -132,6 +132,14 @@ def standup_card_teaser(key: str, data: dict) -> str:
         if cards:
             gist += f" · {cards[0].entity_id}"
         return gist[:_TEASER_W]
+    if key == "production":
+        signals = getattr(report, "ops_signals", ()) or ()
+        events = sum(s.count for s in signals)
+        gist = f"{events} event{'s' if events != 1 else ''} across {len(signals)} signal"
+        gist += "s" if len(signals) != 1 else ""
+        if worst := next((s.severity for s in signals if s.severity), ""):
+            gist += f" · worst {worst}"
+        return gist[:_TEASER_W]
     if key == "activity":
         if report is None or not report.activity_counts:
             return "no sources"
@@ -561,6 +569,31 @@ def _detail_conflicts(ctx: _StandupCtx, data: dict) -> None:
         ctx.blank()
 
 
+def _detail_production(ctx: _StandupCtx, data: dict) -> None:
+    """What production did over its own window — counts, never people.
+
+    The window is stated in the heading rather than assumed from the standup's:
+    ops reads deliberately wider, and a count that does not say what it measured
+    is a number a reader will misread.
+    """
+    from yeaboi.standup import ops as standup_ops
+
+    theme = ctx.theme
+    signals = getattr(data["report"], "ops_signals", ()) or ()
+    window = signals[0].window_start[:10] if signals and signals[0].window_start else ""
+    ctx.heading(f"Production — since {window}" if window else "Production")
+    severity_style = {"critical": theme.bad, "high": theme.bad, "medium": theme.warn}
+    for signal in signals:
+        ctx.wrapped(standup_ops.signal_line(signal), severity_style.get(signal.severity, theme.muted))
+        for sample in signal.samples:
+            ctx.line(f"    · {sample}", theme.dim)
+        ctx.blank()
+    ctx.wrapped(
+        "Team-wide, and attributed to nobody: an alert firing is not anyone's work.",
+        theme.dim,
+    )
+
+
 def _gaps_nudge(ctx: _StandupCtx, nudge) -> None:
     """The standups that ran but were never checked against their meetings."""
     theme = ctx.theme
@@ -660,6 +693,7 @@ def build_standup_detail(ctx: _StandupCtx, key: str, data: dict) -> None:
     builder = {
         "summary": _detail_summary,
         "conflicts": _detail_conflicts,
+        "production": _detail_production,
         "activity": _detail_activity,
         "gaps": _detail_gaps,
         "schedule": _detail_schedule,

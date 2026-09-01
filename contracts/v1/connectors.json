@@ -1,0 +1,231 @@
+{
+  "$schema_version": 3,
+  "$generated_by": "scripts/gen_connectors_contract.py",
+  "connectors": [
+    {
+      "key": "datadog",
+      "label": "Datadog",
+      "family": "observability",
+      "family_label": "Observability",
+      "accent": "rgb(147,111,218)",
+      "glyph": "🐶",
+      "managed_by": "connections"
+    },
+    {
+      "key": "grafana",
+      "label": "Grafana",
+      "family": "observability",
+      "family_label": "Observability",
+      "accent": "rgb(242,131,32)",
+      "glyph": "📊",
+      "managed_by": "connections"
+    },
+    {
+      "key": "incidentio",
+      "label": "incident.io",
+      "family": "incidents",
+      "family_label": "Incidents & on-call",
+      "accent": "rgb(242,85,51)",
+      "glyph": "🔥",
+      "managed_by": "connections"
+    },
+    {
+      "key": "jsm_ops",
+      "label": "JSM Ops alerts",
+      "family": "incidents",
+      "family_label": "Incidents & on-call",
+      "accent": "rgb(101,84,192)",
+      "glyph": "🧞",
+      "managed_by": "connections"
+    },
+    {
+      "key": "pagerduty",
+      "label": "PagerDuty",
+      "family": "incidents",
+      "family_label": "Incidents & on-call",
+      "accent": "rgb(6,172,105)",
+      "glyph": "📟",
+      "managed_by": "connections"
+    },
+    {
+      "key": "statuspage",
+      "label": "Statuspage",
+      "family": "incidents",
+      "family_label": "Incidents & on-call",
+      "accent": "rgb(23,43,77)",
+      "glyph": "🟢",
+      "managed_by": "connections"
+    },
+    {
+      "key": "sentry",
+      "label": "Sentry",
+      "family": "errors",
+      "family_label": "Error tracking",
+      "accent": "rgb(106,84,164)",
+      "glyph": "🛡️",
+      "managed_by": "connections"
+    },
+    {
+      "key": "aws",
+      "label": "AWS",
+      "family": "cloud",
+      "family_label": "Cloud",
+      "accent": "rgb(255,153,0)",
+      "glyph": "🟧",
+      "managed_by": "connections"
+    },
+    {
+      "key": "gcp",
+      "label": "Google Cloud",
+      "family": "cloud",
+      "family_label": "Cloud",
+      "accent": "rgb(66,133,244)",
+      "glyph": "🔵",
+      "managed_by": "connections"
+    },
+    {
+      "key": "azure_cloud",
+      "label": "Microsoft Azure",
+      "family": "cloud",
+      "family_label": "Cloud",
+      "accent": "rgb(0,120,212)",
+      "glyph": "🔷",
+      "managed_by": "connections"
+    },
+    {
+      "key": "launchdarkly",
+      "label": "LaunchDarkly",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(64,91,255)",
+      "glyph": "🚩",
+      "managed_by": "connections"
+    },
+    {
+      "key": "linear",
+      "label": "Linear",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(94,106,210)",
+      "glyph": "📐",
+      "managed_by": "connections"
+    },
+    {
+      "key": "trello",
+      "label": "Trello",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(0,121,191)",
+      "glyph": "🗂️",
+      "managed_by": "connections"
+    },
+    {
+      "key": "bitbucket",
+      "label": "Bitbucket",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(0,82,204)",
+      "glyph": "🪣",
+      "managed_by": "connections"
+    },
+    {
+      "key": "circleci",
+      "label": "CircleCI",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(52,52,52)",
+      "glyph": "⭕",
+      "managed_by": "connections"
+    },
+    {
+      "key": "gitlab",
+      "label": "GitLab",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(226,67,41)",
+      "glyph": "🦊",
+      "managed_by": "connections"
+    },
+    {
+      "key": "jenkins",
+      "label": "Jenkins",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(211,56,51)",
+      "glyph": "🤵",
+      "managed_by": "connections"
+    },
+    {
+      "key": "azdevops",
+      "label": "Azure DevOps Boards",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(0,90,158)",
+      "glyph": "📌",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "jira",
+      "label": "Jira",
+      "family": "delivery",
+      "family_label": "Delivery tracking",
+      "accent": "rgb(38,132,255)",
+      "glyph": "🎫",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "github",
+      "label": "GitHub",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(110,118,129)",
+      "glyph": "🐙",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "confluence",
+      "label": "Confluence",
+      "family": "docs",
+      "family_label": "Docs",
+      "accent": "rgb(76,154,255)",
+      "glyph": "🌊",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "notion",
+      "label": "Notion",
+      "family": "docs",
+      "family_label": "Docs",
+      "accent": "rgb(55,53,47)",
+      "glyph": "🗒️",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "slack",
+      "label": "Slack",
+      "family": "chat",
+      "family_label": "Chat",
+      "accent": "rgb(74,21,75)",
+      "glyph": "✳️",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "elevenlabs",
+      "label": "ElevenLabs",
+      "family": "media",
+      "family_label": "Voice & video",
+      "accent": "rgb(28,28,28)",
+      "glyph": "🗣️",
+      "managed_by": "credentials"
+    },
+    {
+      "key": "tavus",
+      "label": "Tavus",
+      "family": "media",
+      "family_label": "Voice & video",
+      "accent": "rgb(255,79,100)",
+      "glyph": "🎬",
+      "managed_by": "credentials"
+    }
+  ]
+}

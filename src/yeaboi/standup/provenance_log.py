@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 
 _SOURCE = "standup"
 
+#: How many event handles one production record carries. A chain row is
+#: evidence, not a log; the flag below is what stops a trimmed list from
+#: reading as a complete one.
+_INPUT_CAP = 25
+
 
 def _entity(date_str: str, *parts: str) -> str:
     return ":".join(("standup", date_str, *[p for p in parts if p]))
@@ -40,6 +45,8 @@ def build_decision_records(
     dropped_case_ids: Sequence[str] = (),
     adjudicator_id: str = "",
     conflict_cards: Sequence[ConflictCard] = (),
+    ops_signals: Sequence = (),
+    ops_events: Sequence = (),
 ) -> list[DecisionRecord]:
     """One record per surfaced or suppressed signal, deterministic order."""
     activity = f"standup-run:{session_id}:{date_str}"
@@ -133,7 +140,10 @@ def build_decision_records(
                 entity_id=_entity(date_str, "conflict", card.fingerprint),
                 entity_type="conflict",
                 activity_id=activity,
-                agent_id="conflicts.status",
+                # Which detector said so. The two ask different questions of the
+                # same done ticket, and a chain that cannot tell them apart
+                # cannot answer "why did production get named here?".
+                agent_id="conflicts.production" if card.fingerprint.endswith(":ops_conflict") else "conflicts.status",
                 role="generator",
                 source_document=_SOURCE,
                 detail=card.detail,
@@ -141,6 +151,41 @@ def build_decision_records(
                 extras=(("severity", card.severity), ("entity", card.entity_id)),
             )
         )
+
+    # Production roll-ups — one record per signal, its events as HANDLES.
+    # Handles, never urls: a rotated url makes an old record unverifiable, and
+    # a handle is what the vendor itself will still answer to. Never content.
+    if ops_signals:
+        from yeaboi.standup import ops as standup_ops
+
+        for signal in ops_signals:
+            handles = tuple(
+                f"{event.source}:{event.ref}"
+                for event in ops_events
+                if event.kind == signal.kind and event.source == signal.source and event.ref
+            )
+            records.append(
+                DecisionRecord(
+                    entity_id=_entity(date_str, "production", signal.source, signal.kind),
+                    entity_type="ops-signal",
+                    activity_id=activity,
+                    agent_id=f"ops.{signal.source}",
+                    role="generator",
+                    source_document=_SOURCE,
+                    detail=standup_ops.signal_line(signal),
+                    inputs=handles[:_INPUT_CAP],
+                    extras=(
+                        ("count", str(signal.count)),
+                        ("resolved", str(signal.resolved)),
+                        ("severity", signal.severity),
+                        ("window_start", signal.window_start),
+                        ("window_end", signal.window_end),
+                        # A truncated input list that does not say so is a chain
+                        # that lies by omission.
+                        ("inputs_capped", str(len(handles) > _INPUT_CAP).lower()),
+                    ),
+                )
+            )
 
     return records
 
@@ -154,6 +199,8 @@ def record_run(
     dropped_case_ids: Sequence[str] = (),
     adjudicator_id: str = "",
     conflict_cards: Sequence[ConflictCard] = (),
+    ops_signals: Sequence = (),
+    ops_events: Sequence = (),
 ) -> int:
     """Append this run's decision records to the chain; returns how many.
 
@@ -167,6 +214,8 @@ def record_run(
         dropped_case_ids=dropped_case_ids,
         adjudicator_id=adjudicator_id,
         conflict_cards=conflict_cards,
+        ops_signals=ops_signals,
+        ops_events=ops_events,
     )
     if not records:
         return 0

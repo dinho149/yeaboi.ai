@@ -106,6 +106,19 @@
       "type": "list"
     },
     {
+      "emoji": "🚨",
+      "items": [
+        "2 incidents via pagerduty · 1 resolved · worst high · services: checkout"
+      ],
+      "page": [
+        1,
+        1
+      ],
+      "section": "Delivery",
+      "title": "Production",
+      "type": "list"
+    },
+    {
       "emoji": "⭐",
       "items": [
         "SSO live",

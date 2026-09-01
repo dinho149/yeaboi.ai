@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 from prompt_toolkit import prompt
@@ -269,5 +270,43 @@ def run_setup_wizard(console: Console) -> bool:
     # entirely when the user has switched tips off.
     _print_voice_tip(console)
 
+    # Core setup is saved — offer the rest of the catalog. Optional and default
+    # No, so a scripted --setup completes exactly as it always has.
+    _offer_catalog(console)
+
     logger.info("Setup wizard completed successfully")
     return True
+
+
+def _offer_catalog(console: Console) -> None:
+    """One TTY-only prompt into the integrations catalog after the core steps.
+
+    Everything before this point persists through ``save_config``; the browser
+    persists each credential the moment it is typed. Keeping the hand-off AFTER
+    the save is what stops those two persistence models from interleaving.
+    """
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return
+    from yeaboi.connectors.engine import list_connections
+
+    payload = list_connections(connected_only=False, include_legacy=True)
+    remaining = sum(1 for row in payload["connectors"] if not row["connected"])
+    if not remaining:
+        return
+    console.print(
+        f"\n[bold]{remaining} more integrations[/bold] can feed standups, planning and analysis — "
+        "Datadog, GitLab, PagerDuty and friends."
+    )
+    try:
+        reply = input("Browse the catalog now? [y/N] ").strip().lower()
+    except EOFError:
+        return
+    if reply not in ("y", "yes"):
+        console.print("[dim]Later: `yeaboi connections list --all`, or Settings ▸ Catalog.[/dim]")
+        return
+    from yeaboi.ui.catalog import run_catalog_browser_standalone
+
+    result = run_catalog_browser_standalone(console)
+    if result:
+        console.print(f"[green]{result}[/green]")
+    logger.info("Setup wizard: catalog hand-off finished (%s)", result or "browsed")

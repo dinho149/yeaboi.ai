@@ -778,7 +778,7 @@ class TestFetchTeamIterationsMeta:
 class TestGetTools:
     def test_returns_thirty_tools(self):
         tools = get_tools()
-        assert len(tools) == 37
+        assert len(tools) == 48
 
     def test_all_are_base_tools(self):
         from langchain_core.tools import BaseTool
@@ -813,6 +813,17 @@ class TestGetTools:
             "jira_create_epic",
             "jira_create_story",
             "jira_create_sprint",
+            "linear_read_board",
+            "linear_fetch_velocity",
+            "linear_fetch_active_sprint",
+            "linear_create_epic",
+            "linear_create_story",
+            "linear_create_sprint",
+            "trello_read_board",
+            "trello_fetch_active_sprint",
+            "trello_create_epic",
+            "trello_create_story",
+            "trello_create_sprint",
             "confluence_search_docs",
             "confluence_read_page",
             "confluence_read_space",

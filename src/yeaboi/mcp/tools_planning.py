@@ -220,8 +220,12 @@ def _plan_publish(session_id: str, destination: str, content: str = "plan") -> d
 
 
 def _plan_sync(session_id: str, destination: str, target_sprint: str = "", on_progress=None) -> dict:
-    if destination not in ("jira", "azdevops"):
-        raise ValueError(f"Unsupported destination {destination!r} — use 'jira' or 'azdevops'.")
+    from yeaboi import trackers
+
+    spec = trackers.by_key(destination)
+    if spec is None:
+        known = "', '".join(trackers.TRACKERS)
+        raise ValueError(f"Unsupported destination {destination!r} — use '{known}'.")
     resolved, state = _load_state(session_id)
     if target_sprint.strip():
         # Route the whole plan into an existing sprint/iteration instead of
@@ -242,11 +246,7 @@ def _plan_sync(session_id: str, destination: str, target_sprint: str = "", on_pr
             state["sprint_target_mode"] = "existing"
             state["target_sprint_name"] = value
             state["target_sprint_external_id"] = ""
-    if destination == "jira":
-        from yeaboi.jira_sync import sync_all_to_jira as sync_all
-    else:
-        from yeaboi.azdevops_sync import sync_all_to_azdevops as sync_all
-
+    sync_all = spec.sync_all()
     result, updated_state = sync_all(state, on_progress)
     # Persist the created-key mappings so a re-run skips what already exists
     # (the sync modules are idempotent through these state fields).
@@ -256,14 +256,15 @@ def _plan_sync(session_id: str, destination: str, target_sprint: str = "", on_pr
     with SessionStore(get_db_path()) as store:
         store.save_state(resolved, updated_state)
     logger.info("Plan synced via MCP: session=%s dest=%s errors=%d", resolved, destination, len(result.errors))
+    summary = spec.result_summary(result)
     return {
         "session_id": resolved,
         "destination": destination,
-        "epic": result.epic_key if destination == "jira" else result.epic_id,
+        "epic": summary["epic"],
         "stories_created": dict(result.stories_created),
         "tasks_created": dict(result.tasks_created),
-        "sprints_created": dict(result.sprints_created if destination == "jira" else result.iterations_created),
-        "sprints_updated": dict(result.sprints_updated if destination == "jira" else result.iterations_updated),
+        "sprints_created": summary["sprints_created"],
+        "sprints_updated": summary["sprints_updated"],
         "skipped_existing": result.skipped,
         "warnings": list(result.errors),
     }
@@ -440,7 +441,8 @@ def register(app) -> None:
 
     @app.tool()
     async def plan_sync(ctx: Context, session_id: str = "", destination: str = "jira", target_sprint: str = "") -> dict:
-        """Push a saved plan into the user's issue tracker (destination: 'jira' or 'azdevops'):
+        """Push a saved plan into the user's issue tracker (destination: 'jira',
+        'azdevops', 'linear' or 'trello'):
         creates the epic, stories, tasks and sprints/iterations as REAL tickets on the
         configured board — always confirm with the user before calling. Idempotent: items
         created by an earlier sync are skipped, so a partial run can be safely retried.

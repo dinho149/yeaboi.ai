@@ -1077,6 +1077,74 @@ def build_parser() -> argparse.ArgumentParser:
     cer_modes = ceremonies_sub.add_parser("modes", help="Which modes can run on a cadence, and which cannot")
     cer_modes.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
+    connections_p = subparsers.add_parser(
+        "connections",
+        help="Read-only integrations: what is connected, and what it can see",
+    )
+    connections_sub = connections_p.add_subparsers(dest="connections_command", required=True)
+
+    conn_list = connections_sub.add_parser("list", help="What is connected (--all for the whole catalog)")
+    conn_list.add_argument("--family", default="", help="Only this family (e.g. observability)")
+    conn_list.add_argument(
+        "--all", action="store_true", help="The whole catalog: connectors you have not set up + built-in integrations"
+    )
+    conn_list.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    conn_show = connections_sub.add_parser("show", help="One connector: its fields and whether each is set")
+    conn_show.add_argument("name", help="Connector name (see `connections list --all`)")
+    conn_show.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    conn_verify = connections_sub.add_parser("verify", help="Live-check a connection (omit the name for all of them)")
+    conn_verify.add_argument("name", nargs="?", default="", help="Connector name; default: every connected one")
+    conn_verify.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    # No --token flag anywhere: a credential on argv lands in shell history and
+    # the process table. Values are prompted for, exactly as `--setup` does.
+    conn_add = connections_sub.add_parser("add", help="Connect one, prompting for each value")
+    conn_add.add_argument("name", help="Connector name (see `connections list --all`)")
+
+    conn_fetch = connections_sub.add_parser(
+        "fetch", help="What a connection saw over a window — read-only, nothing is stored"
+    )
+    conn_fetch.add_argument("name", nargs="?", default="", help="Connector name; default: every connected one")
+    conn_fetch.add_argument(
+        "--since", default="14d", metavar="WINDOW", help="How far back to look: 14d, 48h, 2w (default 14d)"
+    )
+    conn_fetch.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    conn_create = connections_sub.add_parser(
+        "create", help="Create your own connection — a generic API the catalog then carries"
+    )
+    conn_create.add_argument(
+        "--from-json", dest="from_json", default="", metavar="FILE", help="A descriptor JSON file instead of prompts"
+    )
+
+    conn_wurl = connections_sub.add_parser(
+        "webhook-url", help="Where a webhook connection's deliveries go — URL, header and secret"
+    )
+    conn_wurl.add_argument("name", help="Connection name (a custom webhook connection)")
+    conn_wurl.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    conn_wtest = connections_sub.add_parser(
+        "webhook-test", help="Send one synthetic signed delivery through the local receiver"
+    )
+    conn_wtest.add_argument("name", help="Connection name (a custom webhook connection)")
+
+    conn_rm = connections_sub.add_parser("remove", help="Forget a connection's stored values")
+    conn_rm.add_argument("name")
+    conn_rm.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+
+    webhooks_p = subparsers.add_parser(
+        "webhooks",
+        help="The inbound receiver for webhook connections (loopback; --share tunnels it)",
+    )
+    webhooks_sub = webhooks_p.add_subparsers(dest="webhooks_command", required=True)
+    wh_serve = webhooks_sub.add_parser("serve", help="Run the receiver in the foreground (Ctrl+C stops)")
+    wh_serve.add_argument("--port", type=int, default=0, help="Override the fixed port (default 8642)")
+    wh_serve.add_argument(
+        "--share", action="store_true", help="Also open a cloudflared quick tunnel (URL rotates per share)"
+    )
+
     slack_p = subparsers.add_parser(
         "slack",
         help="Two-way Slack — read reactions and replies on what yeaboi posted",
@@ -1337,7 +1405,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_p.add_argument(
         "--features",
         nargs="+",
-        choices=["delivery", "ai_footprint", "code_health", "documentation"],
+        choices=["delivery", "ai_footprint", "code_health", "documentation", "operational"],
         default=None,
         metavar="FEATURE",
         help="Analysis areas to run (default: all supported by the selected integrations)",
@@ -1389,6 +1457,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PLATFORM",
         help="Doc platforms for the clarity/usefulness read. e.g. --docs confluence",
+    )
+    analyze_p.add_argument(
+        "--ops",
+        nargs="+",
+        default=None,
+        metavar="CONNECTOR",
+        help=(
+            "Monitoring connectors for the Operations rate. Validated against what is "
+            "actually connected. e.g. --ops pagerduty sentry"
+        ),
     )
     analyze_p.add_argument(
         "--members",
@@ -2059,6 +2137,8 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "ship": _cmd_ship,
         "ceremonies": _cmd_ceremonies,
         "slack": _cmd_slack,
+        "connections": _cmd_connections,
+        "webhooks": _cmd_webhooks,
         "app": _cmd_app,
         "ask": _cmd_ask,
     }
@@ -2598,6 +2678,406 @@ def _cmd_provenance(args: argparse.Namespace, console: Console) -> int:
     else:
         console.print(format_trace_rich(trace))
     return 0 if trace.found else 1
+
+
+def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi connections …` — the read-only integration catalog."""
+    import json
+    import os
+
+    from rich.markup import escape
+
+    from yeaboi.connectors import legacy, registry
+    from yeaboi.connectors.engine import list_connections
+
+    to_json = getattr(args, "format", "text") == "json"
+    command = args.connections_command
+
+    if command == "list":
+        payload = list_connections(family=args.family, connected_only=not args.all, include_legacy=args.all)
+        if to_json:
+            print(json.dumps(payload, indent=2))
+            return 0
+        rows = payload["connectors"]
+        if not rows:
+            console.print("[dim]Nothing connected yet. `yeaboi connections list --all` shows what you can add.[/dim]")
+            return 0
+        for row in rows:
+            mark = "[green]connected[/green]" if row["connected"] else "[dim]not connected[/dim]"
+            console.print(f"{row['glyph']} [bold]{row['label']}[/bold]  [dim]{row['family_label']}[/dim]  {mark}")
+            # A list of vendor names is a list of things to go look up. Say what
+            # each one is for, on the line under it.
+            if row["summary"]:
+                console.print(f"   [dim]{row['summary']}[/dim]")
+            if row["managed_by"] == "credentials":
+                console.print("   [dim]set up via: yeaboi --setup (Settings ▸ Credentials)[/dim]")
+        return 0
+
+    if command == "create":
+        return _connections_create(args, console)
+
+    connector = registry.by_key(args.name) if getattr(args, "name", "") else None
+    legacy_entry = legacy.by_key(args.name) if connector is None and getattr(args, "name", "") else None
+    if getattr(args, "name", "") and connector is None and legacy_entry is None:
+        known = ", ".join([c.key for c in registry.all_connectors()] + [c.key for c in registry.legacy_entries()])
+        print(f"Error: unknown connector {args.name!r}. Known: {known}", file=sys.stderr)
+        return 1
+
+    if command in ("webhook-url", "webhook-test"):
+        from yeaboi.connectors.webhooks.server import connection_url, send_test_delivery
+
+        if command == "webhook-test":
+            outcome = send_test_delivery(args.name)
+            console.print(escape(str(outcome["message"])))
+            return 0 if outcome["ok"] else 1
+        info = connection_url(args.name)
+        if info is None:
+            print(f"Error: {args.name!r} is not a webhook connection.", file=sys.stderr)
+            return 1
+        if to_json:
+            print(json.dumps(info, indent=2))
+            return 0
+        console.print(f"[bold]{escape(info['key'])}[/bold]")
+        console.print(f"  local:  {escape(info['url'])}")
+        if info["tunnel_url"]:
+            console.print(f"  tunnel: {escape(info['tunnel_url'])}  [dim](rotates per share — for testing)[/dim]")
+        console.print(f"  header: {escape(info['header'])}  [dim]({info['verify']})[/dim]")
+        console.print(f"  secret: {escape(info['secret'])}")
+        if not info["running"]:
+            console.print("  [yellow]The receiver is not running — start it with `yeaboi webhooks serve`.[/yellow]")
+        if info["last_received_at"]:
+            console.print(f"  last delivery: {escape(info['last_received_at'])}")
+        else:
+            console.print("  [dim]waiting for the first delivery[/dim]")
+        return 0
+
+    if legacy_entry is not None and command in ("add", "remove", "fetch"):
+        # A built-in integration's credentials belong to Credentials/setup —
+        # they are shared with features this command must not silently unplug.
+        print(
+            f"{legacy_entry.label} is set up via `yeaboi --setup` or Settings ▸ Credentials, "
+            f"not `yeaboi connections {command}`.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if command == "show":
+        payload = list_connections(connected_only=False, include_legacy=True)
+        shown_key = (connector or legacy_entry).key
+        row = next(r for r in payload["connectors"] if r["key"] == shown_key)
+        if to_json:
+            print(json.dumps(row, indent=2))
+            return 0
+        entry = connector or legacy_entry
+        console.print(f"{row['glyph']} [bold]{row['label']}[/bold]  [dim]{row['family_label']}[/dim]")
+        if row["detail"]:
+            from rich.padding import Padding
+
+            # Padding, not a literal indent: the detail wraps, and only the first
+            # wrapped line would carry a leading-space indent.
+            console.print(Padding(f"[dim]{row['detail']}[/dim]", (0, 0, 1, 2)))
+        chosen = registry.chosen_method(entry)
+        if chosen is not None:
+            console.print(f"  [bold]{chosen.label}[/bold]  [dim]{chosen.summary}[/dim]")
+            if chosen.warning:
+                console.print(f"  [yellow]⚠  {chosen.warning}[/yellow]")
+        shown = {f.env for f in entry.fields_for(chosen.key)} if chosen else None
+        for field in row["fields"]:
+            if shown is not None and field["env"] not in shown:
+                continue
+            state = "[green]set[/green]" if field["is_set"] else "[dim]not set[/dim]"
+            need = "" if field["required"] else " [dim](optional)[/dim]"
+            console.print(f"  {field['label']}: {state}{need}  [dim]{field['env']}[/dim]")
+        for method in entry.auth_methods:
+            if chosen is not None and method.key == chosen.key:
+                continue
+            console.print(f"  [dim]or {method.key}: {method.summary}[/dim]")
+            if method.warning:
+                console.print(f"  [dim]   ⚠  {method.warning}[/dim]")
+        if row["docs_url"]:
+            console.print(f"  [dim]docs: {row['docs_url']}[/dim]")
+        if row["managed_by"] == "credentials":
+            console.print("  [dim]set up via: yeaboi --setup (Settings ▸ Credentials)[/dim]")
+        return 0
+
+    if command == "verify":
+        from yeaboi.settings.engine import verify_connection
+
+        if legacy_entry is not None and legacy_entry.key not in legacy.LEGACY_VERIFY_KINDS:
+            print(f"{legacy_entry.label} has no live probe — check it under Settings ▸ System.", file=sys.stderr)
+            return 1
+        if connector is not None and not connector.verify:
+            print(f"{connector.label} has no live probe — it receives deliveries instead.", file=sys.stderr)
+            return 1
+        if connector or legacy_entry:
+            targets = [(connector or legacy_entry).key]
+        else:
+            # A probe-less connection (a webhook custom receives deliveries) is
+            # skipped rather than reported as a failure.
+            targets = [key for key in registry.connected() if getattr(registry.by_key(key), "verify", "")]
+        if not targets:
+            console.print("[dim]Nothing connected to verify.[/dim]")
+            return 0
+        results = []
+        for key in targets:
+            try:
+                outcome = verify_connection(key, {})
+            except ValueError as exc:
+                outcome = {"ok": False, "message": str(exc)}
+            results.append({"connector": key, **outcome})
+        if to_json:
+            print(json.dumps(results, indent=2))
+        else:
+            for result in results:
+                tick = "[green]ok[/green]" if result["ok"] else "[red]failed[/red]"
+                # A probe's message is data, not markup: an install hint saying
+                # yeaboi[cloud] would otherwise lose the extra to a style tag.
+                console.print(f"{result['connector']}: {tick} — {escape(str(result['message']))}")
+        return 0 if all(r["ok"] for r in results) else 1
+
+    if command == "fetch":
+        from yeaboi.connectors.engine import fetch_ops_events
+
+        try:
+            payload = fetch_ops_events(connector.key if connector else "", since=args.since)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        if to_json:
+            print(json.dumps(payload, indent=2))
+            return 0
+        if not payload["sources"]:
+            console.print("[dim]Nothing connected has anything to gather yet.[/dim]")
+            return 0
+        window = payload["window"]
+        console.print(f"[dim]{window['start'][:10]} → {window['end'][:10]}[/dim]")
+        for source in payload["sources"]:
+            if source["ok"]:
+                console.print(f"  [green]{source['label']}[/green]: {source['count']} event(s)")
+            else:
+                console.print(f"  [red]{source['label']}[/red]: {escape(str(source['error']))}")
+        for signal in payload["signals"]:
+            worst = f" [dim]worst: {signal['severity']}[/dim]" if signal["severity"] else ""
+            console.print(
+                f"{signal['kind']} via {signal['source']}: [bold]{signal['count']}[/bold] "
+                f"({signal['resolved']} resolved){worst}"
+            )
+            for sample in signal["samples"]:
+                console.print(f"   [dim]{sample}[/dim]")
+        return 0 if all(s["ok"] for s in payload["sources"]) else 1
+
+    if command == "add":
+        from getpass import getpass
+
+        from yeaboi.config import apply_config_value
+
+        console.print(f"{connector.mark} [bold]{connector.label}[/bold]")
+        if connector.docs_url:
+            console.print(f"[dim]{connector.docs_url}[/dim]")
+
+        # The method comes first, because it decides which of the questions
+        # below are even asked. A connector with one way in skips this entirely.
+        method = connector.default_method
+        if connector.auth_methods:
+            for option in connector.auth_methods:
+                tag = " [green](recommended)[/green]" if option.recommended else ""
+                console.print(f"  [bold]{option.key}[/bold]{tag} — {option.summary}")
+                if option.warning:
+                    console.print(f"  [yellow]  ⚠  {option.warning}[/yellow]")
+            picked = input(f"How to connect [{method.key}]: ").strip() or method.key
+            chosen = connector.method(picked)
+            if chosen is None:
+                known = ", ".join(m.key for m in connector.auth_methods)
+                print(f"Error: unknown method {picked!r}. Known: {known}", file=sys.stderr)
+                return 1
+            method = chosen
+            apply_config_value(connector.auth_env, method.key)
+            os.environ[connector.auth_env] = method.key
+            if method.setup_url:
+                console.print(f"[dim]Set it up: {method.setup_url}[/dim]")
+
+        for field in connector.fields_for(method.key) if method else connector.fields:
+            if connector.auth_env and field.env == connector.auth_env:
+                continue
+            # An external ID is yeaboi's to mint, not the user's to invent: it
+            # is what stops a confused deputy assuming the role, so it has to be
+            # unguessable. Shown once, for pasting into the trust policy.
+            if field.env == "AWS_EXTERNAL_ID" and not os.environ.get(field.env, "").strip():
+                from yeaboi.connectors.aws import new_external_id
+
+                generated = new_external_id()
+                apply_config_value(field.env, generated)
+                os.environ[field.env] = generated
+                console.print(f"  External ID (paste into the role's trust policy): [bold]{generated}[/bold]")
+                continue
+            hint = f" [{field.default}]" if field.default else ""
+            label = f"{field.label}{'' if field.required else ' (optional)'}{hint}: "
+            if field.help_scope:
+                console.print(f"[dim]{field.help_scope}[/dim]")
+            # Secrets are never echoed, and never reach argv.
+            value = (getpass(label) if field.secret else input(label)).strip()
+            if not value and field.default:
+                value = field.default
+            if not value:
+                if field.required:
+                    print(f"Error: {connector.label} needs {field.label}", file=sys.stderr)
+                    return 1
+                continue
+            apply_config_value(field.env, value)
+        console.print(f"[green]Saved.[/green] Verify it with: yeaboi connections verify {connector.key}")
+        return 0
+
+    if command == "remove":
+        from yeaboi.config import apply_config_value
+
+        is_custom = connector.key.startswith("custom_")
+        what = "definition and stored values" if is_custom else "stored values"
+        if not args.yes:
+            reply = input(f"Forget the {connector.label} {what}? [y/N] ").strip().lower()
+            if reply not in ("y", "yes"):
+                console.print("[dim]Left alone.[/dim]")
+                return 0
+        if is_custom:
+            from yeaboi.connectors.engine import delete_custom_connection
+
+            delete_custom_connection(connector.key)
+            console.print(f"[green]{connector.label} removed — definition and values.[/green]")
+            return 0
+        for field in connector.fields:
+            apply_config_value(field.env, "")
+            os.environ.pop(field.env, None)
+        console.print(f"[green]{connector.label} disconnected.[/green]")
+        return 0
+
+    return 1
+
+
+def _connections_create(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi connections create` — a descriptor from prompts or a JSON file.
+
+    Descriptor only: credentials are entered afterwards with `connections add`,
+    so they take the masked path this command has no business owning.
+    """
+    import json
+
+    from rich.markup import escape
+
+    from yeaboi.connectors.custom import spec_from_dict
+    from yeaboi.connectors.engine import create_custom_connection
+    from yeaboi.connectors.spec import FAMILIES
+    from yeaboi.connectors.validation import AUTH_SCHEMES
+    from yeaboi.ops.events import EVENT_KINDS
+
+    if args.from_json:
+        try:
+            raw = json.loads(Path(args.from_json).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"Error: could not read {args.from_json}: {exc}", file=sys.stderr)
+            return 1
+    else:
+        console.print(
+            "[bold]Create a connection[/bold] — a read-only API, an inbound webhook or an MCP server "
+            "the catalog then carries."
+        )
+        label = input("Service name: ").strip()
+        if not label:
+            print("Error: a name is required", file=sys.stderr)
+            return 1
+        default_key = "custom_" + "".join(ch if ch.isalnum() else "_" for ch in label.lower()).strip("_")
+        key = input(f"Key [{default_key}]: ").strip() or default_key
+        families = ", ".join(FAMILIES)
+        family = input(f"Family ({families}) [observability]: ").strip() or "observability"
+        summary = input("One-line summary: ").strip()
+        glyph = input("Icon (one emoji) [🔌]: ").strip() or "\U0001f50c"
+        accent = input("Accent rgb(r,g,b) [rgb(120,160,200)]: ").strip() or "rgb(120,160,200)"
+        docs_url = input("Docs URL (https, optional): ").strip()
+        raw = {
+            "key": key,
+            "label": label,
+            "family": family,
+            "summary": summary,
+            "glyph": glyph,
+            "accent": accent,
+            "docs_url": docs_url,
+        }
+        kind = input("Kind (api, webhook, mcp) [api]: ").strip() or "api"
+        raw["kind"] = kind
+        if kind == "webhook":
+            # Inbound-only: what matters is how a delivery authenticates and
+            # how its rows become events; yeaboi mints the secret itself.
+            verify_mode = input("Delivery auth (token, hmac) [token]: ").strip() or "token"
+            kinds = ", ".join(EVENT_KINDS)
+            event_kind = input(f"Event kind ({kinds}) [alert]: ").strip() or "alert"
+            title_path = input("Title path (dot path to a delivery's name, e.g. incident.name): ").strip()
+            raw.update({"webhook_verify": verify_mode, "events": {"kind": event_kind, "title_path": title_path}})
+        elif kind != "mcp":
+            # The HTTP shape belongs to the api kind; an MCP connection has
+            # nothing to ask — its Server URL and token are entered afterwards
+            # like any other credential.
+            schemes = ", ".join(AUTH_SCHEMES)
+            auth_scheme = input(f"Auth scheme ({schemes}) [bearer]: ").strip() or "bearer"
+            header_name = ""
+            if auth_scheme == "header":
+                header_name = input("Header name: ").strip()
+            probe_path = input("Probe path (an authenticated GET, e.g. /v1/me) [/]: ").strip() or "/"
+            raw.update({"auth_scheme": auth_scheme, "header_name": header_name, "probe_path": probe_path})
+            extras = []
+            while len(extras) < 4 and input("Add an extra credential/config field? (y/N): ").strip().lower() == "y":
+                extra_label = input("  Field label (e.g. Application Key): ").strip()
+                suffix = input("  Env suffix (UPPER_SNAKE, e.g. APP_KEY): ").strip()
+                secret = (input("  Secret? (Y/n): ").strip().lower() or "y") != "n"
+                extra_header = input("  Sent as request header (blank for none): ").strip()
+                extras.append(
+                    {"label": extra_label, "env_suffix": suffix, "secret": secret, "header_name": extra_header}
+                )
+            if extras:
+                raw["extra_fields"] = extras
+
+    try:
+        row = create_custom_connection(raw)
+    except ValueError as exc:
+        # The validator's lines are data — a hostname or an emoji must not
+        # become a Rich style tag.
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    console.print(f"[green]Created.[/green] {escape(str(row['label']))} is in the catalog.")
+    if row.get("webhook_secret"):
+        console.print("Delivery secret (shown once — `yeaboi connections webhook-url` shows it again):")
+        console.print(escape(str(row["webhook_secret"])))
+    else:
+        console.print(f"Enter its credentials with: yeaboi connections add {spec_from_dict(raw).key}")
+    return 0
+
+
+def _cmd_webhooks(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi webhooks serve` — the loopback receiver, foreground."""
+    import time as _time
+
+    from yeaboi.connectors.webhooks.server import start_server, start_share, stop_server
+
+    if args.webhooks_command != "serve":
+        return 1
+    try:
+        status = start_server(args.port or None)
+    except OSError as exc:
+        # A fixed port is the point — a walk would silently break pasted URLs.
+        print(f"Error: could not bind 127.0.0.1:{args.port or 'default'} — {exc}", file=sys.stderr)
+        return 1
+    console.print(f"[green]Receiver listening[/green] on 127.0.0.1:{status['port']} (loopback only)")
+    if args.share:
+        url = start_share()
+        if url:
+            console.print(f"Tunnel: {url}  [dim](rotates per share and expires — for testing a sender)[/dim]")
+        else:
+            console.print("[yellow]Could not open the tunnel — the local receiver still runs.[/yellow]")
+    console.print("[dim]`yeaboi connections webhook-url <name>` prints each connection's URL. Ctrl+C stops.[/dim]")
+    try:
+        while True:
+            _time.sleep(1)
+    except KeyboardInterrupt:
+        stop_server()
+        console.print("\n[dim]Receiver stopped.[/dim]")
+        return 0
 
 
 def _cmd_slack(args: argparse.Namespace, console: Console) -> int:
@@ -3448,6 +3928,8 @@ def _cmd_analyze(args: argparse.Namespace, console: Console) -> int:
         components["code"] = args.code
     if args.docs:
         components["docs"] = args.docs
+    if args.ops:
+        components["ops"] = args.ops
     members = {"jira": args.members, "azdevops": args.members} if args.members else None
     analysis_scope = {
         provider: values

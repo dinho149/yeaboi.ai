@@ -15,6 +15,11 @@ from langgraph.graph.message import add_messages
 
 from yeaboi._compat import IntEnum, StrEnum
 
+# Imported rather than redeclared: OpsSignal is the connectors' own vocabulary
+# (yeaboi.ops), and a second copy here would be two shapes to keep in step.
+# ops/ is pure types with no I/O, so nothing cycles back into this module.
+from yeaboi.ops.signals import OpsSignal
+
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -592,6 +597,10 @@ class StandupReport:
     # Cross-source disagreements (standup/conflicts.py) — defaulted so a
     # report stored before conflict cards existed still deserializes.
     conflicts: tuple[ConflictCard, ...] = ()
+    # What production did over its own (wider) window — bounded counts per
+    # source and kind, never per person. Empty whenever no ops vendor is
+    # connected, which is what keeps the "Production" panel unearned.
+    ops_signals: tuple[OpsSignal, ...] = ()
 
 
 # See docs: "Session Management" — Daily Standup transcript-review artifacts
@@ -1259,6 +1268,12 @@ class DeliveryReport:
     delivered_items: tuple[DeliveredItem, ...] = ()  # raw completed-ticket evidence (deterministic)
     emoji_theme: tuple[tuple[str, str], ...] = ()  # (slot, emoji) chosen by the LLM, e.g. ("highlights", "🚀")
     supporting_signals: tuple[SupportingSignal, ...] = ()  # code/docs corroboration (deterministic)
+    # What production did over the SAME period — its own field and its own
+    # heading, never folded into supporting_signals, whose sentence claims
+    # corroboration. Empty whenever no ops vendor is connected. Deterministic,
+    # and deliberately absent from the design prompt: two incidents means
+    # nothing without a baseline this tool does not have.
+    ops_signals: tuple[OpsSignal, ...] = ()
     warnings: tuple[str, ...] = ()
     generated_at: str = ""
     # Reader-authored additions; see Annotation. Defaulted so a report stored
@@ -2649,3 +2664,16 @@ class ScrumState(_RequiredState, total=False):
     azdevops_story_keys: Annotated[dict[str, str], _merge_dicts]
     azdevops_task_keys: Annotated[dict[str, str], _merge_dicts]
     azdevops_iteration_keys: Annotated[dict[str, str], _merge_dicts]
+
+    # Linear / Trello key mappings — populated by linear_sync / trello_sync.
+    # Declared as graph channels with the same _merge_dicts reducer as the Jira
+    # mappings above: an undeclared key is dropped when a resumed session's
+    # state passes back through the graph, which would lose the idempotency
+    # mapping and duplicate cards/issues on the next sync.
+    linear_story_keys: Annotated[dict[str, str], _merge_dicts]
+    linear_story_ids: Annotated[dict[str, str], _merge_dicts]
+    linear_task_keys: Annotated[dict[str, str], _merge_dicts]
+    linear_cycle_keys: Annotated[dict[str, str], _merge_dicts]
+    trello_story_keys: Annotated[dict[str, str], _merge_dicts]
+    trello_task_keys: Annotated[dict[str, str], _merge_dicts]
+    trello_list_keys: Annotated[dict[str, str], _merge_dicts]

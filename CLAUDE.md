@@ -223,7 +223,7 @@ src/yeaboi/
   ceremonies/                        — the clock any mode runs on: OS-job installer, guards, delivery channels
   slack/                             — the inbound half of that clock: anchors, a closed grammar, the poller, the ledger
   pricing.py                         — the per-model LLM rate table (cache-aware); every cost estimate goes through it
-  mcp/                               — stdio MCP server (yeaboi-mcp; 58 tools over the engines)
+  mcp/                               — stdio MCP server (yeaboi-mcp; 59 tools over the engines)
   repl/                              — legacy REPL for CLI-flag-driven flows
   ui/                                — full-screen TUI (mode_select, provider_select, session, shared)
   input_guardrails.py / output_guardrails.py / formatters.py / *_exporter.py / *_sync.py

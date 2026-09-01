@@ -385,23 +385,103 @@ def _get_active_trackers() -> list[str]:
 
     Returns a list of configured trackers, e.g. ["jira"], ["azdevops"], ["jira", "azdevops"], or [].
     """
-    from yeaboi.jira_sync import is_jira_configured
+    from yeaboi import trackers
 
-    trackers: list[str] = []
-    if is_jira_configured():
-        trackers.append("jira")
+    return trackers.configured()
 
-    from yeaboi.azdevops_sync import is_azdevops_board_configured
 
-    if is_azdevops_board_configured():
-        trackers.append("azdevops")
+def _tracker_key_for_label(label: str) -> str:
+    """The registry key behind a sync button's label, or "" for other buttons."""
+    from yeaboi import trackers
 
-    return trackers
+    return next((key for key, spec in trackers.TRACKERS.items() if spec.label == label), "")
+
+
+def _tracker_labels(keys: list[str]) -> list[str]:
+    """Button labels for a list of tracker keys, in the order given."""
+    from yeaboi import trackers
+
+    return [trackers.TRACKERS[key].label for key in keys if key in trackers.TRACKERS]
 
 
 # ---------------------------------------------------------------------------
-# Tracker sync helper (dispatches to Jira or Azure DevOps)
+# Tracker sync helper (dispatches through the yeaboi.trackers registry keys)
 # ---------------------------------------------------------------------------
+
+
+def _tracker_sync_profile(tracker: str) -> dict | None:
+    """Everything stage-level sync needs to know about one tracker.
+
+    The idempotency key fields and per-stage sync functions live with each
+    sync module; this names them per registry key so the pipeline screens
+    dispatch by data instead of an if/else per vendor. ``stage_sync`` values
+    are lazy getters — a sync module must not import until its button is used.
+    """
+    profiles: dict[str, dict] = {
+        "jira": {
+            "label": "Jira",
+            "story_key_field": "jira_story_keys",
+            "task_key_field": "jira_task_keys",
+            "sprint_key_field": "jira_sprint_keys",
+            "epic_key_field": "jira_epic_key",
+            "task_label": "Sub-tasks",
+            "sprint_unit": "sprint",
+            "sprint_plural": "Sprints",
+            "stage_sync": {
+                "story_writer": lambda: __import__("yeaboi.jira_sync", fromlist=["x"]).sync_stories_to_jira,
+                "task_decomposer": lambda: __import__("yeaboi.jira_sync", fromlist=["x"]).sync_tasks_to_jira,
+                "sprint_planner": lambda: __import__("yeaboi.jira_sync", fromlist=["x"]).sync_sprints_to_jira,
+            },
+        },
+        "azdevops": {
+            "label": "Azure DevOps",
+            "story_key_field": "azdevops_story_keys",
+            "task_key_field": "azdevops_task_keys",
+            "sprint_key_field": "azdevops_iteration_keys",
+            "epic_key_field": "azdevops_epic_id",
+            "task_label": "Tasks",
+            "sprint_unit": "iteration",
+            "sprint_plural": "Iterations",
+            "stage_sync": {
+                "story_writer": lambda: __import__("yeaboi.azdevops_sync", fromlist=["x"]).sync_stories_to_azdevops,
+                "task_decomposer": lambda: __import__("yeaboi.azdevops_sync", fromlist=["x"]).sync_tasks_to_azdevops,
+                "sprint_planner": lambda: (
+                    __import__("yeaboi.azdevops_sync", fromlist=["x"]).sync_iterations_to_azdevops
+                ),
+            },
+        },
+        "trello": {
+            "label": "Trello",
+            "story_key_field": "trello_story_keys",
+            "task_key_field": "trello_task_keys",
+            "sprint_key_field": "trello_list_keys",
+            "epic_key_field": "trello_epic_label_id",
+            "task_label": "Checklist items",
+            "sprint_unit": "list",
+            "sprint_plural": "Lists",
+            "stage_sync": {
+                "story_writer": lambda: __import__("yeaboi.trello_sync", fromlist=["x"]).sync_stories_to_trello,
+                "task_decomposer": lambda: __import__("yeaboi.trello_sync", fromlist=["x"]).sync_tasks_to_trello,
+                "sprint_planner": lambda: __import__("yeaboi.trello_sync", fromlist=["x"]).sync_sprints_to_trello,
+            },
+        },
+        "linear": {
+            "label": "Linear",
+            "story_key_field": "linear_story_keys",
+            "task_key_field": "linear_task_keys",
+            "sprint_key_field": "linear_cycle_keys",
+            "epic_key_field": "linear_project_id",
+            "task_label": "Sub-issues",
+            "sprint_unit": "cycle",
+            "sprint_plural": "Cycles",
+            "stage_sync": {
+                "story_writer": lambda: __import__("yeaboi.linear_sync", fromlist=["x"]).sync_stories_to_linear,
+                "task_decomposer": lambda: __import__("yeaboi.linear_sync", fromlist=["x"]).sync_tasks_to_linear,
+                "sprint_planner": lambda: __import__("yeaboi.linear_sync", fromlist=["x"]).sync_cycles_to_linear,
+            },
+        },
+    }
+    return profiles.get(tracker)
 
 
 def _handle_tracker_sync(
@@ -422,42 +502,22 @@ def _handle_tracker_sync(
     then updates graph_state with the results.
     Returns updated graph_state on success, or None on cancel/failure.
 
-    tracker: "jira" or "azdevops" — determines which sync module to use.
+    tracker: a yeaboi.trackers registry key — determines which sync module to use.
     # See docs: "Tools" — tool types, write tools, human-in-the-loop pattern
     """
-    tracker_label = "Jira" if tracker == "jira" else "Azure DevOps"
-
-    if tracker == "jira":
-        from yeaboi.jira_sync import (
-            sync_sprints_to_jira,
-            sync_stories_to_jira,
-            sync_tasks_to_jira,
-        )
-
-        story_key_field = "jira_story_keys"
-        task_key_field = "jira_task_keys"
-        sprint_key_field = "jira_sprint_keys"
-        epic_key_field = "jira_epic_key"
-    else:
-        from yeaboi.azdevops_sync import (
-            sync_iterations_to_azdevops,
-            sync_stories_to_azdevops,
-            sync_tasks_to_azdevops,
-        )
-
-        story_key_field = "azdevops_story_keys"
-        task_key_field = "azdevops_task_keys"
-        sprint_key_field = "azdevops_iteration_keys"
-        epic_key_field = "azdevops_epic_id"
+    profile = _tracker_sync_profile(tracker)
+    if profile is None:
+        return None
+    tracker_label = profile["label"]
+    story_key_field = profile["story_key_field"]
+    task_key_field = profile["task_key_field"]
+    sprint_key_field = profile["sprint_key_field"]
+    epic_key_field = profile["epic_key_field"]
 
     # Pick the right sync function based on stage and tracker
     sync_fn = None
-    if stage == "story_writer":
-        sync_fn = sync_stories_to_jira if tracker == "jira" else sync_stories_to_azdevops
-    elif stage == "task_decomposer":
-        sync_fn = sync_tasks_to_jira if tracker == "jira" else sync_tasks_to_azdevops
-    elif stage == "sprint_planner":
-        sync_fn = sync_sprints_to_jira if tracker == "jira" else sync_iterations_to_azdevops
+    if stage in ("story_writer", "task_decomposer", "sprint_planner"):
+        sync_fn = profile["stage_sync"][stage]()
     elif stage != "epic_review":
         return None
 
@@ -490,7 +550,7 @@ def _handle_tracker_sync(
         if not existing_stories and stories:
             parts.append(f"{len(stories)} Stories (cascade)")
         if new_tasks > 0:
-            task_label = "Sub-tasks" if tracker == "jira" else "Tasks"
+            task_label = profile["task_label"]
             parts.append(f"{new_tasks} {task_label}")
         if existing_tasks > 0:
             parts.append(f"({existing_tasks} already exist)")
@@ -499,7 +559,7 @@ def _handle_tracker_sync(
             # Small-project "add to existing sprint" — nothing gets created.
             target = graph_state.get("target_sprint_name") or graph_state.get("target_sprint_external_id") or "?"
             n_stories = len({sid for sp in sprints for sid in sp.story_ids})
-            unit = "sprint" if tracker == "jira" else "iteration"
+            unit = profile["sprint_unit"]
             parts.append(f"Add {n_stories} stories to existing {unit} '{target}'")
         elif graph_state.get("sprint_target_mode") == "backlog":
             # Small-project "backlog" — stories only, no sprint at all.
@@ -507,7 +567,7 @@ def _handle_tracker_sync(
             parts.append(f"{n_stories} stories to the backlog (no sprint)")
         else:
             new_sprints = len(sprints) - existing_sprints
-            sprint_label = "Sprints" if tracker == "jira" else "Iterations"
+            sprint_label = profile["sprint_plural"]
             if new_sprints > 0:
                 parts.append(f"{new_sprints} {sprint_label}")
             if existing_sprints > 0:
@@ -574,6 +634,41 @@ def _handle_tracker_sync(
                     }
                     _issue = _j.create_issue(fields=_fields)
                     _ep_result_box[0] = _issue.key
+                except Exception as exc:
+                    from yeaboi.ui.session._utils import _classify_api_error
+
+                    _ep_result_box[1] = _classify_api_error(exc)
+            elif tracker == "trello":
+                try:
+                    from yeaboi.tools.trello import _resolve_board, _trello_request
+
+                    _board = _resolve_board()
+                    _created = _trello_request(
+                        "POST", "/labels", {"idBoard": _board["id"], "name": _ep_title[:50], "color": "purple"}
+                    )
+                    if isinstance(_created, dict) and _created.get("id"):
+                        _ep_result_box[0] = str(_created["id"])
+                    else:
+                        _ep_result_box[1] = "Trello did not create the label"
+                except Exception as exc:
+                    from yeaboi.ui.session._utils import _classify_api_error
+
+                    _ep_result_box[1] = _classify_api_error(exc)
+            elif tracker == "linear":
+                try:
+                    from yeaboi.tools.linear import _linear_request, _resolve_team
+
+                    _team = _resolve_team()
+                    _data = _linear_request(
+                        "mutation($input: ProjectCreateInput!) { projectCreate(input: $input)"
+                        " { success project { id } } }",
+                        {"input": {"name": _ep_title, "description": _ep_desc, "teamIds": [_team["id"]]}},
+                    )
+                    _payload = _data.get("projectCreate", {})
+                    if _payload.get("success"):
+                        _ep_result_box[0] = str(_payload["project"]["id"])
+                    else:
+                        _ep_result_box[1] = "Linear did not create the project"
                 except Exception as exc:
                     from yeaboi.ui.session._utils import _classify_api_error
 
@@ -1034,25 +1129,13 @@ def _phase_pipeline(
                 if _qs:
                     _ep_preferred = getattr(_qs, "_preferred_tracker", "")
                 try:
-                    from yeaboi.jira_sync import is_jira_configured
+                    from yeaboi import trackers as _trk_registry
 
-                    _jira_ok = is_jira_configured()
+                    _ep_label = _trk_registry.label_for(_ep_preferred) or _trk_registry.label_for()
                 except Exception:
-                    _jira_ok = False
-                try:
-                    from yeaboi.azdevops_sync import is_azdevops_board_configured
-
-                    _azdo_ok = is_azdevops_board_configured()
-                except Exception:
-                    _azdo_ok = False
-                if _ep_preferred == "jira" and _jira_ok:
-                    _ep_actions.append("Jira")
-                elif _ep_preferred == "azdevops" and _azdo_ok:
-                    _ep_actions.append("Azure DevOps")
-                elif _jira_ok:
-                    _ep_actions.append("Jira")
-                elif _azdo_ok:
-                    _ep_actions.append("Azure DevOps")
+                    _ep_label = ""
+                if _ep_label:
+                    _ep_actions.append(_ep_label)
 
                 logger.info("Epic review: showing project-level epic")
 
@@ -1167,9 +1250,9 @@ def _phase_pipeline(
                         elif _ep_act == "Export":
                             logger.info("Epic review: exporting")
                             _plan_export_flow(live, console, _key, graph_state, "project_analyzer")
-                        elif _ep_act in ("Jira", "Azure DevOps"):
+                        elif _tracker_key_for_label(_ep_act):
                             logger.info("Epic review: syncing to %s", _ep_act)
-                            _btn_tracker = "jira" if _ep_act == "Jira" else "azdevops"
+                            _btn_tracker = _tracker_key_for_label(_ep_act)
                             _sync_result = _handle_tracker_sync(
                                 live,
                                 console,
@@ -1419,8 +1502,7 @@ def _phase_pipeline(
                 acts.append("Share Online")
                 acts.extend(["Adjust", "Revert"] if anon is not None else ["Anonymize"])
             if _active_trackers and (is_story_stage or is_task_stage or is_sprint_stage):
-                for _trk in _active_trackers:
-                    acts.append("Jira" if _trk == "jira" else "Azure DevOps")
+                acts.extend(_tracker_labels(_active_trackers))
             return acts
 
         actions = _compute_actions()
@@ -1833,8 +1915,8 @@ def _phase_pipeline(
                     menu_selected = min(menu_selected, num_actions - 1)
                     btn_targets = [1.0 if i == menu_selected else 0.0 for i in range(num_actions)]
                     btn_fades = list(btn_targets)
-                elif action in ("Jira", "Azure DevOps"):
-                    _btn_tracker = "jira" if action == "Jira" else "azdevops"
+                elif _tracker_key_for_label(action):
+                    _btn_tracker = _tracker_key_for_label(action)
                     logger.info("%s sync requested for %s", action, pending)
                     tracker_result = _handle_tracker_sync(
                         live,
@@ -1854,7 +1936,7 @@ def _phase_pipeline(
                         if project_id:
                             save_project_snapshot(project_id, graph_state)
                         # Re-render artifacts (content_lines unchanged, but status_msg updates)
-                        _sk = "jira_story_keys" if _btn_tracker == "jira" else "azdevops_story_keys"
+                        _sk = (_tracker_sync_profile(_btn_tracker) or {}).get("story_key_field", "")
                         created = len(graph_state.get(_sk, {}))
                         status_msg = f"Synced to {action} ({created} stories)"
 

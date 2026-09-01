@@ -225,7 +225,7 @@ class TestAnalysisOptions:
     def test_it_reports_the_configured_grid_and_the_steps(self, app, monkeypatch):
         monkeypatch.setattr(
             "yeaboi.analysis.setup.available_grid",
-            lambda: {"delivery": ["jira"], "code": [], "docs": ["notion"]},
+            lambda: {"delivery": ["jira"], "code": [], "docs": ["notion"], "ops": ["pagerduty"]},
         )
         body = json.loads(request(app, "GET", "/api/analysis/options").body)
         assert body["grid"]["delivery"] == ["jira"]
@@ -234,6 +234,7 @@ class TestAnalysisOptions:
             "ai_footprint": False,
             "code_health": False,
             "documentation": True,
+            "operational": True,
         }
         assert "features" in body and body["features"][0]["key"] == "delivery"
         assert body["default_depth"] == "deep"
@@ -241,7 +242,7 @@ class TestAnalysisOptions:
 
 class TestAnalysisSteps:
     def _plan(self, app, **answers):
-        answers.setdefault("grid", {"delivery": ["jira"], "code": ["github"], "docs": ["notion"]})
+        answers.setdefault("grid", {"delivery": ["jira"], "code": ["github"], "docs": ["notion"], "ops": []})
         answers.setdefault("roster_fallback", ["jira"])
         return json.loads(request(app, "POST", "/api/analysis/steps", answers).body)
 
@@ -251,7 +252,7 @@ class TestAnalysisSteps:
 
     def test_the_grid_narrows_to_what_the_features_read(self, app):
         plan = self._plan(app, features=["documentation"], components={"docs": ["notion"]})
-        assert plan["grid"] == {"delivery": [], "code": [], "docs": ["notion"]}
+        assert plan["grid"] == {"delivery": [], "code": [], "docs": ["notion"], "ops": []}
 
     def test_a_code_host_earns_its_scope_step(self, app):
         plan = self._plan(app, features=["ai_footprint"], components={"code": ["github"]})

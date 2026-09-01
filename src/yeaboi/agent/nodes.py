@@ -1280,137 +1280,61 @@ def _extract_team_and_velocity(questionnaire: QuestionnaireState) -> dict:
 
 
 def _is_jira_configured() -> bool:
-    """Check whether all 4 Jira environment variables are set.
+    """Whether Jira is fully configured — a thin alias over the tracker registry.
 
     # See docs: "Tools" — tool types, Jira integration
-    #
-    # Returns True only when JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN,
-    # and JIRA_PROJECT_KEY are all non-empty. Used by the intake node
-    # to decide whether to ask Q27 (sprint selection) interactively.
     """
-    from yeaboi.config import get_jira_base_url, get_jira_email, get_jira_project_key, get_jira_token
+    from yeaboi import trackers
 
-    return bool(get_jira_base_url() and get_jira_email() and get_jira_token() and get_jira_project_key())
+    return trackers.TRACKERS["jira"].is_configured()
 
 
 def _is_azdevops_configured() -> bool:
-    """Check whether Azure DevOps board credentials are set.
+    """Whether Azure DevOps Boards is configured — alias over the tracker registry."""
+    from yeaboi import trackers
 
-    Returns True when AZURE_DEVOPS_TOKEN, AZURE_DEVOPS_ORG_URL, and
-    AZURE_DEVOPS_PROJECT are all non-empty. Used as a fallback when
-    Jira is not configured — enables velocity and sprint selection
-    from Azure DevOps iterations.
-    """
-    from yeaboi.azdevops_sync import is_azdevops_board_configured
-
-    return is_azdevops_board_configured()
+    return trackers.TRACKERS["azdevops"].is_configured()
 
 
 def _is_tracker_configured() -> bool:
-    """Check whether any issue tracker (Jira or Azure DevOps) is configured.
+    """Whether any issue tracker is configured.
 
     Used by the intake node to decide whether to ask Q27 (sprint selection)
     interactively and whether to fetch velocity data.
     """
-    return _is_jira_configured() or _is_azdevops_configured()
+    from yeaboi import trackers
+
+    return bool(trackers.configured())
 
 
 def _fetch_jira_velocity() -> dict | None:
-    """Fetch avg velocity AND team size from last 3 closed sprints in Jira.
+    """Alias over the tracker registry — see :mod:`yeaboi.trackers`."""
+    from yeaboi import trackers
 
-    # See docs: "Scrum Standards" — capacity planning
-    #
-    # Thin wrapper around the jira_fetch_velocity @tool in tools/jira.py.
-    # The tool handles all Jira connection logic and returns a JSON string;
-    # this wrapper parses it back to a dict for the intake node.
-    # Same pattern as _prepare_bank_holiday_choices calling detect_bank_holidays.invoke().
-
-    Returns:
-        Dict with keys {team_velocity, jira_team_size, per_dev_velocity},
-        or None if Jira is unavailable or has no data.
-        When velocity is zero but team size is available, the dict includes
-        a ``velocity_error`` key — callers should skip velocity extraction
-        but still use ``jira_team_size``.
-    """
-    try:
-        from yeaboi.tools.jira import jira_fetch_velocity
-
-        result = jira_fetch_velocity.invoke({})
-        if result.startswith("Error"):
-            logger.debug("jira_fetch_velocity returned: %s", result)
-            return None
-        data = json.loads(result)
-        if "velocity_error" in data:
-            logger.debug("jira_fetch_velocity: zero velocity but team_size=%s", data.get("jira_team_size"))
-        return data
-    except Exception:
-        logger.debug("Failed to fetch Jira velocity", exc_info=True)
-    return None
+    return trackers.TRACKERS["jira"].fetch_velocity()
 
 
 def _fetch_azdevops_velocity() -> dict | None:
-    """Fetch avg velocity AND team size from Azure DevOps iterations.
+    """Alias over the tracker registry — see :mod:`yeaboi.trackers`."""
+    from yeaboi import trackers
 
-    # See docs: "Scrum Standards" — capacity planning
-    #
-    # Fallback when Jira is not configured. Uses the azdevops_fetch_velocity
-    # @tool which returns a plain-text summary. We parse the key numbers out.
-
-    Returns:
-        Dict with keys {team_velocity, jira_team_size, per_dev_velocity},
-        or None if Azure DevOps is unavailable or has no data.
-        Uses ``jira_team_size`` key for backward compat with callers.
-    """
-    try:
-        from yeaboi.tools.azure_devops import azdevops_fetch_velocity
-
-        result = azdevops_fetch_velocity.invoke({})
-        if result.startswith("Error") or result.startswith("No completed"):
-            logger.debug("azdevops_fetch_velocity returned: %s", result)
-            return None
-        # Parse the text output: "Team velocity: X.Y points/iteration ..."
-        import re as _re
-
-        vel_match = _re.search(r"Team velocity:\s*([\d.]+)", result)
-        size_match = _re.search(r"Team size:\s*(\d+)", result)
-        per_dev_match = _re.search(r"Per-developer velocity:\s*([\d.]+)", result)
-        if vel_match and size_match and per_dev_match:
-            return {
-                "team_velocity": float(vel_match.group(1)),
-                "jira_team_size": int(size_match.group(1)),  # reuse key for compat
-                "per_dev_velocity": float(per_dev_match.group(1)),
-            }
-        return None
-    except Exception:
-        logger.debug("Failed to fetch Azure DevOps velocity", exc_info=True)
-    return None
+    return trackers.TRACKERS["azdevops"].fetch_velocity()
 
 
 def _fetch_tracker_velocity(preferred: str = "") -> dict | None:
-    """Fetch velocity from the configured tracker (Jira or Azure DevOps).
+    """Fetch velocity from the preferred tracker, else the first configured one.
 
-    When preferred is set ("jira" or "azdevops"), uses that tracker.
-    Otherwise tries Jira first, then falls back to Azure DevOps.
+    # See docs: "Scrum Standards" — capacity planning
     """
-    if preferred == "azdevops" and _is_azdevops_configured():
-        return _fetch_azdevops_velocity()
-    if preferred == "jira" and _is_jira_configured():
-        return _fetch_jira_velocity()
-    # No explicit preference — auto-detect
-    if _is_jira_configured():
-        return _fetch_jira_velocity()
-    if _is_azdevops_configured():
-        return _fetch_azdevops_velocity()
-    return None
+    from yeaboi import trackers
+
+    return trackers.fetch_velocity(preferred)
 
 
 def _fetch_active_sprint_number(preferred: str = "") -> tuple[int | None, str | None, str]:
-    """Connect to the configured tracker and return the current active sprint/iteration.
+    """The configured tracker's current active sprint/iteration.
 
     # See docs: "Scrum Standards" — sprint planning
-    #
-    # When preferred is set ("jira" or "azdevops"), uses that tracker.
-    # Otherwise tries Jira first, then falls back to Azure DevOps active iteration.
 
     Returns:
         Tuple of (sprint_number, start_date, status_message).
@@ -1418,127 +1342,30 @@ def _fetch_active_sprint_number(preferred: str = "") -> tuple[int | None, str | 
         status_message explains what happened — shown to the user so they know
         why sprint selection fell back to "Fresh start".
     """
-    _use_jira = (preferred == "jira" and _is_jira_configured()) or (not preferred and _is_jira_configured())
-    _use_azdevops = (preferred == "azdevops" and _is_azdevops_configured()) or (
-        not preferred and not _is_jira_configured() and _is_azdevops_configured()
-    )
+    from yeaboi import trackers
 
-    if _use_jira:
-        try:
-            from yeaboi.tools.jira import jira_fetch_active_sprint
-
-            result = jira_fetch_active_sprint.invoke({})
-            if result.startswith("Error"):
-                return None, None, result.removeprefix("Error: ")
-            data = json.loads(result)
-            return data["sprint_number"], data.get("start_date"), f"Active sprint: {data['sprint_name']}"
-        except Exception as exc:
-            logger.debug("Failed to fetch Jira sprints for sprint selection", exc_info=True)
-            return None, None, f"Jira connection failed: {exc}"
-
-    if _is_azdevops_configured():
-        try:
-            from yeaboi.tools.azure_devops import azdevops_fetch_active_iteration
-
-            result = azdevops_fetch_active_iteration.invoke({})
-            if result.startswith("Error") or result.startswith("No active"):
-                return None, None, result.removeprefix("Error: ")
-            # Parse text: "Sprint name: X\nSprint number: N\nStart date: YYYY-MM-DD"
-            import re as _re
-
-            num_match = _re.search(r"Sprint number:\s*(\d+)", result)
-            name_match = _re.search(r"Sprint name:\s*(.+)", result)
-            date_match = _re.search(r"Start date:\s*(\S+)", result)
-            sprint_num = int(num_match.group(1)) if num_match else None
-            sprint_name = name_match.group(1).strip() if name_match else "Unknown"
-            start_date = date_match.group(1) if date_match and date_match.group(1) else None
-            if sprint_num:
-                return sprint_num, start_date, f"Active iteration: {sprint_name}"
-            return None, None, "Could not determine active iteration number"
-        except Exception as exc:
-            logger.debug("Failed to fetch Azure DevOps iteration for sprint selection", exc_info=True)
-            return None, None, f"Azure DevOps connection failed: {exc}"
-
-    return None, None, "No tracker configured"
+    return trackers.fetch_active_sprint(preferred)
 
 
 def _fetch_sprint_targets(preferred: str = "") -> tuple[list[dict], str]:
-    """Fetch the board's open (active + future) sprints/iterations as targets.
+    """The board's open (active + future) sprints/iterations as targets.
 
     # See docs: "Scrum Standards" — sprint planning
     #
     # Small-project mode offers "add this work to an existing sprint" and needs
     # the real board sprints to offer as targets — the active one first (small
-    # work often lands mid-sprint), then upcoming future sprints. Uses the same
-    # paginated, scrum-filtered lookup as the sync modules so intake and sync
-    # can never disagree about what exists.
+    # work often lands mid-sprint), then upcoming future sprints. The registry
+    # entries use the same paginated, scrum-filtered lookups as the sync
+    # modules so intake and sync can never disagree about what exists.
 
     Returns:
         ([{name, external_id, state, start_date, number|None}], status_message).
         Empty list on failure, with the reason in status_message — same
         contract as _fetch_active_sprint_number.
     """
-    use_jira = (preferred == "jira" and _is_jira_configured()) or (not preferred and _is_jira_configured())
+    from yeaboi import trackers
 
-    if use_jira:
-        try:
-            from yeaboi.tools.jira import _make_jira_client, fetch_board_sprints, find_scrum_board_id
-
-            jira = _make_jira_client()
-            if jira is None:
-                return [], "Jira not configured"
-            from yeaboi.config import get_jira_project_key
-
-            key = get_jira_project_key() or ""
-            if not key:
-                return [], "JIRA_PROJECT_KEY not set"
-            board_id = find_scrum_board_id(jira, key)
-            if board_id is None:
-                return [], f"No Jira board found for project {key}"
-            targets = []
-            for item in fetch_board_sprints(jira, board_id, states=("active", "future")):
-                num_match = re.search(r"(\d+)\s*$", item["name"])
-                targets.append(
-                    {
-                        "name": item["name"],
-                        "external_id": str(item["id"] or ""),
-                        "state": item["state"],
-                        "start_date": item["start_date"],
-                        "number": int(num_match.group(1)) if num_match else None,
-                    }
-                )
-            return targets, f"{len(targets)} open sprint(s) on the board"
-        except Exception as exc:
-            logger.debug("Failed to fetch Jira sprint targets", exc_info=True)
-            return [], f"Jira connection failed: {exc}"
-
-    if _is_azdevops_configured():
-        try:
-            from yeaboi.tools.azure_devops import fetch_team_iterations_meta
-
-            targets = []
-            for it in fetch_team_iterations_meta():
-                if it["time_frame"] == "past":
-                    continue
-                num_match = re.search(r"(\d+)\s*$", it["name"])
-                targets.append(
-                    {
-                        "name": it["name"],
-                        "external_id": it["path"],
-                        "state": "active" if it["time_frame"] == "current" else "future",
-                        "start_date": it["start_date"],
-                        "number": int(num_match.group(1)) if num_match else None,
-                    }
-                )
-            # Active first, then future — same ordering the Jira path gets
-            # from its states tuple.
-            targets.sort(key=lambda t: (t["state"] != "active", t["start_date"] or "9999"))
-            return targets, f"{len(targets)} open iteration(s) for the team"
-        except Exception as exc:
-            logger.debug("Failed to fetch AzDO iteration targets", exc_info=True)
-            return [], f"Azure DevOps connection failed: {exc}"
-
-    return [], "No tracker configured"
+    return trackers.fetch_sprint_targets(preferred)
 
 
 # Cap on how many existing sprints the small-mode Q27 menu offers — beyond
@@ -1588,8 +1415,10 @@ def _setup_small_sprint_target_question(questionnaire: QuestionnaireState) -> st
     else:
         questionnaire.answers[27] = "_targets"
 
+    from yeaboi import trackers
+
     pref = questionnaire._preferred_tracker
-    label = "Jira" if (pref == "jira" or (not pref and _is_jira_configured())) else "Azure DevOps"
+    label = trackers.label_for(pref) or "Jira"
     logger.info("Small-mode Q27: offering %d sprint target(s) from %s", len(offered), label)
     active_line = f"Detected active sprint in {label}: **{active['name']}**.\n\n" if active else ""
     return f"{active_line}Add this work to an existing sprint, create a new one, or leave it in the backlog?"
@@ -2695,9 +2524,10 @@ def _scan_repo_context(questionnaire: QuestionnaireState) -> tuple[str | None, d
 
     Calls GitHub or AzDO read tools directly as Python functions — no LLM
     ReAct loop needed, they are plain functions that return strings.
-    Returns (None, status) if no URL was provided, the platform is unsupported
-    (GitLab, Bitbucket — tools not yet implemented), or all tool calls fail.
-    The caller proceeds gracefully with reduced context when None is returned.
+    Returns (None, status) if no URL was provided, the remote cannot be read
+    (GitLab and Bitbucket have ops connectors but no repo-read tools — a local
+    path scans regardless of platform), or all tool calls fail. The caller
+    proceeds gracefully with reduced context when None is returned.
 
     Returns:
         Tuple of (context string or None, status dict with name/status/detail).
@@ -2740,8 +2570,13 @@ def _scan_repo_context(questionnaire: QuestionnaireState) -> tuple[str | None, d
                 sections.append(result)
 
         else:
-            # GitLab and Bitbucket: no tools implemented yet
-            return None, {"name": "Repository", "status": "skipped", "detail": f"{platform} not yet supported"}
+            # GitLab and Bitbucket remotes: the connectors read their pipelines,
+            # but there is no repo-read tool — a local checkout path scans fine.
+            return None, {
+                "name": "Repository",
+                "status": "skipped",
+                "detail": f"{platform} remotes are not read — give a local checkout path to scan",
+            }
 
     except Exception as e:
         return None, {"name": "Repository", "status": "error", "detail": str(e)[:80]}
@@ -4307,14 +4142,14 @@ def project_intake(state: ScrumState) -> dict:
     # When both Jira and Azure DevOps are configured, the user picks one
     # for velocity/sprint data before intake begins. This resolves that choice.
     if questionnaire is not None and questionnaire._awaiting_tracker_choice:
+        from yeaboi import trackers
+
         last_msg = state["messages"][-1]
         choice_text = last_msg.content.strip().lower() if isinstance(last_msg, HumanMessage) else ""
-        if choice_text in ("1", "jira"):
-            questionnaire._preferred_tracker = "jira"
-        elif choice_text in ("2", "azdevops", "azure devops", "azure"):
-            questionnaire._preferred_tracker = "azdevops"
-        else:
-            questionnaire._preferred_tracker = "jira"  # default to Jira
+        # Resolve against the same configured list the prompt offered, so a
+        # typed "2" means the second option the user actually read.
+        options = trackers.configured() or ["jira"]
+        questionnaire._preferred_tracker = trackers.resolve_choice(choice_text, options)
         questionnaire._awaiting_tracker_choice = False
         questionnaire._follow_up_choices.pop(1, None)  # clear the tracker choice from Q1
         _chosen_tracker = questionnaire._preferred_tracker
@@ -4509,25 +4344,31 @@ def project_intake(state: ScrumState) -> dict:
             # ── Derive tracker preference from analysis profile if selected ──
             _ap_id = _effective_analysis_profile_id(state)
             if _ap_id and not qs._preferred_tracker:
+                from yeaboi import trackers as _trackers
+
                 _ap_source = _ap_id.split("-", 1)[0]
-                if _ap_source in ("jira", "azdevops"):
+                if _ap_source in _trackers.TRACKERS:
                     qs._preferred_tracker = _ap_source
                     logger.info("Tracker preference derived from analysis profile: %s", _ap_source)
 
-            # ── Tracker choice prompt when both are configured ─────────
-            if _is_jira_configured() and _is_azdevops_configured() and not qs._preferred_tracker:
+            # ── Tracker choice prompt when two or more are configured ──
+            from yeaboi import trackers as _trackers
+
+            _configured_trackers = _trackers.configured()
+            if len(_configured_trackers) >= 2 and not qs._preferred_tracker:
                 qs._awaiting_tracker_choice = True
                 # Use Q1 slot with follow-up choices so the TUI accordion renders
                 # a proper choice menu (Q0 doesn't exist in the accordion height map).
                 qs.current_question = 1
-                qs._follow_up_choices[1] = ("Jira", "Azure DevOps")
+                _labels = tuple(_trackers.TRACKERS[k].label for k in _configured_trackers)
+                qs._follow_up_choices[1] = _labels
+                _named = " and ".join(f"**{label}**" for label in _labels)
                 return {
                     "questionnaire": qs,
                     "messages": [
                         AIMessage(
                             content=(
-                                "Both **Jira** and **Azure DevOps** are configured.\n\n"
-                                "Which tracker should I use for velocity and sprint data?"
+                                f"{_named} are configured.\n\nWhich tracker should I use for velocity and sprint data?"
                             )
                         )
                     ],
@@ -4541,10 +4382,7 @@ def project_intake(state: ScrumState) -> dict:
 
                 need_velocity = 9 not in qs.answers or 9 in qs.defaulted_questions
                 # Determine which tracker to use — explicit choice or auto-detect
-                if qs._preferred_tracker:
-                    _tracker_label = "Jira" if qs._preferred_tracker == "jira" else "Azure DevOps"
-                else:
-                    _tracker_label = "Jira" if _is_jira_configured() else "Azure DevOps"
+                _tracker_label = _trackers.label_for(qs._preferred_tracker) or "Jira"
                 _pref = qs._preferred_tracker
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     vel_future = pool.submit(_fetch_tracker_velocity, _pref) if need_velocity else None
@@ -5043,9 +4881,10 @@ def project_intake(state: ScrumState) -> dict:
         ):
             prompt_text = small_prompt
         elif q_nums[0] == 27 and _is_tracker_configured():
+            from yeaboi import trackers as _trk_registry
+
             _pref_trk = questionnaire._preferred_tracker
-            _use_jira = _pref_trk == "jira" or (not _pref_trk and _is_jira_configured())
-            _trk_label = "Jira" if _use_jira else "Azure DevOps"
+            _trk_label = _trk_registry.label_for(_pref_trk) or "Jira"
             logger.info("Q27: fetching active sprint from %s (preferred=%s)", _trk_label, _pref_trk)
             active_num, active_start, jira_status = _fetch_active_sprint_number(_pref_trk)
             logger.info("Q27: active_num=%s, active_start=%s, status=%s", active_num, active_start, jira_status)
@@ -5989,10 +5828,10 @@ def project_intake(state: ScrumState) -> dict:
             prev_advance_phase = QuestionnairePhase.CAPACITY_PLANNING
         else:
             # Tracker configured — fetch active sprint/iteration and show selection as a choice menu
+            from yeaboi import trackers as _std_registry
+
             _pref_std = questionnaire._preferred_tracker
-            _std_tracker_label = (
-                "Jira" if (_pref_std == "jira" or (not _pref_std and _is_jira_configured())) else "Azure DevOps"
-            )
+            _std_tracker_label = _std_registry.label_for(_pref_std) or "Jira"
             active_num, active_start, jira_status = _fetch_active_sprint_number(_pref_std)
             if active_num is not None:
                 # Store active sprint number and start date in transient fields
@@ -6637,6 +6476,39 @@ def _effective_analysis_profile_id(state) -> str:
         logger.info("analysis dep off — dropping analysis profile %s for this run", pid)
         return ""
     return pid
+
+
+#: How far back the planner's production note looks. Wider than a sprint on
+#: purpose: an incident rate is the thing that bears on capacity, and one
+#: sprint's worth of incidents is a mood, not a rate.
+_OPS_PLANNING_WINDOW_DAYS = 30
+
+
+def _gather_ops_summary() -> str:
+    """Production over the last month as a markdown block ('' when unused).
+
+    Prose only, and prose the planner is told to treat as a constraint it may
+    not compute with. Nothing here touches velocity, capacity or confidence:
+    silently haircutting a sprint because Datadog was chatty is exactly the
+    behaviour the conflicts vocabulary was written to replace.
+    """
+    try:
+        from yeaboi.connectors import registry
+
+        if not registry.any_fetchable():
+            return ""
+        from yeaboi.connectors.fetching import gather
+        from yeaboi.ops.signals import describe
+
+        result = gather(since=f"{_OPS_PLANNING_WINDOW_DAYS}d")
+        if not result.signals:
+            return ""
+        lines = [f"Over the last {_OPS_PLANNING_WINDOW_DAYS} days, the connected monitoring tools saw:"]
+        lines += [f"- {describe(sig)}" for sig in result.signals]
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001 — production context is best-effort
+        logger.debug("_gather_ops_summary failed (non-fatal)", exc_info=True)
+        return ""
 
 
 def project_analyzer(state: ScrumState) -> dict:
@@ -9976,6 +9848,9 @@ def sprint_planner(state: ScrumState) -> dict:
         team_calibration=team_calibration_text,
         ceremony_history=state.get("_ceremony_history", "") or "",
         performance_context=state.get("_performance_context", "") or _gather_performance_summary(_state_scope(state)),
+        # Planner only. The analyzer's output feeds feature generation, and a
+        # feature invented from an incident is a story nobody asked for.
+        production_context=_gather_ops_summary(),
         review_feedback=review_feedback if review_mode else None,
         review_mode=review_mode,
         previous_output=previous_output,

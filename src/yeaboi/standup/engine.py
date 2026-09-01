@@ -1195,6 +1195,7 @@ def _summarize_members(
     self_reported: dict[str, str],
     sprint_name: str,
     self_reported_images: dict[str, list[str]] | None = None,
+    ops_bundle=None,
 ) -> tuple[list[MemberUpdate], str, list[str]]:
     """Produce (member_updates, team_summary, warnings) via one LLM call + deterministic fallback.
 
@@ -1217,6 +1218,10 @@ def _summarize_members(
     self_reported_images: per-member screenshot paths pasted (Ctrl+V) into "My
         Update" — attached to the summary LLM call as multimodal image blocks so
         the model can fold what they show into the team summary.
+    ops_bundle: what production did (standup/ops.py), passed to the prompt as a
+        TOP-LEVEL argument. It never enters ``member_payload``: ``_for_llm`` is
+        the member evidence path, and an ops event has no author to belong to.
+        Empty or None adds nothing to the prompt at all.
     """
     members = [str(m) for m in result.get("members") or ()]
     grouped: dict[str, list[dict]] = result.get("grouped") or {}
@@ -1332,6 +1337,7 @@ def _summarize_members(
     from yeaboi.agent.llm import invoke_json
     from yeaboi.agent.nodes import _is_llm_auth_or_billing_error, _local_llm_hint
     from yeaboi.prompts.standup import get_standup_summary_prompt
+    from yeaboi.standup import ops as standup_ops
 
     prompt = get_standup_summary_prompt(
         sprint_name=sprint_name,
@@ -1341,6 +1347,8 @@ def _summarize_members(
         confidence_rationale=progress.confidence_rationale,
         members=member_payload,
         activity_counts=activity_counts,
+        production=standup_ops.for_prompt(ops_bundle) if ops_bundle else None,
+        production_window=standup_ops.window_label(ops_bundle) if ops_bundle else "",
     )
 
     # Screenshots pasted into "My Update" — flattened across members and attached
@@ -1641,6 +1649,18 @@ def run_standup(
     # timeline axis ends where the freshest event can actually sit.
     activity_window_end = datetime.now().astimezone().isoformat()
 
+    # 2b. What production did, over its OWN wider window. A sibling of the
+    #     activity bundle, never a field on it: an ops event has no author, and
+    #     the two member filters below key on exactly that. With no ops vendor
+    #     connected this is a registry walk with no network and an empty bundle,
+    #     and every surface below stays byte-identical to before it existed.
+    from yeaboi.standup import ops as standup_ops
+
+    ops_bundle = standup_ops.OpsBundle()
+    if standup_ops.connected():
+        _notify("Reading production")
+        ops_bundle = standup_ops.collect()
+
     # 3. Sprint context + deterministic confidence.
     _notify("Reading sprint progress")
     ctx = sprint_context.gather(
@@ -1775,6 +1795,12 @@ def run_standup(
         conflict_cards, conflict_warnings = standup_conflicts.detect_status_conflicts(
             result["grouped"], prefixes=gate_prefixes, work_item_ids=gate_ids
         )
+        # And the same question asked of production: a done ticket while an
+        # incident naming it is still live. Same prefix gate, so an alert
+        # cannot invent a work item; no members, so nobody is indicted.
+        ops_cards = standup_conflicts.detect_ops_conflicts(result["grouped"], ops_bundle.events, prefixes=gate_prefixes)
+        conflict_cards, ops_warnings = standup_conflicts.merge_cards(conflict_cards, ops_cards)
+        conflict_warnings = (*conflict_warnings, *ops_warnings)
     except Exception:
         logger.warning("standup: conflict detection failed", exc_info=True)
 
@@ -1785,6 +1811,7 @@ def run_standup(
         self_reported=self_reported,
         sprint_name=ctx.sprint_name,
         self_reported_images=self_reported_images,
+        ops_bundle=ops_bundle,
     )
 
     # One rule, two audiences. A skip is worth chasing when the user asked for the
@@ -1799,6 +1826,10 @@ def run_standup(
     # then any LLM/config issue. These render as a "Notices" section, never silent.
     warnings = (
         [f"{src.replace('_', ' ').title()}: {msg}" for src, msg in (*bundle.errors, *bundle.partial_sources)]
+        # A connected ops vendor that could not be read. Only ever a vendor the
+        # user chose — an unconnected one cannot reach the bundle at all — so
+        # this is news on the same terms the source auth failures above are.
+        + [f"{label}: {msg}" for label, msg in ops_bundle.errors]
         + llm_warnings
         + automation_notices
     )
@@ -1871,6 +1902,8 @@ def run_standup(
                 session_id=session_id,
                 dropped_case_ids=dropped,
                 conflict_cards=conflict_cards,
+                ops_signals=ops_bundle.signals,
+                ops_events=ops_bundle.events,
             )
         except Exception:
             logger.warning("standup: provenance recording failed", exc_info=True)
@@ -1909,6 +1942,7 @@ def run_standup(
         # between detection and the report can never inflate the team count.
         practice_rollup=habits.rollup({m.name: m.practices for m in member_updates if m.practices}),
         conflicts=tuple(conflict_cards),
+        ops_signals=ops_bundle.signals,
     )
 
     # 6. Deliver, then record the run (so delivery status is captured).

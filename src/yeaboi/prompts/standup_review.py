@@ -93,7 +93,7 @@ def get_transcript_review_prompt(
         "- 'matched_key' is the evidence 'key' the claim corresponds to (e.g. 'YB-12', '#91', a short "
         'SHA) when you can identify one, else "".\n'
         "- 'system_hint' is where the work most likely lives, exactly one of: jira, azure_devops, "
-        "github, azure_repos, local_git, confluence, notion, slack, teams, linear, gitlab, bitbucket, "
+        "github, azure_repos, local_git, confluence, notion, slack, teams, linear, trello, gitlab, bitbucket, "
         "figma, miro, sentry, datadog, google_docs, ci, email, none, unknown. "
         "Use 'none' for work with no digital footprint at all (pairing, a call, interviews, a "
         "whiteboard). Use 'unknown' when you genuinely cannot tell — never guess a system.\n"

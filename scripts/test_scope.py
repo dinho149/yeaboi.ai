@@ -184,6 +184,11 @@ AREAS: tuple[Area, ...] = (
             # a supervised coding agent to a PR.
             "src/yeaboi/ship/",
             "src/yeaboi/questionnaire_io.py",
+            # The issue-tracker registry every planning dispatch site reads,
+            # and the tracker sync modules its entries resolve to.
+            "src/yeaboi/trackers.py",
+            "src/yeaboi/linear_sync.py",
+            "src/yeaboi/trello_sync.py",
             "src/yeaboi/transcript.py",
             "src/yeaboi/json_exporter.py",
             "src/yeaboi/prd_exporter.py",
@@ -195,11 +200,15 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_mcp_server.py",
             "tests/unit/nodes/*.py",
             "tests/unit/prompts/*.py",
+            "tests/unit/test_trackers.py",
+            "tests/unit/test_linear_sync.py",
+            "tests/unit/test_trello_sync.py",
             "tests/unit/test_state.py",
             "tests/unit/test_sessions.py",
             "tests/unit/test_phases_*.py",
             "tests/unit/test_planning_*.py",
             "tests/unit/test_plan_*.py",
+            "tests/unit/test_planner_*.py",
             "tests/unit/test_prior_art*.py",
             "tests/unit/test_chat_*.py",
             "tests/unit/test_headless_pipeline.py",
@@ -389,6 +398,20 @@ AREAS: tuple[Area, ...] = (
             # The headless settings service the desktop settings pages write
             # through — allowlisted config writes, masked reads.
             "src/yeaboi/settings/",
+            # The read-only connector layer. It rides with settings for the same
+            # reason app/ does: it owns no mode, and every surface reads its
+            # catalog through the settings engine it derives.
+            "src/yeaboi/connectors/",
+            # The full-screen catalog browser over that layer (Settings ▸
+            # Connections ▸ Enter) — it renders nothing the engine did not say.
+            "src/yeaboi/ui/catalog/",
+            # The shapes those connectors return. No mode owns them — they are
+            # the vocabulary a mode reads production in — so they ride here with
+            # the connectors that produce them.
+            "src/yeaboi/ops/",
+            # The identities the desktop vendors, generated from those
+            # descriptors — its icon table is checked against this file.
+            "scripts/gen_connectors_contract.py",
             "src/yeaboi/telemetry.py",
             "src/yeaboi/feedback.py",
             # The privacy statement + egress disclosures every surface renders,
@@ -436,6 +459,13 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_cli_*.py",
             "tests/unit/test_app_*.py",
             "tests/unit/test_settings_*.py",
+            "tests/unit/test_connectors_*.py",
+            "tests/unit/test_ops_*.py",
+            "tests/unit/test_connections_*.py",
+            "tests/unit/test_catalog_tui.py",
+            "tests/unit/test_webhook_*.py",
+            "tests/unit/test_provider_verify_ops.py",
+            "tests/unit/test_provider_verify_cloud.py",
             "tests/unit/test_feedback.py",
             "tests/unit/test_privacy.py",
             "tests/unit/test_system_check.py",

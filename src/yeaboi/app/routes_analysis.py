@@ -43,6 +43,7 @@ def options(app, request: Request) -> Response:
                 "ai_footprint": bool(grid["code"]),
                 "code_health": bool(grid["code"]),
                 "documentation": bool(grid["docs"]),
+                "operational": bool(grid["ops"]),
             },
             "steps": list(setup.STEPS),
             "depths": list(setup.DEPTHS),

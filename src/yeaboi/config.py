@@ -548,6 +548,37 @@ def get_confluence_space_key() -> str | None:
     return os.getenv("CONFLUENCE_SPACE_KEY") or None
 
 
+def get_linear_api_key() -> str | None:
+    """Return the Linear personal API key, or None if not set."""
+    return os.getenv("LINEAR_API_KEY") or None
+
+
+def get_linear_team_key() -> str | None:
+    """Return the Linear team key to work in (e.g. 'ENG'), or None if not set.
+
+    Optional: a workspace with one team needs no key at all.
+    """
+    return os.getenv("LINEAR_TEAM_KEY") or None
+
+
+def get_trello_api_key() -> str | None:
+    """Return the Trello API key (names the app; the token grants access), or None."""
+    return os.getenv("TRELLO_API_KEY") or None
+
+
+def get_trello_token() -> str | None:
+    """Return the Trello API token, or None if not set."""
+    return os.getenv("TRELLO_TOKEN") or None
+
+
+def get_trello_board_id() -> str | None:
+    """Return the Trello board to plan against, or None if not set.
+
+    Optional: an account with one open board needs no id at all.
+    """
+    return os.getenv("TRELLO_BOARD_ID") or None
+
+
 def get_anonymize_mask_terms() -> tuple[str, ...]:
     """Return extra company-specific terms to always mask in Anonymize mode.
 

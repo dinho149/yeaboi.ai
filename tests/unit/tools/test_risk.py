@@ -23,6 +23,12 @@ _EXPECTED_WRITES = {
     "azdevops_create_epic",
     "azdevops_create_story",
     "azdevops_create_iteration",
+    "linear_create_epic",
+    "linear_create_story",
+    "linear_create_sprint",
+    "trello_create_epic",
+    "trello_create_story",
+    "trello_create_sprint",
 }
 
 

@@ -101,7 +101,7 @@ class TestConnectionVerify:
         assert request(app, "POST", "/api/settings/connection/verify", {"token": "t"}).code == 400
 
     def test_unknown_kind_is_400(self, app):
-        resp = request(app, "POST", "/api/settings/connection/verify", {"kind": "gitlab"})
+        resp = request(app, "POST", "/api/settings/connection/verify", {"kind": "gopher"})
         assert resp.code == 400
         assert "unknown connection kind" in json.loads(resp.body)["error"]
 
@@ -281,3 +281,44 @@ class TestAccessDoctor:
 
         # The point of the route: it answers before Share Mode is switched on.
         assert seen == [True, True]
+
+
+class TestConnectionsCatalog:
+    """``GET /api/connections`` — the read-only integration catalog."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_env(self, monkeypatch):
+        from yeaboi.connectors import registry
+
+        for env in registry.all_envs():
+            monkeypatch.delenv(env, raising=False)
+
+    def test_requires_auth(self, app):
+        assert request(app, "GET", "/api/connections", authed=False).code == 401
+
+    def test_lists_nothing_when_nothing_is_connected(self, app):
+        body = json.loads(request(app, "GET", "/api/connections").body)
+        assert body["connectors"] == []
+        assert body["connected"] == []
+
+    def test_all_shows_the_catalog(self, app):
+        body = json.loads(request(app, "GET", "/api/connections?all=1").body)
+        from yeaboi.connectors import registry
+
+        # The browse view is the whole roster: connectors plus the built-in
+        # integrations as managed_by:"credentials" rows.
+        expected = {c.key for c in registry.all_connectors()} | {c.key for c in registry.legacy_entries()}
+        assert {c["key"] for c in body["connectors"]} == expected
+        assert body["connectors"][0]["connected"] is False
+        managed = {c["key"]: c["managed_by"] for c in body["connectors"]}
+        assert managed["datadog"] == "connections"
+        assert managed["github"] == "credentials"
+
+    def test_never_carries_a_field_value(self, app, monkeypatch):
+        secret = "dd-api-key-never-on-the-wire"
+        monkeypatch.setenv("DATADOG_API_KEY", secret)
+        monkeypatch.setenv("DATADOG_APP_KEY", "app-key-never-on-the-wire")
+        raw = request(app, "GET", "/api/connections").body.decode()
+        assert secret not in raw
+        assert "app-key-never-on-the-wire" not in raw
+        assert '"is_set": true' in raw or '"is_set":true' in raw

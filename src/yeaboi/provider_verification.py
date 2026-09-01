@@ -758,6 +758,630 @@ def _verify_notion(token: str) -> tuple[bool, str]:
         return False, _connection_error(e)
 
 
+def _verify_datadog(token: str, app_key: str, site: str = "") -> tuple[bool, str]:
+    """Verify a Datadog API key and application key against their site.
+
+    Two calls, because the two credentials fail in different places: the API key
+    is rejected by /v1/validate, while a bad *application* key only shows up on
+    a call that authorises something. Reporting either as "invalid Datadog
+    credentials" would send the user to re-cut the wrong one.
+    """
+    from yeaboi.connectors.datadog import api_base
+    from yeaboi.connectors.http import probe_status
+
+    base = api_base(site)
+    status, message = probe_status(
+        f"{base}/api/v1/validate",
+        headers={"DD-API-KEY": token},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+
+    # The API key is good. Now the application key, on the cheapest endpoint
+    # that actually requires one.
+    status, message = probe_status(
+        f"{base}/api/v1/monitor?page_size=1",
+        headers={"DD-API-KEY": token, "DD-APPLICATION-KEY": app_key},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, "API key verified, but the application key was rejected — check it has monitors_read"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Datadog verified"
+
+
+def _verify_grafana(base_url: str, token: str) -> tuple[bool, str]:
+    """Verify a Grafana service-account token against GET /api/org.
+
+    The host is the user's, so the request goes through the connector HTTP
+    guard: https only, and never an address on this machine or a private range.
+    """
+    from yeaboi.connectors.http import probe_status
+
+    status, message = probe_status(
+        f"{base_url.rstrip('/')}/api/org",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, "Reached the host, but it does not look like a Grafana API — check the base URL"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Grafana verified"
+
+
+def _verify_pagerduty(token: str) -> tuple[bool, str]:
+    """Verify a PagerDuty REST API key against GET /abilities — no scope needed."""
+    from yeaboi.connectors.http import probe_status
+
+    status, message = probe_status(
+        "https://api.pagerduty.com/abilities",
+        headers={
+            "Authorization": f"Token token={token}",
+            "Accept": "application/vnd.pagerduty+json;version=2",
+        },
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "PagerDuty verified"
+
+
+def _verify_aws(auth_method: str = "", role_arn: str = "", external_id: str = "", region: str = "") -> tuple[bool, str]:
+    """Verify AWS access, and say whose identity yeaboi ended up as.
+
+    Under ``assume_role`` this proves the whole guarantee at once: the assume
+    call succeeds, and the read-only session policy it carried is what the
+    subsequent DescribeAlarms runs under. Under ambient it reports the caller
+    ARN, because a user pointing yeaboi at whatever this machine happens to be
+    should see what that turned out to mean.
+    """
+    from yeaboi.connectors import aws
+
+    if not aws.installed():
+        return False, aws.PKG_MISSING
+    if auth_method == "assume_role" and not (role_arn and external_id):
+        return False, "Assuming a role needs both a role ARN and an external ID"
+
+    try:
+        import boto3
+
+        caller = boto3.client("sts", region_name=region or "us-east-1").get_caller_identity()
+    except Exception as exc:
+        return False, _connection_error(exc)
+
+    if auth_method != "assume_role":
+        arn = str(caller.get("Arn") or "this machine's identity")
+        return True, f"AWS verified as {arn} — yeaboi cannot bound what this identity may do"
+
+    try:
+        alarms = aws.client("cloudwatch").describe_alarms(MaxRecords=1)
+    except Exception as exc:
+        return False, _connection_error(exc)
+    count = len(alarms.get("MetricAlarms") or []) + len(alarms.get("CompositeAlarms") or [])
+    scope = "read-only session" if count or alarms is not None else "session"
+    return True, f"AWS verified — assumed {role_arn.rsplit('/', 1)[-1]} under a {scope}"
+
+
+def _verify_gcp(auth_method: str = "", project_id: str = "", service_account: str = "") -> tuple[bool, str]:
+    """Verify Google Cloud access, and name the identity the token carries."""
+    from yeaboi.connectors import gcp
+    from yeaboi.connectors.http import probe_status
+
+    if not gcp.installed():
+        return False, gcp.PKG_MISSING
+    if not project_id:
+        return False, "Google Cloud verification needs a project id"
+    if auth_method == "impersonate" and not service_account:
+        return False, "Impersonation needs the service account to impersonate"
+
+    try:
+        token = gcp.access_token()
+    except Exception as exc:
+        return False, _connection_error(exc)
+
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    status, message = probe_status(
+        gcp.group_stats_url(project_id, now - timedelta(hours=1), now),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, "Token minted, but it was refused — the account needs roles/errorreporting.viewer"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    if auth_method != "impersonate":
+        return True, f"Google Cloud verified on {project_id} — yeaboi cannot bound what this identity may do"
+    return True, f"Google Cloud verified on {project_id} as {service_account}"
+
+
+def _verify_azure_cloud(
+    tenant_id: str = "", client_id: str = "", client_secret: str = "", subscription_id: str = ""
+) -> tuple[bool, str]:
+    """Verify an Azure app registration and its Monitoring Reader assignment.
+
+    Two failures worth telling apart: the app registration itself being wrong
+    (the token never issues) and the role assignment being missing (the token
+    issues and ARM refuses it). Reporting either as "invalid Azure credentials"
+    sends the user to re-cut the wrong thing.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from yeaboi.connectors import azure_cloud
+    from yeaboi.connectors.http import probe_status
+
+    missing = [
+        name
+        for name, value in (
+            ("tenant id", tenant_id),
+            ("client id", client_id),
+            ("client secret", client_secret),
+            ("subscription id", subscription_id),
+        )
+        if not value
+    ]
+    if missing:
+        return False, f"Azure verification needs the {', '.join(missing)}"
+
+    try:
+        token = azure_cloud.access_token()
+    except Exception as exc:
+        return False, str(exc) if type(exc).__name__ == "FetchError" else _connection_error(exc)
+
+    now = datetime.now(timezone.utc)
+    status, message = probe_status(
+        azure_cloud.alerts_url(subscription_id, now - timedelta(hours=1), now),
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, "App registration verified, but ARM refused it — it needs Monitoring Reader on that subscription"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Microsoft Azure verified — Monitoring Reader on that subscription"
+
+
+def _verify_incidentio(token: str) -> tuple[bool, str]:
+    """Verify an incident.io API key, and report the roles it carries.
+
+    ``/v1/identity`` names the key's roles, so the result can say what the key
+    may do rather than only that it authenticated — a key holding a write role
+    still verifies, but the user is told before they trust it.
+    """
+    from yeaboi.connectors.http import UnsafeUrlError, get_json
+    from yeaboi.connectors.incidentio import API_BASE
+
+    try:
+        resp = get_json(f"{API_BASE}/v1/identity", headers={"Authorization": f"Bearer {token}"})
+    except UnsafeUrlError as exc:
+        return False, str(exc)
+    except Exception as exc:
+        return False, _connection_error(exc)
+    if resp.status_code in (401, 403):
+        return False, INVALID_KEY
+    if resp.status_code != 200:
+        return False, f"Unexpected response: {resp.status_code}"
+    try:
+        roles = (resp.json() or {}).get("identity", {}).get("roles") or []
+    except Exception:
+        roles = []
+    named = ", ".join(str(r) for r in roles if r)
+    return True, f"incident.io verified \u2014 key roles: {named}" if named else "incident.io verified"
+
+
+def _verify_sentry(token: str, org: str, base_url: str = "") -> tuple[bool, str]:
+    """Verify a Sentry auth token against its organisation.
+
+    The org is a user-supplied path segment, so it is quoted rather than
+    interpolated — a slug with a slash in it must not reach another endpoint.
+    """
+    from urllib.parse import quote
+
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.sentry import api_base
+
+    slug = quote(org.strip().strip("/"), safe="")
+    if not slug:
+        return False, "Sentry needs an organisation slug"
+    status, message = probe_status(
+        f"{api_base(base_url)}/api/0/organizations/{slug}/",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Token accepted, but no organisation named {org!r} — check the slug, not the display name"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Sentry verified"
+
+
+def _verify_gitlab(token: str, base_url: str = "") -> tuple[bool, str]:
+    """Verify a GitLab access token against GET /api/v4/user.
+
+    The host may be the user's own install, so the request goes through the
+    connector HTTP guard: https only, never an address on this machine or a
+    private range.
+    """
+    from yeaboi.connectors.gitlab import api_base
+    from yeaboi.connectors.http import probe_status
+
+    status, message = probe_status(
+        f"{api_base(base_url)}/api/v4/user",
+        headers={"PRIVATE-TOKEN": token},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, "Reached the host, but it does not look like a GitLab API — check the base URL"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "GitLab verified"
+
+
+def _verify_bitbucket(email: str, token: str, workspace: str) -> tuple[bool, str]:
+    """Verify an Atlassian API token can read one Bitbucket workspace.
+
+    The workspace is a user-supplied path segment, so it is quoted rather than
+    interpolated — an ID with a slash in it must not reach another endpoint.
+    """
+    from urllib.parse import quote
+
+    from yeaboi.connectors.bitbucket import basic_auth
+    from yeaboi.connectors.http import probe_status
+
+    slug = quote(workspace.strip().strip("/"), safe="")
+    if not slug:
+        return False, "Bitbucket needs a workspace ID"
+    status, message = probe_status(
+        f"https://api.bitbucket.org/2.0/workspaces/{slug}",
+        headers={"Authorization": f"Basic {basic_auth(email, token)}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Credentials accepted, but no workspace named {workspace!r} — check the ID, not the display name"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Bitbucket verified"
+
+
+def _verify_circleci(token: str, org_slug: str) -> tuple[bool, str]:
+    """Verify a CircleCI token can list one org's pipelines.
+
+    The slug rides the query string, urlencoded — a slug with a ``&`` in it
+    must stay one parameter — and the host is fixed.
+    """
+    from urllib.parse import urlencode
+
+    from yeaboi.connectors.circleci import API_BASE
+    from yeaboi.connectors.http import probe_status
+
+    slug = org_slug.strip().strip("/")
+    if not slug:
+        return False, "CircleCI needs an org slug"
+    status, message = probe_status(
+        f"{API_BASE}/pipeline?{urlencode({'org-slug': slug})}",
+        headers={"Circle-Token": token},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Token accepted, but no org named {org_slug!r} — use the slug form, e.g. gh/acme"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "CircleCI verified"
+
+
+def _verify_jenkins(base_url: str, username: str, token: str) -> tuple[bool, str]:
+    """Verify a Jenkins user API token against GET /me/api/json.
+
+    The host is the user's own install, so the request goes through the
+    connector HTTP guard: https only, never an address on this machine or a
+    private range.
+    """
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.jenkins import api_base, basic_auth
+
+    status, message = probe_status(
+        f"{api_base(base_url)}/me/api/json",
+        headers={"Authorization": f"Basic {basic_auth(username, token)}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, "Reached the host, but it does not look like a Jenkins API — check the base URL"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Jenkins verified"
+
+
+def _verify_statuspage(token: str, page_id: str) -> tuple[bool, str]:
+    """Verify a Statuspage API key can read one page.
+
+    The page ID is a user-supplied path segment, so it is quoted rather than
+    interpolated — an ID with a slash in it must not reach another endpoint.
+    """
+    from urllib.parse import quote
+
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.statuspage import API_BASE
+
+    page = quote(page_id.strip().strip("/"), safe="")
+    if not page:
+        return False, "Statuspage needs a page ID"
+    status, message = probe_status(
+        f"{API_BASE}/pages/{page}",
+        headers={"Authorization": f"OAuth {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Key accepted, but no page named {page_id!r} — use the ID from the page's API settings"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Statuspage verified"
+
+
+def _verify_launchdarkly(token: str) -> tuple[bool, str]:
+    """Verify a LaunchDarkly access token with the cheapest project read.
+
+    The host is fixed and LaunchDarkly's token rides the Authorization header
+    bare — no Bearer scheme.
+    """
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.launchdarkly import API_BASE
+
+    status, message = probe_status(
+        f"{API_BASE}/projects?limit=1",
+        headers={"Authorization": token},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "LaunchDarkly verified"
+
+
+def _verify_jsm_ops(token: str, cloud_id: str) -> tuple[bool, str]:
+    """Verify a JSM Ops API key can list one site's alerts.
+
+    The cloud ID is a user-supplied path segment, so it is quoted rather than
+    interpolated, and the key uses the GenieKey scheme — it is an Operations
+    key, never a Jira API token.
+    """
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.jsm_ops import alerts_base
+
+    site = cloud_id.strip().strip("/")
+    if not site:
+        return False, "JSM Ops needs your Atlassian site's cloud ID"
+    status, message = probe_status(
+        f"{alerts_base(site)}/alerts?limit=1",
+        headers={"Authorization": f"GenieKey {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Key accepted, but no Ops site for cloud ID {cloud_id!r} — check the ID, not the site name"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "JSM Ops verified"
+
+
+def _verify_linear(token: str) -> tuple[bool, str]:
+    """Verify a Linear API key with the cheapest authenticated query — the viewer.
+
+    Linear is GraphQL-only, so this is the one probe that POSTs. The host is
+    fixed, the query is a constant, and nothing from the response beyond the
+    presence of a viewer id is read.
+    """
+    try:
+        import httpx
+
+        resp = httpx.post(
+            "https://api.linear.app/graphql",
+            headers={"Authorization": token, "Content-Type": "application/json"},
+            json={"query": "{ viewer { id } }"},
+            timeout=10,
+        )
+        if resp.status_code in (400, 401, 403):
+            return False, INVALID_KEY
+        if resp.status_code != 200:
+            return False, f"Unexpected response: {resp.status_code}"
+        body = resp.json() if resp.content else {}
+        if isinstance(body, dict) and body.get("errors"):
+            return False, INVALID_KEY
+        return True, "Linear verified"
+    except Exception as e:
+        return False, _connection_error(e)
+
+
+def _verify_trello(api_key: str, token: str) -> tuple[bool, str]:
+    """Verify a Trello key/token pair against GET /1/members/me.
+
+    Trello authenticates on the query string, so the URL carries both
+    credentials — it must never be logged or echoed, and the failure messages
+    here are constants for that reason.
+    """
+    from urllib.parse import urlencode
+
+    try:
+        import httpx
+
+        creds = urlencode({"key": api_key, "token": token})
+        resp = httpx.get(f"https://api.trello.com/1/members/me?{creds}", timeout=10)
+        if resp.status_code in (401, 403):
+            return False, INVALID_KEY
+        if resp.status_code != 200:
+            return False, f"Unexpected response: {resp.status_code}"
+        return True, "Trello verified"
+    except Exception as e:
+        return False, _connection_error(e)
+
+
+def _verify_custom_api(
+    key: str = "", base_url: str = "", token: str = "", username: str = "", password: str = "", **extra: str
+) -> tuple[bool, str]:
+    """Verify one user-created API connection against its declared probe.
+
+    The host is the user's own, so the request goes through the connector HTTP
+    guard: https only, never an address on this machine or a private range.
+    Auth is built from the descriptor's scheme; nothing about the request shape
+    comes from the caller beyond the credential values themselves. ``extra``
+    carries the descriptor's extra fields, keyed by lower-cased env suffix.
+    """
+    from yeaboi.connectors.custom import auth_headers, spec_by_key
+    from yeaboi.connectors.http import probe_status
+
+    spec = spec_by_key(key)
+    if spec is None:
+        return False, f"No custom connection named {key!r}"
+    values = {
+        f"{spec.env_stem}_TOKEN": token,
+        f"{spec.env_stem}_USERNAME": username,
+        f"{spec.env_stem}_PASSWORD": password,
+    }
+    for field in spec.extra_fields:
+        values[f"{spec.env_stem}_{field.env_suffix}"] = str(extra.get(field.env_suffix.lower(), "") or "")
+    status, message = probe_status(
+        f"{base_url.rstrip('/')}{spec.probe_path}",
+        headers=auth_headers(spec, values),
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, "Reached the host, but the probe path does not exist — check the connection's probe"
+    if status != spec.probe_ok_status:
+        return False, f"Unexpected response: {status} (expected {spec.probe_ok_status})"
+    return True, f"{spec.label} verified"
+
+
+_MCP_PROTOCOL_VERSION = "2025-03-26"
+_MCP_NAME_MAX = 60
+
+
+def _mcp_body(resp) -> dict:
+    """The JSON-RPC body of a streamable-HTTP response, SSE-framed or plain.
+
+    A server may answer ``application/json`` or ``text/event-stream``; in the
+    stream shape the payload rides ``data:`` lines. Anything unreadable is {}.
+    """
+    import json
+
+    try:
+        if "text/event-stream" in str(resp.headers.get("content-type", "")):
+            body = {}
+            for line in resp.text.splitlines():
+                if line.startswith("data:"):
+                    body = json.loads(line[5:].strip())
+                    break
+        else:
+            body = resp.json() if resp.content else {}
+        return body if isinstance(body, dict) else {}
+    except Exception:
+        return {}
+
+
+def _verify_custom_mcp(key: str = "", url: str = "", token: str = "") -> tuple[bool, str]:
+    """Verify one user-created MCP connection with the streamable-HTTP handshake.
+
+    initialize → notifications/initialized → tools/list, over the guarded POST
+    (https only, never a private address). Nothing beyond the server's name and
+    its tool count is read, and the name is length-capped before display.
+    """
+    from yeaboi.connectors.custom import spec_by_key
+    from yeaboi.connectors.http import UnsafeUrlError, post_json
+
+    spec = spec_by_key(key)
+    if spec is None:
+        return False, f"No custom connection named {key!r}"
+    server = url.strip()
+    if not server:
+        return False, "Set the Server URL first"
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    if token.strip():
+        headers["Authorization"] = f"Bearer {token.strip()}"
+
+    def rpc(payload: dict):
+        return post_json(server, headers=headers, payload=payload)
+
+    try:
+        resp = rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": _MCP_PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "yeaboi", "version": "1"},
+                },
+            }
+        )
+        if resp.status_code in (401, 403):
+            return False, INVALID_KEY
+        if resp.status_code in (404, 405):
+            return False, "Reached the host, but it does not speak MCP streamable HTTP — check the URL"
+        body = _mcp_body(resp)
+        error = body.get("error")
+        if isinstance(error, dict):
+            return False, f"The server refused initialize: {str(error.get('message') or '')[:120]}"
+        if resp.status_code != 200 or not isinstance(body.get("result"), dict):
+            return False, f"Unexpected response: {resp.status_code}"
+        name = str(body["result"].get("serverInfo", {}).get("name") or "")[:_MCP_NAME_MAX]
+
+        session = str(resp.headers.get("mcp-session-id", "") or "")
+        if session:
+            headers["Mcp-Session-Id"] = session
+        rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+        tools_resp = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        listed = _mcp_body(tools_resp).get("result")
+        tools = listed.get("tools") if isinstance(listed, dict) else []
+        count = len(tools) if isinstance(tools, list) else 0
+        who = f"MCP server {name!r}" if name else "MCP server"
+        return True, f"{who} verified — {count} tool(s)"
+    except UnsafeUrlError as exc:
+        return False, str(exc)
+    except Exception as exc:
+        return False, _connection_error(exc)
+
+
 def _verify_elevenlabs(token: str) -> tuple[bool, str]:
     """Verify an ElevenLabs API key against GET /v1/user — the cheapest authenticated endpoint."""
     try:

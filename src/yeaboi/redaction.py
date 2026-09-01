@@ -62,9 +62,24 @@ CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 # rotated file, which is the quieter half of a log-injection attack.
 LOG_VALUE_LIMIT = 200
 
+
+def _connector_secret_keys() -> tuple[str, ...]:
+    """Secrets declared by the connector registry, sorted for a stable regex.
+
+    Derived so a new connector cannot ship un-redacted: its descriptor is the
+    only place the secret is named. Import is local — this module is on the
+    logging path and must stay import-light.
+    """
+    from yeaboi.connectors import registry
+
+    return tuple(sorted(registry.secret_envs()))
+
+
 # Env vars whose values are credentials. Order does not matter — value
 # matching sorts longest-first at compile time so substring overlaps
 # (e.g. a token that contains another) cannot leave a partial secret behind.
+# The connector registry's own secrets are appended, so a new connector cannot
+# ship un-redacted.
 SECRET_ENV_KEYS: tuple[str, ...] = (
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
@@ -86,7 +101,7 @@ SECRET_ENV_KEYS: tuple[str, ...] = (
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
     "AWS_SESSION_TOKEN",
-)
+) + _connector_secret_keys()
 
 # Never value-match short strings — a 4-char "key" like "true" or "8080"
 # would redact half the log. Real credentials are always longer than this.
@@ -131,8 +146,19 @@ _cache_regex: re.Pattern[str] | None = None
 
 
 def _current_secret_values() -> tuple[str, ...]:
-    """Snapshot the env-var secret values worth matching, longest first."""
+    """Snapshot the env-var secret values worth matching, longest first.
+
+    Beyond the declared keys, every ``YEABOI_CUSTOM_*`` env is swept in whole:
+    user-created connections derive their envs under that prefix at runtime,
+    and over-redacting a custom base URL costs nothing (connectors never log
+    URLs) while under-redacting a token costs everything. The prefix scan also
+    self-heals for a connection created mid-process — the regex cache is keyed
+    on the value snapshot, and this path imports no registry.
+    """
     values = {v for key in SECRET_ENV_KEYS if (v := os.environ.get(key, "")) and len(v) >= _MIN_SECRET_LEN}
+    values |= {
+        v for key, v in os.environ.items() if key.startswith("YEABOI_CUSTOM_") and v and len(v) >= _MIN_SECRET_LEN
+    }
     return tuple(sorted(values, key=len, reverse=True))
 
 

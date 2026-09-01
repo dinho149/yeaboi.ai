@@ -66,6 +66,81 @@ def signals_sentence(signals) -> str:
     return f"Corroborated by {joined}"
 
 
+#: An ops kind → the noun a business reader recognises. Built from the closed
+#: vocabulary rather than a fixed three, so a new kind cannot fall out of the
+#: sentence while still printing in the export.
+OPS_KIND_LABELS = {
+    "incident": "incident",
+    "alert": "alert",
+    "error_spike": "error spike",
+    "deploy": "deploy",
+    "spend_change": "spend change",
+}
+
+
+#: Production's mark on every surface. Fixed rather than an ``emoji_theme``
+#: slot: the model chooses emoji for the sections it writes, and it never sees
+#: this one.
+OPS_EMOJI = "🚨"
+
+
+def ops_sentence(signals) -> str:
+    """One production sentence for renderers ('' when there is nothing to say).
+
+    Deliberately not "corroborated by": an incident *qualifies* delivery rather
+    than supporting it, and the two must never be joined into one claim. The
+    period is not restated here — every caller has already printed it.
+    """
+    from yeaboi.ops.events import EVENT_KINDS
+
+    totals = {kind: sum(s.count for s in signals if s.kind == kind) for kind in EVENT_KINDS}
+    parts = [f"{n} {OPS_KIND_LABELS[kind]}{'s' if n != 1 else ''}" for kind, n in totals.items() if n]
+    if not parts:
+        return ""
+    joined = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return f"Production saw {joined} over the same period"
+
+
+def gather_ops_signals(
+    *,
+    period_start: str,
+    period_end: str,
+    on_progress=None,
+) -> tuple[tuple, list[str]]:
+    """Return ``(ops_signals, warnings)`` for the period — never raises.
+
+    Reads the *report's own* window rather than a lookback from now: a report on
+    a sprint that ended a fortnight ago must not count last night's incident.
+    Nothing connected costs one walk of the descriptors and no network, and
+    returns nothing, so a reader who has never heard of PagerDuty sees no trace
+    of it anywhere in the report.
+    """
+    from datetime import timezone
+
+    from yeaboi.connectors import registry
+
+    if not registry.any_fetchable():
+        return (), []
+
+    from yeaboi.connectors.fetching import gather
+
+    start = datetime.combine(parse_date(period_start), time.min, tzinfo=timezone.utc)
+    end = datetime.combine(parse_date(period_end), time.max, tzinfo=timezone.utc)
+    _emit(on_progress, "Reading production…")
+    try:
+        result = gather(window=(start, end))
+    except Exception as e:  # noqa: BLE001 — production is reference context
+        logger.warning("reporting context: ops gather failed: %s", e, exc_info=True)
+        return (), [f"Production context unavailable — {e}"]
+
+    warnings = [f"{s.label}: {s.error}" for s in result.failures if s.error]
+    if result.signals:
+        total = sum(s.count for s in result.signals)
+        _emit(on_progress, f"Production: {total} event(s) across {len(result.signals)} signal(s)")
+    logger.info("gather_ops_signals: %d signal(s), %d warning(s)", len(result.signals), len(warnings))
+    return result.signals, warnings
+
+
 class _ProgressProxy(list):
     """List-shaped adapter so doc discovery's ``progress.append`` reaches on_progress.
 

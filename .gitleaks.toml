@@ -1,0 +1,13 @@
+# Gitleaks config for the CI history scan (.github/workflows security job) and
+# the pre-commit hook. Extends the default rules; the allowlist below names
+# synthetic test fixtures individually — never a path, so a real credential
+# pasted into a test still fails the scan.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "synthetic test-fixture values, committed on purpose"
+regexes = [
+  '''delivery-secret-abc123''',
+]

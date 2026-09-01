@@ -21,6 +21,23 @@ from yeaboi.ui.shared._components import (
 )
 
 
+def _tab(title: str) -> int:
+    """A settings tab's index, by name.
+
+    Resolved rather than hardcoded: inserting a tab shifts every index after it,
+    and a screen test asserting against the wrong tab then fails in a way that
+    reads like a rendering bug.
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS
+
+    return _SETTINGS_TABS.index(title)
+
+
+CREDENTIALS_TAB = _tab("Credentials")
+SHARING_TAB = _tab("Sharing")
+SYSTEM_TAB = _tab("System")
+
+
 class TestTheme:
     def test_analysis_theme_defaults(self):
         t = ANALYSIS_THEME
@@ -627,36 +644,36 @@ class TestSettingsScreen:
     def test_only_active_tab_section_renders(self):
         # Credentials groups LLM + integrations (Anthropic key AND Jira); the System
         # tab shows Advanced (Log Level) and none of the credential rows.
-        creds = self._render({"JIRA_BASE_URL": "https://org.atlassian.net"}, height=80, active_tab=0)
+        creds = self._render({"JIRA_BASE_URL": "https://org.atlassian.net"}, height=80, active_tab=CREDENTIALS_TAB)
         assert "Anthropic Key" in creds
         assert "org.atlassian.net" in creds  # Jira grouped under Credentials
-        system = self._render({}, height=40, active_tab=2)
+        system = self._render({}, height=40, active_tab=SYSTEM_TAB)
         assert "Log Level" in system  # Advanced section
         assert "Anthropic Key" not in system  # credentials are on another tab
 
     def test_duck_row_on_the_system_tab(self):
         # The duck-bubble mute is a persisted preference (DUCK_ENABLED) with a
         # Settings row beside Tips — default on, "false" shows off.
-        on = self._render({}, height=60, active_tab=2)
+        on = self._render({}, height=60, active_tab=SYSTEM_TAB)
         assert "Duck" in on and "on" in on
-        off = self._render({"DUCK_ENABLED": "false"}, height=60, active_tab=2)
+        off = self._render({"DUCK_ENABLED": "false"}, height=60, active_tab=SYSTEM_TAB)
         assert "Duck" in off
 
     def test_system_tab_hint_mentions_log_level(self):
-        output = self._render({}, height=40, active_tab=2)  # System tab (Advanced → log level)
+        output = self._render({}, height=40, active_tab=SYSTEM_TAB)  # System tab (Advanced → log level)
         assert "log level" in output.lower()
 
     def test_tunnel_timeout_row_on_the_sharing_tab(self):
         # Auto-expiry for retro/poker/output-share Cloudflare tunnels — same
         # "0 disables" convention as Session Prune Days. It lives on the Sharing
         # tab, promoted out of System so the tier is findable.
-        default = self._render({}, height=60, active_tab=1)
+        default = self._render({}, height=60, active_tab=SHARING_TAB)
         assert "Tunnel Timeout" in default and "60" in default
-        off = self._render({"TUNNEL_TIMEOUT_MINUTES": "0"}, height=60, active_tab=1)
+        off = self._render({"TUNNEL_TIMEOUT_MINUTES": "0"}, height=60, active_tab=SHARING_TAB)
         assert "Tunnel Timeout" in off
 
     def test_share_mode_row_on_the_sharing_tab(self):
-        sharing = self._render({}, height=60, active_tab=1)
+        sharing = self._render({}, height=60, active_tab=SHARING_TAB)
         assert "Share Mode" in sharing
         assert "Log Level" not in sharing  # System rows live on their own tab
 
@@ -675,7 +692,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         con = Console(width=120, height=44, file=StringIO())
-        panel = _build_settings_screen({}, width=120, height=44, active_tab=0)  # Credentials
+        panel = _build_settings_screen({}, width=120, height=44, active_tab=CREDENTIALS_TAB)  # Credentials
         assert panel._row_regions  # editable rows attached
         lines = con.render_lines(panel, con.options, pad=True)
         envs = {env for _, _, _, env, _, _ in panel._row_regions}
@@ -690,7 +707,10 @@ class TestSettingsScreen:
         # When a row is being edited in place, its value is replaced by the live
         # buffer (not the stored value or "not set").
         out = self._render(
-            {"ANTHROPIC_API_KEY": ""}, height=40, active_tab=0, editing=("ANTHROPIC_API_KEY", "sk-typed", 8)
+            {"ANTHROPIC_API_KEY": ""},
+            height=40,
+            active_tab=CREDENTIALS_TAB,
+            editing=("ANTHROPIC_API_KEY", "sk-typed", 8),
         )
         assert "Anthropic Key: sk-typed" in " ".join(out.split())
 
@@ -698,7 +718,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         # The System tab's "Config File" and "Dictation" rows are read-only.
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=2)
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=SYSTEM_TAB)
         labels = {label for _, _, _, _, label, _ in panel._row_regions}
         assert "Config File" not in labels
         assert "Log Level" in labels  # but editable rows on the same tab do have regions
@@ -709,7 +729,7 @@ class TestSettingsScreen:
         # narrow sections share a row.
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)  # System
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=SYSTEM_TAB)  # System
         out = self._text(panel, width=130, height=44)
         assert "╭─ Storage" in out and "╭─ Daily Standup" in out
         # Side by side: the first box of each column lands on the same rendered row.
@@ -718,7 +738,7 @@ class TestSettingsScreen:
     def test_narrow_terminal_falls_back_to_one_column(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=70, height=44, active_tab=2)
+        panel = _build_settings_screen({}, width=70, height=44, active_tab=SYSTEM_TAB)
         out = self._text(panel, width=70, height=44)
         # One column — a second would fall below _SETTINGS_MIN_BOX_W.
         assert len(panel._box_cols) == 1
@@ -734,7 +754,7 @@ class TestSettingsScreen:
 
         # box 4 / field 1 is Session Prune Days on the System tab (Privacy is the
         # fourth box now; AWS Bedrock's old fifth box moved beside the provider).
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2, sel_box=4, sel_field=1)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=SYSTEM_TAB, sel_box=4, sel_field=1)
         rows = self._segments(panel, width=130, height=44)
         barred = [r for r in rows if any(_SETTINGS_FOCUS_BG in str(s.style) for s in r)]
         assert len(barred) == 1  # exactly one value is highlighted
@@ -747,7 +767,7 @@ class TestSettingsScreen:
     def test_rows_sit_flush_against_the_box_padding(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=SYSTEM_TAB)
         line = next(ln for ln in self._text(panel, width=130, height=44).splitlines() if "Data Directory" in ln)
         # One space between the box border and the label — no marker gutter.
         assert "│ Data Directory" in line
@@ -755,7 +775,7 @@ class TestSettingsScreen:
     def test_navigation_map_is_published(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=SYSTEM_TAB)
         # Every System section dealt into two balanced columns, nothing in the
         # wide tail. Counted from the registry rather than hard-coded, so adding
         # a section is a one-line change there and not a test edit as well.
@@ -767,12 +787,12 @@ class TestSettingsScreen:
         envs = [f[0] for box in panel._box_fields for f in box]
         assert "LOG_LEVEL" in envs
         # The tier switch lives on the Sharing tab now, navigable like any row.
-        sharing = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        sharing = _build_settings_screen({}, width=130, height=44, active_tab=SHARING_TAB)
         assert "YEABOI_SHARE_MODE" in [f[0] for box in sharing._box_fields for f in box]
         assert "_config_path" not in envs  # read-only rows aren't navigable
         # AWS credentials are navigable on the Credentials tab now, under the
         # provider that uses them, and only when Bedrock is the live provider.
-        creds = _build_settings_screen({"LLM_PROVIDER": "bedrock"}, width=130, height=44, active_tab=0)
+        creds = _build_settings_screen({"LLM_PROVIDER": "bedrock"}, width=130, height=44, active_tab=CREDENTIALS_TAB)
         assert "AWS_REGION" in [f[0] for box in creds._box_fields for f in box]
 
     def test_boxes_keep_their_own_height_and_the_columns_end_level(self):
@@ -784,7 +804,7 @@ class TestSettingsScreen:
             _build_settings_screen,
         )
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=SYSTEM_TAB)
         lines = self._text(panel, width=130, height=44).splitlines()
         i = next(n for n, ln in enumerate(lines) if "Data Directory" in ln)
         assert "Daily Standup" in lines[i - 1]  # side by side
@@ -804,11 +824,11 @@ class TestSettingsScreen:
     def test_wide_sections_stack_below_the_columns(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=0)  # Credentials
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=CREDENTIALS_TAB)  # Credentials
         # LLM Provider is the only column box; the token-help sections go full
-        # width — Jira, Azure, GitHub, Notion and Slack.
+        # width — Jira, Azure, GitHub, Notion, Slack, and the Integrations view.
         assert panel._box_cols == [[0]]
-        assert panel._box_tail == [1, 2, 3, 4, 5]
+        assert panel._box_tail == [1, 2, 3, 4, 5, 6]
 
     def test_selecting_an_offscreen_value_scrolls_it_into_view(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -816,7 +836,14 @@ class TestSettingsScreen:
         meta: dict = {}
         # A short page can't show the last section, so focusing it must scroll.
         panel = _build_settings_screen(
-            {}, width=130, height=22, active_tab=0, scroll_offset=0, scroll_meta=meta, sel_box=4, sel_field=0
+            {},
+            width=130,
+            height=22,
+            active_tab=CREDENTIALS_TAB,
+            scroll_offset=0,
+            scroll_meta=meta,
+            sel_box=4,
+            sel_field=0,
         )
         assert meta["scroll"] > 0
         # Notion is the last section; its focused row (highlight and all) is on screen.
@@ -835,7 +862,7 @@ class TestSettingsScreen:
 
         buf = "sk-ant-" + "x" * 200
         panel = _build_settings_screen(
-            {}, width=100, height=40, active_tab=0, editing=("ANTHROPIC_API_KEY", buf, len(buf))
+            {}, width=100, height=40, active_tab=CREDENTIALS_TAB, editing=("ANTHROPIC_API_KEY", buf, len(buf))
         )
         row = next(ln for ln in self._text(panel, width=100, height=40).splitlines() if "Anthropic Key" in ln)
         assert "…" not in row  # cropped from the left, not ellipsized on the right
@@ -848,7 +875,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS, _build_settings_screen
 
         con = Console(width=120, height=40, file=StringIO())
-        panel = _build_settings_screen({}, width=120, height=40, active_tab=0)
+        panel = _build_settings_screen({}, width=120, height=40, active_tab=CREDENTIALS_TAB)
         # The builder attaches one region per tab: (labels_row, underline_row, sc, ec).
         assert len(panel._tab_regions) == len(_SETTINGS_TABS)
         lines = con.render_lines(panel, con.options, pad=True)
@@ -900,18 +927,18 @@ class TestSettingsScreen:
     def test_storage_section_rendered(self):
         # Storage is one row, so it folded into System (tab index 1) rather than
         # keeping a tab to itself; the data dir is edited like any other value.
-        output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=40, active_tab=2)
+        output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=40, active_tab=SYSTEM_TAB)
         assert "Data Directory" in output
         assert "/data/yeaboi" in output
 
     def test_data_dir_default_label_when_unset(self):
-        output = self._render({}, height=40, active_tab=2)  # System tab
+        output = self._render({}, height=40, active_tab=SYSTEM_TAB)  # System tab
         assert "~/.yeaboi (default)" in output
 
     def test_data_dir_is_an_editable_row(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=SYSTEM_TAB)
         envs = [f[0] for box in panel._box_fields for f in box]
         assert "YEABOI_HOME" in envs  # reachable by keyboard and click
 
@@ -921,7 +948,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         panel = _build_settings_screen(
-            {"YEABOI_ALLOWED_PATHS": "/repos/team,/tmp/exports"}, width=160, height=44, active_tab=2
+            {"YEABOI_ALLOWED_PATHS": "/repos/team,/tmp/exports"}, width=160, height=44, active_tab=SYSTEM_TAB
         )
         output = self._text(panel, width=160, height=44)
         assert "Allowed Paths" in output
@@ -930,7 +957,7 @@ class TestSettingsScreen:
     def test_allowed_paths_empty_shows_sandbox_note(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=160, height=44, active_tab=2)
+        panel = _build_settings_screen({}, width=160, height=44, active_tab=SYSTEM_TAB)
         assert "none — sandboxed to data dir" in self._text(panel, width=160, height=44)
 
     def test_status_message_spoken_by_the_duck(self):
@@ -945,7 +972,7 @@ class TestSettingsScreen:
 
     def test_notion_token_masked(self):
         # Notion lives under the Credentials tab (index 0) now.
-        output = self._render({"NOTION_TOKEN": "ntn_verysecretvalue12345"}, height=80, active_tab=0)
+        output = self._render({"NOTION_TOKEN": "ntn_verysecretvalue12345"}, height=80, active_tab=CREDENTIALS_TAB)
         assert "verysecretvalue12345" not in output
 
     def test_token_help_link_and_scope_rendered(self):
@@ -953,7 +980,7 @@ class TestSettingsScreen:
         # user knows where to make the token and what access to grant it. GitHub +
         # Azure both live under the Credentials tab; render it tall enough to reach
         # them, then confirm both help lines appear.
-        out = self._render({"GITHUB_TOKEN": "ghp_x", "AZURE_DEVOPS_TOKEN": "az"}, height=80, active_tab=0)
+        out = self._render({"GITHUB_TOKEN": "ghp_x", "AZURE_DEVOPS_TOKEN": "az"}, height=80, active_tab=CREDENTIALS_TAB)
         assert "create:" in out
         assert "scope:" in out
         assert "github.com/settings/tokens" in out  # GitHub creation link
@@ -969,7 +996,7 @@ class TestSettingsScreen:
             {"GITHUB_TOKEN": "ghp_x", "TEAM_ANALYSIS_GITHUB_OWNERS": "acme-corp,zeta-labs"},
             width=160,
             height=80,
-            active_tab=0,
+            active_tab=CREDENTIALS_TAB,
         )
         output = self._text(panel, width=160, height=80)
         assert "Analysis Owners" in output
@@ -978,13 +1005,13 @@ class TestSettingsScreen:
     def test_analysis_owners_empty_points_at_the_wizard(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=160, height=80, active_tab=0)
+        panel = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=160, height=80, active_tab=CREDENTIALS_TAB)
         assert "chosen per run in Analysis setup" in self._text(panel, width=160, height=80)
 
     def test_analysis_owners_is_an_editable_row(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=160, height=80, active_tab=0)
+        panel = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=160, height=80, active_tab=CREDENTIALS_TAB)
         envs = [f[0] for box in panel._box_fields for f in box]
         assert "TEAM_ANALYSIS_GITHUB_OWNERS" in envs  # reachable by keyboard and click
 
@@ -996,7 +1023,7 @@ class TestSettingsScreen:
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        result = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=120, height=80, active_tab=0)
+        result = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=120, height=80, active_tab=CREDENTIALS_TAB)
         buf = StringIO()
         Console(file=buf, width=120, force_terminal=True, color_system="truecolor").print(result)
         assert "https://github.com/settings/tokens" in buf.getvalue()
@@ -1117,7 +1144,7 @@ class TestLogLevelButton:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         # Log Level lives on the System tab now (Advanced row + Enter action), not a button.
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=100, height=40, active_tab=2)
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=100, height=40, active_tab=SYSTEM_TAB)
         assert isinstance(panel, Panel)
         console = Console(width=120)
         with console.capture() as cap:
@@ -1132,7 +1159,7 @@ class TestLogLevelButton:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         # The tab bar fits a narrow terminal; all tabs still appear.
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=80, height=40, active_tab=2)
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=80, height=40, active_tab=SYSTEM_TAB)
         console = Console(width=80)
         with console.capture() as cap:
             console.print(panel)
@@ -1394,7 +1421,7 @@ class TestSettingsScrollbar:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         meta: dict = {}
-        panel = _build_settings_screen({}, width=width, height=height, active_tab=0, scroll_meta=meta)
+        panel = _build_settings_screen({}, width=width, height=height, active_tab=CREDENTIALS_TAB, scroll_meta=meta)
         console = Console(file=io.StringIO(), width=width, height=height, force_terminal=False, legacy_windows=False)
         rows = [
             "".join(s.text for s in line).rstrip()

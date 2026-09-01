@@ -323,8 +323,10 @@ class TestFetchSprintTargets:
     """Board-sprint targets for the Q27 "add to an existing sprint" menu."""
 
     def _patch_trackers(self, monkeypatch, jira: bool = False, azdo: bool = False) -> None:
-        monkeypatch.setattr("yeaboi.agent.nodes._is_jira_configured", lambda: jira)
-        monkeypatch.setattr("yeaboi.agent.nodes._is_azdevops_configured", lambda: azdo)
+        # The dispatch moved into the tracker registry, so configuredness is
+        # patched where the registry reads it.
+        monkeypatch.setattr("yeaboi.trackers._jira_configured", lambda: jira)
+        monkeypatch.setattr("yeaboi.trackers._azdevops_configured", lambda: azdo)
 
     def test_jira_targets_carry_fields_and_parse_trailing_numbers(self, monkeypatch):
         self._patch_trackers(monkeypatch, jira=True)

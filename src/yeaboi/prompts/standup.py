@@ -27,6 +27,8 @@ def get_standup_summary_prompt(
     confidence_rationale: str,
     members: list[dict],
     activity_counts: list[tuple[str, int]],
+    production: list[dict] | None = None,
+    production_window: str = "",
 ) -> str:
     """Build the standup-summary prompt.
 
@@ -51,10 +53,44 @@ def get_standup_summary_prompt(
             blocker evidence strings from insights.detect_blocker_signals that
             MUST be reflected in the member's 'blockers'.
         activity_counts: (source, count) pairs for the "what we looked at" line.
+        production: rolled-up ops signals — [{kind, source, count, resolved,
+            worst_severity, services, examples}] — from the connected
+            observability/incident/error vendors, over their own wider window.
+            A TOP-LEVEL argument, never folded into a member: nothing here is
+            attributable to a person, and an alert firing is not anyone's work.
+            None or empty adds NOTHING to the prompt — with no ops vendor
+            connected the bytes are identical to before this existed.
+        production_window: how far back `production` looked, e.g. "the last 14
+            days", so the model never implies it covers the standup's own day.
     """
     # --- Context block: everything the model needs to reason over ------------
     counts_str = ", ".join(f"{src}: {n}" for src, n in activity_counts) or "no activity sources reported"
     members_json = json.dumps(members, ensure_ascii=False, indent=2)
+
+    # Ops enters as its own block or not at all. An empty list adds NOTHING:
+    # told about a section that is empty, models reliably narrate the absence
+    # ("no production issues were reported"), which is the nag this whole layer
+    # exists to avoid — and a standup with no ops vendor connected must be
+    # byte-identical to one from before ops existed.
+    production_rows = production or []
+    production_context = ""
+    production_rule = ""
+    if production_rows:
+        window = production_window or "the ops window"
+        production_context = (
+            f"- PRODUCTION over {window} (team-wide, NOT attributable to anyone):\n"
+            f"{json.dumps(production_rows, ensure_ascii=False, indent=2)}\n"
+        )
+        production_rule = (
+            "- PRODUCTION lists incidents, alerts and error spikes from the connected monitoring "
+            f"tools over {window} — a WIDER window than this standup covers, and team-wide: never "
+            "attribute any of it to a person, never put it in anyone's 'summary', 'blockers' or "
+            "'outlook', and never treat it as their work. Mention it in 'team_summary' ONLY when it "
+            "bears on delivery, in at most one clause, naming the count and the service. Say nothing "
+            "about production being quiet, calm or incident-free: silence is the correct output when "
+            "there is nothing there, and only the listed sources exist — do not name a tool that is "
+            "not in the list.\n"
+        )
 
     # ARC: Ask
     ask = (
@@ -133,6 +169,7 @@ def get_standup_summary_prompt(
         f"Factor in the sprint status (currently '{confidence_label}': {confidence_rationale}) "
         "but do NOT restate it — it is displayed beside the summary; write only what the team did "
         "and what is at risk.\n"
+        f"{production_rule}"
         "- Be concrete and concise. No filler, no preamble.\n"
         "- Return ONLY a JSON object, no markdown fences, of the exact shape:\n"
         '  {"members": [{"name": "...", "summary": "...", "ticketing_summary": "...", '
@@ -145,6 +182,7 @@ def get_standup_summary_prompt(
         "Context:\n"
         f"- Sprint: {sprint_name or 'unknown'} — day {sprint_day} of {sprint_total_days}.\n"
         f"- Activity sources examined ({counts_str}).\n"
+        f"{production_context}"
         f"- MEMBERS (one summary each):\n{members_json}"
     )
 
