@@ -15258,7 +15258,7 @@ def select_mode(
                             # explicit gesture. The tab itself keeps rendering
                             # connected-only — falling through here would open
                             # the setup wizard.
-                            logger.info("Settings: opening the integrations catalog from the Connections tab")
+                            logger.info("Settings: opening the integrations catalog from the Integrations tab")
                             from yeaboi.ui.catalog import run_catalog_browser
 
                             _result = run_catalog_browser(console, live, read_key, _FRAME_TIME, _supports_timeout)

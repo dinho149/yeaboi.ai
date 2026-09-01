@@ -6698,16 +6698,20 @@ class _EditableRow(Text):
 
 # Settings is a tabbed view. A few broad tabs group the config; this order drives
 # both the tab bar and the loop's Enter action (see settings_tab_action).
-_SETTINGS_TABS: list[str] = ["Credentials", "Connections", "Sharing", "System"]
+_SETTINGS_TABS: list[str] = ["Credentials", "Integrations", "Sharing", "System"]
 
 # The heading sections each tab renders, in order. Storage is one row, so it
 # lives under System rather than owning a tab of its own.
 _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
-    "Credentials": ["provider", "jira", "azure", "github", "notion", "slack"],
-    # Connections is its own tab: the catalog is what a user scans to answer
-    # "what does yeaboi already see", and burying it under Credentials would put
-    # it behind the one thing that is not optional.
-    "Connections": ["connections"],
+    # "integrations" is the connected-catalog view: what is set up, with its
+    # fields — it lives beside the other credentials because that is where a
+    # user goes to see and edit what they have configured.
+    "Credentials": ["provider", "jira", "azure", "github", "notion", "slack", "integrations"],
+    # Integrations is its own tab: the catalog is what a user scans to answer
+    # "what could yeaboi see", and burying it under Credentials would put it
+    # behind the one thing that is not optional. The section id stays
+    # "connections" — the rename is titles only.
+    "Integrations": ["connections"],
     # AWS credentials used to live here; they moved beside the provider that uses
     # them, so Bedrock has no section of its own any more.
     # Sharing is its own tab, not a System section: who can open a shared
@@ -6721,7 +6725,7 @@ _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
 # These carry token-help sub-lines (a creation URL + a scope sentence) that a
 # half-width column would ellipsize away — same reasoning as the Usage dashboard's
 # ``wide`` sections (see _build_usage_screen).
-_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion", "slack", "connections"}
+_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion", "slack", "connections", "integrations"}
 
 # Absolute rows the tab bar occupies (labels + underline), for click hit-testing.
 # The header above it is fixed height: top border + top pad + blank + title (2
@@ -6890,7 +6894,7 @@ _TAB_GAP = 3  # spaces between tab labels
 def settings_tab_action(active_tab: int) -> str:
     """Return what Enter does on a settings tab: 'loglevel' (System → cycles the log
     level), 'sharing' (Sharing → the Cloudflare Access wizard), 'connections'
-    (Connections → names the command that adds one) or 'setup' (Credentials →
+    (Integrations → opens the catalog browser) or 'setup' (Credentials →
     wizard). The data directory is no longer a tab action — it's the Storage
     box's row, opened like any other value.
 
@@ -6902,7 +6906,7 @@ def settings_tab_action(active_tab: int) -> str:
         return "loglevel"
     if label == "Sharing":
         return "sharing"
-    if label == "Connections":
+    if label == "Integrations":
         return "connections"
     return "setup"
 
@@ -7605,7 +7609,38 @@ def _build_settings_screen(
             )
 
     def _sec_connections() -> None:
-        """The connector catalog: what is connected, and one way to add more.
+        """The catalog teaser: how much exists, and the gesture that opens it.
+
+        Counts only — the full roster renders in the catalog browser behind
+        Enter, an explicit ask. Naming a vendor here would put its name in
+        front of a user who never asked, which is the invariant this whole
+        layer holds.
+        """
+        from yeaboi.connectors import registry as _creg
+
+        _entries = list(_creg.all_connectors()) + list(_creg.legacy_entries())
+        _n_connected = sum(1 for c in _creg.all_connectors() if _creg.is_connected(c, config_data))
+        _heading("Catalog", wide=True)
+        line = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+        line.append(f"{len(_entries)} integrations", style=theme.value)
+        line.append("  ·  ", style=theme.muted)
+        line.append(f"{_n_connected} connected", style=theme.value if _n_connected else theme.muted)
+        _cur.append(line)
+        where = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+        where.append(
+            "Set-up integrations live under Credentials",
+            style=theme.muted,
+        )
+        _cur.append(where)
+        add = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+        add.append("↳ ", style=theme.muted)
+        add.append("⏎ browse the catalog", style=theme.value)
+        add.append("  ·  add: ", style=theme.muted)
+        add.append("yeaboi connections add <name>", style=theme.dim)
+        _cur.append(add)
+
+    def _sec_integrations() -> None:
+        """The set-up integrations, beside the other credentials.
 
         Derived from the connector registry, so a new vendor needs no builder of
         its own. A connector the user has not set up contributes NO rows — that
@@ -7616,10 +7651,10 @@ def _build_settings_screen(
         from yeaboi.connectors.spec import FAMILY_LABELS
 
         _linked = [c for c in _creg.all_connectors() if _creg.is_connected(c, config_data)]
-        _heading("Connections", wide=True)
+        _heading("Integrations", wide=True)
         if not _linked:
             hint = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
-            hint.append("Nothing connected yet", style=theme.muted)
+            hint.append("Nothing connected yet — browse the catalog on the Integrations tab", style=theme.muted)
             _cur.append(hint)
         for _c in _linked:
             head = Text(justify="left", no_wrap=True, overflow="ellipsis")
@@ -7654,12 +7689,6 @@ def _build_settings_screen(
                     _choice_row(f"  {_f.label}", _f.env)
                 else:
                     _row(f"  {_f.label}", config_data.get(_f.env, ""), masked=_f.secret, env=_f.env)
-        add = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
-        add.append("\u21b3 ", style=theme.muted)
-        add.append("\u23ce browse the catalog", style=theme.value)
-        add.append("  \u00b7  add: ", style=theme.muted)
-        add.append("yeaboi connections add <name>", style=theme.dim)
-        _cur.append(add)
 
     _builders = {
         "provider": _sec_provider,
@@ -7669,6 +7698,7 @@ def _build_settings_screen(
         "notion": _sec_notion,
         "slack": _sec_slack,
         "connections": _sec_connections,
+        "integrations": _sec_integrations,
         "storage": _sec_storage,
         "standup": _sec_standup,
         "voice": _sec_voice,

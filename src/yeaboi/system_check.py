@@ -426,14 +426,14 @@ _INTEGRATIONS: tuple[dict, ...] = (
         "key": "linear",
         "label": "Linear",
         "feature": "Tracker sync",
-        "section": "Connections",
+        "section": "Integrations",
         "parts": lambda c: (("API key", c.get_linear_api_key()),),
     },
     {
         "key": "trello",
         "label": "Trello",
         "feature": "Tracker sync",
-        "section": "Connections",
+        "section": "Integrations",
         "parts": lambda c: (("API key", c.get_trello_api_key()), ("token", c.get_trello_token())),
     },
     {

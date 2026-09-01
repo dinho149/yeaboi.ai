@@ -302,7 +302,7 @@ def _offer_catalog(console: Console) -> None:
     except EOFError:
         return
     if reply not in ("y", "yes"):
-        console.print("[dim]Later: `yeaboi connections list --all`, or Settings ▸ Connections.[/dim]")
+        console.print("[dim]Later: `yeaboi connections list --all`, or Settings ▸ Integrations.[/dim]")
         return
     from yeaboi.ui.catalog import run_catalog_browser_standalone
 

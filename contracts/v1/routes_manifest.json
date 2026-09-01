@@ -194,7 +194,7 @@
     {
       "path": "/settings/connections",
       "capability": "connections",
-      "title": "Settings · Connections"
+      "title": "Settings · Integrations"
     },
     {
       "path": "/settings/sharing",
@@ -337,12 +337,13 @@
         "azure",
         "github",
         "notion",
-        "slack"
+        "slack",
+        "integrations"
       ]
     },
     {
       "route": "/settings/connections",
-      "title": "Connections",
+      "title": "Integrations",
       "sections": [
         "connections"
       ]

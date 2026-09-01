@@ -826,9 +826,9 @@ class TestSettingsScreen:
 
         panel = _build_settings_screen({}, width=130, height=44, active_tab=CREDENTIALS_TAB)  # Credentials
         # LLM Provider is the only column box; the token-help sections go full
-        # width — Jira, Azure, GitHub, Notion and Slack.
+        # width — Jira, Azure, GitHub, Notion, Slack, and the Integrations view.
         assert panel._box_cols == [[0]]
-        assert panel._box_tail == [1, 2, 3, 4, 5]
+        assert panel._box_tail == [1, 2, 3, 4, 5, 6]
 
     def test_selecting_an_offscreen_value_scrolls_it_into_view(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen

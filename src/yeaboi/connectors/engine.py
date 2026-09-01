@@ -39,7 +39,11 @@ def list_connections(*, family: str = "", connected_only: bool = True, include_l
     rows, so a catalog can show the whole roster while a connect form knows to
     hand those to Credentials/setup instead of rendering fields.
     """
-    from yeaboi.connectors import legacy
+    from yeaboi.connectors import custom, legacy
+
+    # A custom connection's kind (api/webhook/mcp) rides its row so a surface
+    # can shape the form without sniffing derived env names. Builtins send "".
+    custom_kinds = {spec.key: spec.kind for spec in custom.load_specs()}
 
     connectors = registry.all_connectors()
     if not connected_only and include_legacy:
@@ -67,6 +71,7 @@ def list_connections(*, family: str = "", connected_only: bool = True, include_l
                 # Where configuring happens: "connections" rows carry their own
                 # add flow; "credentials" rows deep-link to Credentials/setup.
                 "managed_by": "credentials" if is_legacy else "connections",
+                "kind": custom_kinds.get(connector.key, ""),
                 "docs_url": connector.docs_url,
                 "glyph": connector.mark,
                 "accent": connector.accent,
