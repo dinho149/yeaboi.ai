@@ -116,6 +116,22 @@ class TestContextDepsVocabulary:
     def test_normalize_drops_unknown_tokens_without_raising(self):
         assert normalize_context_deps(["retro", "bogus"]) == frozenset({"retro"})
 
+    def test_normalize_all_unknown_means_all_on_not_incognito(self):
+        # A wholly-typo'd value is a mistake, not a request for no context — an
+        # empty frozenset here would silently blank every cross-mode read.
+        assert normalize_context_deps(["retros"]) is None
+        assert normalize_context_deps("retros, standups") is None
+        assert normalize_context_deps('["bogus"]') is None
+        # Only an explicitly empty value is incognito.
+        assert normalize_context_deps([]) == frozenset()
+        assert normalize_context_deps(()) == frozenset()
+
+    def test_typo_does_not_resolve_to_an_incognito_scope(self):
+        from yeaboi.projects.scope import incognito, resolve_scope
+
+        assert incognito(resolve_scope("", context_deps=["retros"])) is False
+        assert incognito(resolve_scope("", context_deps=[])) is True
+
     def test_parse_spec_grammar(self):
         assert parse_context_spec("all") == list(CONTEXT_DEP_TOKENS)
         assert parse_context_spec("none") == []

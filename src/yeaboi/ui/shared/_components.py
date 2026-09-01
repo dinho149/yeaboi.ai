@@ -818,6 +818,23 @@ def calc_viewport(height: int, *, header_h: int = 7, action_h: int = 4) -> int:
     return max(3, inner_h - header_h - action_h)
 
 
+def render_to_lines(renderable, render_w: int, left_pad: str = "") -> list:
+    """Flatten a renderable to one ``Text`` per rendered row.
+
+    A multi-row renderable (a Table, a grid of boxes) breaks the "one body entry
+    == one rendered row" assumption :func:`calc_viewport` and the scroll math
+    depend on: it counts as a single entry while drawing many, so the page
+    overshoots its viewport and ``build_page_panel``'s fixed height crops the
+    action buttons off the bottom. Pass any such block through this first.
+    """
+    from rich.console import Console as _Console
+
+    console = _Console(width=render_w, height=400)
+    with console.capture() as capture:
+        console.print(renderable)
+    return [Text.from_ansi(left_pad + line) for line in capture.get().splitlines()]
+
+
 # Minimum terminal size for the TUI to function
 MIN_TERMINAL_HEIGHT = 10
 MIN_TERMINAL_WIDTH = 40

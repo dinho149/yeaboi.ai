@@ -25,6 +25,7 @@ from yeaboi.ui.shared._components import (
     build_scrollbar,
     calc_viewport,
     projects_title,
+    render_to_lines,
 )
 from yeaboi.ui.shared._scroll import publish_geometry
 
@@ -51,7 +52,7 @@ def _cell(text: str, style: str) -> Text:
     return Text(text, style=style, no_wrap=True, overflow="ellipsis")
 
 
-def _build_rows(projects: list[dict], selected: int, active_project_id: str, theme) -> list:
+def _build_rows(projects: list[dict], selected: int, active_project_id: str, theme, width: int) -> list:
     if not projects:
         return [
             Text(""),
@@ -77,7 +78,10 @@ def _build_rows(projects: list[dict], selected: int, active_project_id: str, the
             _cell(str(project.get("session_count", 0)), theme.muted),
             _cell(project.get("last_active", "")[:10], theme.muted),
         )
-    return [table]
+    # Flattened to one Text per rendered row: the table draws len(projects)+1
+    # lines but counts as a single body entry, which overshoots the viewport and
+    # crops the action buttons off the bottom.
+    return render_to_lines(table, max(24, width - 4))
 
 
 def _build_projects_screen(
@@ -100,7 +104,7 @@ def _build_projects_screen(
     title = projects_title(shimmer_tick)
     sub = build_reveal_subtitle("One project, every mode's context", sub_reveal, pad=PAD + "  ")
 
-    body: list = _build_rows(projects, selected, active_project_id, theme)
+    body: list = _build_rows(projects, selected, active_project_id, theme, width)
     body.append(Text(""))
     if active_project_id:
         body.append(Text(f"{PAD}Scoped runs read context through the ● project.", style=theme.dim))

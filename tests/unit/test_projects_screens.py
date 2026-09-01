@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from rich.console import Console
 
 from yeaboi.ui.mode_select.screens._screens_projects import _build_context_screen, _build_projects_screen
@@ -15,9 +16,9 @@ from yeaboi.ui.mode_select.screens._screens_projects import _build_context_scree
 _W, _H = 84, 40
 
 
-def _render(**kwargs) -> str:
-    panel = _build_projects_screen(width=_W, height=_H, **kwargs)
-    console = Console(file=io.StringIO(), width=_W, height=_H)
+def _render(*, width: int = _W, height: int = _H, **kwargs) -> str:
+    panel = _build_projects_screen(width=width, height=height, **kwargs)
+    console = Console(file=io.StringIO(), width=width, height=height)
     console.print(panel)
     return console.file.getvalue()
 
@@ -44,6 +45,30 @@ class TestEmptyState:
 
     def test_still_draws_its_buttons(self):
         assert "Back" in _render(projects=[])
+
+
+class TestTheListDoesNotCropTheButtons:
+    """The row block is flattened to one Text per line, so the viewport math holds.
+
+    A single multi-row Table counted as one body entry while drawing N+1 lines,
+    which pushed the action block off the bottom of the fixed-height Panel at
+    three projects or more — on any terminal height.
+    """
+
+    @staticmethod
+    def _many(n: int) -> list[dict]:
+        return [_project(project_id=f"proj-{i:08d}", name=f"Project {i}") for i in range(n)]
+
+    @pytest.mark.parametrize("count", [1, 3, 6, 12, 40])
+    def test_actions_survive_any_project_count(self, count):
+        out = _render(projects=self._many(count))
+        assert "Set active" in out
+        assert "Back" in out
+
+    def test_a_long_list_can_actually_scroll(self):
+        meta: dict = {}
+        _render(projects=self._many(40), scroll_meta=meta, height=24)
+        assert meta["max_offset"] > 0, "the page publishes no scroll room, so rows past the fold are unreachable"
 
 
 class TestTheRow:

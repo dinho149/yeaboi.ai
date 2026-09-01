@@ -12,6 +12,8 @@ a paused ceremony that still fires is the thing users report as a bug.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from yeaboi.agent.state import Ceremony, CeremonyRun
@@ -118,6 +120,9 @@ class TestLoad:
 
     def test_the_last_run_and_the_months_spend_come_back(self, env):
         _save(env["db"])
+        # Fired this month, computed rather than hard-coded: month_spend defaults
+        # to the current month, so a pinned date fails the day the month rolls.
+        fired_at = datetime.now(timezone.utc).replace(day=17, hour=9, minute=0, second=0, microsecond=0).isoformat()
         with CeremonyStore(env["db"]) as store:
             store.record_run(
                 CeremonyRun(
@@ -125,7 +130,7 @@ class TestLoad:
                     session_id="s1",
                     outcome="ok",
                     cost_usd=0.25,
-                    fired_at="2026-08-17T09:00:00+00:00",
+                    fired_at=fired_at,
                 )
             )
         _, last, spend, _ = _ceremonies._load("s1")

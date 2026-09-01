@@ -82,6 +82,10 @@ def normalize_context_deps(value: object) -> frozenset[str] | None:
     Accepts ``None`` (→ ``None`` = all on), an iterable of tokens, a JSON
     list string, or a comma-separated string. Unknown tokens are dropped with
     a warning rather than raised — same never-raise contract as the resolver.
+
+    A value whose tokens are *all* unknown returns ``None`` (all on), never an
+    empty frozenset: only an explicitly empty value means incognito, and a
+    surface typo must not read as "every source is switched off".
     """
     if value is None:
         return None
@@ -101,10 +105,16 @@ def normalize_context_deps(value: object) -> frozenset[str] | None:
         logger.warning("normalize_context_deps: unsupported value %r — treating as all-on", value)
         return None
     tokens = {str(item).strip() for item in value if str(item).strip()}
+    known = tokens & set(CONTEXT_DEP_TOKENS)
     unknown = tokens - set(CONTEXT_DEP_TOKENS)
     if unknown:
         logger.warning("normalize_context_deps: dropping unknown token(s) %s", sorted(unknown))
-    return frozenset(tokens & set(CONTEXT_DEP_TOKENS))
+    if tokens and not known:
+        logger.warning(
+            "normalize_context_deps: no known token in %s — treating as all-on, not incognito", sorted(tokens)
+        )
+        return None
+    return frozenset(known)
 
 
 def parse_context_spec(spec: str) -> list[str] | None:

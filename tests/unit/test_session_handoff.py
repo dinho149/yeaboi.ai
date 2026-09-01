@@ -166,3 +166,67 @@ class TestChatToPipelineHandoff:
     def test_quit_during_the_greeting_returns_none(self, monkeypatch):
         calls = self._run_body(monkeypatch, chat_result=None)
         assert calls == ["chat"]
+
+
+class TestScopeStateKeys:
+    """_scope_state_keys seeds the run's project and its effective context deps.
+
+    Both must land on the graph state: `_state_scope` resolves the project's
+    default on its own, but `_wants_dep` reads only the `context_deps` key, so
+    leaving it absent gates half a run and leaves the other half all-on.
+    """
+
+    @staticmethod
+    def _project(tmp_path, settings=None) -> tuple:
+        from yeaboi.projects.store import ProjectStore
+
+        db = tmp_path / "sessions.db"
+        with ProjectStore(db) as projects:
+            project = projects.create("Apollo")
+            if settings:
+                projects.set_settings(project["project_id"], settings)
+        return db, project["project_id"]
+
+    @staticmethod
+    def _seed(monkeypatch, db, project="", deps=None):
+        from yeaboi.ui.session import _scope_state_keys
+
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        monkeypatch.setattr("yeaboi.projects.active.get_active_project", lambda: project)
+        monkeypatch.setattr("yeaboi.projects.active.get_context_deps", lambda: deps)
+        return _scope_state_keys()
+
+    def test_no_project_and_no_toggles_seeds_nothing(self, tmp_path, monkeypatch):
+        db, _ = self._project(tmp_path)
+        keys, deps = self._seed(monkeypatch, db)
+        assert keys == {} and deps is None
+
+    def test_the_active_project_lands_on_the_state(self, tmp_path, monkeypatch):
+        db, pid = self._project(tmp_path)
+        keys, _ = self._seed(monkeypatch, db, project=pid)
+        assert keys["project_id"] == pid
+
+    def test_session_toggles_land_as_a_json_list(self, tmp_path, monkeypatch):
+        db, pid = self._project(tmp_path)
+        keys, deps = self._seed(monkeypatch, db, project=pid, deps=("retro", "plan"))
+        assert keys["context_deps"] == '["plan", "retro"]'
+        assert deps == frozenset({"retro", "plan"})
+
+    def test_the_projects_default_applies_when_the_session_inherits(self, tmp_path, monkeypatch):
+        db, pid = self._project(tmp_path, {"default_context_deps": ["standup"]})
+        keys, deps = self._seed(monkeypatch, db, project=pid)
+        assert keys["context_deps"] == '["standup"]'
+        assert deps == frozenset({"standup"})
+
+    def test_a_projects_incognito_default_reaches_the_state_key(self, tmp_path, monkeypatch):
+        # The gap this closes: `_wants_dep` saw no key and answered "all on",
+        # so a project documented as incognito-by-default still loaded context.
+        db, pid = self._project(tmp_path, {"default_context_deps": []})
+        keys, deps = self._seed(monkeypatch, db, project=pid)
+        assert keys["context_deps"] == "[]"
+        assert deps == frozenset()
+
+    def test_session_toggles_beat_the_projects_default(self, tmp_path, monkeypatch):
+        db, pid = self._project(tmp_path, {"default_context_deps": ["standup"]})
+        keys, _ = self._seed(monkeypatch, db, project=pid, deps=("retro",))
+        assert keys["context_deps"] == '["retro"]'
