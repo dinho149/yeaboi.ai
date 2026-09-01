@@ -23,6 +23,7 @@ from yeaboi.provider_verification import (
     _verify_gitlab,
     _verify_grafana,
     _verify_incidentio,
+    _verify_jenkins,
     _verify_pagerduty,
     _verify_sentry,
 )
@@ -315,5 +316,46 @@ class TestCircleCI:
     def test_the_token_never_appears_in_the_failure(self, monkeypatch):
         monkeypatch.setattr("httpx.get", _Capture(500))
         ok, msg = _verify_circleci("super-secret-token", "gh/acme")
+        assert ok is False
+        assert "super-secret-token" not in msg
+
+
+class TestJenkins:
+    def test_it_asks_who_am_i_with_basic_auth(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        ok, _ = _verify_jenkins("https://ci.acme.test/", "dev", "tok")
+        assert ok is True
+        assert capture.url == "https://ci.acme.test/me/api/json"
+        assert capture.headers["Authorization"].startswith("Basic ")
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_rejected_credentials_are_the_invalid_key_message(self, monkeypatch, status):
+        monkeypatch.setattr("httpx.get", _Capture(status))
+        assert _verify_jenkins("https://ci.acme.test", "dev", "bad") == (False, INVALID_KEY)
+
+    def test_a_404_blames_the_url_not_the_token(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(404))
+        ok, msg = _verify_jenkins("https://example.com", "dev", "tok")
+        assert ok is False
+        assert "base URL" in msg
+
+    def test_a_private_host_never_leaves_the_machine(self, monkeypatch):
+        called = MagicMock()
+        monkeypatch.setattr("httpx.get", called)
+        ok, _ = _verify_jenkins("https://10.0.0.5", "dev", "tok")
+        assert ok is False
+        called.assert_not_called()
+
+    def test_http_is_refused(self, monkeypatch):
+        called = MagicMock()
+        monkeypatch.setattr("httpx.get", called)
+        ok, _ = _verify_jenkins("http://ci.acme.test", "dev", "tok")
+        assert ok is False
+        called.assert_not_called()
+
+    def test_the_token_never_appears_in_the_failure(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(500))
+        ok, msg = _verify_jenkins("https://ci.acme.test", "dev", "super-secret-token")
         assert ok is False
         assert "super-secret-token" not in msg

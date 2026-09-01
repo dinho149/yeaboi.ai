@@ -1097,6 +1097,31 @@ def _verify_circleci(token: str, org_slug: str) -> tuple[bool, str]:
     return True, "CircleCI verified"
 
 
+def _verify_jenkins(base_url: str, username: str, token: str) -> tuple[bool, str]:
+    """Verify a Jenkins user API token against GET /me/api/json.
+
+    The host is the user's own install, so the request goes through the
+    connector HTTP guard: https only, never an address on this machine or a
+    private range.
+    """
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.jenkins import api_base, basic_auth
+
+    status, message = probe_status(
+        f"{api_base(base_url)}/me/api/json",
+        headers={"Authorization": f"Basic {basic_auth(username, token)}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, "Reached the host, but it does not look like a Jenkins API — check the base URL"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Jenkins verified"
+
+
 def _verify_linear(token: str) -> tuple[bool, str]:
     """Verify a Linear API key with the cheapest authenticated query — the viewer.
 

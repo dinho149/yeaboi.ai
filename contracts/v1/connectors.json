@@ -120,6 +120,15 @@
       "managed_by": "connections"
     },
     {
+      "key": "jenkins",
+      "label": "Jenkins",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(211,56,51)",
+      "glyph": "🤵",
+      "managed_by": "connections"
+    },
+    {
       "key": "azdevops",
       "label": "Azure DevOps Boards",
       "family": "delivery",

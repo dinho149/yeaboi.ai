@@ -24,6 +24,7 @@ from yeaboi.connectors import (
     gitlab,
     grafana,
     incidentio,
+    jenkins,
     linear,
     pagerduty,
     sentry,
@@ -48,6 +49,7 @@ _CONNECTORS: tuple[Connector, ...] = (
     gitlab.CONNECTOR,
     bitbucket.CONNECTOR,
     circleci.CONNECTOR,
+    jenkins.CONNECTOR,
     linear.CONNECTOR,
     trello.CONNECTOR,
 )

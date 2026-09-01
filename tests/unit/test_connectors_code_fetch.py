@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from yeaboi.connectors import bitbucket, circleci, gitlab
+from yeaboi.connectors import bitbucket, circleci, gitlab, jenkins
 from yeaboi.ops.events import EVENT_KINDS, OpsEvent
 
 START = datetime(2026, 6, 1, tzinfo=timezone.utc)
@@ -140,6 +140,32 @@ CIRCLECI_WORKFLOWS = {
 }
 
 
+# 2026-06-10T09:00:00Z and 2020-01-01T00:00:00Z as Jenkins epoch-ms timestamps.
+JENKINS_IN_WINDOW_MS = 1781082000000
+JENKINS_ANCIENT_MS = 1577836800000
+
+JENKINS_JOBS = {
+    "jobs": [
+        {
+            "name": "web-deploy",
+            "url": "https://ci.acme.test/job/web-deploy/",
+            "builds": [
+                {
+                    "number": 88,
+                    "result": "FAILURE",
+                    "timestamp": JENKINS_IN_WINDOW_MS,
+                    "duration": 1200000,
+                    "url": "https://ci.acme.test/job/web-deploy/88/",
+                },
+                {"number": 87, "result": None, "timestamp": JENKINS_IN_WINDOW_MS},  # still running
+                {"number": 2, "result": "SUCCESS", "timestamp": JENKINS_ANCIENT_MS},  # behind the window
+            ],
+        },
+        {"name": "docs", "builds": LEAK_CANARY},  # a shape surprise, not a list
+    ]
+}
+
+
 @pytest.fixture
 def connected(monkeypatch):
     for env, value in {
@@ -150,6 +176,9 @@ def connected(monkeypatch):
         "BITBUCKET_WORKSPACE": "acme",
         "CIRCLECI_TOKEN": "cc-tok",
         "CIRCLECI_ORG_SLUG": "gh/acme",
+        "JENKINS_BASE_URL": "https://ci.acme.test",
+        "JENKINS_USER": "dev",
+        "JENKINS_API_TOKEN": "jk-tok",
     }.items():
         monkeypatch.setenv(env, value)
 
@@ -245,11 +274,38 @@ class TestCircleCI:
         assert circleci.fetch(START, END) == ()
 
 
+class TestJenkins:
+    def routes(self):
+        return [("/api/json?tree=", JENKINS_JOBS)]
+
+    def test_one_request_carries_the_whole_ask_with_its_bounds(self, monkeypatch, connected):
+        router = install(monkeypatch, self.routes())
+        jenkins.fetch(START, END)
+        (url,) = router.urls()
+        assert url.startswith("https://ci.acme.test/api/json?tree=jobs[")
+        assert "{0,20}" in url  # both list caps ride in the request itself
+        assert router.calls[0][1]["Authorization"].startswith("Basic ")
+
+    def test_keeps_completed_builds_inside_the_window(self, monkeypatch, connected):
+        install(monkeypatch, self.routes())
+        found = jenkins.fetch(START, END)
+        # The running build has no result yet; the 2020 build is outside the window.
+        assert [e.ref for e in found] == ["web-deploy#88"]
+        assert (found[0].kind, found[0].severity, found[0].status) == ("deploy", "high", "failure")
+        assert found[0].started_at == "2026-06-10T09:00:00Z"
+        assert found[0].ended_at == "2026-06-10T09:20:00Z"
+
+    def test_a_changed_shape_yields_nothing_rather_than_raising(self, monkeypatch, connected):
+        install(monkeypatch, [("/api/json?tree=", {"jobs": "not a list"})])
+        assert jenkins.fetch(START, END) == ()
+
+
 class TestNoBodyCrossesTheBoundary:
     CASES = [
         (gitlab, [("/api/v4/projects?", GITLAB_PROJECTS), ("/pipelines?", GITLAB_PIPELINES)]),
         (bitbucket, [("/repositories/acme?", BITBUCKET_REPOS), ("/pipelines/", BITBUCKET_PIPELINES)]),
         (circleci, [("/api/v2/pipeline?", CIRCLECI_PIPELINES), ("/workflow", CIRCLECI_WORKFLOWS)]),
+        (jenkins, [("/api/json?tree=", JENKINS_JOBS)]),
     ]
 
     @pytest.mark.parametrize(("module", "routes"), CASES, ids=lambda v: getattr(v, "__name__", ""))
