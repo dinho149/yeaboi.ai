@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+
+from yeaboi import cli
 from yeaboi.cli import _run_headless, build_parser
 
 
@@ -21,3 +25,17 @@ class TestSoloFlag:
         monkeypatch.setattr("yeaboi.repl.run_repl", lambda **kw: captured.update(kw))
         _run_headless(build_parser().parse_args(["--non-interactive", "--description", "A todo app"]))
         assert captured["solo"] is False
+
+    def test_every_fresh_planning_launch_forwards_solo(self):
+        # --quick / --questionnaire / --full-intake reach run_repl through main();
+        # a resume restores the flag from the saved state instead.
+        tree = ast.parse(inspect.getsource(cli))
+        launches = [
+            node for node in ast.walk(tree) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "run_repl"
+        ]
+        assert len(launches) >= 3
+        for call in launches:
+            keywords = {kw.arg for kw in call.keywords}
+            if "resume_state" in keywords:
+                continue
+            assert "solo" in keywords, f"run_repl at line {call.lineno} does not forward --solo"

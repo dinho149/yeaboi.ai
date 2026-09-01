@@ -19,8 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from yeaboi import __version__, fs_policy, paths
-from yeaboi import beta as _beta
-from yeaboi.beta import AGENTWATCH_BETA_NOTICE, BETA_TAG, PERFORMANCE_BETA_NOTICE
+from yeaboi.beta import AGENTWATCH_BETA_NOTICE, BETA_TAG, PERFORMANCE_BETA_NOTICE, WEEKLY_REVIEW_BETA_NOTICE
 from yeaboi.config import (
     detect_proxy,
     disable_langsmith_tracing,
@@ -36,14 +35,6 @@ if TYPE_CHECKING:
 # Default filename for exported questionnaire templates
 DEFAULT_QUESTIONNAIRE_FILENAME = "scrum-questionnaire.md"
 
-# Weekly Review's notice lands in beta.py with its TUI gate; the fallback keeps
-# the subcommand honest until then.
-WEEKLY_REVIEW_BETA_NOTICE: str = getattr(
-    _beta,
-    "WEEKLY_REVIEW_BETA_NOTICE",
-    "Weekly Review is in beta — a draft about your own week, drawn from your standups and "
-    "tracker, not a verdict. Read it as notes to edit.",
-)
 
 # Default DB path — inside the user config directory alongside history/config.
 # Matches the path used by SessionStore in run_repl(). Single-sourced via
@@ -4724,6 +4715,7 @@ def main(argv: list[str] | None = None) -> None:
                 export_only=args.export_only,
                 bell=not args.no_bell,
                 theme=args.theme,
+                solo=args.solo,
             )
         else:
             console.print(f"\n[warning]Unknown mode '{startup_mode}'.[/warning]")
@@ -4839,6 +4831,7 @@ def main(argv: list[str] | None = None) -> None:
                 export_only=args.export_only,
                 bell=not args.no_bell,
                 theme=args.theme,
+                solo=args.solo,
             )
 
 

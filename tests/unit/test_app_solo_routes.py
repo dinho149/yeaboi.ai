@@ -183,9 +183,14 @@ class TestReviewRun:
         seen: dict = {}
 
         def fake_run(*, on_progress=None, **kwargs):
+            from yeaboi.analysis.progress import send_component_progress
+
             seen.update(kwargs)
             for phase in ("scope", "standups"):
-                on_progress(phase)
+                send_component_progress(on_progress, component_id=phase, label=phase, status="running")
+                send_component_progress(on_progress, component_id=phase, label=phase, status="running", detail="x")
+                send_component_progress(on_progress, component_id=phase, label=phase, status="completed")
+            on_progress("Fetching completed work from Jira…")  # free text never reaches the wire
             review = _review()
             with WeeklyReviewStore(db) as store:
                 seen["run_id"] = store.record_run(review)
@@ -213,6 +218,14 @@ class TestReviewRun:
         assert seen["session_id"] == "sid" and seen["project_id"] == "proj-12345678"
         assert seen["context_deps"] == ["standup"] and seen["week_end"] == "2026-08-28"
         assert seen["carried_statuses"] == {"a1b2c3d4e5f6": "done"}
+
+    def test_a_malformed_week_end_is_400(self, app, db, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.solo.engine.run_weekly_review",
+            lambda **kw: (_ for _ in ()).throw(AssertionError("must not run")),
+        )
+        resp = request(app, "POST", "/api/solo/review/run", body={"week_end": "next friday"})
+        assert resp.code == 400
 
     def test_blank_body_runs_the_newest_of_everything(self, app, db, monkeypatch):
         seen: dict = {}

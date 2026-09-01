@@ -30,6 +30,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from yeaboi.agent.state import DeliveredItem, ReviewAction, WeeklyReview
+from yeaboi.solo.today import REVIEWABLE_STANDUP_STATUSES
 from yeaboi.timeparse import parse_date
 
 logger = logging.getLogger(__name__)
@@ -44,13 +45,61 @@ OPEN_STATUSES = ("pending", "carried")
 _MAX_LIST = 6
 
 
-def _emit(on_progress: Callable[[str], None] | None, phase: str) -> None:
-    if on_progress is None:
-        return
-    try:
-        on_progress(phase)
-    except Exception:  # noqa: BLE001 — progress is cosmetic
-        logger.debug("weekly review: on_progress callback failed", exc_info=True)
+#: The checklist label a surface shows for each phase id.
+PHASE_LABELS: dict[str, str] = {
+    "scope": "Resolving scope",
+    "standups": "Reading your standups",
+    "plan": "Reading your sprint plan",
+    "delivery": "Gathering delivered work",
+    "carried": "Carrying forward actions",
+    "model": "Drafting the review",
+    "save": "Saving and exporting",
+}
+
+
+class _Phases:
+    """Turns the pipeline's phase order into component lifecycle events.
+
+    ``start`` marks the previous phase completed and the next one running;
+    ``detail`` refreshes the running phase's detail line; ``finish`` closes the
+    last one. Same event shape as performance/analysis, so every surface's
+    checklist reads it unchanged. None-safe and never raises.
+    """
+
+    def __init__(self, on_progress: Callable[[dict], None] | None) -> None:
+        self._on_progress = on_progress
+        self._current = ""
+
+    def start(self, phase: str) -> None:
+        if self._current:
+            self._send(self._current, "completed")
+        self._current = phase
+        self._send(phase, "running")
+
+    def detail(self, text: object) -> None:
+        if self._current:
+            self._send(self._current, "running", detail=str(text or ""))
+
+    def finish(self) -> None:
+        if self._current:
+            self._send(self._current, "completed")
+            self._current = ""
+
+    def _send(self, phase: str, status: str, *, detail: str = "") -> None:
+        if self._on_progress is None:
+            return
+        from yeaboi.analysis.progress import send_component_progress
+
+        try:
+            send_component_progress(
+                self._on_progress,
+                component_id=phase,
+                label=PHASE_LABELS.get(phase, phase),
+                status=status,
+                detail=detail,
+            )
+        except Exception:  # noqa: BLE001 — progress is cosmetic
+            logger.debug("weekly review: on_progress callback failed", exc_info=True)
 
 
 def _resolve_db_path(db_path) -> Path:
@@ -76,8 +125,6 @@ def _week_window(week_end: str, today: date) -> tuple[date, date, str]:
     """``(monday, end, label)`` for the week ``week_end`` (or today) falls in."""
     end = today
     if week_end:
-        from yeaboi.timeparse import parse_date
-
         try:
             parsed = parse_date(week_end)
         except ValueError:
@@ -117,7 +164,11 @@ def _standups(scope, path: Path, monday: date, end: date, warnings: list[str]) -
         lo, hi = monday.isoformat(), end.isoformat()
         with StandupStore(path) as store:
             rows = store.get_all_history(limit=60, session_ids=session_ids)
-            picked = [r for r in rows if r.get("status") == "success" and lo <= str(r.get("standup_date", "")) <= hi]
+            picked = [
+                r
+                for r in rows
+                if r.get("status") in REVIEWABLE_STANDUP_STATUSES and lo <= str(r.get("standup_date", "")) <= hi
+            ]
             reports = [store.get_run_by_id(int(r["id"])) for r in picked]
         reports = sorted((r for r in reports if r is not None), key=lambda r: r.date)
         if not reports:
@@ -170,7 +221,7 @@ def _delivered(
             days_override=(end - monday).days + 1,
             window_start=monday.isoformat(),
             window_end=end.isoformat(),
-            on_progress=on_progress,
+            on_progress=on_progress,  # the tracker's free text rides as the delivery phase's detail
         )
         warnings.extend(warns)
     except Exception as e:  # noqa: BLE001
@@ -252,14 +303,16 @@ def _plan_verdict(
 # ---------------------------------------------------------------------------
 
 
-def carried_actions(scope, *, db_path: Path | None = None) -> tuple[ReviewAction, ...]:
+def carried_actions(scope, *, db_path: Path | None = None, week_label: str = "") -> tuple[ReviewAction, ...]:
     """Last review's actions still worth tracking, reset to pending carry-overs.
 
     Source = the previous review's new actions plus whatever *it* carried and
     left open — the retro rule, so an action marked "carried" twice does not
     vanish. Deduplicated by text, ids kept so a surface can mark them.
     ``scope`` narrows to the project's own reviews; ``None`` reads the newest.
-    Never raises.
+    ``week_label`` is the week being generated: a review of that same week is
+    skipped, so a re-run carries from the last *earlier* week rather than from
+    its own draft. Never raises.
     """
     from dataclasses import replace
 
@@ -270,7 +323,9 @@ def carried_actions(scope, *, db_path: Path | None = None) -> tuple[ReviewAction
         if not path.exists():
             return ()
         with WeeklyReviewStore(path) as store:
-            previous = store.get_latest_report(session_ids=scope.session_ids if scope is not None else None)
+            session_ids = scope.session_ids if scope is not None else None
+            recent = store.get_recent_reports(limit=12, session_ids=session_ids)
+        previous = next((r for r in recent if not week_label or r.week_label != week_label), None)
     except Exception as e:  # noqa: BLE001
         logger.warning("weekly review: could not read the previous review: %s", e)
         return ()
@@ -382,7 +437,7 @@ def run_weekly_review(
     dry_run: bool = False,
     db_path: Path | None = None,
     today: date | None = None,
-    on_progress: Callable[[str], None] | None = None,
+    on_progress: Callable[[dict], None] | None = None,
 ) -> WeeklyReview:
     """Review the week ending ``week_end`` (default today) and store the result.
 
@@ -396,7 +451,8 @@ def run_weekly_review(
         carried_statuses: ``{action_id: status}`` marks for last review's
             actions, recorded on this review's ``carried_actions``.
         dry_run: skip the tracker and the LLM — the deterministic review only.
-        on_progress: receives each phase id from ``PHASES`` as it starts.
+        on_progress: receives one component lifecycle event per phase transition —
+            ``{kind, component_id: <PHASES id>, label, status: running|completed, detail}``.
     """
     from yeaboi.projects.scope import resolve_scope
 
@@ -411,28 +467,29 @@ def run_weekly_review(
         dry_run,
     )
 
-    _emit(on_progress, "scope")
+    phases = _Phases(on_progress)
+    phases.start("scope")
     scope = resolve_scope(project_id, session_id, context_deps=context_deps, db_path=path)
     monday, end, week_label = _week_window(week_end, today)
     pid = scope.project_id if scope is not None else project_id
     project_name = _project_name(pid, path)
 
-    _emit(on_progress, "standups")
+    phases.start("standups")
     standup = _standups(scope, path, monday, end, warnings) if path.exists() else {}
     blockers: list[str] = standup.pop("_blockers", [])
     my_name = standup.get("my_name") or _configured_name()
 
-    _emit(on_progress, "plan")
+    phases.start("plan")
     plan_state, plan_session, planned, plan_sprint = (
         _plan(scope, path, end, warnings) if path.exists() else ({}, "", 0, "")
     )
 
-    _emit(on_progress, "delivery")
+    phases.start("delivery")
     if dry_run:
         delivered: tuple[DeliveredItem, ...] = ()
         warnings.append("dry run — the tracker was not read")
     else:
-        delivered = _delivered(plan_state, monday, end, my_name, warnings, on_progress)
+        delivered = _delivered(plan_state, monday, end, my_name, warnings, phases.detail)
 
     plan_status, plan_line = _plan_verdict(
         has_plan=bool(plan_state),
@@ -447,10 +504,10 @@ def run_weekly_review(
         planned=planned,
     )
 
-    _emit(on_progress, "carried")
-    carried = _apply_statuses(carried_actions(scope, db_path=path), carried_statuses, warnings)
+    phases.start("carried")
+    carried = _apply_statuses(carried_actions(scope, db_path=path, week_label=week_label), carried_statuses, warnings)
 
-    _emit(on_progress, "model")
+    phases.start("model")
     parsed: dict = {}
     if dry_run:
         warnings.append("dry run — the AI review was skipped")
@@ -508,8 +565,9 @@ def run_weekly_review(
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
 
-    _emit(on_progress, "save")
+    phases.start("save")
     _save(review, path)
+    phases.finish()
     logger.info(
         "run_weekly_review: done week=%s status=%s delivered=%d actions=%d carried=%d warnings=%d",
         week_label,

@@ -5,8 +5,6 @@ promoted to ceremonies/: these exercise standup/render.py, which stayed put.
 """
 
 import dataclasses
-
-
 from dataclasses import replace
 
 from rich.console import Group

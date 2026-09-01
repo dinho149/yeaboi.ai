@@ -22,7 +22,7 @@ from rich.text import Text
 from yeaboi.beta import BETA_LABEL, BETA_RGB
 from yeaboi.ui.shared._animations import BLACK_RGB, COLOR_RGB, lerp_color, shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import PAD, build_badge, build_page_panel
+from yeaboi.ui.shared._components import PAD, SOLO_THEME, build_badge, build_page_panel
 from yeaboi.ui.shared._mascot import render_head, render_head_shades
 from yeaboi.ui.shared._tips import TIP_ROTATE_SECONDS
 
@@ -675,7 +675,7 @@ def _build_update_box(*, cols: int) -> Panel | None:
 _TODAY_FULL_ROWS = 7  # 4 lines + 2 borders + 1 spacer
 _TODAY_COMPACT_ROWS = 2  # 1 line + 1 spacer
 _TODAY_LINES = 4
-_TODAY_ACCENT = (210, 168, 80)  # SOLO_THEME.accent, as a triple for the reveal lerp
+_TODAY_ACCENT = COLOR_RGB[SOLO_THEME.accent]  # as a triple, for the reveal lerp
 _TODAY_TREND = {"improving": "↑", "steady": "→", "declining": "↓"}
 
 

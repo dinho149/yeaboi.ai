@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 #: anyway, but the desktop tile should not receive a paragraph.
 _CLIP = 160
 
+#: Standup runs worth reading back: a partial run (one source failed) still
+#: carries the user's own update. Shared with the weekly review.
+REVIEWABLE_STANDUP_STATUSES = ("success", "partial")
+
 
 @dataclass(frozen=True)
 class TodaySnapshot:
@@ -159,7 +163,7 @@ def _standup_fields(scope, path: Path, warnings: list[str]) -> dict:
         session_ids = scope.session_ids if scope is not None else None
         with StandupStore(path) as store:
             rows = store.get_all_history(limit=10, session_ids=session_ids)
-            row = next((r for r in rows if r.get("status") in ("success", "partial")), None)
+            row = next((r for r in rows if r.get("status") in REVIEWABLE_STANDUP_STATUSES), None)
             report = store.get_run_by_id(int(row["id"])) if row else None
         if report is None:
             return {}

@@ -204,10 +204,6 @@ CAPABILITIES: dict[str, dict] = {
         "tui_mode": "weekly-review",
         "cli": {"review"},
         "skill": "weekly-review",
-        # The backend routes (/api/solo/review*) are live; the window has no Solo
-        # review page yet, so its manifest carries no /solo/* route. The desktop
-        # PR that adds /solo/review regenerates the manifest, and this column
-        # becomes {"/solo/review", "/solo/review/report"} in the PR that vendors it.
         "desktop": {"/solo/review", "/solo/review/report"},
     },
     "performance": {

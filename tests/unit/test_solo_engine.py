@@ -172,7 +172,26 @@ class TestHappyPath:
         assert all(a.origin == "ai" and a.status == "pending" and len(a.id) == 12 for a in review.actions)
         assert review.carried_actions == ()
         assert review.warnings == ()
-        assert [p for p in phases if p in engine.PHASES] == list(engine.PHASES)
+        # one lifecycle event per transition: every phase runs, then finishes, in order
+        from yeaboi.analysis.progress import is_component_progress
+
+        assert all(is_component_progress(e) for e in phases)
+        running = [e["component_id"] for e in phases if e["status"] == "running"]
+        assert [p for i, p in enumerate(running) if p not in running[:i]] == list(engine.PHASES)
+        assert [e["component_id"] for e in phases if e["status"] == "completed"] == list(engine.PHASES)
+        assert all(e["label"] == engine.PHASE_LABELS[e["component_id"]] for e in phases)
+
+    def test_partial_standups_still_count(self, monkeypatch, tmp_path):
+        # A run with one failed source still carries the user's own update — the
+        # same rule the Today strip applies (REVIEWABLE_STANDUP_STATUSES).
+        db, pid = _seed(tmp_path, standups=False)
+        with StandupStore(db) as store:
+            store.record_run(_report("plan-1", "2026-09-01", pct=55, summary="Fixed S-3"), status="partial")
+        _patch_llm(monkeypatch, _GOOD)
+        _patch_activity(monkeypatch)
+        review = engine.run_weekly_review(project_id=pid, db_path=db, today=TODAY)
+        assert review.standup_dates == ("2026-09-01",)
+        assert "Fixed S-3" in review.standup_lines[0]
 
     def test_saved_and_exported(self, monkeypatch, tmp_path):
         db, pid = _seed(tmp_path)
@@ -438,6 +457,22 @@ class TestCarryForward:
 
     def test_missing_db_reads_nothing(self, tmp_path):
         assert engine.carried_actions(None, db_path=tmp_path / "none.db") == ()
+
+    def test_a_same_week_rerun_does_not_carry_its_own_draft(self, monkeypatch, tmp_path):
+        db, pid = _seed(tmp_path)
+        first = self._first(monkeypatch, db, pid)
+        again = engine.run_weekly_review(project_id=pid, db_path=db, today=TODAY)
+        assert again.week_label == first.week_label
+        assert again.carried_actions == ()
+        from yeaboi.projects.scope import resolve_scope
+
+        scope = resolve_scope(pid, db_path=db)
+        # the reader: skip this week's drafts; without a week the newest wins
+        assert engine.carried_actions(scope, db_path=db, week_label=first.week_label) == ()
+        assert [a.text for a in engine.carried_actions(scope, db_path=db)] == [a.text for a in again.actions]
+        # the next week carries from the newest draft of the earlier week
+        following = engine.run_weekly_review(project_id=pid, db_path=db, today=date(2026, 9, 11))
+        assert [a.text for a in following.carried_actions] == [a.text for a in again.actions]
 
 
 class TestApplyStatuses:

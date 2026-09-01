@@ -245,6 +245,19 @@ class TestSavedSetupGate:
             lambda session_id, on_progress=None, **_kwargs: calls.append("engine") or "Generated.",
         )
 
+    def test_solo_never_asks_for_a_roster(self, monkeypatch):
+        # A Solo run is self-only; the engine discards any roster, so the
+        # team step is skipped and the rest of the sequence still runs.
+        calls = []
+        self._wire(monkeypatch, calls, rows=None, choice="change")
+        monkeypatch.setattr(mode_select, "_is_solo", lambda: True)
+
+        result = mode_select._standup_generate_flow(_Console(), _Live(), lambda **kwargs: "", 0.001, True, "s1")
+
+        assert result == "Generated."
+        assert "team" not in calls
+        assert calls[-2:] == ["update", "engine"]
+
     def test_use_saved_skips_every_picker(self, monkeypatch):
         calls = []
         self._wire(monkeypatch, calls, rows=[("Trackers", "Jira")], choice="use")

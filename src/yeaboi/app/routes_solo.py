@@ -37,9 +37,9 @@ _END = object()
 
 
 def _beta_notice() -> str:
-    from yeaboi import beta
+    from yeaboi.beta import WEEKLY_REVIEW_BETA_NOTICE
 
-    return str(getattr(beta, "WEEKLY_REVIEW_BETA_NOTICE", ""))
+    return WEEKLY_REVIEW_BETA_NOTICE
 
 
 def review(app, request: Request) -> Response:
@@ -110,6 +110,13 @@ def review_run(app, request: Request) -> Response:
     if context_deps is not None and not isinstance(context_deps, list):
         raise HTTPError(400, "context_deps must be a list of tokens or null")
     week_end = str(payload.get("week_end", "")).strip()
+    if week_end:
+        from yeaboi.timeparse import parse_date
+
+        try:
+            parse_date(week_end)
+        except ValueError:
+            raise HTTPError(400, "week_end must be an ISO date (YYYY-MM-DD)") from None
     carried_statuses = payload.get("carried_statuses")
     if carried_statuses is not None and not isinstance(carried_statuses, dict):
         raise HTTPError(400, "carried_statuses must be an object of {action_id: status}")
@@ -134,6 +141,20 @@ def _run(app, op, session_id, project_id, context_deps, week_end, carried_status
     events: queue.Queue = queue.Queue()
     result: list = [None, None]  # review, failure
 
+    last_phase = [""]
+
+    def on_progress(event) -> None:
+        # One progress line per phase transition; the engine's detail refreshes
+        # and done events stay off the wire (the contract names the seven ids).
+        from yeaboi.analysis.progress import is_component_progress
+
+        if not is_component_progress(event) or event["status"] != "running":
+            return
+        phase = event["component_id"]
+        if phase != last_phase[0]:
+            last_phase[0] = phase
+            events.put({"type": "progress", "phase": phase})
+
     def worker() -> None:
         from yeaboi.solo.engine import run_weekly_review
 
@@ -146,7 +167,7 @@ def _run(app, op, session_id, project_id, context_deps, week_end, carried_status
                     context_deps=context_deps,
                     week_end=week_end,
                     carried_statuses=carried_statuses,
-                    on_progress=lambda phase: events.put({"type": "progress", "phase": phase}),
+                    on_progress=on_progress,
                 )
         except BaseException as exc:  # noqa: BLE001 — reported on the stream below
             result[1] = exc

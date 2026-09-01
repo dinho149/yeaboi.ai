@@ -3336,18 +3336,23 @@ def _standup_generate_flow(
         # Mirror Analysis mode: confirm tracker sources, discover their roster,
         # then confirm the authoritative member subset. Confirmed choices are
         # persisted immediately, so cancelling the later My Update prompt still
-        # leaves the new defaults ready for scheduled runs.
-        team_ok, team_message = _standup_team_configure(
-            console,
-            live,
-            read_key,
-            frame_time,
-            supports_timeout,
-            session_id,
-        )
-        if not team_ok:
-            logger.info("standup generate: stopped during team selection (session=%s)", session_id)
-            return team_message
+        # leaves the new defaults ready for scheduled runs. A Solo run is
+        # self-only by construction, so the roster step is skipped: the engine
+        # would discard whatever was picked.
+        if _is_solo():
+            logger.info("standup generate: solo run — roster step skipped (session=%s)", session_id)
+        else:
+            team_ok, team_message = _standup_team_configure(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                session_id,
+            )
+            if not team_ok:
+                logger.info("standup generate: stopped during team selection (session=%s)", session_id)
+                return team_message
 
         code_ok, code_message = _standup_code_configure(
             console,

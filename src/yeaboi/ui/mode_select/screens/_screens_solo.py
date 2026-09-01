@@ -41,18 +41,21 @@ from yeaboi.ui.shared._scroll import publish_geometry
 SOLO_REVIEW_CARRIED_ACTIONS = ["Generate", "Back"]
 SOLO_REVIEW_DETAIL_ACTIONS = ["Export", "Anonymize", "Back"]
 
-#: The engine's phase ids paired with what "pending" reads as on the checklist.
+#: The engine's phase ids paired with the checklist wording. The engine emits a
+#: structured running/completed event per id (analysis.progress), which is what
+#: advances a declared row; the label here is what the row reads before, during
+#: and after.
 SOLO_REVIEW_PHASES: tuple[tuple[str, str], ...] = tuple(
     zip(
         PHASES,
         (
-            "Resolve the project scope",
-            "Read this week's standups",
-            "Read the sprint plan",
-            "Gather delivered work",
-            "Carry last week's actions",
-            "Draft the review",
-            "Save and export",
+            "Resolving scope",
+            "Reading your standups",
+            "Reading your sprint plan",
+            "Gathering delivered work",
+            "Carrying forward actions",
+            "Drafting the review",
+            "Saving and exporting",
         ),
         strict=True,
     )

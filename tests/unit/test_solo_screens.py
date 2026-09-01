@@ -304,13 +304,13 @@ class TestReviewCarriedView:
 
         assert tuple(p for p, _label in SOLO_REVIEW_PHASES) == PHASES
 
-    def test_progress_screen_renders_with_the_phases(self):
+    def _progress_render(self, progress: list) -> str:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
         from yeaboi.ui.mode_select.screens._screens_solo import SOLO_REVIEW_PHASES
         from yeaboi.ui.shared._components import SOLO_THEME, solo_review_title
 
         panel = _build_standup_progress_screen(
-            ["scope", "standups"],
+            progress,
             width=100,
             height=30,
             theme=SOLO_THEME,
@@ -321,9 +321,29 @@ class TestReviewCarriedView:
         console = Console(width=100, height=30, force_terminal=False, color_system=None)
         with console.capture() as cap:
             console.print(panel)
-        out = cap.get()
+        return cap.get()
+
+    def test_progress_screen_lists_every_phase_pending_before_the_run(self):
+        out = self._progress_render(["Starting"])
         assert "Reviewing your week" in out
-        assert "Draft the review" in out
+        for _pid, label in __import__("yeaboi.ui.mode_select.screens._screens_solo", fromlist=["x"]).SOLO_REVIEW_PHASES:
+            assert f"○ {label}" in out
+
+    def test_progress_screen_advances_on_the_engine_events(self):
+        # The engine emits one structured running/completed event per phase id;
+        # a declared row must settle to ✓ (not sit pending with a bare-string
+        # footnote), and the active one must not read as pending.
+        from yeaboi.analysis.progress import append_component_progress
+
+        progress: list = ["Starting"]
+        append_component_progress(progress, component_id="scope", label="Resolving scope", status="running")
+        append_component_progress(progress, component_id="scope", label="Resolving scope", status="completed")
+        append_component_progress(progress, component_id="standups", label="Reading your standups", status="running")
+        out = self._progress_render(progress)
+        assert "✓ Resolving scope" in out
+        assert "○ Reading your standups" not in out
+        assert "○ Reading your sprint plan" in out
+        assert "↳ scope" not in out
 
 
 class TestMarkCycle:

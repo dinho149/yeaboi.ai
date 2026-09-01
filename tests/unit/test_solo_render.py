@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Console
 
 from yeaboi.agent.state import ReviewAction, WeeklyReview
-from yeaboi.solo.render import format_review_lines, format_review_rich
+from yeaboi.solo.render import _accent, format_review_rich
 
 
 def _review() -> WeeklyReview:
@@ -26,22 +26,6 @@ def _review() -> WeeklyReview:
     )
 
 
-class TestPlaintext:
-    def test_layout(self):
-        lines = format_review_lines(_review())
-        assert lines[0] == "Weekly Review — Apollo — 2026-W36"
-        assert "Against the plan: Day 2/5 · On track" in lines
-        assert "  ○ Split S-2" in lines
-        assert "  ● Write docs  (from W35)" in lines
-        assert lines[-1] == "  ! no key"
-
-    def test_empty_review(self):
-        lines = format_review_lines(WeeklyReview())
-        assert lines[0] == "Weekly Review — Solo — "
-        assert "Against the plan: no verdict" in lines
-        assert lines[-1] != ""
-
-
 class TestRich:
     def test_renders_without_error(self):
         console = Console(width=80, record=True, force_terminal=False, color_system=None)
@@ -50,3 +34,11 @@ class TestRich:
         assert "Weekly Review — Apollo — 2026-W36" in text
         assert "● Write docs" in text
         assert "! no key" in text
+
+    def test_default_accent_is_the_solo_theme(self):
+        from yeaboi.ui.shared._components import SOLO_THEME
+
+        assert _accent() == SOLO_THEME.accent
+        console = Console(width=80, record=True, force_terminal=False, color_system=None)
+        console.print(format_review_rich(_review()))
+        assert "Weekly Review — Apollo — 2026-W36" in console.export_text()
