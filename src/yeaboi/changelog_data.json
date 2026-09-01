@@ -2,6 +2,19 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.38.1",
+      "date": "2026-09-01",
+      "headline": "Desktop route manifest corrected",
+      "summary": "Nothing changes in how yeaboi works — this release is internal corrections to the desktop route manifest and parity checks, ensuring the desktop app builds against reality.",
+      "highlights": [
+        {
+          "text": "Desktop manifest now matches what the app generates",
+          "areas": ["general"],
+          "surfaces": ["desktop"]
+        }
+      ]
+    },
+    {
       "version": "3.38.0",
       "date": "2026-08-31",
       "headline": "Work by project and pick your working world",
