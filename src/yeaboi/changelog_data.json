@@ -2,6 +2,30 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.39.0",
+      "date": "2026-09-01",
+      "headline": "Connect to 20 vendors and build your own integrations",
+      "summary": "Browse 20 built-in integrations from Datadog to Grafana, Linear and Trello as first-class trackers, and create your own API, webhook or MCP connections. Webhook events flow into your standup, performance and analysis views.",
+      "highlights": [
+        {
+          "text": "Browse 20 built-in integrations including Datadog, Grafana, AWS and more",
+          "areas": ["settings"]
+        },
+        {
+          "text": "Create custom API, webhook and MCP connections with your own config",
+          "areas": ["settings"]
+        },
+        {
+          "text": "Use Linear and Trello as first-class trackers alongside Jira and Azure DevOps",
+          "areas": ["planning"]
+        },
+        {
+          "text": "Receive webhook events in your standup, performance and analysis views",
+          "areas": ["standup", "performance", "analysis"]
+        }
+      ]
+    },
+    {
       "version": "3.38.1",
       "date": "2026-09-01",
       "headline": "Desktop route manifest corrected",
