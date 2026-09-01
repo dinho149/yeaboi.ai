@@ -114,6 +114,13 @@ class TestValidator:
         assert problems, f"{patch} was accepted"
         assert any(needle in p for p in problems), f"{needle!r} not named in {problems}"
 
+    def test_non_string_fields_are_problems_not_a_crash(self):
+        # A hostile or sloppy JSON body must reach the validator as rejectable
+        # values — a TypeError here would surface as an HTTP 500.
+        hostile = {**VALID, "key": 123, "accent": 5, "docs_url": 7, "events": {**VALID["events"], "path": 9}}
+        problems = _no_problems(spec_from_dict(hostile))
+        assert problems  # judged, not crashed
+
     def test_a_key_collision_with_a_builtin_is_fatal(self):
         spec = spec_from_dict({**VALID, "key": "custom_x"})
         problems = descriptor_problems(
@@ -576,6 +583,7 @@ class TestExtraFields:
             ([APP_KEY_FIELD, {**APP_KEY_FIELD, "header_name": ""}], "duplicate extra-field env suffix"),
             ([{**APP_KEY_FIELD, "label": " "}], "label"),
             ([{**APP_KEY_FIELD, "header_name": "Cookie"}], "may not be"),
+            ([{**APP_KEY_FIELD, "header_name": "Authorization"}], "auth scheme owns"),
             ([{**APP_KEY_FIELD, "header_name": "Bad Header"}], "letters, digits and hyphens"),
             ([{**APP_KEY_FIELD, "env_suffix": f"K{i}"} for i in range(5)], "at most 4"),
         ],

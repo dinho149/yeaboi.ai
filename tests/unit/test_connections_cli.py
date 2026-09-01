@@ -194,6 +194,35 @@ class TestCreate:
         assert spec.icon_data == icon
         assert spec.extra_fields[0].env_suffix == "APP_KEY"
 
+    def test_verify_skips_a_probe_less_webhook_connection(self, monkeypatch, _custom_store):
+        # A webhook custom is connected the moment its secret is minted, but it
+        # has nothing to probe — a bare `connections verify` must not red on it.
+        from yeaboi.connectors import custom
+        from yeaboi.connectors.custom import spec_from_dict
+
+        monkeypatch.setattr("yeaboi.config.apply_config_value", lambda k, v: None)
+        custom.save_custom(
+            spec_from_dict(
+                {
+                    "key": "custom_hook",
+                    "label": "Hook",
+                    "family": "incidents",
+                    "summary": "Inbound deliveries",
+                    "glyph": "📟",
+                    "accent": "rgb(22,92,52)",
+                    "kind": "webhook",
+                    "events": {"kind": "incident", "title_path": "name"},
+                }
+            )
+        )
+        monkeypatch.setenv("YEABOI_CUSTOM_HOOK_WEBHOOK_SECRET", "s3cret")
+        code, out = _run(["connections", "verify"])
+        assert code == 0
+        assert "Nothing connected to verify." in out
+        # Named explicitly, the answer is honest and non-zero, not a probe error.
+        code, _ = _run(["connections", "verify", "custom_hook"])
+        assert code == 1
+
     def test_a_bad_kind_is_a_message_not_a_crash(self, monkeypatch, _custom_store):
         self._answers(
             monkeypatch,

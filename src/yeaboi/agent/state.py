@@ -2664,3 +2664,16 @@ class ScrumState(_RequiredState, total=False):
     azdevops_story_keys: Annotated[dict[str, str], _merge_dicts]
     azdevops_task_keys: Annotated[dict[str, str], _merge_dicts]
     azdevops_iteration_keys: Annotated[dict[str, str], _merge_dicts]
+
+    # Linear / Trello key mappings — populated by linear_sync / trello_sync.
+    # Declared as graph channels with the same _merge_dicts reducer as the Jira
+    # mappings above: an undeclared key is dropped when a resumed session's
+    # state passes back through the graph, which would lose the idempotency
+    # mapping and duplicate cards/issues on the next sync.
+    linear_story_keys: Annotated[dict[str, str], _merge_dicts]
+    linear_story_ids: Annotated[dict[str, str], _merge_dicts]
+    linear_task_keys: Annotated[dict[str, str], _merge_dicts]
+    linear_cycle_keys: Annotated[dict[str, str], _merge_dicts]
+    trello_story_keys: Annotated[dict[str, str], _merge_dicts]
+    trello_task_keys: Annotated[dict[str, str], _merge_dicts]
+    trello_list_keys: Annotated[dict[str, str], _merge_dicts]

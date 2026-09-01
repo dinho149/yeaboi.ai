@@ -147,7 +147,9 @@ def spec_from_dict(raw: dict) -> CustomSpec:
     events = None
     if isinstance(raw.get("events"), dict):
         known = {f.name for f in EventsMapping.__dataclass_fields__.values()}
-        events = EventsMapping(**{k: v for k, v in raw["events"].items() if k in known})
+        events = EventsMapping(
+            **{k: (v if isinstance(v, str) else str(v or "")) for k, v in raw["events"].items() if k in known}
+        )
     extras = []
     if isinstance(raw.get("extra_fields"), list):
         known = {f.name for f in CustomFieldSpec.__dataclass_fields__.values()}
@@ -157,7 +159,11 @@ def spec_from_dict(raw: dict) -> CustomSpec:
             kwargs = {k: (bool(v) if k == "secret" else str(v or "")) for k, v in entry.items() if k in known}
             extras.append(CustomFieldSpec(**kwargs))
     known = {f.name for f in CustomSpec.__dataclass_fields__.values()} - {"events", "extra_fields"}
-    kwargs = {k: v for k, v in raw.items() if k in known}
+    # String fields are coerced so a non-string in submitted JSON reaches the
+    # validator as a rejectable value instead of a TypeError.
+    kwargs = {
+        k: (v if isinstance(v, str) or k == "probe_ok_status" else str(v or "")) for k, v in raw.items() if k in known
+    }
     kwargs.setdefault("key", "")
     kwargs.setdefault("label", "")
     try:

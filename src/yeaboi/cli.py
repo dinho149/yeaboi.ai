@@ -2806,7 +2806,15 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
         if legacy_entry is not None and legacy_entry.key not in legacy.LEGACY_VERIFY_KINDS:
             print(f"{legacy_entry.label} has no live probe — check it under Settings ▸ System.", file=sys.stderr)
             return 1
-        targets = [(connector or legacy_entry).key] if (connector or legacy_entry) else registry.connected()
+        if connector is not None and not connector.verify:
+            print(f"{connector.label} has no live probe — it receives deliveries instead.", file=sys.stderr)
+            return 1
+        if connector or legacy_entry:
+            targets = [(connector or legacy_entry).key]
+        else:
+            # A probe-less connection (a webhook custom receives deliveries) is
+            # skipped rather than reported as a failure.
+            targets = [key for key in registry.connected() if getattr(registry.by_key(key), "verify", "")]
         if not targets:
             console.print("[dim]Nothing connected to verify.[/dim]")
             return 0

@@ -41,6 +41,10 @@ _ENV_SUFFIX_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,29}$")
 #: Suffixes the auth schemes and other kinds already derive.
 _RESERVED_SUFFIXES = frozenset({"BASE_URL", "TOKEN", "USERNAME", "PASSWORD", "WEBHOOK_SECRET", "URL"})
 
+#: Headers the auth scheme owns — an extra claiming one would silently replace
+#: the scheme's credential on every request.
+_AUTH_HEADERS = frozenset({"authorization", "proxy-authorization"})
+
 #: Raster only — SVG can script, so it never crosses this gate.
 _ICON_RE = re.compile(r"^data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$")
 ICON_MAX_BYTES = 64 * 1024
@@ -98,6 +102,8 @@ def _extra_field_problems(spec) -> list[str]:
                 problems.append("an extra field's header name must be letters, digits and hyphens")
             elif name.lower() in _HEADER_DENYLIST:
                 problems.append(f"an extra field's header name may not be {name!r}")
+            elif name.lower() in _AUTH_HEADERS:
+                problems.append(f"an extra field may not carry {name!r} — the auth scheme owns that header")
             elif name.lower() in seen_headers:
                 problems.append(f"duplicate header name {name!r}")
             seen_headers.add(name.lower())

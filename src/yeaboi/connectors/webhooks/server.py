@@ -96,9 +96,11 @@ def _verify_delivery(key: str, headers, raw_body: bytes) -> bool:
         if abs(time.time() - int(timestamp)) > REPLAY_WINDOW_SECONDS:
             return False
         expected = hmac.new(secret.encode(), f"{timestamp}.".encode() + raw_body, hashlib.sha256).hexdigest()
-        return bool(secret) and hmac.compare_digest(signature, expected)
+        # Bytes on both sides: the str overload raises TypeError on non-ASCII,
+        # which would let an unauthenticated sender crash the request thread.
+        return bool(secret) and hmac.compare_digest(signature.encode(), expected.encode())
     supplied = str(headers.get(_TOKEN_HEADER, "") or "")
-    return bool(secret) and hmac.compare_digest(supplied, secret)
+    return bool(secret) and hmac.compare_digest(supplied.encode(), secret.encode())
 
 
 def map_delivery(spec, body) -> tuple:

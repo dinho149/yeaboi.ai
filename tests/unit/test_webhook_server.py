@@ -81,6 +81,12 @@ class TestAuth:
         (event,) = webhook_store.events_in_window("custom_pager", None, None)
         assert (event.kind, event.title, event.severity) == ("incident", "API down", "high")
 
+    def test_a_non_ascii_credential_is_a_401_not_a_crash(self, _world):
+        # hmac.compare_digest raises TypeError on non-ASCII str — an
+        # unauthenticated sender must get the uniform 401, not a dropped thread.
+        bad = _post(_world["port"], "/hooks/custom_pager", GOOD_BODY, {"X-Yeaboi-Token": "é" * 8})
+        assert bad == (401, {"error": "unauthorized"})
+
     def test_a_bad_token_and_an_unknown_key_answer_identically(self, _world):
         bad = _post(_world["port"], "/hooks/custom_pager", GOOD_BODY, {"X-Yeaboi-Token": "wrong"})
         unknown = _post(_world["port"], "/hooks/custom_nope", GOOD_BODY, {"X-Yeaboi-Token": "wrong"})
