@@ -36,7 +36,8 @@ Respond with ONLY a JSON object (no code fences, no commentary) with these keys:
 - "docs_url": the https URL of the service's API-token documentation, or ""
 - "glyph": one emoji that suits the service
 - "accent": the service's brand colour as "rgb(r,g,b)"
-- "kind": "api"
+- "kind": "api" — or "mcp" when the description is a remote MCP (Model Context Protocol)
+  server endpoint rather than a REST API
 - "auth_scheme": one of: {schemes}
 - "header_name": the auth header's name, ONLY when auth_scheme is "header", else ""
 - "probe_path": a cheap authenticated GET path (starting "/") that proves the credential works
@@ -54,4 +55,7 @@ Rules:
 - Propose only reads. If the service is write-oriented, set "events" to null.
 - Paths are paths, never full URLs, and never contain "..".
 - When unsure about the events endpoint, set "events" to null rather than guessing.
+- For kind "mcp": keep "auth_scheme" "bearer", "header_name" "", "probe_path" "/",
+  "probe_ok_status" 200, and "events" null — the server URL and token are entered
+  afterwards as credentials.
 """

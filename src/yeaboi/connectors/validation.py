@@ -17,7 +17,7 @@ from yeaboi.connectors.spec import ACCENT_RE, FAMILIES
 from yeaboi.ops.events import EVENT_KINDS
 
 #: What a custom connection may be.
-CUSTOM_KINDS: tuple[str, ...] = ("api", "webhook")
+CUSTOM_KINDS: tuple[str, ...] = ("api", "webhook", "mcp")
 
 WEBHOOK_VERIFY_MODES: tuple[str, ...] = ("token", "hmac")
 
@@ -104,6 +104,18 @@ def descriptor_problems(
                 problems.append(f"the event kind must be one of: {', '.join(EVENT_KINDS)}")
             if not (spec.events.title_path or "").strip():
                 problems.append("the events mapping needs a title_path")
+        clashes = sorted(set(spec.derived_envs()) & set(existing_envs))
+        if clashes:
+            problems.append(f"derived env(s) already in use: {', '.join(clashes)}")
+        return problems
+
+    if spec.kind == "mcp":
+        # A server URL and an optional bearer token — the HTTP shape and the
+        # events mapping belong to the api and webhook kinds.
+        if spec.events is not None:
+            problems.append("an MCP connection gathers nothing yet — events belong to the api and webhook kinds")
+        if spec.header_name:
+            problems.append("a header name only makes sense with the api kind's header scheme")
         clashes = sorted(set(spec.derived_envs()) & set(existing_envs))
         if clashes:
             problems.append(f"derived env(s) already in use: {', '.join(clashes)}")

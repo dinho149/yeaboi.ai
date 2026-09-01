@@ -2966,7 +2966,7 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
             print(f"Error: could not read {args.from_json}: {exc}", file=sys.stderr)
             return 1
     else:
-        console.print("[bold]Create a connection[/bold] — a read-only API the catalog then carries.")
+        console.print("[bold]Create a connection[/bold] — a read-only API or an MCP server the catalog then carries.")
         label = input("Service name: ").strip()
         if not label:
             print("Error: a name is required", file=sys.stderr)
@@ -2979,12 +2979,6 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
         glyph = input("Icon (one emoji) [🔌]: ").strip() or "\U0001f50c"
         accent = input("Accent rgb(r,g,b) [rgb(120,160,200)]: ").strip() or "rgb(120,160,200)"
         docs_url = input("Docs URL (https, optional): ").strip()
-        schemes = ", ".join(AUTH_SCHEMES)
-        auth_scheme = input(f"Auth scheme ({schemes}) [bearer]: ").strip() or "bearer"
-        header_name = ""
-        if auth_scheme == "header":
-            header_name = input("Header name: ").strip()
-        probe_path = input("Probe path (an authenticated GET, e.g. /v1/me) [/]: ").strip() or "/"
         raw = {
             "key": key,
             "label": label,
@@ -2993,10 +2987,20 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
             "glyph": glyph,
             "accent": accent,
             "docs_url": docs_url,
-            "auth_scheme": auth_scheme,
-            "header_name": header_name,
-            "probe_path": probe_path,
         }
+        kind = input("Kind (api, mcp) [api]: ").strip() or "api"
+        raw["kind"] = kind
+        if kind != "mcp":
+            # The HTTP shape belongs to the api kind; an MCP connection has
+            # nothing to ask — its Server URL and token are entered afterwards
+            # like any other credential.
+            schemes = ", ".join(AUTH_SCHEMES)
+            auth_scheme = input(f"Auth scheme ({schemes}) [bearer]: ").strip() or "bearer"
+            header_name = ""
+            if auth_scheme == "header":
+                header_name = input("Header name: ").strip()
+            probe_path = input("Probe path (an authenticated GET, e.g. /v1/me) [/]: ").strip() or "/"
+            raw.update({"auth_scheme": auth_scheme, "header_name": header_name, "probe_path": probe_path})
 
     try:
         row = create_custom_connection(raw)

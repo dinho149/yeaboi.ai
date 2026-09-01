@@ -106,6 +106,18 @@ def post_form(url: str, *, data: dict[str, str], timeout: int = DEFAULT_TIMEOUT)
     return httpx.post(assert_safe_url(url), data=data, timeout=timeout)
 
 
+def post_json(url: str, *, headers: dict[str, str], payload: dict, timeout: int = DEFAULT_TIMEOUT):
+    """``POST`` a JSON body to a guarded URL. Returns the raw httpx response.
+
+    What the MCP handshake speaks — JSON-RPC over HTTPS — through the same
+    guard as every GET, so a user-typed server URL cannot reach the loopback
+    interface or a metadata endpoint.
+    """
+    import httpx
+
+    return httpx.post(assert_safe_url(url), json=payload, headers=headers, timeout=timeout)
+
+
 def probe_status(url: str, *, headers: dict[str, str], timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str]:
     """``(status_code, "")`` for a completed request, or ``(0, message)``.
 

@@ -35,6 +35,82 @@ def _connected(monkeypatch):
     monkeypatch.setenv("DATADOG_APP_KEY", APP_KEY)
 
 
+@pytest.fixture
+def _custom_store(tmp_path, monkeypatch):
+    path = tmp_path / "custom_connectors.json"
+    monkeypatch.setattr("yeaboi.connectors.custom._store_path", lambda: path)
+    from yeaboi.connectors import custom
+    from yeaboi.settings.engine import _invalidate_fields_cache
+
+    custom.invalidate()
+    _invalidate_fields_cache()
+    yield path
+    custom.invalidate()
+    _invalidate_fields_cache()
+
+
+class TestCreate:
+    """The interactive flow — one prompt script per kind."""
+
+    def _answers(self, monkeypatch, answers: list[str]) -> list[str]:
+        script = list(answers)
+        prompts: list[str] = []
+
+        def _fake_input(prompt: str = "") -> str:
+            prompts.append(prompt)
+            return script.pop(0) if script else ""
+
+        monkeypatch.setattr("builtins.input", _fake_input)
+        return prompts
+
+    def test_the_mcp_kind_skips_the_http_shape_prompts(self, monkeypatch, _custom_store):
+        from yeaboi.connectors import custom
+
+        prompts = self._answers(
+            monkeypatch,
+            ["Context7", "", "docs", "Docs lookup over MCP for the agent", "🧰", "rgb(30,120,90)", "", "mcp"],
+        )
+        code, out = _run(["connections", "create"])
+        assert code == 0, out
+        assert "Created." in out
+        (spec,) = custom.load_specs()
+        assert (spec.key, spec.kind) == ("custom_context7", "mcp")
+        # Nothing HTTP-shaped was asked once the kind was mcp.
+        assert not any("Auth scheme" in p or "Probe path" in p for p in prompts)
+
+    def test_the_api_kind_still_asks_for_its_shape(self, monkeypatch, _custom_store):
+        from yeaboi.connectors import custom
+
+        prompts = self._answers(
+            monkeypatch,
+            [
+                "Statuspage",
+                "",
+                "incidents",
+                "Component status changes",
+                "📟",
+                "rgb(20,90,50)",
+                "",
+                "api",
+                "bearer",
+                "/v1/pages",
+            ],
+        )
+        code, out = _run(["connections", "create"])
+        assert code == 0, out
+        (spec,) = custom.load_specs()
+        assert (spec.kind, spec.probe_path) == ("api", "/v1/pages")
+        assert any("Auth scheme" in p for p in prompts)
+
+    def test_a_bad_kind_is_a_message_not_a_crash(self, monkeypatch, _custom_store):
+        self._answers(
+            monkeypatch,
+            ["Thing", "", "docs", "A thing", "🧰", "rgb(31,121,91)", "", "carrier-pigeon"],
+        )
+        code, _ = _run(["connections", "create"])
+        assert code == 1
+
+
 class TestParser:
     def test_every_verb_parses(self):
         parser = build_parser()

@@ -351,3 +351,177 @@ class TestEngine:
         result = draft_custom_connection("gibberish")
         assert result["ok"] is False
         assert "draft" in result
+
+
+MCP_VALID = {
+    "key": "custom_context7",
+    "label": "Context7",
+    "family": "docs",
+    "summary": "Docs lookup over MCP, so the agent can cite the current API",
+    "glyph": "🧰",
+    "accent": "rgb(30,120,90)",
+    "kind": "mcp",
+}
+
+
+class _McpServer:
+    """A post_json stand-in answering the three-step handshake, recording each call."""
+
+    def __init__(self, *, status: int = 200, sse: bool = False, name: str = "Context7", tools: int = 2):
+        self.status, self.sse, self.name, self.tools = status, sse, name, tools
+        self.calls: list[tuple[str, dict, dict]] = []
+
+    def __call__(self, url, *, headers, payload, timeout=None):
+        import json as _json
+        from types import SimpleNamespace
+
+        self.calls.append((url, dict(headers), payload))
+        if payload.get("method") == "initialize":
+            body = {"jsonrpc": "2.0", "id": 1, "result": {"serverInfo": {"name": self.name}}}
+            resp_headers = {"mcp-session-id": "sess-1", "content-type": "application/json"}
+        elif payload.get("method") == "tools/list":
+            body = {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{} for _ in range(self.tools)]}}
+            resp_headers = {"content-type": "application/json"}
+        else:  # notifications/initialized
+            body = {}
+            resp_headers = {"content-type": "application/json"}
+        if self.sse:
+            text = f"event: message\ndata: {_json.dumps(body)}\n\n"
+            resp_headers["content-type"] = "text/event-stream"
+            return SimpleNamespace(status_code=self.status, headers=resp_headers, text=text, content=text.encode())
+        raw = _json.dumps(body)
+        return SimpleNamespace(
+            status_code=self.status,
+            headers=resp_headers,
+            text=raw,
+            content=raw.encode(),
+            json=lambda b=body: b,
+        )
+
+
+class TestMcpKind:
+    """The third custom kind: a server URL, an optional token, and a handshake."""
+
+    def test_the_valid_descriptor_passes(self):
+        assert _no_problems(spec_from_dict(MCP_VALID)) == []
+
+    @pytest.mark.parametrize(
+        ("patch", "needle"),
+        [
+            ({"events": VALID["events"]}, "gathers nothing"),
+            ({"header_name": "X-Api-Key"}, "header name"),
+        ],
+    )
+    def test_the_http_shape_is_refused(self, patch, needle):
+        problems = _no_problems(spec_from_dict({**MCP_VALID, **patch}))
+        assert any(needle in p for p in problems), f"{needle!r} not named in {problems}"
+
+    def test_the_derived_envs_are_a_url_and_a_token(self):
+        spec = spec_from_dict(MCP_VALID)
+        assert spec.derived_envs() == ("YEABOI_CUSTOM_CONTEXT7_URL", "YEABOI_CUSTOM_CONTEXT7_TOKEN")
+
+    def test_it_joins_the_catalog_connected_on_the_url_alone(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+        connector = registry.by_key("custom_context7")
+        assert connector is not None
+        assert connector.verify == "_verify_custom_mcp"
+        assert connector.fetch == ""  # config + verify only — it gathers nothing
+        monkeypatch.setenv("YEABOI_CUSTOM_CONTEXT7_URL", "https://mcp.example.com/mcp")
+        assert registry.is_connected(connector)  # the token is optional
+
+    def test_the_row_carries_its_kind_on_the_wire(self, _store, monkeypatch):
+        from yeaboi.connectors.engine import create_custom_connection, list_connections
+
+        row = create_custom_connection(MCP_VALID)
+        assert row["kind"] == "mcp"
+        assert "webhook_secret" not in row  # no delivery secret is minted for mcp
+        monkeypatch.setenv("YEABOI_CUSTOM_CONTEXT7_URL", "https://mcp.example.com/mcp")
+        listed = next(r for r in list_connections()["connectors"] if r["key"] == "custom_context7")
+        assert listed["kind"] == "mcp"
+
+    def test_the_handshake_runs_in_order_with_bearer_and_session(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+        server = _McpServer()
+        monkeypatch.setattr("yeaboi.connectors.http.post_json", server)
+        from yeaboi.provider_verification import _verify_custom_mcp
+
+        ok, message = _verify_custom_mcp(key="custom_context7", url="https://mcp.example.com/mcp", token="tok")
+        assert ok is True
+        assert message == "MCP server 'Context7' verified — 2 tool(s)"
+        methods = [payload.get("method") for _, _, payload in server.calls]
+        assert methods == ["initialize", "notifications/initialized", "tools/list"]
+        assert all(headers["Authorization"] == "Bearer tok" for _, headers, _ in server.calls)
+        # The session id from initialize rides every later call.
+        assert server.calls[1][1]["Mcp-Session-Id"] == "sess-1"
+        assert server.calls[2][1]["Mcp-Session-Id"] == "sess-1"
+
+    def test_a_tokenless_server_still_verifies(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+        server = _McpServer(tools=0)
+        monkeypatch.setattr("yeaboi.connectors.http.post_json", server)
+        from yeaboi.provider_verification import _verify_custom_mcp
+
+        ok, _ = _verify_custom_mcp(key="custom_context7", url="https://mcp.example.com/mcp")
+        assert ok is True
+        assert all("Authorization" not in headers for _, headers, _ in server.calls)
+
+    def test_an_sse_shaped_body_is_parsed(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+        monkeypatch.setattr("yeaboi.connectors.http.post_json", _McpServer(sse=True, tools=3))
+        from yeaboi.provider_verification import _verify_custom_mcp
+
+        ok, message = _verify_custom_mcp(key="custom_context7", url="https://mcp.example.com/mcp")
+        assert ok is True
+        assert "3 tool(s)" in message
+
+    def test_a_rejected_credential_is_named(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+        monkeypatch.setattr("yeaboi.connectors.http.post_json", _McpServer(status=401))
+        from yeaboi.provider_verification import INVALID_KEY, _verify_custom_mcp
+
+        assert _verify_custom_mcp(key="custom_context7", url="https://mcp.example.com/mcp") == (False, INVALID_KEY)
+
+    def test_a_host_that_does_not_speak_mcp_is_named(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+        monkeypatch.setattr("yeaboi.connectors.http.post_json", _McpServer(status=405))
+        from yeaboi.provider_verification import _verify_custom_mcp
+
+        ok, message = _verify_custom_mcp(key="custom_context7", url="https://mcp.example.com/mcp")
+        assert ok is False
+        assert "streamable HTTP" in message
+
+    def test_a_non_https_url_never_leaves(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+        import httpx
+
+        monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest.fail("a request left for an http URL"))
+        from yeaboi.provider_verification import _verify_custom_mcp
+
+        ok, _ = _verify_custom_mcp(key="custom_context7", url="http://mcp.example.com/mcp")
+        assert ok is False
+
+    def test_a_private_host_never_leaves(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+        import httpx
+
+        monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest.fail("a request left for a private host"))
+        from yeaboi.provider_verification import _verify_custom_mcp
+
+        ok, _ = _verify_custom_mcp(key="custom_context7", url="https://127.0.0.1:8642/mcp")
+        assert ok is False
+
+    def test_the_token_never_appears_in_a_failure(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(MCP_VALID))
+
+        def boom(url, *, headers, payload, timeout=None):
+            raise OSError("connect failed for bearer super-secret-mcp-token")
+
+        monkeypatch.setenv("YEABOI_CUSTOM_CONTEXT7_TOKEN", "super-secret-mcp-token")
+        monkeypatch.setattr("yeaboi.connectors.http.post_json", boom)
+        from yeaboi.provider_verification import _verify_custom_mcp
+
+        ok, message = _verify_custom_mcp(
+            key="custom_context7", url="https://mcp.example.com/mcp", token="super-secret-mcp-token"
+        )
+        assert ok is False
+        assert "super-secret-mcp-token" not in message

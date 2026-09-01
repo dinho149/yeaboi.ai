@@ -1288,6 +1288,97 @@ def _verify_custom_api(
     return True, f"{spec.label} verified"
 
 
+_MCP_PROTOCOL_VERSION = "2025-03-26"
+_MCP_NAME_MAX = 60
+
+
+def _mcp_body(resp) -> dict:
+    """The JSON-RPC body of a streamable-HTTP response, SSE-framed or plain.
+
+    A server may answer ``application/json`` or ``text/event-stream``; in the
+    stream shape the payload rides ``data:`` lines. Anything unreadable is {}.
+    """
+    import json
+
+    try:
+        if "text/event-stream" in str(resp.headers.get("content-type", "")):
+            body = {}
+            for line in resp.text.splitlines():
+                if line.startswith("data:"):
+                    body = json.loads(line[5:].strip())
+                    break
+        else:
+            body = resp.json() if resp.content else {}
+        return body if isinstance(body, dict) else {}
+    except Exception:
+        return {}
+
+
+def _verify_custom_mcp(key: str = "", url: str = "", token: str = "") -> tuple[bool, str]:
+    """Verify one user-created MCP connection with the streamable-HTTP handshake.
+
+    initialize → notifications/initialized → tools/list, over the guarded POST
+    (https only, never a private address). Nothing beyond the server's name and
+    its tool count is read, and the name is length-capped before display.
+    """
+    from yeaboi.connectors.custom import spec_by_key
+    from yeaboi.connectors.http import UnsafeUrlError, post_json
+
+    spec = spec_by_key(key)
+    if spec is None:
+        return False, f"No custom connection named {key!r}"
+    server = url.strip()
+    if not server:
+        return False, "Set the Server URL first"
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    if token.strip():
+        headers["Authorization"] = f"Bearer {token.strip()}"
+
+    def rpc(payload: dict):
+        return post_json(server, headers=headers, payload=payload)
+
+    try:
+        resp = rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": _MCP_PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "yeaboi", "version": "1"},
+                },
+            }
+        )
+        if resp.status_code in (401, 403):
+            return False, INVALID_KEY
+        if resp.status_code in (404, 405):
+            return False, "Reached the host, but it does not speak MCP streamable HTTP — check the URL"
+        body = _mcp_body(resp)
+        error = body.get("error")
+        if isinstance(error, dict):
+            return False, f"The server refused initialize: {str(error.get('message') or '')[:120]}"
+        if resp.status_code != 200 or not isinstance(body.get("result"), dict):
+            return False, f"Unexpected response: {resp.status_code}"
+        name = str(body["result"].get("serverInfo", {}).get("name") or "")[:_MCP_NAME_MAX]
+
+        session = str(resp.headers.get("mcp-session-id", "") or "")
+        if session:
+            headers["Mcp-Session-Id"] = session
+        rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+        tools_resp = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        listed = _mcp_body(tools_resp).get("result")
+        tools = listed.get("tools") if isinstance(listed, dict) else []
+        count = len(tools) if isinstance(tools, list) else 0
+        who = f"MCP server {name!r}" if name else "MCP server"
+        return True, f"{who} verified — {count} tool(s)"
+    except UnsafeUrlError as exc:
+        return False, str(exc)
+    except Exception as exc:
+        return False, _connection_error(exc)
+
+
 def _verify_elevenlabs(token: str) -> tuple[bool, str]:
     """Verify an ElevenLabs API key against GET /v1/user — the cheapest authenticated endpoint."""
     try:

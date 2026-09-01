@@ -93,6 +93,8 @@ class CustomSpec:
             # Inbound-only: the one secret is the delivery credential yeaboi
             # mints; there is no host and no outbound auth.
             return (f"{self.env_stem}_WEBHOOK_SECRET",)
+        if self.kind == "mcp":
+            return (f"{self.env_stem}_URL", f"{self.env_stem}_TOKEN")
         envs = [f"{self.env_stem}_BASE_URL"]
         if self.auth_scheme == "basic":
             envs += [f"{self.env_stem}_USERNAME", f"{self.env_stem}_PASSWORD"]
@@ -155,6 +157,42 @@ def to_connector(spec: CustomSpec) -> Connector:
                     label="Webhook Secret",
                     secret=True,
                     hint="Minted when the connection is created — `yeaboi connections webhook-url` shows it",
+                ),
+            ),
+        )
+    if spec.kind == "mcp":
+        # Both fields are env_args: the URL decides a host, so a request may
+        # never supply it beside the stored token, and an optional token cannot
+        # be a verify_arg (verify_connection refuses an unset one). Verify
+        # therefore always reads the saved values — the flow every surface
+        # already uses.
+        return Connector(
+            key=spec.key,
+            label=spec.label,
+            family=spec.family if spec.family in FAMILIES else "observability",
+            section="connections",
+            summary=spec.summary,
+            detail=spec.detail,
+            verify="_verify_custom_mcp",
+            docs_url=spec.docs_url,
+            glyph=spec.glyph,
+            accent=spec.accent,
+            connected_when=(f"{spec.env_stem}_URL",),
+            fields=(
+                ConnectorField(
+                    env=f"{spec.env_stem}_URL",
+                    label="Server URL",
+                    env_arg="url",
+                    placeholder="https://mcp.example.com/mcp",
+                    hint="A streamable-HTTP MCP endpoint — https only, private and local addresses are refused",
+                ),
+                ConnectorField(
+                    env=f"{spec.env_stem}_TOKEN",
+                    label="Bearer Token",
+                    secret=True,
+                    required=False,
+                    env_arg="token",
+                    hint="Only for a server that wants one",
                 ),
             ),
         )
