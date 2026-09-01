@@ -102,6 +102,15 @@
       "managed_by": "connections"
     },
     {
+      "key": "circleci",
+      "label": "CircleCI",
+      "family": "code",
+      "family_label": "Code",
+      "accent": "rgb(52,52,52)",
+      "glyph": "⭕",
+      "managed_by": "connections"
+    },
+    {
       "key": "gitlab",
       "label": "GitLab",
       "family": "code",

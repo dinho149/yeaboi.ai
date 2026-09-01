@@ -1068,6 +1068,35 @@ def _verify_bitbucket(email: str, token: str, workspace: str) -> tuple[bool, str
     return True, "Bitbucket verified"
 
 
+def _verify_circleci(token: str, org_slug: str) -> tuple[bool, str]:
+    """Verify a CircleCI token can list one org's pipelines.
+
+    The slug rides the query string, urlencoded — a slug with a ``&`` in it
+    must stay one parameter — and the host is fixed.
+    """
+    from urllib.parse import urlencode
+
+    from yeaboi.connectors.circleci import API_BASE
+    from yeaboi.connectors.http import probe_status
+
+    slug = org_slug.strip().strip("/")
+    if not slug:
+        return False, "CircleCI needs an org slug"
+    status, message = probe_status(
+        f"{API_BASE}/pipeline?{urlencode({'org-slug': slug})}",
+        headers={"Circle-Token": token},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Token accepted, but no org named {org_slug!r} — use the slug form, e.g. gh/acme"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "CircleCI verified"
+
+
 def _verify_linear(token: str) -> tuple[bool, str]:
     """Verify a Linear API key with the cheapest authenticated query — the viewer.
 

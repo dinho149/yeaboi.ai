@@ -18,6 +18,7 @@ from yeaboi.connectors import (
     aws,
     azure_cloud,
     bitbucket,
+    circleci,
     datadog,
     gcp,
     gitlab,
@@ -46,6 +47,7 @@ _CONNECTORS: tuple[Connector, ...] = (
     azure_cloud.CONNECTOR,
     gitlab.CONNECTOR,
     bitbucket.CONNECTOR,
+    circleci.CONNECTOR,
     linear.CONNECTOR,
     trello.CONNECTOR,
 )

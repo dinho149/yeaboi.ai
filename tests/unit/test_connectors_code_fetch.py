@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from yeaboi.connectors import bitbucket, gitlab
+from yeaboi.connectors import bitbucket, circleci, gitlab
 from yeaboi.ops.events import EVENT_KINDS, OpsEvent
 
 START = datetime(2026, 6, 1, tzinfo=timezone.utc)
@@ -109,6 +109,37 @@ BITBUCKET_PIPELINES = {
 }
 
 
+CIRCLECI_PIPELINES = {
+    "items": [
+        {
+            "id": "p-1",
+            "number": 55,
+            "project_slug": "gh/acme/web",
+            "created_at": "2026-06-10T09:00:00Z",
+        },
+        {
+            "id": "p-0",
+            "number": 2,
+            "project_slug": "gh/acme/web",
+            "created_at": "2020-01-01T00:00:00Z",
+        },
+    ]
+}
+
+CIRCLECI_WORKFLOWS = {
+    "items": [
+        {
+            "id": "w-1",
+            "name": LEAK_CANARY,
+            "status": "failed",
+            "created_at": "2026-06-10T09:00:00Z",
+            "stopped_at": "2026-06-10T09:20:00Z",
+        },
+        {"id": "w-2", "name": "nightly", "status": "running", "created_at": "2026-06-10T09:00:00Z"},
+    ]
+}
+
+
 @pytest.fixture
 def connected(monkeypatch):
     for env, value in {
@@ -117,6 +148,8 @@ def connected(monkeypatch):
         "BITBUCKET_EMAIL": "dev@acme.test",
         "BITBUCKET_API_TOKEN": "bb-tok",
         "BITBUCKET_WORKSPACE": "acme",
+        "CIRCLECI_TOKEN": "cc-tok",
+        "CIRCLECI_ORG_SLUG": "gh/acme",
     }.items():
         monkeypatch.setenv(env, value)
 
@@ -186,10 +219,37 @@ class TestBitbucket:
         assert bitbucket.fetch(START, END) == ()
 
 
+class TestCircleCI:
+    def routes(self):
+        return [("/api/v2/pipeline?", CIRCLECI_PIPELINES), ("/workflow", CIRCLECI_WORKFLOWS)]
+
+    def test_walks_the_org_with_the_token_header(self, monkeypatch, connected):
+        router = install(monkeypatch, self.routes())
+        circleci.fetch(START, END)
+        first, second = router.urls()
+        assert first == "https://circleci.com/api/v2/pipeline?org-slug=gh%2Facme"
+        assert second == "https://circleci.com/api/v2/pipeline/p-1/workflow"
+        assert all(headers == {"Circle-Token": "cc-tok"} for _, headers in router.calls)
+
+    def test_keeps_finished_runs_and_stops_at_the_window_edge(self, monkeypatch, connected):
+        install(monkeypatch, self.routes())
+        found = circleci.fetch(START, END)
+        # The running workflow is dropped; the 2020 pipeline is behind the
+        # window edge and, because rows come newest first, ends the walk.
+        assert [e.ref for e in found] == ["gh/acme/web#55"]
+        assert (found[0].kind, found[0].severity, found[0].status) == ("deploy", "high", "failed")
+        assert found[0].url == "https://app.circleci.com/pipelines/gh/acme/web/55"
+
+    def test_a_changed_shape_yields_nothing_rather_than_raising(self, monkeypatch, connected):
+        install(monkeypatch, [("/api/v2/pipeline?", {"items": "not a list"})])
+        assert circleci.fetch(START, END) == ()
+
+
 class TestNoBodyCrossesTheBoundary:
     CASES = [
         (gitlab, [("/api/v4/projects?", GITLAB_PROJECTS), ("/pipelines?", GITLAB_PIPELINES)]),
         (bitbucket, [("/repositories/acme?", BITBUCKET_REPOS), ("/pipelines/", BITBUCKET_PIPELINES)]),
+        (circleci, [("/api/v2/pipeline?", CIRCLECI_PIPELINES), ("/workflow", CIRCLECI_WORKFLOWS)]),
     ]
 
     @pytest.mark.parametrize(("module", "routes"), CASES, ids=lambda v: getattr(v, "__name__", ""))

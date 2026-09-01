@@ -19,6 +19,7 @@ from yeaboi.connectors.sentry import api_base as sentry_base
 from yeaboi.provider_verification import (
     INVALID_KEY,
     _verify_bitbucket,
+    _verify_circleci,
     _verify_gitlab,
     _verify_grafana,
     _verify_incidentio,
@@ -275,3 +276,44 @@ class TestBitbucket:
         ok, msg = _verify_bitbucket("dev@acme.test", "tok", "nope")
         assert ok is False
         assert "workspace" in msg
+
+
+class TestCircleCI:
+    def test_it_lists_pipelines_for_the_org_with_the_token_header(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        ok, _ = _verify_circleci("tok", "gh/acme")
+        assert ok is True
+        assert capture.url == "https://circleci.com/api/v2/pipeline?org-slug=gh%2Facme"
+        assert capture.headers["Circle-Token"] == "tok"
+
+    def test_a_slug_with_a_query_metacharacter_stays_one_parameter(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        _verify_circleci("tok", "gh/acme&page-token=evil")
+        assert "org-slug=gh%2Facme%26page-token%3Devil" in capture.url
+
+    def test_an_empty_slug_is_refused_before_the_request(self, monkeypatch):
+        called = MagicMock()
+        monkeypatch.setattr("httpx.get", called)
+        ok, msg = _verify_circleci("tok", "   ")
+        assert ok is False
+        assert "org slug" in msg
+        called.assert_not_called()
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_rejected_token_is_named(self, monkeypatch, status):
+        monkeypatch.setattr("httpx.get", _Capture(status))
+        assert _verify_circleci("bad", "gh/acme") == (False, INVALID_KEY)
+
+    def test_a_404_blames_the_slug_not_the_token(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(404))
+        ok, msg = _verify_circleci("tok", "acme")
+        assert ok is False
+        assert "slug" in msg
+
+    def test_the_token_never_appears_in_the_failure(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(500))
+        ok, msg = _verify_circleci("super-secret-token", "gh/acme")
+        assert ok is False
+        assert "super-secret-token" not in msg
