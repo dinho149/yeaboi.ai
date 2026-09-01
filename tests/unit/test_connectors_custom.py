@@ -14,7 +14,7 @@ import json
 import pytest
 
 from yeaboi.connectors import custom, registry
-from yeaboi.connectors.custom import CustomSpec, EventsMapping, spec_from_dict
+from yeaboi.connectors.custom import CustomFieldSpec, CustomSpec, EventsMapping, spec_from_dict
 from yeaboi.connectors.validation import descriptor_problems
 
 VALID = {
@@ -340,6 +340,30 @@ class TestEngine:
         assert result["ok"] is False
         assert result["problems"]
 
+    def test_a_webhook_draft_is_judged_like_any_other(self, _store, monkeypatch):
+        from types import SimpleNamespace
+
+        from yeaboi.connectors.engine import draft_custom_connection
+
+        webhook = {
+            "key": "custom_pager",
+            "label": "Pager",
+            "family": "incidents",
+            "summary": "Inbound incident deliveries, mapped to events",
+            "glyph": "📟",
+            "accent": "rgb(21,91,51)",
+            "kind": "webhook",
+            "webhook_verify": "hmac",
+            "events": {"kind": "incident", "title_path": "incident.name"},
+        }
+        monkeypatch.setattr(
+            "yeaboi.agent.llm.invoke_json", lambda prompt, **kw: SimpleNamespace(content=json.dumps(webhook))
+        )
+        result = draft_custom_connection("a service that can only push deliveries")
+        assert result["ok"] is True
+        assert result["draft"]["kind"] == "webhook"
+        assert custom.load_specs() == ()
+
     def test_unusable_model_output_is_a_message_not_a_crash(self, _store, monkeypatch):
         from types import SimpleNamespace
 
@@ -525,3 +549,181 @@ class TestMcpKind:
         )
         assert ok is False
         assert "super-secret-mcp-token" not in message
+
+
+APP_KEY_FIELD = {
+    "label": "Application Key",
+    "env_suffix": "APP_KEY",
+    "secret": True,
+    "header_name": "DD-Application-Key",
+    "hint": "Organization settings → Application Keys",
+}
+
+EXTRAS_VALID = {**VALID, "extra_fields": [APP_KEY_FIELD, {"label": "Site", "env_suffix": "SITE", "secret": False}]}
+
+
+class TestExtraFields:
+    """The Datadog shape for customs: extra credentials/config beyond the auth scheme."""
+
+    def test_the_datadog_shaped_descriptor_passes(self):
+        assert _no_problems(spec_from_dict(EXTRAS_VALID)) == []
+
+    @pytest.mark.parametrize(
+        ("extras", "needle"),
+        [
+            ([{**APP_KEY_FIELD, "env_suffix": "app-key"}], "UPPER_SNAKE"),
+            ([{**APP_KEY_FIELD, "env_suffix": "TOKEN"}], "reserved"),
+            ([APP_KEY_FIELD, {**APP_KEY_FIELD, "header_name": ""}], "duplicate extra-field env suffix"),
+            ([{**APP_KEY_FIELD, "label": " "}], "label"),
+            ([{**APP_KEY_FIELD, "header_name": "Cookie"}], "may not be"),
+            ([{**APP_KEY_FIELD, "header_name": "Bad Header"}], "letters, digits and hyphens"),
+            ([{**APP_KEY_FIELD, "env_suffix": f"K{i}"} for i in range(5)], "at most 4"),
+        ],
+    )
+    def test_each_broken_extra_is_named(self, extras, needle):
+        problems = _no_problems(spec_from_dict({**VALID, "extra_fields": extras}))
+        assert any(needle in p for p in problems), f"{needle!r} not named in {problems}"
+
+    def test_an_extra_header_may_not_shadow_the_auth_header(self):
+        spec = spec_from_dict(
+            {
+                **VALID,
+                "auth_scheme": "header",
+                "header_name": "X-Api-Key",
+                "extra_fields": [{**APP_KEY_FIELD, "header_name": "x-api-key"}],
+            }
+        )
+        assert any("duplicate header name" in p for p in _no_problems(spec))
+
+    @pytest.mark.parametrize("base", [MCP_VALID, {**VALID, "kind": "webhook", "webhook_verify": "token"}])
+    def test_only_the_api_kind_may_declare_extras(self, base):
+        problems = _no_problems(spec_from_dict({**base, "extra_fields": [APP_KEY_FIELD]}))
+        assert any("belong to the api kind" in p for p in problems)
+
+    def test_the_derived_envs_include_the_suffixes(self):
+        spec = spec_from_dict(EXTRAS_VALID)
+        assert "YEABOI_CUSTOM_STATUSPAGE_APP_KEY" in spec.derived_envs()
+        assert "YEABOI_CUSTOM_STATUSPAGE_SITE" in spec.derived_envs()
+
+    def test_the_connector_carries_the_extra_fields(self):
+        connector = custom.to_connector(spec_from_dict(EXTRAS_VALID))
+        app_key = next(f for f in connector.fields if f.env == "YEABOI_CUSTOM_STATUSPAGE_APP_KEY")
+        assert (app_key.label, app_key.secret, app_key.verify_arg) == ("Application Key", True, "app_key")
+        site = next(f for f in connector.fields if f.env == "YEABOI_CUSTOM_STATUSPAGE_SITE")
+        assert (site.secret, site.verify_arg) == (False, "site")
+
+    def test_auth_headers_send_the_declared_extra_header(self):
+        spec = spec_from_dict(EXTRAS_VALID)
+        values = {"YEABOI_CUSTOM_STATUSPAGE_TOKEN": "tok", "YEABOI_CUSTOM_STATUSPAGE_APP_KEY": "app-secret"}
+        headers = custom.auth_headers(spec, values)
+        assert headers["Authorization"] == "Bearer tok"
+        assert headers["DD-Application-Key"] == "app-secret"
+
+    def test_round_trip_through_the_store(self, _store):
+        custom.save_custom(spec_from_dict(EXTRAS_VALID))
+        (loaded,) = custom.load_specs()
+        assert loaded.extra_fields[0] == CustomFieldSpec(**APP_KEY_FIELD)
+        assert loaded.extra_fields[1].secret is False
+
+    def test_a_spec_without_extras_serializes_exactly_as_before(self):
+        data = spec_from_dict(VALID).to_dict()
+        assert "extra_fields" not in data
+        assert "icon_data" not in data
+
+    def test_the_settings_engine_masks_the_extra_secret(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(EXTRAS_VALID))
+        secret = "dd-app-key-never-shown-whole"
+        monkeypatch.setenv("YEABOI_CUSTOM_STATUSPAGE_APP_KEY", secret)
+        from dataclasses import asdict
+
+        from yeaboi.settings.engine import get_settings
+
+        payload = get_settings()
+        row = next(f for f in payload.fields if f.env == "YEABOI_CUSTOM_STATUSPAGE_APP_KEY")
+        assert row.secret is True
+        assert secret not in json.dumps(asdict(payload))
+
+    def test_the_probe_carries_the_extra_header(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(EXTRAS_VALID))
+        seen = {}
+
+        def fake_probe(url, *, headers):
+            seen.update({"url": url, "headers": headers})
+            return 200, ""
+
+        monkeypatch.setattr("yeaboi.connectors.http.probe_status", fake_probe)
+        from yeaboi.provider_verification import _verify_custom_api
+
+        ok, _ = _verify_custom_api(
+            key="custom_statuspage", base_url="https://api.statuspage.io", token="tok", app_key="app-secret"
+        )
+        assert ok is True
+        assert seen["headers"]["DD-Application-Key"] == "app-secret"
+
+    def test_verify_connection_carries_the_extra_field(self, _store, monkeypatch):
+        custom.save_custom(spec_from_dict(EXTRAS_VALID))
+        monkeypatch.setattr("yeaboi.connectors.http.probe_status", lambda url, *, headers: (200, ""))
+        from yeaboi.settings.engine import verify_connection
+
+        fields = {"base_url": "https://api.statuspage.io", "token": "tok", "app_key": "app", "site": "eu"}
+        assert verify_connection("custom_statuspage", fields)["ok"] is True
+
+    def test_a_supplied_host_needs_every_secret_supplied(self, _store, monkeypatch):
+        # Pairing a caller's host with the STORED app key would exfiltrate it.
+        custom.save_custom(spec_from_dict(EXTRAS_VALID))
+        monkeypatch.setenv("YEABOI_CUSTOM_STATUSPAGE_APP_KEY", "stored-app-key")
+        monkeypatch.setenv("YEABOI_CUSTOM_STATUSPAGE_SITE", "eu")
+        from yeaboi.settings.engine import verify_connection
+
+        with pytest.raises(ValueError, match="app_key"):
+            verify_connection("custom_statuspage", {"base_url": "https://attacker.example", "token": "tok"})
+
+
+# A 1×1 transparent PNG — small, real, and byte-checkable.
+PNG_ICON = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+class TestIcon:
+    """An uploaded icon is a validated raster data URI — never SVG, never oversized."""
+
+    def test_a_small_png_icon_passes(self):
+        assert _no_problems(spec_from_dict({**VALID, "icon_data": PNG_ICON})) == []
+
+    @pytest.mark.parametrize(
+        ("icon", "needle"),
+        [
+            ("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", "SVG"),
+            ("https://cdn.example/icon.png", "SVG"),  # only a data URI is accepted
+            ("data:image/png;base64,AAA", "not decodable"),
+            ("data:image/png;base64," + PNG_ICON.split(",", 1)[1].replace("iVBOR", "aVBOR"), "do not match"),
+        ],
+    )
+    def test_each_bad_icon_is_named(self, icon, needle):
+        problems = _no_problems(spec_from_dict({**VALID, "icon_data": icon}))
+        assert any(needle in p for p in problems), f"{needle!r} not named in {problems}"
+
+    def test_an_oversized_icon_is_refused_before_decoding(self):
+        import base64
+
+        blob = b"\x89PNG\r\n\x1a\n" + b"\x00" * (80 * 1024)
+        icon = "data:image/png;base64," + base64.b64encode(blob).decode()
+        problems = _no_problems(spec_from_dict({**VALID, "icon_data": icon}))
+        assert any("64KB" in p for p in problems)
+
+    def test_the_icon_rides_the_catalog_row(self, _store):
+        from yeaboi.connectors.engine import create_custom_connection, list_connections
+
+        row = create_custom_connection({**VALID, "icon_data": PNG_ICON})
+        assert row["icon"] == PNG_ICON
+        builtin = next(
+            r for r in list_connections(connected_only=False)["connectors"] if not r["key"].startswith("custom_")
+        )
+        assert builtin["icon"] == ""
+
+    def test_the_icon_survives_the_store_round_trip(self, _store):
+        custom.save_custom(spec_from_dict({**VALID, "icon_data": PNG_ICON}))
+        (loaded,) = custom.load_specs()
+        assert loaded.icon_data == PNG_ICON

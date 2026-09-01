@@ -1253,14 +1253,15 @@ def _verify_trello(api_key: str, token: str) -> tuple[bool, str]:
 
 
 def _verify_custom_api(
-    key: str = "", base_url: str = "", token: str = "", username: str = "", password: str = ""
+    key: str = "", base_url: str = "", token: str = "", username: str = "", password: str = "", **extra: str
 ) -> tuple[bool, str]:
     """Verify one user-created API connection against its declared probe.
 
     The host is the user's own, so the request goes through the connector HTTP
     guard: https only, never an address on this machine or a private range.
     Auth is built from the descriptor's scheme; nothing about the request shape
-    comes from the caller beyond the credential values themselves.
+    comes from the caller beyond the credential values themselves. ``extra``
+    carries the descriptor's extra fields, keyed by lower-cased env suffix.
     """
     from yeaboi.connectors.custom import auth_headers, spec_by_key
     from yeaboi.connectors.http import probe_status
@@ -1273,6 +1274,8 @@ def _verify_custom_api(
         f"{spec.env_stem}_USERNAME": username,
         f"{spec.env_stem}_PASSWORD": password,
     }
+    for field in spec.extra_fields:
+        values[f"{spec.env_stem}_{field.env_suffix}"] = str(extra.get(field.env_suffix.lower(), "") or "")
     status, message = probe_status(
         f"{base_url.rstrip('/')}{spec.probe_path}",
         headers=auth_headers(spec, values),

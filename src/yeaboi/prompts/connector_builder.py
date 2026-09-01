@@ -37,11 +37,21 @@ Respond with ONLY a JSON object (no code fences, no commentary) with these keys:
 - "glyph": one emoji that suits the service
 - "accent": the service's brand colour as "rgb(r,g,b)"
 - "kind": "api" — or "mcp" when the description is a remote MCP (Model Context Protocol)
-  server endpoint rather than a REST API
+  server endpoint rather than a REST API, or "webhook" when the service can only PUSH
+  deliveries (no read API to poll)
 - "auth_scheme": one of: {schemes}
 - "header_name": the auth header's name, ONLY when auth_scheme is "header", else ""
 - "probe_path": a cheap authenticated GET path (starting "/") that proves the credential works
 - "probe_ok_status": the status that GET returns on success (usually 200)
+- "webhook_verify": ONLY for kind "webhook": "token" (a static secret header) or "hmac"
+  (a Stripe-shaped signature), else omit it
+- "extra_fields": [] — or, ONLY when the api needs more than one credential or a required
+  non-secret setting (e.g. a Datadog-style application key beside the api key), up to 4 of:
+  - "label": what a person calls it (e.g. "Application Key")
+  - "env_suffix": UPPER_SNAKE, unique, never BASE_URL/TOKEN/USERNAME/PASSWORD (e.g. "APP_KEY")
+  - "secret": true for a credential, false for plain configuration
+  - "header_name": the request header that carries the value, or "" when none does
+  - "hint": one short line on where the user finds it, or ""
 - "events": null, or — only when the service has a list endpoint whose rows are
   incidents/alerts/errors/deploys — an object with:
   - "path": the GET path of that endpoint (starting "/")
@@ -55,7 +65,10 @@ Rules:
 - Propose only reads. If the service is write-oriented, set "events" to null.
 - Paths are paths, never full URLs, and never contain "..".
 - When unsure about the events endpoint, set "events" to null rather than guessing.
+- Never propose a credential VALUE, an env var name, or an icon image — only the shape.
 - For kind "mcp": keep "auth_scheme" "bearer", "header_name" "", "probe_path" "/",
-  "probe_ok_status" 200, and "events" null — the server URL and token are entered
-  afterwards as credentials.
+  "probe_ok_status" 200, "events" null and "extra_fields" [] — the server URL and token
+  are entered afterwards as credentials.
+- For kind "webhook": the events mapping is REQUIRED (it is how a delivery becomes an
+  event); keep the HTTP-shape fields at their defaults and "extra_fields" [].
 """

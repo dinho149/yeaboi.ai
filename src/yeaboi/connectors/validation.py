@@ -11,6 +11,7 @@ anything.
 
 from __future__ import annotations
 
+import base64
 import re
 
 from yeaboi.connectors.spec import ACCENT_RE, FAMILIES
@@ -31,6 +32,76 @@ _KEY_RE = re.compile(r"^custom_[a-z][a-z0-9_]*$")
 _HEADER_RE = re.compile(r"^[A-Za-z0-9-]+$")
 
 SUMMARY_MAX = 90
+
+#: Extra fields beyond the auth scheme — enough for an app key and some config.
+EXTRA_FIELDS_MAX = 4
+
+_ENV_SUFFIX_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,29}$")
+
+#: Suffixes the auth schemes and other kinds already derive.
+_RESERVED_SUFFIXES = frozenset({"BASE_URL", "TOKEN", "USERNAME", "PASSWORD", "WEBHOOK_SECRET", "URL"})
+
+#: Raster only — SVG can script, so it never crosses this gate.
+_ICON_RE = re.compile(r"^data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$")
+ICON_MAX_BYTES = 64 * 1024
+
+_ICON_MAGIC = {
+    "png": (b"\x89PNG\r\n\x1a\n",),
+    "jpeg": (b"\xff\xd8\xff",),
+    "webp": (b"RIFF",),
+}
+
+
+def _icon_problems(icon_data: str) -> list[str]:
+    """An icon is empty, or a size-capped raster data URI whose bytes match its mime."""
+    if not isinstance(icon_data, str):
+        return ["the icon must be a data:image/png, jpeg or webp base64 URI — SVG is not accepted"]
+    if len(icon_data) > ICON_MAX_BYTES * 4 // 3 + 64:  # refuse oversize before decoding it
+        return [f"the icon must be at most {ICON_MAX_BYTES // 1024}KB — downscale it first"]
+    m = _ICON_RE.fullmatch(icon_data)
+    if not m:
+        return ["the icon must be a data:image/png, jpeg or webp base64 URI — SVG is not accepted"]
+    try:
+        blob = base64.b64decode(m.group(2), validate=True)
+    except (ValueError, TypeError):
+        return ["the icon's base64 payload is not decodable"]
+    if len(blob) > ICON_MAX_BYTES:
+        return [f"the icon must be at most {ICON_MAX_BYTES // 1024}KB — downscale it first"]
+    kind = m.group(1)
+    if not blob.startswith(_ICON_MAGIC[kind]) or (kind == "webp" and blob[8:12] != b"WEBP"):
+        return ["the icon's bytes do not match its declared image type"]
+    return []
+
+
+def _extra_field_problems(spec) -> list[str]:
+    """The extra-fields rules: derived-env hygiene and header hygiene."""
+    problems: list[str] = []
+    extras = spec.extra_fields
+    if len(extras) > EXTRA_FIELDS_MAX:
+        problems.append(f"at most {EXTRA_FIELDS_MAX} extra fields")
+    seen_suffixes: set[str] = set()
+    seen_headers = {(spec.header_name or "").lower()} - {""}
+    for extra in extras:
+        suffix = extra.env_suffix or ""
+        if not _ENV_SUFFIX_RE.fullmatch(suffix):
+            problems.append("an extra field's env suffix must be UPPER_SNAKE (e.g. APP_KEY)")
+        elif suffix in _RESERVED_SUFFIXES:
+            problems.append(f"the env suffix {suffix!r} is reserved by the auth scheme")
+        elif suffix in seen_suffixes:
+            problems.append(f"duplicate extra-field env suffix {suffix!r}")
+        seen_suffixes.add(suffix)
+        if not (extra.label or "").strip():
+            problems.append("every extra field needs a label")
+        name = extra.header_name or ""
+        if name:
+            if not _HEADER_RE.fullmatch(name):
+                problems.append("an extra field's header name must be letters, digits and hyphens")
+            elif name.lower() in _HEADER_DENYLIST:
+                problems.append(f"an extra field's header name may not be {name!r}")
+            elif name.lower() in seen_headers:
+                problems.append(f"duplicate header name {name!r}")
+            seen_headers.add(name.lower())
+    return problems
 
 
 def _path_problems(path: str, what: str) -> list[str]:
@@ -89,8 +160,14 @@ def descriptor_problems(
     if spec.docs_url and not spec.docs_url.startswith("https://"):
         problems.append("the docs link must be https")
 
+    if spec.icon_data:
+        problems.extend(_icon_problems(spec.icon_data))
+
     if spec.kind not in CUSTOM_KINDS:
         problems.append(f"kind must be one of: {', '.join(CUSTOM_KINDS)}")
+
+    if spec.kind != "api" and spec.extra_fields:
+        problems.append("extra fields belong to the api kind — the webhook and mcp shapes are fixed")
 
     if spec.kind == "webhook":
         # Inbound-only: no host, no probe, no outbound auth — what matters is
@@ -135,6 +212,8 @@ def descriptor_problems(
     problems.extend(_path_problems(spec.probe_path or "", "the probe path"))
     if not (200 <= int(spec.probe_ok_status or 0) <= 299):
         problems.append("the probe's expected status must be a 2xx")
+
+    problems.extend(_extra_field_problems(spec))
 
     if spec.events is not None:
         problems.extend(_path_problems(spec.events.path or "", "the events path"))

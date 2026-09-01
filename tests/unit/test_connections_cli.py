@@ -102,6 +102,98 @@ class TestCreate:
         assert (spec.kind, spec.probe_path) == ("api", "/v1/pages")
         assert any("Auth scheme" in p for p in prompts)
 
+    def test_the_webhook_kind_asks_for_its_mapping_and_shows_the_secret_once(self, monkeypatch, _custom_store):
+        from yeaboi.connectors import custom
+
+        # The minted delivery secret must not land in the real shared .env.
+        monkeypatch.setattr("yeaboi.config.apply_config_value", lambda k, v: None)
+        prompts = self._answers(
+            monkeypatch,
+            [
+                "Pager",
+                "",
+                "incidents",
+                "Inbound incident deliveries",
+                "📟",
+                "rgb(21,91,51)",
+                "",
+                "webhook",
+                "hmac",
+                "incident",
+                "incident.name",
+            ],
+        )
+        code, out = _run(["connections", "create"])
+        assert code == 0, out
+        (spec,) = custom.load_specs()
+        assert (spec.kind, spec.webhook_verify) == ("webhook", "hmac")
+        assert (spec.events.kind, spec.events.title_path) == ("incident", "incident.name")
+        assert not any("Auth scheme" in p or "Probe path" in p for p in prompts)
+        # The minted delivery secret is shown once instead of the add-credentials tip.
+        assert "shown once" in out
+        assert "connections add" not in out
+
+    def test_the_api_kind_offers_the_extra_fields_loop(self, monkeypatch, _custom_store):
+        from yeaboi.connectors import custom
+
+        self._answers(
+            monkeypatch,
+            [
+                "Datadogish",
+                "",
+                "observability",
+                "Metrics with two keys",
+                "📈",
+                "rgb(99,44,190)",
+                "",
+                "api",
+                "bearer",
+                "/api/v1/validate",
+                "y",
+                "Application Key",
+                "APP_KEY",
+                "",
+                "DD-Application-Key",
+                "n",
+            ],
+        )
+        code, out = _run(["connections", "create"])
+        assert code == 0, out
+        (spec,) = custom.load_specs()
+        (extra,) = spec.extra_fields
+        assert (extra.label, extra.env_suffix, extra.secret, extra.header_name) == (
+            "Application Key",
+            "APP_KEY",
+            True,
+            "DD-Application-Key",
+        )
+
+    def test_from_json_carries_extras_and_icon(self, monkeypatch, _custom_store, tmp_path):
+        from yeaboi.connectors import custom
+
+        icon = (
+            "data:image/png;base64,"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+        descriptor = {
+            "key": "custom_ddish",
+            "label": "Datadogish",
+            "family": "observability",
+            "summary": "Metrics with two keys",
+            "glyph": "📈",
+            "accent": "rgb(98,43,189)",
+            "kind": "api",
+            "icon_data": icon,
+            "extra_fields": [{"label": "Application Key", "env_suffix": "APP_KEY"}],
+        }
+        path = tmp_path / "descriptor.json"
+        path.write_text(json.dumps(descriptor), encoding="utf-8")
+        code, out = _run(["connections", "create", "--from-json", str(path)])
+        assert code == 0, out
+        (spec,) = custom.load_specs()
+        assert spec.icon_data == icon
+        assert spec.extra_fields[0].env_suffix == "APP_KEY"
+
     def test_a_bad_kind_is_a_message_not_a_crash(self, monkeypatch, _custom_store):
         self._answers(
             monkeypatch,

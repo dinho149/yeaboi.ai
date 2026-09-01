@@ -612,14 +612,21 @@ def verify_connection(kind: str, fields: dict[str, str]) -> dict:
         if not value:
             raise ValueError(f"{kind} verification needs {name}")
         resolved[name] = value
-    if "token" not in supplied and supplied & {"base_url", "email"}:
+    connector = _connector_registry().by_key(kind)
+    if connector is not None and connector.verify:
+        # The descriptor names which verify fields are secret; pairing a
+        # caller-supplied host with ANY stored secret would exfiltrate it.
+        secret_args = {f.verify_arg for f in connector.fields if f.verify_arg and f.secret}
+    else:
+        secret_args = {"token"}
+    if supplied & {"base_url", "email"} and not secret_args <= supplied:
+        missing = ", ".join(sorted(secret_args - supplied))
         raise ValueError(
-            f"{kind} verification with the stored token also uses the stored base_url and email — "
-            "supply the token to verify against other values"
+            f"{kind} verification with a stored secret also uses the stored base_url and email — "
+            f"supply the {missing} to verify against other values"
         )
     if "base_url" in supplied and not resolved["base_url"].startswith("https://"):
         raise ValueError(f"{kind} base_url must start with https://")
-    connector = _connector_registry().by_key(kind)
     if connector is not None and connector.verify:
         ok, message = _verify_via_descriptor(connector, resolved)
     elif kind == "github":

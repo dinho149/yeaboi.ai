@@ -59,6 +59,23 @@ class EventsMapping:
 
 
 @dataclass(frozen=True)
+class CustomFieldSpec:
+    """One extra field an api-kind connection declares beyond its auth scheme.
+
+    Covers the second-credential shape (an app key beside the api key) and
+    non-secret configuration. The env stays derived — ``{env_stem}_{env_suffix}``
+    — never authored; ``header_name`` sends the value as that header on the
+    probe and every fetch.
+    """
+
+    label: str = ""
+    env_suffix: str = ""
+    secret: bool = True
+    header_name: str = ""
+    hint: str = ""
+
+
+@dataclass(frozen=True)
 class CustomSpec:
     """One user-created connection, as saved. Never carries a credential."""
 
@@ -69,6 +86,9 @@ class CustomSpec:
     detail: str = ""
     docs_url: str = ""
     glyph: str = ""
+    #: optional raster icon as a ``data:image/(png|jpeg|webp);base64,`` URI —
+    #: never SVG (scriptable), size-capped by the validator.
+    icon_data: str = ""
     accent: str = ""
     kind: str = "api"
     auth_scheme: str = "bearer"
@@ -79,6 +99,8 @@ class CustomSpec:
     #: ("token") or a Stripe-shaped signature ("hmac").
     webhook_verify: str = "token"
     events: EventsMapping | None = None
+    #: api kind only: extra credentials/config beyond the auth scheme.
+    extra_fields: tuple[CustomFieldSpec, ...] = ()
     created_at: str = ""
 
     @property
@@ -100,12 +122,19 @@ class CustomSpec:
             envs += [f"{self.env_stem}_USERNAME", f"{self.env_stem}_PASSWORD"]
         else:
             envs.append(f"{self.env_stem}_TOKEN")
+        envs += [f"{self.env_stem}_{f.env_suffix}" for f in self.extra_fields]
         return tuple(envs)
 
     def to_dict(self) -> dict:
+        # Empty additive fields are omitted so a pre-existing file resaves
+        # byte-identical.
         data = asdict(self)
         if self.events is None:
             data.pop("events")
+        if not self.extra_fields:
+            data.pop("extra_fields")
+        if not self.icon_data:
+            data.pop("icon_data")
         return data
 
 
@@ -119,7 +148,15 @@ def spec_from_dict(raw: dict) -> CustomSpec:
     if isinstance(raw.get("events"), dict):
         known = {f.name for f in EventsMapping.__dataclass_fields__.values()}
         events = EventsMapping(**{k: v for k, v in raw["events"].items() if k in known})
-    known = {f.name for f in CustomSpec.__dataclass_fields__.values()} - {"events"}
+    extras = []
+    if isinstance(raw.get("extra_fields"), list):
+        known = {f.name for f in CustomFieldSpec.__dataclass_fields__.values()}
+        for entry in raw["extra_fields"]:
+            if not isinstance(entry, dict):
+                continue
+            kwargs = {k: (bool(v) if k == "secret" else str(v or "")) for k, v in entry.items() if k in known}
+            extras.append(CustomFieldSpec(**kwargs))
+    known = {f.name for f in CustomSpec.__dataclass_fields__.values()} - {"events", "extra_fields"}
     kwargs = {k: v for k, v in raw.items() if k in known}
     kwargs.setdefault("key", "")
     kwargs.setdefault("label", "")
@@ -127,7 +164,7 @@ def spec_from_dict(raw: dict) -> CustomSpec:
         kwargs["probe_ok_status"] = int(kwargs.get("probe_ok_status", 200))
     except (TypeError, ValueError):
         kwargs["probe_ok_status"] = 0
-    return CustomSpec(events=events, **kwargs)
+    return CustomSpec(events=events, extra_fields=tuple(extras), **kwargs)
 
 
 def to_connector(spec: CustomSpec) -> Connector:
@@ -212,6 +249,18 @@ def to_connector(spec: CustomSpec) -> Connector:
         )
     else:
         fields.append(ConnectorField(env=f"{spec.env_stem}_TOKEN", label="Token", secret=True, verify_arg="token"))
+    for extra in spec.extra_fields:
+        # verify_arg is the lower-cased suffix; the validator reserves the
+        # auth-scheme suffixes so it cannot shadow base_url/token/username/password.
+        fields.append(
+            ConnectorField(
+                env=f"{spec.env_stem}_{extra.env_suffix}",
+                label=extra.label,
+                secret=extra.secret,
+                verify_arg=extra.env_suffix.lower(),
+                hint=extra.hint,
+            )
+        )
     has_events = spec.events is not None and bool(spec.events.path)
     return Connector(
         key=spec.key,
@@ -373,11 +422,17 @@ def auth_headers(spec: CustomSpec, values=None) -> dict[str, str]:
         user = str(read.get(f"{spec.env_stem}_USERNAME", "") or "")
         password = str(read.get(f"{spec.env_stem}_PASSWORD", "") or "")
         b64 = base64.b64encode(f"{user}:{password}".encode()).decode()
-        return {"Authorization": f"Basic {b64}"}
-    token = str(read.get(f"{spec.env_stem}_TOKEN", "") or "")
-    if spec.auth_scheme == "header":
-        return {spec.header_name: token}
-    return {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Basic {b64}"}
+    else:
+        token = str(read.get(f"{spec.env_stem}_TOKEN", "") or "")
+        if spec.auth_scheme == "header":
+            headers = {spec.header_name: token}
+        else:
+            headers = {"Authorization": f"Bearer {token}"}
+    for extra in spec.extra_fields:
+        if extra.header_name:
+            headers[extra.header_name] = str(read.get(f"{spec.env_stem}_{extra.env_suffix}", "") or "")
+    return headers
 
 
 def fetch_webhook_events(connector: Connector, window_start, window_end) -> tuple:

@@ -2958,6 +2958,7 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
     from yeaboi.connectors.engine import create_custom_connection
     from yeaboi.connectors.spec import FAMILIES
     from yeaboi.connectors.validation import AUTH_SCHEMES
+    from yeaboi.ops.events import EVENT_KINDS
 
     if args.from_json:
         try:
@@ -2966,7 +2967,10 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
             print(f"Error: could not read {args.from_json}: {exc}", file=sys.stderr)
             return 1
     else:
-        console.print("[bold]Create a connection[/bold] — a read-only API or an MCP server the catalog then carries.")
+        console.print(
+            "[bold]Create a connection[/bold] — a read-only API, an inbound webhook or an MCP server "
+            "the catalog then carries."
+        )
         label = input("Service name: ").strip()
         if not label:
             print("Error: a name is required", file=sys.stderr)
@@ -2988,9 +2992,17 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
             "accent": accent,
             "docs_url": docs_url,
         }
-        kind = input("Kind (api, mcp) [api]: ").strip() or "api"
+        kind = input("Kind (api, webhook, mcp) [api]: ").strip() or "api"
         raw["kind"] = kind
-        if kind != "mcp":
+        if kind == "webhook":
+            # Inbound-only: what matters is how a delivery authenticates and
+            # how its rows become events; yeaboi mints the secret itself.
+            verify_mode = input("Delivery auth (token, hmac) [token]: ").strip() or "token"
+            kinds = ", ".join(EVENT_KINDS)
+            event_kind = input(f"Event kind ({kinds}) [alert]: ").strip() or "alert"
+            title_path = input("Title path (dot path to a delivery's name, e.g. incident.name): ").strip()
+            raw.update({"webhook_verify": verify_mode, "events": {"kind": event_kind, "title_path": title_path}})
+        elif kind != "mcp":
             # The HTTP shape belongs to the api kind; an MCP connection has
             # nothing to ask — its Server URL and token are entered afterwards
             # like any other credential.
@@ -3001,6 +3013,17 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
                 header_name = input("Header name: ").strip()
             probe_path = input("Probe path (an authenticated GET, e.g. /v1/me) [/]: ").strip() or "/"
             raw.update({"auth_scheme": auth_scheme, "header_name": header_name, "probe_path": probe_path})
+            extras = []
+            while len(extras) < 4 and input("Add an extra credential/config field? (y/N): ").strip().lower() == "y":
+                extra_label = input("  Field label (e.g. Application Key): ").strip()
+                suffix = input("  Env suffix (UPPER_SNAKE, e.g. APP_KEY): ").strip()
+                secret = (input("  Secret? (Y/n): ").strip().lower() or "y") != "n"
+                extra_header = input("  Sent as request header (blank for none): ").strip()
+                extras.append(
+                    {"label": extra_label, "env_suffix": suffix, "secret": secret, "header_name": extra_header}
+                )
+            if extras:
+                raw["extra_fields"] = extras
 
     try:
         row = create_custom_connection(raw)
@@ -3010,7 +3033,11 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     console.print(f"[green]Created.[/green] {escape(str(row['label']))} is in the catalog.")
-    console.print(f"Enter its credentials with: yeaboi connections add {spec_from_dict(raw).key}")
+    if row.get("webhook_secret"):
+        console.print("Delivery secret (shown once — `yeaboi connections webhook-url` shows it again):")
+        console.print(escape(str(row["webhook_secret"])))
+    else:
+        console.print(f"Enter its credentials with: yeaboi connections add {spec_from_dict(raw).key}")
     return 0
 
 

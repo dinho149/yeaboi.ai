@@ -44,6 +44,9 @@ def list_connections(*, family: str = "", connected_only: bool = True, include_l
     # A custom connection's kind (api/webhook/mcp) rides its row so a surface
     # can shape the form without sniffing derived env names. Builtins send "".
     custom_kinds = {spec.key: spec.kind for spec in custom.load_specs()}
+    # A custom connection's uploaded icon (a validated raster data URI, never
+    # SVG). Builtins send "" — their marks ship with the client.
+    custom_icons = {spec.key: spec.icon_data for spec in custom.load_specs()}
 
     connectors = registry.all_connectors()
     if not connected_only and include_legacy:
@@ -74,6 +77,7 @@ def list_connections(*, family: str = "", connected_only: bool = True, include_l
                 "kind": custom_kinds.get(connector.key, ""),
                 "docs_url": connector.docs_url,
                 "glyph": connector.mark,
+                "icon": custom_icons.get(connector.key, ""),
                 "accent": connector.accent,
                 "verify_kind": _verify_kind(connector, is_legacy),
                 # The ways in, and which one is in force. A connector with one
