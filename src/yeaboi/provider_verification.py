@@ -1122,6 +1122,35 @@ def _verify_jenkins(base_url: str, username: str, token: str) -> tuple[bool, str
     return True, "Jenkins verified"
 
 
+def _verify_statuspage(token: str, page_id: str) -> tuple[bool, str]:
+    """Verify a Statuspage API key can read one page.
+
+    The page ID is a user-supplied path segment, so it is quoted rather than
+    interpolated — an ID with a slash in it must not reach another endpoint.
+    """
+    from urllib.parse import quote
+
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.statuspage import API_BASE
+
+    page = quote(page_id.strip().strip("/"), safe="")
+    if not page:
+        return False, "Statuspage needs a page ID"
+    status, message = probe_status(
+        f"{API_BASE}/pages/{page}",
+        headers={"Authorization": f"OAuth {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Key accepted, but no page named {page_id!r} — use the ID from the page's API settings"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "Statuspage verified"
+
+
 def _verify_linear(token: str) -> tuple[bool, str]:
     """Verify a Linear API key with the cheapest authenticated query — the viewer.
 

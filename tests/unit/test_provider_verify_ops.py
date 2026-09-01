@@ -26,6 +26,7 @@ from yeaboi.provider_verification import (
     _verify_jenkins,
     _verify_pagerduty,
     _verify_sentry,
+    _verify_statuspage,
 )
 
 
@@ -357,5 +358,46 @@ class TestJenkins:
     def test_the_token_never_appears_in_the_failure(self, monkeypatch):
         monkeypatch.setattr("httpx.get", _Capture(500))
         ok, msg = _verify_jenkins("https://ci.acme.test", "dev", "super-secret-token")
+        assert ok is False
+        assert "super-secret-token" not in msg
+
+
+class TestStatuspage:
+    def test_it_reads_the_page_with_the_oauth_scheme(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        ok, _ = _verify_statuspage("tok", "abc123")
+        assert ok is True
+        assert capture.url == "https://api.statuspage.io/v1/pages/abc123"
+        assert capture.headers["Authorization"] == "OAuth tok"
+
+    def test_a_page_id_cannot_escape_its_path_segment(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        _verify_statuspage("tok", "abc/../../evil")
+        assert capture.url == "https://api.statuspage.io/v1/pages/abc%2F..%2F..%2Fevil"
+
+    def test_an_empty_page_id_is_refused_before_the_request(self, monkeypatch):
+        called = MagicMock()
+        monkeypatch.setattr("httpx.get", called)
+        ok, msg = _verify_statuspage("tok", "  ")
+        assert ok is False
+        assert "page ID" in msg
+        called.assert_not_called()
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_rejected_key_is_named(self, monkeypatch, status):
+        monkeypatch.setattr("httpx.get", _Capture(status))
+        assert _verify_statuspage("bad", "abc123") == (False, INVALID_KEY)
+
+    def test_a_404_blames_the_page_not_the_key(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(404))
+        ok, msg = _verify_statuspage("tok", "nope")
+        assert ok is False
+        assert "page" in msg
+
+    def test_the_key_never_appears_in_the_failure(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(500))
+        ok, msg = _verify_statuspage("super-secret-token", "abc123")
         assert ok is False
         assert "super-secret-token" not in msg

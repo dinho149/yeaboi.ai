@@ -28,6 +28,7 @@ from yeaboi.connectors import (
     linear,
     pagerduty,
     sentry,
+    statuspage,
     trello,
 )
 from yeaboi.connectors.spec import FAMILY_ORDER, Connector
@@ -42,6 +43,7 @@ _CONNECTORS: tuple[Connector, ...] = (
     grafana.CONNECTOR,
     pagerduty.CONNECTOR,
     incidentio.CONNECTOR,
+    statuspage.CONNECTOR,
     sentry.CONNECTOR,
     aws.CONNECTOR,
     gcp.CONNECTOR,

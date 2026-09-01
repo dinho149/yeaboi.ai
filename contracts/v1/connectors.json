@@ -39,6 +39,15 @@
       "managed_by": "connections"
     },
     {
+      "key": "statuspage",
+      "label": "Statuspage",
+      "family": "incidents",
+      "family_label": "Incidents & on-call",
+      "accent": "rgb(23,43,77)",
+      "glyph": "🟢",
+      "managed_by": "connections"
+    },
+    {
       "key": "sentry",
       "label": "Sentry",
       "family": "errors",

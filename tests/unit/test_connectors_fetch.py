@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from yeaboi.connectors import datadog, grafana, incidentio, pagerduty, sentry
+from yeaboi.connectors import datadog, grafana, incidentio, pagerduty, sentry, statuspage
 from yeaboi.connectors.fetching import FetchError
 from yeaboi.ops.events import OpsEvent
 
@@ -147,6 +147,28 @@ SENTRY_BODY = [
 ]
 
 
+STATUSPAGE_BODY = [
+    {
+        "id": "inc-9",
+        "name": "Checkout degraded",
+        "impact": "major",
+        "status": "resolved",
+        "started_at": "2026-06-10T09:00:00Z",
+        "resolved_at": "2026-06-10T10:30:00Z",
+        "shortlink": "https://stspg.io/abc",
+        "components": [{"name": "Checkout API"}],
+        "incident_updates": [{"body": LEAK_CANARY}],
+    },
+    {
+        "id": "inc-1",
+        "name": "Ancient history",
+        "impact": "minor",
+        "status": "resolved",
+        "started_at": "2020-01-01T00:00:00Z",
+    },
+]
+
+
 @pytest.fixture
 def connected(monkeypatch):
     for env, value in {
@@ -160,6 +182,8 @@ def connected(monkeypatch):
         "SENTRY_AUTH_TOKEN": "sentry-tok",
         "SENTRY_ORG": "acme",
         "SENTRY_BASE_URL": "",
+        "STATUSPAGE_API_KEY": "sp-tok",
+        "STATUSPAGE_PAGE_ID": "abc123",
     }.items():
         monkeypatch.setenv(env, value)
 
@@ -296,6 +320,33 @@ class TestSentry:
         assert sentry.fetch(START, END)[0].title == "Something broke"
 
 
+class TestStatuspage:
+    def test_it_scopes_the_read_to_the_page_with_the_oauth_scheme(self, monkeypatch, connected):
+        capture = install(monkeypatch, STATUSPAGE_BODY)
+        statuspage.fetch(START, END)
+        assert capture.url == "https://api.statuspage.io/v1/pages/abc123/incidents?limit=100"
+        assert capture.headers["Authorization"] == "OAuth sp-tok"
+
+    def test_a_page_id_cannot_escape_its_path_segment(self, monkeypatch, connected):
+        monkeypatch.setenv("STATUSPAGE_PAGE_ID", "abc/../evil")
+        capture = install(monkeypatch, [])
+        statuspage.fetch(START, END)
+        assert "/pages/abc%2F..%2Fevil/incidents" in capture.url
+
+    def test_grades_impact_and_stops_at_the_window_edge(self, monkeypatch, connected):
+        install(monkeypatch, STATUSPAGE_BODY)
+        found = statuspage.fetch(START, END)
+        # Rows come newest first, so the 2020 incident ends the walk.
+        assert [e.ref for e in found] == ["inc-9"]
+        assert (found[0].kind, found[0].severity, found[0].status) == ("incident", "high", "resolved")
+        assert found[0].service == "Checkout API"
+        assert found[0].url == "https://stspg.io/abc"
+
+    def test_a_changed_shape_yields_nothing_rather_than_raising(self, monkeypatch, connected):
+        install(monkeypatch, {"incidents": "not a list"})
+        assert statuspage.fetch(START, END) == ()
+
+
 class TestFailures:
     """A vendor saying no must be a message, never a traceback or a credential."""
 
@@ -349,6 +400,7 @@ class TestNoBodyCrossesTheBoundary:
         (pagerduty, PAGERDUTY_BODY),
         (incidentio, INCIDENTIO_BODY),
         (sentry, SENTRY_BODY),
+        (statuspage, STATUSPAGE_BODY),
     ]
 
     @pytest.mark.parametrize(("module", "body"), CASES, ids=lambda v: getattr(v, "__name__", ""))
