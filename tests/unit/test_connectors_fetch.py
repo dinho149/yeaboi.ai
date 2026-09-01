@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from yeaboi.connectors import datadog, grafana, incidentio, launchdarkly, pagerduty, sentry, statuspage
+from yeaboi.connectors import datadog, grafana, incidentio, jsm_ops, launchdarkly, pagerduty, sentry, statuspage
 from yeaboi.connectors.fetching import FetchError
 from yeaboi.ops.events import OpsEvent
 
@@ -147,6 +147,30 @@ SENTRY_BODY = [
 ]
 
 
+JSM_OPS_BODY = {
+    "values": [
+        {
+            "id": "a-1",
+            "tinyId": "42",
+            "message": "Checkout is down",
+            "note": LEAK_CANARY,
+            "status": "closed",
+            "priority": "P2",
+            "entity": "checkout",
+            "createdAt": "2026-06-10T09:00:00Z",
+            "updatedAt": "2026-06-10T10:30:00Z",
+        },
+        {
+            "id": "a-0",
+            "tinyId": "1",
+            "message": "Ancient history",
+            "status": "closed",
+            "priority": "P5",
+            "createdAt": "2020-01-01T00:00:00Z",
+        },
+    ]
+}
+
 LAUNCHDARKLY_BODY = {
     "items": [
         {
@@ -201,6 +225,8 @@ def connected(monkeypatch):
         "STATUSPAGE_API_KEY": "sp-tok",
         "STATUSPAGE_PAGE_ID": "abc123",
         "LAUNCHDARKLY_API_KEY": "ld-tok",
+        "JSM_OPS_API_KEY": "jsm-tok",
+        "JSM_OPS_CLOUD_ID": "cloud-1",
     }.items():
         monkeypatch.setenv(env, value)
 
@@ -387,6 +413,35 @@ class TestLaunchDarkly:
         assert launchdarkly.fetch(START, END) == ()
 
 
+class TestJsmOps:
+    def test_it_asks_newest_first_with_the_geniekey_scheme(self, monkeypatch, connected):
+        capture = install(monkeypatch, JSM_OPS_BODY)
+        jsm_ops.fetch(START, END)
+        assert capture.url == (
+            "https://api.atlassian.com/jsm/ops/api/cloud-1/v1/alerts?limit=100&sort=createdAt&order=desc"
+        )
+        assert capture.headers["Authorization"] == "GenieKey jsm-tok"
+
+    def test_grades_priority_and_stops_at_the_window_edge(self, monkeypatch, connected):
+        install(monkeypatch, JSM_OPS_BODY)
+        found = jsm_ops.fetch(START, END)
+        # Rows come newest first, so the 2020 alert ends the walk.
+        assert [e.ref for e in found] == ["42"]
+        assert (found[0].kind, found[0].severity, found[0].status) == ("alert", "high", "closed")
+        assert found[0].service == "checkout"
+        assert found[0].ended_at == "2026-06-10T10:30:00Z"
+
+    def test_a_cloud_id_cannot_escape_its_path_segment(self, monkeypatch, connected):
+        monkeypatch.setenv("JSM_OPS_CLOUD_ID", "cloud/../evil")
+        capture = install(monkeypatch, {"values": []})
+        jsm_ops.fetch(START, END)
+        assert "/jsm/ops/api/cloud%2F..%2Fevil/v1/alerts" in capture.url
+
+    def test_a_changed_shape_yields_nothing_rather_than_raising(self, monkeypatch, connected):
+        install(monkeypatch, {"values": "not a list"})
+        assert jsm_ops.fetch(START, END) == ()
+
+
 class TestFailures:
     """A vendor saying no must be a message, never a traceback or a credential."""
 
@@ -442,6 +497,7 @@ class TestNoBodyCrossesTheBoundary:
         (sentry, SENTRY_BODY),
         (statuspage, STATUSPAGE_BODY),
         (launchdarkly, LAUNCHDARKLY_BODY),
+        (jsm_ops, JSM_OPS_BODY),
     ]
 
     @pytest.mark.parametrize(("module", "body"), CASES, ids=lambda v: getattr(v, "__name__", ""))

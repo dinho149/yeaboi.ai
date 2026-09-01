@@ -24,6 +24,7 @@ from yeaboi.provider_verification import (
     _verify_grafana,
     _verify_incidentio,
     _verify_jenkins,
+    _verify_jsm_ops,
     _verify_pagerduty,
     _verify_sentry,
     _verify_statuspage,
@@ -399,5 +400,46 @@ class TestStatuspage:
     def test_the_key_never_appears_in_the_failure(self, monkeypatch):
         monkeypatch.setattr("httpx.get", _Capture(500))
         ok, msg = _verify_statuspage("super-secret-token", "abc123")
+        assert ok is False
+        assert "super-secret-token" not in msg
+
+
+class TestJsmOps:
+    def test_it_lists_one_alert_with_the_geniekey_scheme(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        ok, _ = _verify_jsm_ops("tok", "cloud-1")
+        assert ok is True
+        assert capture.url == "https://api.atlassian.com/jsm/ops/api/cloud-1/v1/alerts?limit=1"
+        assert capture.headers["Authorization"] == "GenieKey tok"
+
+    def test_a_cloud_id_cannot_escape_its_path_segment(self, monkeypatch):
+        capture = _Capture()
+        monkeypatch.setattr("httpx.get", capture)
+        _verify_jsm_ops("tok", "cloud/../../evil")
+        assert "/jsm/ops/api/cloud%2F..%2F..%2Fevil/v1/alerts" in capture.url
+
+    def test_an_empty_cloud_id_is_refused_before_the_request(self, monkeypatch):
+        called = MagicMock()
+        monkeypatch.setattr("httpx.get", called)
+        ok, msg = _verify_jsm_ops("tok", "  ")
+        assert ok is False
+        assert "cloud ID" in msg
+        called.assert_not_called()
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_rejected_key_is_named(self, monkeypatch, status):
+        monkeypatch.setattr("httpx.get", _Capture(status))
+        assert _verify_jsm_ops("bad", "cloud-1") == (False, INVALID_KEY)
+
+    def test_a_404_blames_the_cloud_id_not_the_key(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(404))
+        ok, msg = _verify_jsm_ops("tok", "nope")
+        assert ok is False
+        assert "cloud ID" in msg
+
+    def test_the_key_never_appears_in_the_failure(self, monkeypatch):
+        monkeypatch.setattr("httpx.get", _Capture(500))
+        ok, msg = _verify_jsm_ops("super-secret-token", "cloud-1")
         assert ok is False
         assert "super-secret-token" not in msg

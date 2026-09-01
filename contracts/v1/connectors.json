@@ -30,6 +30,15 @@
       "managed_by": "connections"
     },
     {
+      "key": "jsm_ops",
+      "label": "JSM Ops alerts",
+      "family": "incidents",
+      "family_label": "Incidents & on-call",
+      "accent": "rgb(101,84,192)",
+      "glyph": "🧞",
+      "managed_by": "connections"
+    },
+    {
       "key": "pagerduty",
       "label": "PagerDuty",
       "family": "incidents",

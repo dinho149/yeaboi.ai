@@ -1173,6 +1173,34 @@ def _verify_launchdarkly(token: str) -> tuple[bool, str]:
     return True, "LaunchDarkly verified"
 
 
+def _verify_jsm_ops(token: str, cloud_id: str) -> tuple[bool, str]:
+    """Verify a JSM Ops API key can list one site's alerts.
+
+    The cloud ID is a user-supplied path segment, so it is quoted rather than
+    interpolated, and the key uses the GenieKey scheme — it is an Operations
+    key, never a Jira API token.
+    """
+    from yeaboi.connectors.http import probe_status
+    from yeaboi.connectors.jsm_ops import alerts_base
+
+    site = cloud_id.strip().strip("/")
+    if not site:
+        return False, "JSM Ops needs your Atlassian site's cloud ID"
+    status, message = probe_status(
+        f"{alerts_base(site)}/alerts?limit=1",
+        headers={"Authorization": f"GenieKey {token}"},
+    )
+    if status == 0:
+        return False, message
+    if status in (401, 403):
+        return False, INVALID_KEY
+    if status == 404:
+        return False, f"Key accepted, but no Ops site for cloud ID {cloud_id!r} — check the ID, not the site name"
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, "JSM Ops verified"
+
+
 def _verify_linear(token: str) -> tuple[bool, str]:
     """Verify a Linear API key with the cheapest authenticated query — the viewer.
 
