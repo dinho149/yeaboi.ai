@@ -136,6 +136,25 @@ CATALOG: tuple[CeremonyMode, ...] = (
         default_at="08:00",
     ),
     CeremonyMode(
+        key="weekly-review",
+        label="Weekly review",
+        blurb="Your own week — what went well, what to change, on track or not.",
+        engine=("yeaboi.solo.engine", "run_weekly_review"),
+        renderer=("yeaboi.ceremonies.renderers", "weekly_review_dispatch"),
+        params=(
+            CeremonyParam(
+                name="project_id",
+                kind="str",
+                label="Project",
+                help="Blank reviews every project's history",
+            ),
+        ),
+        session_param="session_id",
+        est_cost_usd=0.10,
+        default_weekdays="5",
+        default_at="16:00",
+    ),
+    CeremonyMode(
         key="agents-usage",
         label="Agent cost",
         blurb="What the AI coding agents spent, by model and project.",

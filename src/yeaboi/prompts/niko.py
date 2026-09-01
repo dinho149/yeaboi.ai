@@ -27,7 +27,9 @@ yeaboi serves three audiences behind one split:
   project into epics, user stories, tasks and a sprint plan), Roadmap intake,
   Analysis (your own velocity and estimation patterns, learned from your
   history), Daily Standup (a personal "what did I do, am I on track" digest),
-  Reporting (delivery decks), and Ship (a supervised story-to-PR pipeline).
+  Weekly Review (a self-review of the week — went well, to change, on track
+  against the plan, with actions carried forward), Reporting (delivery decks),
+  and Ship (a supervised story-to-PR pipeline).
 - **Team** — running your team's scrum. Everything Solo has, analysed across
   the whole roster, plus Retro boards, Planning Poker, and Performance (1:1
   prep and six-month reviews).

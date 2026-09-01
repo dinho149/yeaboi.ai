@@ -188,6 +188,28 @@ CAPABILITIES: dict[str, dict] = {
         "skill": "delivery-report",
         "desktop": {"/team/reporting", "/team/reporting/new", "/team/reporting/style"},
     },
+    "weekly-review": {
+        # The Solo world's one capability of its own: a self-review of the week
+        # over the user's own standups, delivered work and plan. carried_actions
+        # is the headless carry-forward load (last review's open actions) the
+        # TUI, MCP and desktop show for marking — parity with retro-board's
+        # carried_action_items_for_session.
+        "engines": {
+            ("yeaboi.solo.engine", "run_weekly_review"),
+            ("yeaboi.solo.engine", "carried_actions"),
+        },
+        # weekly_review_history / weekly_review_export are read-only store/export
+        # wrappers (no pipeline) — parity with reporting_history / reporting_export.
+        "mcp_tools": {"weekly_review_run", "weekly_review_history", "weekly_review_export"},
+        "tui_mode": "weekly-review",
+        "cli": {"review"},
+        "skill": "weekly-review",
+        # The backend routes (/api/solo/review*) are live; the window has no Solo
+        # review page yet, so its manifest carries no /solo/* route. The desktop
+        # PR that adds /solo/review regenerates the manifest, and this column
+        # becomes {"/solo/review", "/solo/review/report"} in the PR that vendors it.
+        "desktop": {"/solo/review", "/solo/review/report"},
+    },
     "performance": {
         "engines": {
             ("yeaboi.performance.engine", "run_one_on_one_prep"),
@@ -532,6 +554,7 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "standup_run": ("yeaboi.standup.engine", "run_standup"),
     "standup_review": ("yeaboi.standup.engine", "run_transcript_review"),
     "report_delivery": ("yeaboi.reporting.engine", "run_delivery_report"),
+    "weekly_review_run": ("yeaboi.solo.engine", "run_weekly_review"),
     "perf_one_on_one_prep": ("yeaboi.performance.engine", "run_one_on_one_prep"),
     "perf_one_on_one_complete": ("yeaboi.performance.engine", "complete_one_on_one"),
     "perf_six_month_review": ("yeaboi.performance.engine", "run_six_month_review"),
@@ -610,6 +633,7 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "report": ("yeaboi.reporting.engine", "run_delivery_report"),
     "standup": ("yeaboi.standup.engine", "run_standup"),
     "standup-review": ("yeaboi.standup.engine", "run_transcript_review"),
+    "review run": ("yeaboi.solo.engine", "run_weekly_review"),
     "perf prep": ("yeaboi.performance.engine", "run_one_on_one_prep"),
     "perf complete": ("yeaboi.performance.engine", "complete_one_on_one"),
     "perf review": ("yeaboi.performance.engine", "run_six_month_review"),
@@ -635,6 +659,7 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
         "context": "context_deps",
     },
     "standup": {"session": "session_id", "project": "project_id", "context": "context_deps"},
+    "review run": {"session": "session_id", "project": "project_id", "context": "context_deps"},
     # --transcript/--date carry explicit dest= in cli.py, so only --session
     # needs a rename here.
     "standup-review": {"session": "session_id"},
@@ -681,6 +706,8 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     # produces) — the handler folds it into transcript_paths, and a lone "-" into
     # transcript_text.
     "standup-review": {"format", "strict", "file_issues", "list_gaps", "paths"},
+    # --mark ID=STATUS pairs are assembled into the engine's carried_statuses dict.
+    "review run": {"format", "strict", "incognito", "mark"},
     "perf prep": {"strict", "incognito"},
     "perf complete": {"strict"},
     "perf review": {"strict", "incognito"},
@@ -714,6 +741,9 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
 
 # Engine params deliberately without a CLI flag. Reasoned; staleness-checked.
 CLI_HIDDEN: dict[str, dict[str, str]] = {
+    "review run": {
+        "carried_statuses": "assembled from repeated --mark ID=STATUS flags; a raw dict flag invites typos",
+    },
     "report": {
         "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
         "sources": "assembled from the --source/--code-sources/--documentation-sources flags",
@@ -887,15 +917,16 @@ class TestTuiModes:
             f"  registered but card removed: {sorted(registered - actual)}\n{_HOW_TO}"
         )
 
-    def test_solo_cards_are_a_subset_of_the_team_menu(self):
-        # Solo introduces no capability of its own: every solo card shares a
-        # Team card's key (dispatch, hubs, tips and this registry all key on
-        # it), and the complement is exactly the deliberately team-only modes.
+    def test_solo_and_team_menus_differ_by_exactly_the_world_only_modes(self):
+        # Every shared card keeps one key (dispatch, hubs, tips and this
+        # registry all key on it). The difference is exactly the modes each
+        # world owns: Team's three room-shaped modes, and Solo's Weekly Review —
+        # a self-review has no roster to review, so it never appears on Team.
         from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS, _SOLO_CARDS
 
         solo = {card["key"] for card in _SOLO_CARDS}
         team = {card["key"] for card in _MODE_CARDS}
-        assert solo <= team, sorted(solo - team)
+        assert solo - team == {"weekly-review"}, sorted(solo - team)
         assert team - solo == {"retro", "poker", "performance"}
 
 
@@ -1008,11 +1039,11 @@ class TestTips:
     def test_carded_capabilities_have_jump_targets(self):
         # Every capability that owns a mode card must have a tip whose mode_key
         # points at that exact card, so the jump-into-feature key can't rot.
-        # Cards span both category menus (the `g` jump switches category).
-        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
+        # Cards span every category menu (the `g` jump switches category).
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS, _SOLO_CARDS
         from yeaboi.ui.shared._tips import _FEATURE_TIPS
 
-        card_keys = {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
+        card_keys = {card["key"] for card in (*_SOLO_CARDS, *_MODE_CARDS, *_AGENT_CARDS)}
         for cap, tui_mode in _non_exempt("tui_mode").items():
             # "some tip", not "the tip": several capabilities carry more than one.
             tips = [t for t in _FEATURE_TIPS if t.key == cap and "tui" in t.surfaces]
@@ -1068,9 +1099,9 @@ class TestSavedSessions:
     """
 
     def _card_keys(self) -> set[str]:
-        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS, _SOLO_CARDS
 
-        return {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
+        return {card["key"] for card in (*_SOLO_CARDS, *_MODE_CARDS, *_AGENT_CARDS)}
 
     def test_every_card_lands_on_a_saved_sessions_hub(self):
         from yeaboi.ui.mode_select import SAVED_SESSION_HUBS

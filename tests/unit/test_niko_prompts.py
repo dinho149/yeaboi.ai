@@ -21,6 +21,9 @@ class TestIdentity:
         for mode in ("planning", "standup", "retro", "poker", "performance", "reporting", "ship"):
             assert mode in prompt
 
+    def test_it_names_the_solo_worlds_own_mode(self):
+        assert "Weekly Review" in get_niko_system_prompt()
+
     def test_it_names_the_agents_family(self):
         prompt = get_niko_system_prompt().lower()
         for member in ("usage", "advisor", "security"):

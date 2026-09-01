@@ -68,6 +68,12 @@ SHIP_BETA_NOTICE = (
     "gate; review the diff like a stranger wrote it."
 )
 
+WEEKLY_REVIEW_BETA_NOTICE = (
+    "Weekly Review is in beta — it drafts a review of your own week from your "
+    "standups, shipped work and sprint plan. Read it as a draft about your week, "
+    "not a verdict on it."
+)
+
 # ── The one-time entry gate ──────────────────────────────────────────────────
 # A mode card's BETA chip says *that* a mode is unverified; this is the copy
 # that says how, shown once the first time the mode is opened. It lives here,
@@ -87,6 +93,19 @@ BETA_GATE_SUBTITLE = "Beta — worth thirty seconds"
 BETA_GATE_FOOTER = "You'll only see this once — the BETA tag stays on the page."
 
 BETA_GATE_COPY: dict[str, dict] = {
+    "weekly-review": {
+        "headline": "Weekly Review is in beta.",
+        "body": (
+            "The review is drafted from your own standups, the tickets you closed and",
+            "your sprint plan — a draft about your week, not a verdict on it.",
+            "",
+            "The on-track line is computed from the numbers, never by the model; the",
+            "prose is. A week with no standups produces a thin review, and says so.",
+            "",
+            "Nothing is sent to anyone. Exports stay on this machine under",
+            "~/.yeaboi/exports/solo.",
+        ),
+    },
     "performance": {
         "headline": "Performance is in beta.",
         "body": (

@@ -68,6 +68,10 @@ ROUTES: tuple[AppRoute, ...] = (
     # Chrome like tips: the Solo home's "where am I" strip is a construct of
     # the welcome screen, not a capability, so no row owns it.
     AppRoute("GET", "/api/solo/today", routes_solo.today),
+    AppRoute("GET", "/api/solo/review", routes_solo.review, "weekly-review"),
+    AppRoute("POST", "/api/solo/review/run", routes_solo.review_run, "weekly-review"),
+    AppRoute("GET", "/api/solo/review/runs/{run_id}", routes_solo.review_run_get, "weekly-review"),
+    AppRoute("POST", "/api/solo/review/runs/{run_id}/delete", routes_solo.review_delete, "weekly-review"),
     AppRoute("GET", "/api/tools", routes_meta.tools),
     AppRoute("POST", "/api/tool/{name}", routes_meta.call_tool),
     AppRoute("GET", "/api/events", routes_meta.events),

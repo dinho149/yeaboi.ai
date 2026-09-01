@@ -67,14 +67,14 @@ class TestPerformanceCardRegistration:
 
     def test_no_other_card_carries_a_badge(self):
         # Performance and Ship are the two beta modes on the Team menu (Ship
-        # also on Solo); test_beta_surfaces.py keeps their three markers
-        # (badge, notice, tip) in agreement.
+        # also on Solo), and Weekly Review is Solo's own; test_beta_surfaces.py
+        # keeps their three markers (badge, notice, tip) in agreement.
         from yeaboi.ui.mode_select.screens._screens import _SOLO_CARDS
 
         badged = [
             card["key"]
             for card in (*_MODE_CARDS, *_SOLO_CARDS, *_INTAKE_CARDS, *_OFFLINE_CARDS)
-            if card.get("badge") and card.get("key") not in ("performance", "ship")
+            if card.get("badge") and card.get("key") not in ("performance", "ship", "weekly-review")
         ]
         assert badged == []
 

@@ -65,6 +65,28 @@ def _attr(obj: object, name: str, default=None):
     return getattr(obj, name, default)
 
 
+def current_sprint(state: dict, today: date):
+    """The plan's sprint whose date window holds ``today``, else its first; None without sprints.
+
+    The plan's own dates — the same arithmetic the report and the tracker sync use.
+    """
+    from yeaboi.reporting.sprints import _from_plan
+
+    sprints = list(state.get("sprints") or [])
+    if not sprints:
+        return None
+    idx = 0
+    for i, ref in enumerate(_from_plan(state, 0)):
+        if ref.start_date <= today.isoformat() <= ref.end_date:
+            idx = i
+            break
+    return sprints[min(idx, len(sprints) - 1)]
+
+
+def sprint_story_ids(sprint) -> list[str]:
+    return [str(sid) for sid in (_attr(sprint, "story_ids", ()) or ())]
+
+
 def build_today_snapshot(
     *, project_id: str = "", db_path: Path | None = None, today: date | None = None
 ) -> TodaySnapshot:
@@ -165,7 +187,6 @@ def _standup_fields(scope, path: Path, warnings: list[str]) -> dict:
 def _plan_fields(scope, path: Path, today: date, warnings: list[str]) -> dict:
     try:
         from yeaboi.projects.scope import latest_planning_state
-        from yeaboi.reporting.sprints import _from_plan
         from yeaboi.ship.plans import latest_plan_with_work
 
         scoped = latest_planning_state(scope, db_path=path)
@@ -182,21 +203,13 @@ def _plan_fields(scope, path: Path, today: date, warnings: list[str]) -> dict:
                 return {}
             state, session_id, _name = found
             plan_scoped = False
-        sprints = list(state.get("sprints") or [])
-        if not sprints:
+        sprint = current_sprint(state, today)
+        if sprint is None:
             return {"plan_session_id": session_id, "plan_scoped": plan_scoped}
-        # The sprint whose date window holds today, else the first — the plan's
-        # own dates, the same arithmetic the report and the tracker sync use.
-        idx = 0
-        for i, ref in enumerate(_from_plan(state, 0)):
-            if ref.start_date <= today.isoformat() <= ref.end_date:
-                idx = i
-                break
-        sprint = sprints[min(idx, len(sprints) - 1)]
         titles = {
             str(_attr(s, "id", "")): (_attr(s, "title") or _attr(s, "goal") or "") for s in state.get("stories") or []
         }
-        story_ids = [str(sid) for sid in (_attr(sprint, "story_ids", ()) or ())]
+        story_ids = sprint_story_ids(sprint)
         next_id = story_ids[0] if story_ids else ""
         return {
             "next_story_id": next_id,

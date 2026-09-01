@@ -465,6 +465,13 @@ class TestTipJumpTarget:
         assert cat == "team"
         assert _MODE_CARDS[j]["key"] == "retro"
 
+    def test_the_solo_only_review_key_lands_on_solo(self):
+        from yeaboi.ui.mode_select import _MODE_CARDS, _SOLO_CARDS, _tip_jump_target
+
+        cat, j = _tip_jump_target("weekly-review", _MODE_CARDS)
+        assert cat == "solo"
+        assert _SOLO_CARDS[j]["key"] == "weekly-review"
+
     def test_a_shared_key_from_agents_lands_on_team(self):
         from yeaboi.ui.mode_select import _AGENT_CARDS, _MODE_CARDS, _tip_jump_target
 

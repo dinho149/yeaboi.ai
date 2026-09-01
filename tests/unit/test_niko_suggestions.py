@@ -103,6 +103,7 @@ class TestForRoute:
         [
             ("/agents/usage", "agents cost"),
             ("/team/ship/run", "waiting on me"),
+            ("/solo/review", "week"),
             ("/ceremonies", "scheduled"),
             ("/provenance", "decide"),
         ],

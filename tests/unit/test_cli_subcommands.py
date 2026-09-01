@@ -1691,3 +1691,161 @@ class TestSoloFlags:
     def test_the_flag_is_off_by_default(self):
         assert build_parser().parse_args(["standup"]).solo is False
         assert build_parser().parse_args(["report"]).solo is False
+
+
+def _weekly_review(**kw):
+    from yeaboi.agent.state import ReviewAction, WeeklyReview
+
+    base = dict(
+        week_label="2026-W35",
+        session_id="sid",
+        summary="A steady week.",
+        plan_line="Day 4/10 · On track",
+        went_well=("Shipped the login",),
+        actions=(ReviewAction(id="a1b2c3d4e5f6", text="Write the ADR", week_label="2026-W35"),),
+    )
+    base.update(kw)
+    return WeeklyReview(**base)
+
+
+class TestReviewCommand:
+    def test_bare_review_prints_usage_and_exits_2(self, capsys):
+        from yeaboi.cli import _cmd_review
+
+        args = build_parser().parse_args(["review"])
+        assert _cmd_review(args, _console()) == 2
+        assert "review {run,history,export}" in capsys.readouterr().err
+
+    def test_run_forwards_the_marks_and_scope_to_the_engine(self, monkeypatch, capsys):
+        from yeaboi.cli import _cmd_review
+
+        seen: dict = {}
+        monkeypatch.setattr("yeaboi.solo.engine.run_weekly_review", lambda **kw: seen.update(kw) or _weekly_review())
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        args = build_parser().parse_args(
+            [
+                "review",
+                "run",
+                "--project",
+                "proj-12345678",
+                "--week-end",
+                "2026-08-28",
+                "--mark",
+                "a1b2c3d4e5f6=done",
+                "--mark",
+                "ffffffffffff=dropped",
+                "--context",
+                "standup",
+                "--format",
+                "json",
+            ]
+        )
+        assert _cmd_review(args, _console()) == 0
+        assert seen == {
+            "session_id": "sid",
+            "project_id": "proj-12345678",
+            "context_deps": ["standup"],
+            "week_end": "2026-08-28",
+            "carried_statuses": {"a1b2c3d4e5f6": "done", "ffffffffffff": "dropped"},
+        }
+        payload = json.loads(capsys.readouterr().out)  # stdout is machine-clean
+        assert payload["week_label"] == "2026-W35" and payload["actions"][0]["text"] == "Write the ADR"
+
+    def test_no_marks_means_none_and_incognito_wins(self, monkeypatch):
+        from yeaboi.cli import _cmd_review
+
+        seen: dict = {}
+        monkeypatch.setattr("yeaboi.solo.engine.run_weekly_review", lambda **kw: seen.update(kw) or _weekly_review())
+        monkeypatch.setattr("yeaboi.solo.render.format_review_rich", lambda r: "")
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        args = build_parser().parse_args(["review", "run", "--incognito"])
+        assert _cmd_review(args, _console()) == 0
+        assert seen["carried_statuses"] is None and seen["context_deps"] == []
+
+    @pytest.mark.parametrize("bad", ["nope", "abc=", "abc=maybe", "=done"])
+    def test_a_malformed_mark_is_refused_before_the_engine_runs(self, monkeypatch, capsys, bad):
+        from yeaboi.cli import _cmd_review
+
+        monkeypatch.setattr(
+            "yeaboi.solo.engine.run_weekly_review",
+            lambda **kw: (_ for _ in ()).throw(AssertionError("engine must not run")),
+        )
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        args = build_parser().parse_args(["review", "run", "--mark", bad])
+        assert _cmd_review(args, _console()) == 2
+        assert "--mark expects ID=STATUS" in capsys.readouterr().err
+
+    def test_strict_maps_warnings_to_exit_3(self, monkeypatch):
+        from yeaboi.cli import _cmd_review
+
+        monkeypatch.setattr(
+            "yeaboi.solo.engine.run_weekly_review", lambda **kw: _weekly_review(warnings=("no standups",))
+        )
+        monkeypatch.setattr("yeaboi.solo.render.format_review_rich", lambda r: "")
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        args = build_parser().parse_args(["review", "run", "--strict"])
+        assert _cmd_review(args, _console()) == 3
+
+    def test_history_json_lists_runs_and_carried_actions(self, monkeypatch, tmp_path, capsys):
+        from yeaboi.cli import _cmd_review
+        from yeaboi.solo.store import WeeklyReviewStore
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        with WeeklyReviewStore(db) as store:
+            store.record_run(_weekly_review())
+        args = build_parser().parse_args(["review", "history", "--format", "json"])
+        assert _cmd_review(args, _console()) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["history"][0]["week_label"] == "2026-W35"
+        assert payload["carried"] == [{"id": "a1b2c3d4e5f6", "text": "Write the ADR", "status": "pending"}]
+
+    def test_history_text_names_the_open_actions(self, monkeypatch, tmp_path):
+        from yeaboi.cli import _cmd_review
+        from yeaboi.solo.store import WeeklyReviewStore
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        with WeeklyReviewStore(db) as store:
+            store.record_run(_weekly_review())
+        buf = io.StringIO()
+        assert _cmd_review(build_parser().parse_args(["review", "history"]), _console(buf)) == 0
+        out = buf.getvalue()
+        assert "2026-W35" in out and "a1b2c3d4e5f6" in out and "Write the ADR" in out
+
+    def test_history_with_nothing_recorded_says_so(self, monkeypatch, tmp_path):
+        from yeaboi.cli import _cmd_review
+
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        buf = io.StringIO()
+        assert _cmd_review(build_parser().parse_args(["review", "history"]), _console(buf)) == 0
+        assert "No weekly reviews yet" in buf.getvalue()
+
+    def test_export_writes_the_markdown(self, monkeypatch, tmp_path):
+        from yeaboi.cli import _cmd_review
+        from yeaboi.solo.store import WeeklyReviewStore
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        monkeypatch.setattr("yeaboi.paths.get_solo_export_dir", lambda key: tmp_path / "out")
+        (tmp_path / "out").mkdir()
+        with WeeklyReviewStore(db) as store:
+            store.record_run(_weekly_review())
+        assert _cmd_review(build_parser().parse_args(["review", "export"]), _console()) == 0
+        assert (tmp_path / "out" / "weekly-review-2026-W35.md").exists()
+
+    def test_export_without_a_review_exits_2(self, monkeypatch, tmp_path):
+        from yeaboi.cli import _cmd_review
+
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        assert _cmd_review(build_parser().parse_args(["review", "export", "--run-id", "7"]), _console()) == 2
+
+    def test_review_is_dispatched_from_main(self, monkeypatch):
+        from yeaboi import cli
+
+        seen = {}
+        monkeypatch.setattr(
+            cli, "_cmd_review", lambda args, console: (seen.setdefault("cmd", args.review_command), 0)[1]
+        )
+        assert cli._run_subcommand(build_parser().parse_args(["review", "history"])) == 0
+        assert seen["cmd"] == "history"

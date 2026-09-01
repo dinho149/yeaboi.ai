@@ -28,6 +28,7 @@ from yeaboi.agent.state import (
     DeliveryReport,
     Dispatch,
     StandupReport,
+    WeeklyReview,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,22 @@ def report_dispatch(report: DeliveryReport) -> Dispatch:
             report.executive_summary,
             metrics,
             _bullets(report.highlights),
+        ),
+    )
+
+
+def weekly_review_dispatch(review: WeeklyReview) -> Dispatch:
+    """The Solo world's weekly review, led by the on-track line."""
+    week = review.week_label or review.week_start
+    actions = _bullets(f"{a.text}" for a in review.actions)
+    return Dispatch(
+        title=f"Weekly review — {week}" if week else "Weekly review",
+        summary=review.plan_line or review.summary or "Your weekly review is ready.",
+        body=_assemble(
+            review.summary,
+            f"Went well:\n{_bullets(review.went_well)}" if review.went_well else "",
+            f"To change:\n{_bullets(review.to_change)}" if review.to_change else "",
+            f"Actions:\n{actions}" if actions else "",
         ),
     )
 

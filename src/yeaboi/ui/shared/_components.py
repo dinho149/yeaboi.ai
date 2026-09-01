@@ -470,6 +470,11 @@ def ship_title(shimmer_tick: float | None = None, *, width: int | None = None) -
     return build_ascii_title("Ship", "rgb(235,140,60)", shimmer_tick=shimmer_tick, width=width)
 
 
+def solo_review_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Weekly Review ASCII title (Solo gold accent). Optionally shimmering."""
+    return build_ascii_title("Review", SOLO_THEME.accent, shimmer_tick=shimmer_tick, width=width)
+
+
 def niko_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Niko ASCII title (duck gold). Optionally shimmering."""
     return build_ascii_title("Niko", "rgb(229,166,48)", shimmer_tick=shimmer_tick, width=width)

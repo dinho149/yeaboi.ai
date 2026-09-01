@@ -94,6 +94,11 @@ src/yeaboi/
     export.py           — DeliveryReport → Markdown + HTML + slide deck (paths.get_reporting_export_dir)
     presentation.py     — deck_payload() + build_presentation_html(): the slide deck's content; renderer is yeaboi-frontend's src/deck
     store.py            — ReportingStore (reporting_history table, schema v9)
+  solo/                 — the Solo world's own modules (schema v32)
+    today.py            — build_today_snapshot(): the welcome strip's "where am I" snapshot (also GET /api/solo/today)
+    engine.py           — run_weekly_review() + carried_actions(): a self-review of the week (gather → verdict → one LLM call → fallback)
+    store.py            — WeeklyReviewStore (weekly_review_history table)
+    render.py / export.py — WeeklyReview → Rich, and → Markdown (paths.get_solo_export_dir)
   roadmap/              — Roadmap Intake mode (proactive Planning: quarterly roadmap → ranked candidate projects)
     engine.py           — run_roadmap_analysis(): fetch source → LLM analysis → ranked projects (parse → fallback → format)
     store.py            — RoadmapStore (roadmaps list + roadmap_history run log, schema v10/v11)
@@ -192,7 +197,7 @@ Key flags to know about when modifying the CLI:
 | `--standup-output {terminal,desktop,slack,email,all}` | Override the session's saved delivery channels |
 | `--standup-remind-transcript` | Headless: post a desktop reminder if standups went unchecked against their meetings (the scheduler's *second* job, fired after the standup) |
 
-**Subcommands** (additive `add_subparsers(dest="command")` — every flat flag keeps working): `yeaboi report`, `yeaboi standup`, `yeaboi perf {roster,prep,complete,review,note}`, `yeaboi analyze`. Thin `_cmd_*` handlers in `cli.py` over the shared engines; `--format json` keeps stdout machine-clean. Dispatched in `main()` before the flag-guard sequence. Tests in `tests/unit/test_cli_subcommands.py` (the flat-flag assertions in `tests/integration/test_cli.py` must stay untouched).
+**Subcommands** (additive `add_subparsers(dest="command")` — every flat flag keeps working): `yeaboi report`, `yeaboi standup`, `yeaboi perf {roster,prep,complete,review,note}`, `yeaboi review {run,history,export}` (the Solo world's Weekly Review), `yeaboi analyze`. Thin `_cmd_*` handlers in `cli.py` over the shared engines; `--format json` keeps stdout machine-clean. Dispatched in `main()` before the flag-guard sequence. Tests in `tests/unit/test_cli_subcommands.py` (the flat-flag assertions in `tests/integration/test_cli.py` must stay untouched).
 
 Validation rules in `main()`:
 - `--non-interactive` requires `--description`

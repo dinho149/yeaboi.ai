@@ -1283,6 +1283,62 @@ class DeliveryReport:
 
 
 @dataclass(frozen=True)
+class ReviewAction:
+    """One commitment a Weekly Review proposes, and what became of it.
+
+    ``status`` is marked on the *next* review's ``carried_actions`` (retro's
+    carry-forward rule) — the review that created it is an append-only record.
+    """
+
+    id: str = ""  # engine-assigned, stable across carry-forward so a surface can mark it
+    text: str = ""
+    status: str = "pending"  # "pending" | "done" | "dropped" | "carried"
+    origin: str = "ai"  # "ai" | "carryover" | "fallback"
+    week_label: str = ""  # the review that created it, e.g. "2026-W35"
+
+
+@dataclass(frozen=True)
+class WeeklyReview:
+    """A solo developer's review of their own week.
+
+    Produced by solo/engine.py:run_weekly_review() — the Solo world's
+    counterpart of a retro plus a performance check-in, over the user's own
+    standups, delivered work and sprint plan. One deterministic gather, one
+    LLM call for the prose (parse → fallback), and an honest "on track vs your
+    plan" line computed without the model. All fields defaulted so a stored
+    review keeps deserializing as the shape grows.
+    """
+
+    week_label: str = ""  # ISO week, e.g. "2026-W35"
+    week_start: str = ""  # ISO date (Monday)
+    week_end: str = ""
+    project_id: str = ""
+    project_name: str = ""
+    session_id: str = ""
+    my_name: str = ""
+    standup_dates: tuple[str, ...] = ()
+    standup_lines: tuple[str, ...] = ()  # "Mon 2026-08-31: <summary> — blocked: <b>" per standup
+    confidence_start: int = 0
+    confidence_end: int = 0
+    confidence_label: str = ""
+    sprint_name: str = ""
+    sprint_day: int = 0
+    sprint_total_days: int = 0
+    delivered_items: tuple[DeliveredItem, ...] = ()
+    planned_story_count: int = 0
+    plan_status: str = ""  # "on_track" | "at_risk" | "behind" | "no_plan" | "no_data"
+    plan_line: str = ""  # the deterministic sentence behind plan_status
+    summary: str = ""
+    went_well: tuple[str, ...] = ()
+    to_change: tuple[str, ...] = ()
+    actions: tuple[ReviewAction, ...] = ()  # new this week
+    carried_actions: tuple[ReviewAction, ...] = ()  # last review's, with this week's statuses
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+@dataclass(frozen=True)
 class AnonymizedOutput:
     """A privacy-masked copy of a mode's generated output, ready for public sharing.
 

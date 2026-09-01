@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from yeaboi import __version__, fs_policy, paths
+from yeaboi import beta as _beta
 from yeaboi.beta import AGENTWATCH_BETA_NOTICE, BETA_TAG, PERFORMANCE_BETA_NOTICE
 from yeaboi.config import (
     detect_proxy,
@@ -34,6 +35,15 @@ if TYPE_CHECKING:
 
 # Default filename for exported questionnaire templates
 DEFAULT_QUESTIONNAIRE_FILENAME = "scrum-questionnaire.md"
+
+# Weekly Review's notice lands in beta.py with its TUI gate; the fallback keeps
+# the subcommand honest until then.
+WEEKLY_REVIEW_BETA_NOTICE: str = getattr(
+    _beta,
+    "WEEKLY_REVIEW_BETA_NOTICE",
+    "Weekly Review is in beta — a draft about your own week, drawn from your standups and "
+    "tracker, not a verdict. Read it as notes to edit.",
+)
 
 # Default DB path — inside the user config directory alongside history/config.
 # Matches the path used by SessionStore in run_repl(). Single-sourced via
@@ -588,7 +598,7 @@ def build_parser() -> argparse.ArgumentParser:
     # See CLAUDE.md "REQUIRED: Surface Parity" — each mode needs a CLI path;
     # these run the same engines the TUI and the MCP server use.
     subparsers = parser.add_subparsers(
-        dest="command", metavar="{report,standup,standup-review,perf,project,retro,poker,analyze,agents}"
+        dest="command", metavar="{report,standup,standup-review,perf,project,retro,poker,review,analyze,agents}"
     )
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
@@ -974,6 +984,57 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also export the latest poker session to Markdown + HTML",
     )
     poker_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    # ── review (Weekly Review — the Solo world's own mode) ─────────────────
+    review_root = subparsers.add_parser(
+        "review",
+        help=f"Weekly self-review of your own week — the Solo world {BETA_TAG}",
+        description=WEEKLY_REVIEW_BETA_NOTICE,
+    )
+    review_sub = review_root.add_subparsers(dest="review_command", metavar="{run,history,export}")
+    review_run_p = review_sub.add_parser(
+        "run", help="Review this week (or the week of --week-end)", description=WEEKLY_REVIEW_BETA_NOTICE
+    )
+    review_run_p.add_argument("--session", default="", metavar="ID", help="Session to scope by (default: newest)")
+    review_run_p.add_argument(
+        "--project",
+        default="",
+        metavar="PROJ_ID",
+        help="Project id (proj-<8hex>) to scope the standup and plan reads to (default: the session's link)",
+    )
+    review_run_p.add_argument(
+        "--context",
+        default=None,
+        metavar="SPEC",
+        type=_context_spec,
+        help="Context sources for this run: 'all', 'none', or a comma-separated subset of "
+        "retro,standup,plan,performance,analysis — standup and plan gate the reads here "
+        "(default: inherit the project setting)",
+    )
+    review_run_p.add_argument("--incognito", action="store_true", help="Read no cross-mode context at all")
+    review_run_p.add_argument(
+        "--week-end",
+        dest="week_end",
+        default="",
+        metavar="YYYY-MM-DD",
+        help="A date inside the week to review — its Monday through this date (default: today)",
+    )
+    review_run_p.add_argument(
+        "--mark",
+        action="append",
+        default=[],
+        metavar="ID=STATUS",
+        help="Mark one of last review's actions: done, dropped, pending or carried (repeatable; ids from history)",
+    )
+    review_run_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    review_run_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+    review_hist_p = review_sub.add_parser("history", help="List past weekly reviews and last week's open actions")
+    review_hist_p.add_argument("--session", default="", metavar="ID", help="Session to scope by (default: all)")
+    review_hist_p.add_argument("--project", default="", metavar="PROJ_ID", help="Project id to scope by")
+    review_hist_p.add_argument("--limit", type=int, default=12, help="Number of past reviews to show (default 12)")
+    review_hist_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    review_exp_p = review_sub.add_parser("export", help="Export one weekly review to Markdown")
+    review_exp_p.add_argument("--run-id", dest="run_id", type=int, default=0, help="Review to export (0 = latest)")
 
     # ── ask (Niko, the global assistant) ──────────────────────────────────
     ask_p = subparsers.add_parser(
@@ -2150,6 +2211,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "project": _cmd_project,
         "retro": _cmd_retro,
         "poker": _cmd_poker,
+        "review": _cmd_review,
         "analyze": _cmd_analyze,
         "agents": _cmd_agents,
         "provenance": _cmd_provenance,
@@ -3889,6 +3951,118 @@ def _cmd_retro(args: argparse.Namespace, console: Console) -> int:
         console.print(f"  Last sprint's actions: {carried_summary}")
     for kind, path in exported.items():
         console.print(f"  Exported {kind}: {path}")
+    return 0
+
+
+def _parse_marks(marks: list[str]) -> dict[str, str]:
+    """``ID=STATUS`` pairs from repeated --mark flags; a malformed one is an error."""
+    from yeaboi.solo.engine import ACTION_STATUSES
+
+    parsed: dict[str, str] = {}
+    for raw in marks:
+        action_id, sep, status = raw.partition("=")
+        action_id, status = action_id.strip(), status.strip().lower()
+        if not sep or not action_id or status not in ACTION_STATUSES:
+            raise ValueError(f"--mark expects ID=STATUS with STATUS one of {', '.join(ACTION_STATUSES)} — got {raw!r}")
+        parsed[action_id] = status
+    return parsed
+
+
+def _cmd_review(args: argparse.Namespace, console: Console) -> int:
+    """`yeaboi review {run,history,export}` — the Solo world's Weekly Review."""
+    command = getattr(args, "review_command", None)
+    if command is None:
+        print("Usage: yeaboi review {run,history,export}", file=sys.stderr)
+        return 2
+    if command == "run":
+        return _cmd_review_run(args, console)
+    if command == "history":
+        return _cmd_review_history(args, console)
+    return _cmd_review_export(args, console)
+
+
+def _cmd_review_run(args: argparse.Namespace, console: Console) -> int:
+    from yeaboi.solo.engine import run_weekly_review
+    from yeaboi.solo.render import format_review_rich
+
+    _print_beta_notice(WEEKLY_REVIEW_BETA_NOTICE)
+    try:
+        marks = _parse_marks(args.mark)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    console.print("[bold cyan]Reviewing your week...[/bold cyan]")
+    review = run_weekly_review(
+        session_id=_resolve_cli_session(args.session) or "",
+        project_id=args.project,
+        context_deps=_cli_context_deps(args),
+        week_end=args.week_end,
+        carried_statuses=marks or None,
+    )
+    for warning in review.warnings:
+        print(f"⚠ {warning}", file=sys.stderr)
+    if args.format == "json":
+        print(_json_dump(review))
+    else:
+        from yeaboi.paths import SOLO_EXPORTS_DIR
+
+        console.print(format_review_rich(review))
+        console.print(f"[dim]Exports (Markdown): {SOLO_EXPORTS_DIR}[/dim]")
+    return _strict_exit(args.strict, review.warnings, empty=not (review.summary or review.went_well))
+
+
+def _cmd_review_history(args: argparse.Namespace, console: Console) -> int:
+    import json
+
+    from yeaboi.paths import get_db_path
+    from yeaboi.projects.scope import resolve_scope
+    from yeaboi.solo.engine import carried_actions
+    from yeaboi.solo.store import WeeklyReviewStore
+
+    path = get_db_path()
+    scope = resolve_scope(args.project, args.session, db_path=path)
+    session_ids = scope.session_ids if scope is not None else None
+    with WeeklyReviewStore(path) as store:
+        history = store.get_all_history(limit=args.limit, session_ids=session_ids)
+    carried = carried_actions(scope, db_path=path)
+    if args.format == "json":
+        print(
+            json.dumps(
+                {
+                    "history": history,
+                    "carried": [{"id": a.id, "text": a.text, "status": a.status} for a in carried],
+                },
+                indent=2,
+            )
+        )
+        return 0
+    if not history:
+        console.print("[yellow]No weekly reviews yet — run `yeaboi review run` at the end of a week.[/yellow]")
+        return 0
+    for row in history:
+        console.print(
+            f"  • #{row['id']}  {row['week_label']}  {row['project_name'] or 'all projects'}"
+            f"  — {row['action_count']} action(s)"
+        )
+    if carried:
+        console.print("  Open from last week (mark with `review run --mark ID=done`):")
+        for action in carried:
+            console.print(f"    {action.id}  {action.text}")
+    return 0
+
+
+def _cmd_review_export(args: argparse.Namespace, console: Console) -> int:
+    from yeaboi.paths import get_db_path
+    from yeaboi.solo.export import export_weekly_review
+    from yeaboi.solo.store import WeeklyReviewStore
+
+    with WeeklyReviewStore(get_db_path()) as store:
+        review = store.get_run_by_id(args.run_id) if args.run_id else store.get_latest_report()
+    if review is None:
+        print("Error: no weekly review recorded yet — run `yeaboi review run` first.", file=sys.stderr)
+        return 2
+    paths = export_weekly_review(review)
+    console.print(f"  Exported markdown: {paths['markdown']}")
     return 0
 
 

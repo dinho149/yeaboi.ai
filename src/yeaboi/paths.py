@@ -144,6 +144,7 @@ REPORTING_EXPORTS_DIR = EXPORTS_DIR / "reporting"
 ROADMAP_EXPORTS_DIR = EXPORTS_DIR / "roadmap"
 ANONYMIZE_EXPORTS_DIR = EXPORTS_DIR / "anonymize"  # privacy-masked, shareable copies of any mode's output
 AGENTWATCH_EXPORTS_DIR = EXPORTS_DIR / "agentwatch"  # the Agents family: usage / standup / security reports
+SOLO_EXPORTS_DIR = EXPORTS_DIR / "solo"  # the Solo world's own modes: weekly reviews
 
 # ---------------------------------------------------------------------------
 # Ship (supervised coding-agent runs)
@@ -182,6 +183,7 @@ SHIP_LOGS_DIR = LOGS_DIR / "ship"
 CEREMONIES_LOGS_DIR = LOGS_DIR / "ceremonies"
 SLACK_LOGS_DIR = LOGS_DIR / "slack"
 NIKO_LOGS_DIR = LOGS_DIR / "niko"
+SOLO_LOGS_DIR = LOGS_DIR / "solo"
 
 # Legacy log paths
 LEGACY_TUI_LOG = ROOT_DIR / "scrum-agent.log"
@@ -420,6 +422,13 @@ def get_anonymize_export_dir(project_key: str) -> Path:
     return d
 
 
+def get_solo_export_dir(project_key: str) -> Path:
+    """Return the Solo export directory for a project, creating it if needed."""
+    d = SOLO_EXPORTS_DIR / _safe_key(project_key, "review")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def get_agentwatch_export_dir(kind_key: str) -> Path:
     """Return the agentwatch export directory for a report kind, creating it if needed.
 
@@ -543,6 +552,12 @@ def get_agentwatch_log_dir() -> Path:
     """Return the agentwatch (Agents family) logs directory, creating it if needed."""
     AGENTWATCH_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     return AGENTWATCH_LOGS_DIR
+
+
+def get_solo_log_dir() -> Path:
+    """Return the Solo world's logs directory (weekly reviews), creating it if needed."""
+    SOLO_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return SOLO_LOGS_DIR
 
 
 def get_ceremonies_log_dir() -> Path:

@@ -216,6 +216,50 @@ class TestProjectsMigration:
             assert store.schema_mismatch is False
 
 
+class TestWeeklyReviewMigration:
+    """Migration v32 — the weekly_review_history table."""
+
+    def _v31_db(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(
+            """CREATE TABLE sessions_meta (
+                   session_id          TEXT PRIMARY KEY,
+                   project_name        TEXT NOT NULL DEFAULT '',
+                   created_at          TEXT NOT NULL,
+                   last_modified       TEXT NOT NULL,
+                   last_node_completed TEXT NOT NULL DEFAULT '',
+                   session_state       TEXT NOT NULL DEFAULT '',
+                   session_mode        TEXT NOT NULL DEFAULT 'planning',
+                   project_id          TEXT NOT NULL DEFAULT ''
+               );
+               CREATE TABLE schema_info (schema_version INT NOT NULL);"""
+        )
+        conn.execute("INSERT INTO schema_info VALUES (31)")
+        conn.commit()
+        conn.close()
+        return db
+
+    def test_v31_db_gains_the_table(self, tmp_path):
+        db = self._v31_db(tmp_path)
+        with SessionStore(db) as store:
+            assert store.schema_mismatch is False
+        conn = sqlite3.connect(str(db))
+        try:
+            names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master")}
+            assert "weekly_review_history" in names
+            (version,) = conn.execute("SELECT schema_version FROM schema_info").fetchone()
+            assert version == CURRENT_SCHEMA_VERSION
+        finally:
+            conn.close()
+
+    def test_reopen_is_idempotent(self, tmp_path):
+        db = self._v31_db(tmp_path)
+        SessionStore(db).close()
+        with SessionStore(db) as store:
+            assert store.schema_mismatch is False
+
+
 class TestSessionProjectLink:
     def test_create_session_defaults_to_unscoped(self, tmp_path):
         with SessionStore(tmp_path / "sessions.db") as store:

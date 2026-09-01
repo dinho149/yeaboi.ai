@@ -126,13 +126,14 @@ _MODE_CARDS: list[dict[str, Any]] = [
 ]
 
 # ---------------------------------------------------------------------------
-# Solo mode definitions — the first category on the landing split. Keys are
-# deliberately SHARED with _MODE_CARDS (same dispatch chains, saved-session
+# Solo mode definitions — the first category on the landing split. Shared keys
+# are deliberately the SAME as _MODE_CARDS (same dispatch chains, saved-session
 # hubs, capabilities and colours); only the copy differs — solo-voiced, "your
 # history" rather than "your team's". Kept as copies, not references: the
 # welcome tests pin exact renders against each list, and a dict shared across
 # menus invites silent drift. No retro/poker (they host live multi-participant
-# boards) and no performance (it reviews *someone else* by construction).
+# boards) and no performance (it reviews *someone else* by construction); the
+# one Solo-only card is Review, the self-review those three have no room for.
 # ---------------------------------------------------------------------------
 
 _SOLO_CARDS: list[dict[str, Any]] = [
@@ -156,6 +157,16 @@ _SOLO_CARDS: list[dict[str, Any]] = [
         "description": "Run your daily standup: what you did, sprint-day confidence, and a summary you can send.",
         "available": True,
         "color": "rgb(200,100,180)",
+    },
+    {
+        "key": "weekly-review",
+        "title": "Review",
+        "description": "Review your week: what went well, what to change, and whether you are on track with the plan.",
+        # Beta: a draft about your own week from unverified data, and the Solo
+        # world itself still wears the chip. "available" stays True (see above).
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(210,168,80)",
     },
     {
         "key": "reporting",
@@ -305,8 +316,8 @@ _MIN_WIDTH = 84
 # bottom-left version row all fit in 40. An eleventh card is what pushes that
 # row off — which is why Niko and Ceremonies are keycaps (see
 # :func:`_build_version_row`). Below this the "size up" duck shows instead of a
-# clipped menu. The seven-card Solo menu leaves eleven rows free at this floor,
-# which is where its Today strip (:func:`_today_rows`, 7 rows) goes.
+# clipped menu. The eight-card Solo menu (26 rows) leaves eight rows free at
+# this floor, which is where its Today strip (:func:`_today_rows`, 7 rows) goes.
 _MIN_HEIGHT = 40
 
 # The bottom-right duck companion + its speech-bubble tip need extra room: the

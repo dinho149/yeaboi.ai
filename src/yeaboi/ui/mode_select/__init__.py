@@ -7094,6 +7094,99 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
     )
 
 
+def _run_solo_review_hub(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Weekly Review saved-runs hub → landing for the Solo Review card."""
+    from yeaboi.persistence import _relative_time
+    from yeaboi.solo.export import build_weekly_review_markdown, export_weekly_review
+    from yeaboi.solo.store import WeeklyReviewStore
+    from yeaboi.ui.mode_select._solo import run_solo_review_page
+    from yeaboi.ui.mode_select.screens._project_cards import RunSummary
+    from yeaboi.ui.mode_select.screens._screens_solo import _build_solo_review_screen
+    from yeaboi.ui.shared._components import SOLO_THEME, solo_review_title
+
+    def _review(run_id: int):
+        with WeeklyReviewStore(_ana_dbp) as store:
+            return store.get_run_by_id(run_id)
+
+    def load_runs():
+        with WeeklyReviewStore(_ana_dbp) as store:
+            rows = store.get_all_history(100)
+        out = []
+        for r in rows:
+            proj = r.get("project_name") or ""
+            n = r.get("action_count", 0)
+            sub = " · ".join(p for p in (proj, f"{n} action{'s' if n != 1 else ''}") if p)
+            out.append(
+                RunSummary(
+                    "weekly-review",
+                    r["id"],
+                    f"Week {r.get('week_label') or _relative_time(r['run_at'])}",
+                    sub,
+                    _relative_time(r["run_at"]),
+                    session_id=r.get("session_id", ""),
+                )
+            )
+        return out
+
+    def make_detail(run):
+        # A saved review renders through the live detail screen, so a snapshot
+        # looks like the page did the day it was generated.
+        review = _review(run.run_id)
+        if review is None:
+            return None
+
+        def render(*, scroll, action_sel, actions, scroll_meta, width, height, message, shimmer_tick):
+            return _build_solo_review_screen(
+                {"view": "detail", "review": review, "actions": actions, "message": message},
+                scroll_offset=scroll,
+                scroll_meta=scroll_meta,
+                action_sel=action_sel,
+                width=width,
+                height=height,
+                shimmer_tick=shimmer_tick,
+            )
+
+        return render
+
+    def files_export(run):
+        review = _review(run.run_id)
+        if review is None:
+            return "That run is no longer available."
+        paths = export_weekly_review(review)
+        return f"Exported to {paths['markdown'].parent}  (Markdown)"
+
+    def get_document(run):
+        review = _review(run.run_id)
+        if review is None:
+            return "That run is no longer available."
+        return f"Weekly Review — {review.week_label}", build_weekly_review_markdown(review)
+
+    def delete_run(run):
+        with WeeklyReviewStore(_ana_dbp) as store:
+            store.delete_run(run.run_id)
+
+    _run_mode_hub(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        mode="solo",
+        title_fn=solo_review_title,
+        subtitle="Saved weekly reviews",
+        empty_title="No reviews yet",
+        empty_subtitle="Press Enter to review your first week",
+        new_label="+ New review",
+        load_runs=load_runs,
+        make_detail=make_detail,
+        files_export=files_export,
+        get_document=get_document,
+        share_theme=SOLO_THEME,
+        delete_run=delete_run,
+        run_new=lambda: run_solo_review_page(console, live, read_key, frame_time, supports_timeout),
+    )
+
+
 def _run_performance_hub(
     console: Console, live, read_key, frame_time: float, supports_timeout: bool, engineer: str = ""
 ) -> None:
@@ -13315,6 +13408,7 @@ SAVED_SESSION_HUBS = {
     "poker": _run_poker_hub,
     "reporting": _run_reporting_hub,
     "ship": _run_ship_hub,
+    "weekly-review": _run_solo_review_hub,
 }
 
 #: Which menu (card list + companion mascot) each landing category opens.
@@ -13330,9 +13424,10 @@ _CATEGORY_MENUS: dict[str, tuple[list[dict], str]] = {
 def _tip_jump_target(mode_key: str, cards: list[dict]) -> tuple[str, int] | None:
     """Where a cross-category tip jump lands: ``(category, card index)`` or None.
 
-    Team is searched first: Solo's keys are a subset of Team's, so a shared key
-    jumped from any other menu lands on the Team menu — and a retro/poker tip
-    fired while browsing Solo correctly jumps to the world that has the card.
+    Team is searched first: every Solo key but Review is also a Team key, so a
+    shared key jumped from any other menu lands on the Team menu — and a
+    retro/poker tip fired while browsing Solo correctly jumps to the world that
+    has the card. Solo comes last, so only its own Review card lands there.
     """
     for cat in ("team", "agents", "solo"):
         other, _mascot = _CATEGORY_MENUS[cat]
@@ -14886,6 +14981,20 @@ def select_mode(
                 logger.info("Reporting mode selected")
                 with mode_log("reporting"):
                     SAVED_SESSION_HUBS["reporting"](console, live, read_key, _FRAME_TIME, _supports_timeout)
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
+
+            # ── Route: Weekly Review (Solo) → saved-reviews hub ───────────
+            if chosen["key"] == "weekly-review":
+                logger.info("Weekly Review mode selected")
+                with mode_log("solo"):
+                    # Beta gate first: the review is a draft about the user's own
+                    # week from unverified data. Shown once ever.
+                    if show_beta_notice(
+                        live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="weekly-review"
+                    ):
+                        SAVED_SESSION_HUBS["weekly-review"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue

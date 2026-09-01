@@ -39,6 +39,7 @@ from yeaboi.ui.shared._components import (
     PAD,
     PERFORMANCE_THEME,
     SHIP_THEME,
+    SOLO_THEME,
     Theme,
     agent_advisor_title,
     agent_security_title,
@@ -50,6 +51,7 @@ from yeaboi.ui.shared._components import (
     build_reveal_subtitle,
     performance_title,
     ship_title,
+    solo_review_title,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,7 @@ _BETA_MODES: dict[str, _BetaMode] = {
     "agent-advisor": _BetaMode(agent_advisor_title, AGENT_ADVISOR_THEME),
     "agent-standup": _BetaMode(agent_standup_title, AGENT_STANDUP_THEME),
     "agent-security": _BetaMode(agent_security_title, AGENT_SECURITY_THEME),
+    "weekly-review": _BetaMode(solo_review_title, SOLO_THEME),
 }
 
 

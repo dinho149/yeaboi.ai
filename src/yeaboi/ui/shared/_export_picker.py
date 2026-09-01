@@ -43,6 +43,7 @@ from yeaboi.ui.shared._components import (
     PLANNING_THEME,
     REPORTING_THEME,
     RETRO_THEME,
+    SOLO_THEME,
     STANDUP_THEME,
     analysis_title,
     build_action_buttons,
@@ -52,6 +53,7 @@ from yeaboi.ui.shared._components import (
     planning_title,
     reporting_title,
     retro_title,
+    solo_review_title,
     standup_title,
 )
 
@@ -66,6 +68,7 @@ _MODE_STYLES = {
     "retro": (retro_title, RETRO_THEME),
     "performance": (performance_title, PERFORMANCE_THEME),
     "reporting": (reporting_title, REPORTING_THEME),
+    "solo": (solo_review_title, SOLO_THEME),
 }
 
 

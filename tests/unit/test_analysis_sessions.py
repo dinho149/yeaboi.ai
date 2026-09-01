@@ -65,7 +65,8 @@ class TestSchemaVersion:
         # existing repos the user ruled out as prior art.
         # v31 adds the projects table and sessions_meta.project_id, the
         # identity that links sessions across modes.
-        assert CURRENT_SCHEMA_VERSION == 31
+        # v32 adds weekly_review_history, the Solo world's own review record.
+        assert CURRENT_SCHEMA_VERSION == 32
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""

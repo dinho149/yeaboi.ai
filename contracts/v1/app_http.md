@@ -806,3 +806,13 @@ disagree about today.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/solo/today` | `?project_id=` narrows the standup and plan reads to that project ('' = newest of everything). Returns the `TodaySnapshot` fields verbatim, text and numbers only: `project_id`, `project_name`, `standup_date`, `standup_summary`, `standup_blockers`, `sprint_name`, `sprint_day`, `sprint_total_days`, `confidence_pct`, `confidence_label`, `confidence_trend`, `next_story_id`, `next_story_title`, `next_sprint_name`, `plan_session_id`, `plan_scoped`, `spend_usd`, `spend_sessions`, `spend_known`, `warnings`. An empty string or zero is the honest empty state (no standup yet, no plan yet); `warnings` lists the sources that could not be read. The spend is the last agentwatch ingest's, never a fresh scan |
+| GET | `/api/solo/review` | `?session_id=&project_id=` scope the reads (blank = everything). `{latest: {run_id, review} \| null, history: [{id, session_id, project_id, run_at, week_label, week_start, week_end, project_name, action_count}], carried: [ReviewAction], beta_notice}` — `carried` is last review's still-open actions with the `id`s a run's `carried_statuses` takes; `beta_notice` is the gate copy |
+| GET | `/api/solo/review/runs/{run_id}` | one saved review: `{run_id, review}`; 404 when unknown |
+| POST | `/api/solo/review/run` | body `{session_id?, project_id?, context_deps?: [tokens] \| null, week_end?: "YYYY-MM-DD", carried_statuses?: {action_id: "done" \| "dropped" \| "pending" \| "carried"}}` → a chunked NDJSON run in the standup's line shapes: `{type: "op", op_id}` first, then `{type: "progress", phase}` per engine phase (`scope, standups, plan, delivery, carried, model, save`), then `{type: "done", run_id, review}` or `{type: "error", message}`. Not cancellable — the engine has no cancel seam. The review is stored and exported to Markdown |
+| POST | `/api/solo/review/runs/{run_id}/delete` | drop one review from the saved-runs hub: `{deleted, run_id}`; 404 when unknown |
+
+**Weekly Review** is the Solo world's own capability — a self-review of the
+week (went well, to change, on track against the plan, actions carried forward)
+over the user's own standups, delivered tickets and sprint plan. The desktop
+renders it at `/solo/review` (hub) and `/solo/review/report?id=` (one saved
+run). Export stays on the MCP tool (`/api/tool/weekly_review_export`).

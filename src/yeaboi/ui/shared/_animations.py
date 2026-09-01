@@ -44,6 +44,7 @@ COLOR_RGB: dict[str, tuple[int, int, int]] = {
     "rgb(120,150,175)": (120, 150, 175),  # Ceremonies accent (slate)
     "rgb(150,170,90)": (150, 170, 90),  # Projects accent (olive)
     "rgb(229,166,48)": (229, 166, 48),  # Niko accent (duck gold — the desktop's own --primary)
+    "rgb(210,168,80)": (210, 168, 80),  # Weekly Review / Solo accent (warm gold)
 }
 
 # Grey levels for fade-out (bright → invisible) and fade-in (invisible → bright).

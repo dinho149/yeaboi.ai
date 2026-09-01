@@ -126,6 +126,16 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_new=True,
     ),
     FeatureTip(
+        "weekly-review",
+        "\U0001f4dd Tip: Weekly Review reads your own standups and shipped work — "
+        "what went well, what to change, on track or not",
+        mode_key="weekly-review",
+        # Beta, not new: a draft about your week from unverified data.
+        is_beta=True,
+        # Solo-only by construction: it reviews one person's week.
+        worlds=("solo",),
+    ),
+    FeatureTip(
         "retro-board",
         "\U0001f504 Tip: Retro runs a live board — teammates add cards from a browser, AI drafts actions",
         mode_key="retro",

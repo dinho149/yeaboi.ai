@@ -378,10 +378,20 @@ class TestWorlds:
         assert {"planning", "standup", "reporting", "agent-usage"} <= {t.key for t in solo}
         _clear_cache()
 
-    def test_team_rotation_is_the_full_terminal_list(self, monkeypatch):
+    def test_team_rotation_is_the_terminal_list_minus_solo_only_tips(self, monkeypatch):
+        # Team sees everything but the one Solo-only tip (Weekly Review).
         _clear_cache()
         monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
-        assert tips_for_surface("tui", world="team") == tips_for_surface("tui")
+        expected = tuple(t for t in tips_for_surface("tui") if "team" in t.worlds)
+        assert tips_for_surface("tui", world="team") == expected
+        assert {t.key for t in tips_for_surface("tui")} - {t.key for t in expected} == {"weekly-review"}
+        _clear_cache()
+
+    def test_the_review_tip_rotates_only_in_solo(self, monkeypatch):
+        _clear_cache()
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "ready")
+        assert "weekly-review" in {t.key for t in tips_for_surface("tui", world="solo")}
+        assert "weekly-review" not in {t.key for t in tips_for_surface("tui", world="agents")}
         _clear_cache()
 
     def test_the_team_only_tips_are_tagged(self):
