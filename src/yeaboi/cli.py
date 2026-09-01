@@ -1083,10 +1083,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     connections_sub = connections_p.add_subparsers(dest="connections_command", required=True)
 
-    conn_list = connections_sub.add_parser("list", help="What is connected (--all for every integration)")
+    conn_list = connections_sub.add_parser("list", help="What is connected (--all for the whole catalog)")
     conn_list.add_argument("--family", default="", help="Only this family (e.g. observability)")
     conn_list.add_argument(
-        "--all", action="store_true", help="Every integration: connectors you have not set up + the built-ins"
+        "--all", action="store_true", help="The whole catalog: connectors you have not set up + built-in integrations"
     )
     conn_list.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
@@ -1113,7 +1113,7 @@ def build_parser() -> argparse.ArgumentParser:
     conn_fetch.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     conn_create = connections_sub.add_parser(
-        "create", help="Create your own integration — a generic API or an MCP server"
+        "create", help="Create your own connection — a generic API the catalog then carries"
     )
     conn_create.add_argument(
         "--from-json", dest="from_json", default="", metavar="FILE", help="A descriptor JSON file instead of prompts"
@@ -2966,7 +2966,7 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
             print(f"Error: could not read {args.from_json}: {exc}", file=sys.stderr)
             return 1
     else:
-        console.print("[bold]Create an integration[/bold] — a read-only API or an MCP server yeaboi then carries.")
+        console.print("[bold]Create a connection[/bold] — a read-only API or an MCP server the catalog then carries.")
         label = input("Service name: ").strip()
         if not label:
             print("Error: a name is required", file=sys.stderr)
@@ -3009,7 +3009,7 @@ def _connections_create(args: argparse.Namespace, console: Console) -> int:
         # become a Rich style tag.
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    console.print(f"[green]Created.[/green] {escape(str(row['label']))} is in your integrations.")
+    console.print(f"[green]Created.[/green] {escape(str(row['label']))} is in the catalog.")
     console.print(f"Enter its credentials with: yeaboi connections add {spec_from_dict(raw).key}")
     return 0
 

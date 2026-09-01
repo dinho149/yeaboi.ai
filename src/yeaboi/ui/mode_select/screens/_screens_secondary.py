@@ -7620,7 +7620,7 @@ def _build_settings_screen(
 
         _entries = list(_creg.all_connectors()) + list(_creg.legacy_entries())
         _n_connected = sum(1 for c in _creg.all_connectors() if _creg.is_connected(c, config_data))
-        _heading("Integrations", wide=True)
+        _heading("Catalog", wide=True)
         line = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
         line.append(f"{len(_entries)} integrations", style=theme.value)
         line.append("  ·  ", style=theme.muted)
@@ -7634,7 +7634,7 @@ def _build_settings_screen(
         _cur.append(where)
         add = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
         add.append("↳ ", style=theme.muted)
-        add.append("⏎ browse integrations", style=theme.value)
+        add.append("⏎ browse the catalog", style=theme.value)
         add.append("  ·  add: ", style=theme.muted)
         add.append("yeaboi connections add <name>", style=theme.dim)
         _cur.append(add)
@@ -7654,7 +7654,7 @@ def _build_settings_screen(
         _heading("Integrations", wide=True)
         if not _linked:
             hint = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
-            hint.append("Nothing connected yet — browse the Integrations tab", style=theme.muted)
+            hint.append("Nothing connected yet — browse the catalog on the Integrations tab", style=theme.muted)
             _cur.append(hint)
         for _c in _linked:
             head = Text(justify="left", no_wrap=True, overflow="ellipsis")

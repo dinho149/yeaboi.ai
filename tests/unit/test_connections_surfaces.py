@@ -59,7 +59,7 @@ class TestTheTab:
     def test_the_catalog_tab_teases_counts_and_never_fields(self):
         out = _render({"_config_path": "/tmp/.env"}, tab=CATALOG_TAB)
         assert "integrations" in out and "connected" in out
-        assert "browse integrations" in out
+        assert "browse the catalog" in out
         # No field rows here any more — they live under Credentials.
         assert "API Key" not in out
 

@@ -277,7 +277,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     # catalog exists to remove.
     FeatureTip(
         "connections",
-        "\U0001f50c Tip: Connect your tools under Settings ▸ Integrations, so standups see production too",
+        "\U0001f50c Tip: Browse the integrations catalog — Settings ▸ Integrations — so standups see production too",
         is_new=True,
     ),
 )

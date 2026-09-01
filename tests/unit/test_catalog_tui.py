@@ -68,7 +68,7 @@ class TestBrowse:
 
     def test_the_smallest_supported_terminal_survives_it(self, payload):
         out = _render(build_catalog_screen(payload, 0, width=84, height=40), width=84, height=40)
-        assert "Integrations" in out
+        assert "Integrations catalog" in out
 
     def test_the_empty_filter_state_offers_the_way_out(self, payload):
         out = _render(build_catalog_screen(payload, 0, filter_text="zzzznope", width=100, height=40))
