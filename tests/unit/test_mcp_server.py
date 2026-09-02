@@ -59,6 +59,9 @@ EXPECTED_TOOLS = {
     "report_delivery",
     "reporting_history",
     "reporting_export",
+    "weekly_review_run",
+    "weekly_review_history",
+    "weekly_review_export",
     "perf_roster",
     "perf_one_on_one_prep",
     "perf_one_on_one_complete",
@@ -415,6 +418,26 @@ class TestEngineTools:
         assert payload["llm_mode"] == "provider"
         assert payload["data"]["session_id"] == "new-abcd1234-2026-07-20"
         assert payload["data"]["stories"]
+
+    def test_plan_generate_forwards_solo(self, seeded_session, provider_mode, monkeypatch):
+        from yeaboi.sessions import SessionStore
+
+        seen: dict = {}
+
+        def fake_pipeline(questionnaire, *, on_progress=None, **kwargs):
+            seen.update(kwargs)
+            from yeaboi.paths import get_db_path
+
+            with SessionStore(get_db_path()) as store:
+                state = store.load_state("new-abcd1234-2026-07-20")
+            state["_session_id"] = "new-abcd1234-2026-07-20"
+            return state
+
+        monkeypatch.setattr("yeaboi.agent.headless.run_planning_pipeline", fake_pipeline)
+        assert call_tool("plan_generate", {"description": "A todo app", "solo": True})["ok"] is True
+        assert seen["solo"] is True
+        call_tool("plan_generate", {"description": "A todo app"})
+        assert seen["solo"] is False
 
     def test_plan_generate_requires_description(self, tmp_db, provider_mode):
         payload = call_tool("plan_generate", {"description": "   "})
@@ -1428,3 +1451,98 @@ class TestSlackTools:
             "slack_inbound_history",
             "slack_identities_list",
         }
+
+
+class TestWeeklyReviewTools:
+    """The Solo world's review tools: the run forwards every wire param, the
+    reads never need an LLM, and export names the Markdown path."""
+
+    def _review(self, **kw):
+        from yeaboi.agent.state import ReviewAction, WeeklyReview
+
+        base = dict(
+            week_label="2026-W35",
+            week_start="2026-08-24",
+            week_end="2026-08-28",
+            session_id="new-abcd1234-2026-07-20",
+            summary="A steady week.",
+            plan_line="Day 4/10 · On track",
+            actions=(ReviewAction(id="a1b2c3d4e5f6", text="Write the ADR", week_label="2026-W35"),),
+        )
+        base.update(kw)
+        return WeeklyReview(**base)
+
+    def test_run_forwards_every_param(self, seeded_session, provider_mode, monkeypatch):
+        seen: dict = {}
+
+        def fake_run(**kwargs):
+            seen.update(kwargs)
+            return self._review()
+
+        monkeypatch.setattr("yeaboi.solo.engine.run_weekly_review", fake_run)
+        payload = call_tool(
+            "weekly_review_run",
+            {
+                "session_id": seeded_session,
+                "project_id": "proj-12345678",
+                "context_deps": ["standup"],
+                "week_end": "2026-08-28",
+                "carried_statuses": {"a1b2c3d4e5f6": "done"},
+            },
+        )
+        assert payload["ok"] is True, payload
+        assert payload["data"]["week_label"] == "2026-W35"
+        assert seen == {
+            "session_id": seeded_session,
+            "project_id": "proj-12345678",
+            "context_deps": ["standup"],
+            "week_end": "2026-08-28",
+            "carried_statuses": {"a1b2c3d4e5f6": "done"},
+        }
+
+    def test_run_defaults_are_blank(self, seeded_session, provider_mode, monkeypatch):
+        seen: dict = {}
+        monkeypatch.setattr("yeaboi.solo.engine.run_weekly_review", lambda **kw: seen.update(kw) or self._review())
+        assert call_tool("weekly_review_run", {})["ok"] is True
+        assert seen["session_id"] == "" and seen["project_id"] == ""
+        assert seen["context_deps"] is None and seen["carried_statuses"] is None and seen["week_end"] == ""
+
+    def test_history_lists_runs_the_latest_and_the_carried_actions(self, seeded_session):
+        from yeaboi.paths import get_db_path
+        from yeaboi.solo.store import WeeklyReviewStore
+
+        with WeeklyReviewStore(get_db_path()) as store:
+            store.record_run(self._review())
+        payload = call_tool("weekly_review_history", {"limit": 5})
+        assert payload["ok"] is True, payload
+        data = payload["data"]
+        assert data["history"][0]["week_label"] == "2026-W35"
+        assert data["latest"]["summary"] == "A steady week."
+        # Last review's action comes back as a pending carry-over with its id.
+        assert [(a["id"], a["status"], a["origin"]) for a in data["carried"]] == [
+            ("a1b2c3d4e5f6", "pending", "carryover")
+        ]
+
+    def test_history_is_empty_before_any_review(self, tmp_db):
+        data = call_tool("weekly_review_history", {})["data"]
+        assert data == {"project_id": "", "history": [], "latest": None, "carried": []}
+
+    def test_export_writes_markdown_for_the_latest_or_a_run(self, seeded_session, tmp_path, monkeypatch):
+        from yeaboi.paths import get_db_path
+        from yeaboi.solo.store import WeeklyReviewStore
+
+        monkeypatch.setattr("yeaboi.paths.get_solo_export_dir", lambda key: tmp_path / "out")
+        (tmp_path / "out").mkdir()
+        with WeeklyReviewStore(get_db_path()) as store:
+            first = store.record_run(self._review(week_label="2026-W34"))
+            store.record_run(self._review())
+        latest = call_tool("weekly_review_export", {})
+        assert latest["ok"] is True and latest["data"]["week_label"] == "2026-W35"
+        assert latest["data"]["markdown"].endswith("weekly-review-2026-W35.md")
+        older = call_tool("weekly_review_export", {"run_id": first})
+        assert older["data"]["week_label"] == "2026-W34"
+
+    def test_export_without_a_review_is_a_clean_error(self, tmp_db):
+        payload = call_tool("weekly_review_export", {"run_id": 99})
+        assert payload["ok"] is False
+        assert "run 99" in payload["error"]["message"]

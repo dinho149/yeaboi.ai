@@ -6,6 +6,8 @@ team-level narrative. A member's typed self-report is passed as supporting
 context for their entry — it enriches the analysis (extra intent, blockers)
 but the summary must stay grounded in the listed activity, so the user still
 learns what their activity shows even when they typed an update themselves.
+``solo=True`` is the Solo world's variant: one member, first-person notes,
+and the narrative says whether *I* am on track; the JSON shape is the same.
 
 Uses the ARC framework (Ask · Requirements · Context) like every other prompt in
 this package.
@@ -29,6 +31,7 @@ def get_standup_summary_prompt(
     activity_counts: list[tuple[str, int]],
     production: list[dict] | None = None,
     production_window: str = "",
+    solo: bool = False,
 ) -> str:
     """Build the standup-summary prompt.
 
@@ -62,6 +65,9 @@ def get_standup_summary_prompt(
             connected the bytes are identical to before this existed.
         production_window: how far back `production` looked, e.g. "the last 14
             days", so the model never implies it covers the standup's own day.
+        solo: a one-person standup — MEMBERS holds only the user, the notes are
+            written in the first person, and 'team_summary' says whether *I*
+            am on track. The JSON shape is unchanged.
     """
     # --- Context block: everything the model needs to reason over ------------
     counts_str = ", ".join(f"{src}: {n}" for src, n in activity_counts) or "no activity sources reported"
@@ -93,11 +99,34 @@ def get_standup_summary_prompt(
         )
 
     # ARC: Ask
-    ask = (
-        "You are an experienced Scrum Master writing the notes for today's daily standup. "
-        "Summarize what each team member did since the last standup, and write a short "
-        "team-level progress narrative."
-    )
+    if solo:
+        ask = (
+            "You are helping me write my own daily standup notes — I work alone, there is no team. "
+            "Summarize what I did since the last standup, in the first person, and say plainly "
+            "whether I am on track for the sprint."
+        )
+    else:
+        ask = (
+            "You are an experienced Scrum Master writing the notes for today's daily standup. "
+            "Summarize what each team member did since the last standup, and write a short "
+            "team-level progress narrative."
+        )
+    if solo:
+        summary_rule = (
+            "- Write 'team_summary' as 1-3 sentences in the FIRST PERSON ('I shipped…', 'I'm still "
+            "blocked on…'): what I got done, whether I'm on track for the sprint, and what is at risk. "
+            "Never say 'the team' — there is none. "
+            f"Factor in the sprint status (currently '{confidence_label}': {confidence_rationale}) "
+            "but do NOT restate it — it is displayed beside the summary.\n"
+        )
+    else:
+        summary_rule = (
+            "- Write 'team_summary' as 2-4 sentences: overall momentum, notable progress, and any risks "
+            "— name members with blockers explicitly. "
+            f"Factor in the sprint status (currently '{confidence_label}': {confidence_rationale}) "
+            "but do NOT restate it — it is displayed beside the summary; write only what the team did "
+            "and what is at risk.\n"
+        )
 
     # ARC: Requirements
     requirements = (
@@ -164,11 +193,7 @@ def get_standup_summary_prompt(
         "'blockers' — you may rephrase and merge them, and add blockers you infer yourself (e.g. a "
         "PR stuck in review, a ticket flipped back to 'Blocked') — but never omit or soften a "
         "provided signal. With no signals and nothing suggesting a blocker, use an empty string.\n"
-        "- Write 'team_summary' as 2-4 sentences: overall momentum, notable progress, and any risks "
-        "— name members with blockers explicitly. "
-        f"Factor in the sprint status (currently '{confidence_label}': {confidence_rationale}) "
-        "but do NOT restate it — it is displayed beside the summary; write only what the team did "
-        "and what is at risk.\n"
+        f"{summary_rule}"
         f"{production_rule}"
         "- Be concrete and concise. No filler, no preamble.\n"
         "- Return ONLY a JSON object, no markdown fences, of the exact shape:\n"

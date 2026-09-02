@@ -320,6 +320,14 @@ class TestContextDepsPipeline:
         state = run_planning_pipeline(self._qs(), save_session=False)
         assert "context_deps" not in state
 
+    def test_solo_lands_on_state(self, fake_graph):
+        state = run_planning_pipeline(self._qs(), save_session=False, solo=True)
+        assert state["solo"] is True
+
+    def test_non_solo_leaves_the_key_absent(self, fake_graph):
+        state = run_planning_pipeline(self._qs(), save_session=False)
+        assert "solo" not in state
+
     def test_project_default_deps_apply_when_caller_passes_none(self, fake_graph, tmp_path):
         db, pid = self._project(tmp_path, {"default_context_deps": ["standup"]})
         state = run_planning_pipeline(self._qs(), db_path=db, project_id=pid)

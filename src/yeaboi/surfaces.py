@@ -11,3 +11,8 @@ from __future__ import annotations
 
 VALID_SURFACES = frozenset({"tui", "desktop", "web"})
 ALL_SURFACES: tuple[str, ...] = ("tui", "desktop", "web")
+
+# The landing worlds a piece of copy can be true in — the same keys as the
+# landing split's cards. A tip that names a room full of teammates is Team-only.
+VALID_WORLDS = frozenset({"solo", "team", "agents"})
+ALL_WORLDS: tuple[str, ...] = ("solo", "team", "agents")

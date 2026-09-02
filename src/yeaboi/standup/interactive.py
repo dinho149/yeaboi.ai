@@ -47,6 +47,7 @@ def run_interactive_standup(
     *,
     channels: list[str] | None = None,
     window_seconds: float = 90.0,
+    solo: bool = False,
     db_path=None,
     today: date | None = None,
 ) -> int:
@@ -62,7 +63,7 @@ def run_interactive_standup(
 
     if not interactive:
         # Headless (e.g. Linux cron with no display) — same as the plain run.
-        run_standup(session_id, channels=channels, deliver=True, db_path=db_path, today=today)
+        run_standup(session_id, channels=channels, deliver=True, solo=solo, db_path=db_path, today=today)
         return 0
 
     from yeaboi.config import get_standup_user_name
@@ -90,7 +91,7 @@ def run_interactive_standup(
     # 3. Generate + deliver.
     print("\nGenerating and delivering standup…\n")
     try:
-        report = run_standup(session_id, channels=channels, deliver=True, db_path=db_path, today=today)
+        report = run_standup(session_id, channels=channels, deliver=True, solo=solo, db_path=db_path, today=today)
     except Exception as e:
         logger.error("interactive standup failed: %s", e, exc_info=True)
         print(f"Error: {e}")

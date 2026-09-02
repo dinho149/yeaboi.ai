@@ -79,10 +79,12 @@ class ChatSupervisor:
                 self._graph = self._graph_factory()
             return self._graph
 
-    def create(self, description: str, *, intake_mode: str = "") -> LiveChat:
+    def create(self, description: str, *, intake_mode: str = "", solo: bool = False) -> LiveChat:
         """Open a new conversation seeded with the greeting and the description."""
         project_id = self._id_factory()
-        chat = LiveChat(project_id, ChatSession(self.graph(), start_state(description, intake_mode=intake_mode)))
+        chat = LiveChat(
+            project_id, ChatSession(self.graph(), start_state(description, intake_mode=intake_mode, solo=solo))
+        )
         with self._lock:
             self._chats[project_id] = chat
         logger.info("Chat created: project=%s", project_id)

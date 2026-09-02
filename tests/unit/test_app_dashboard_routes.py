@@ -361,3 +361,23 @@ class TestAnalysisRun:
         op_id = drain(request(app, "POST", "/api/analysis/run", {}))[0]["op_id"]
         assert seen[0] is not None
         assert app.ops.get(op_id) is None  # released when the stream ended
+
+
+class TestStandupSolo:
+    def test_solo_reaches_the_engine(self, app, monkeypatch):
+        seen: list = []
+        monkeypatch.setattr("yeaboi.standup.engine.run_standup", lambda sid, **kw: seen.append(kw["solo"]) or _report())
+        drain(request(app, "POST", "/api/standup/run", {"session_id": "s1"}))
+        drain(request(app, "POST", "/api/standup/run", {"session_id": "s1", "solo": True}))
+        assert seen == [False, True]
+
+    def test_solo_reaches_the_schedule(self, app, monkeypatch):
+        applied: list = []
+        monkeypatch.setattr(
+            "yeaboi.standup.schedule.apply_schedule", lambda sid, **kw: applied.append(kw["solo"]) or "ok"
+        )
+        monkeypatch.setattr("yeaboi.standup.schedule.current_schedule", lambda sid, **k: {"enabled": True})
+        payload = {"session_id": "s1", "enabled": True, "delivery_channels": ["terminal"], "remind_after": 0}
+        request(app, "POST", "/api/standup/schedule", payload)
+        request(app, "POST", "/api/standup/schedule", {**payload, "solo": True})
+        assert applied == [False, True]

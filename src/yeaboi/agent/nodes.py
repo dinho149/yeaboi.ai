@@ -74,6 +74,7 @@ from yeaboi.prompts.intake import (
     SCRUM_MD_HINT,
     SMALL_PROJECT_ESSENTIALS,
     SMART_ESSENTIALS,
+    SOLO_ROLES_DEFAULT,
     AnswerSource,
     ValidationWarning,
     is_choice_question,
@@ -2653,6 +2654,38 @@ def _auto_apply_extractions(questionnaire: QuestionnaireState, extracted: dict[i
         questionnaire.answer_sources[q_num] = AnswerSource.EXTRACTED
 
 
+def _apply_solo_defaults(questionnaire: QuestionnaireState, essential_set: frozenset[int]) -> frozenset[int]:
+    """Answer the team questions for a one-developer run; Q6 leaves the essentials.
+
+    Q6/Q7/Q30 land as DEFAULTED, never extracted, so CONDITIONAL_ESSENTIALS
+    cannot promote Q7 and the gap finder asks none of them.
+    """
+    prior = questionnaire.suggested_answers.get(6) or questionnaire.answers.get(6)
+    if prior and _parse_first_int(prior) not in (None, 1):
+        logger.info("Intake: solo run overrides a described team size of %r with 1", prior)
+    q30_meta = QUESTION_METADATA[30]
+    solo_answers = ((6, "1"), (7, SOLO_ROLES_DEFAULT), (30, q30_meta.options[q30_meta.default_index or 0]))
+    for q_num, answer in solo_answers:
+        questionnaire.answers[q_num] = answer
+        questionnaire.defaulted_questions.add(q_num)
+        questionnaire.answer_sources[q_num] = AnswerSource.DEFAULTED
+        questionnaire.extracted_questions.discard(q_num)
+        questionnaire.suggested_answers.pop(q_num, None)
+    # Caps the "add engineers" recommendation at the one person there is.
+    questionnaire._jira_org_team_size = 1
+    return essential_set - {6}
+
+
+def _solo_velocity_from_profile(profile, examples: dict | None) -> str:
+    """Q9 for a solo run: the profile's per-developer rate, not the whole team's."""
+    vel = float(getattr(profile, "velocity_avg", 0.0) or 0.0)
+    if vel <= 0:
+        return ""
+    contrib = (examples or {}).get("contributor_stats", [])
+    heads = len(contrib) if isinstance(contrib, list) and contrib else 1
+    return f"{vel / max(1, heads):.0f} points per sprint (your per-developer rate from team analysis)"
+
+
 def _auto_default_remaining(
     questionnaire: QuestionnaireState,
     essential_set: frozenset[int],
@@ -4202,6 +4235,10 @@ def project_intake(state: ScrumState) -> dict:
         if intake_mode not in ("smart", "quick", "small_project"):
             intake_mode = "smart"
         qs.intake_mode = intake_mode
+        # The Solo world's key, seeded by the caller (see ScrumState.solo).
+        solo = bool(state.get("solo"))
+        if solo:
+            logger.info("Intake: solo run — Q6/Q7/Q30 default to one developer, member selection skipped")
 
         # Extract initial description from the first message (if present).
         # The REPL sends the user's first input as a HumanMessage before
@@ -4249,6 +4286,13 @@ def project_intake(state: ScrumState) -> dict:
             _ap, _ap_ex = _load_profile_by_id(_analysis_profile_id)
             if _ap:
                 _analysis_answers = _extract_answers_from_profile(_ap, _ap_ex)
+                if solo:
+                    _analysis_answers.pop(6, None)
+                    _solo_vel = _solo_velocity_from_profile(_ap, _ap_ex)
+                    if _solo_vel:
+                        _analysis_answers[9] = _solo_vel
+                    else:
+                        _analysis_answers.pop(9, None)
                 for q_num, answer in _analysis_answers.items():
                     if q_num not in extracted:
                         extracted[q_num] = answer
@@ -4262,7 +4306,7 @@ def project_intake(state: ScrumState) -> dict:
 
                 # Set up Q6 as team member multi-select when contributor data exists
                 _member_names = _get_contributor_names(_ap_ex)
-                if _member_names and len(_member_names) >= 2:
+                if not solo and _member_names and len(_member_names) >= 2:
                     # Build member labels with velocity info
                     _member_labels = []
                     _contrib_list = _ap_ex.get("contributor_stats", [])
@@ -4319,6 +4363,8 @@ def project_intake(state: ScrumState) -> dict:
                 if 17 in extracted:
                     _sync_platform_from_url(qs)
             fallbacks = QUICK_FALLBACK_DEFAULTS if intake_mode == "quick" else None
+            if solo:
+                essential_set = _apply_solo_defaults(qs, essential_set)
 
             # Auto-default all non-essential, non-answered questions
             _auto_default_remaining(qs, essential_set, fallbacks)
@@ -4397,7 +4443,8 @@ def project_intake(state: ScrumState) -> dict:
                     jira_team_size = jira_data["jira_team_size"]
                     # Always store the org team size — used to cap the
                     # "increase team" recommendation even when velocity is zero.
-                    qs._jira_org_team_size = jira_team_size
+                    # A solo run is capped at the one person there is.
+                    qs._jira_org_team_size = 1 if solo else jira_team_size
 
                     if "velocity_error" not in jira_data:
                         per_dev = jira_data["per_dev_velocity"]

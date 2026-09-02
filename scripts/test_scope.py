@@ -93,6 +93,25 @@ AREAS: tuple[Area, ...] = (
         tests=("tests/unit/test_mcp_server.py", "tests/unit/test_projects_*.py"),
     ),
     Area(
+        # The Solo world's own modules: the welcome's Today snapshot and the
+        # desktop route that serves it. The engines it reads stay in their areas.
+        "solo",
+        src=(
+            "src/yeaboi/solo/",
+            "src/yeaboi/app/routes_solo.py",
+            "src/yeaboi/mcp/tools_solo.py",
+            "src/yeaboi/prompts/weekly_review.py",
+            "src/yeaboi/ui/mode_select/_solo.py",
+            "src/yeaboi/ui/mode_select/screens/_screens_solo.py",
+        ),
+        tests=(
+            "tests/unit/test_solo_*.py",
+            "tests/unit/test_app_solo_routes.py",
+            "tests/unit/prompts/test_weekly_review_prompt.py",
+            "tests/unit/test_mcp_server.py",
+        ),
+    ),
+    Area(
         "standup",
         src=("src/yeaboi/standup/", "src/yeaboi/mcp/tools_standup.py"),
         tests=("tests/unit/test_mcp_server.py", "tests/unit/test_standup_*.py", "tests/unit/prompts/test_standup_*.py"),

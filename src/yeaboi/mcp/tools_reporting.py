@@ -80,6 +80,7 @@ def _report_delivery(
     sources: dict | None,
     project_id: str,
     context_deps: list | None,
+    solo: bool,
 ):
     if period not in _PERIODS:
         raise ValueError(f"period must be one of {', '.join(_PERIODS)} — got {period!r}")
@@ -98,6 +99,7 @@ def _report_delivery(
         period_label_override=period_label_override,
         theme=theme or "midnight",
         sources=sources,
+        solo=solo,
     )
 
 
@@ -119,6 +121,7 @@ def register(app) -> None:
         sources: dict[str, list[str]] | None = None,
         project_id: str = "",
         context_deps: list[str] | None = None,
+        solo: bool = False,
     ) -> dict:
         """Generate a stakeholder-friendly delivery report of completed work from the team's
         tracker (Jira/Azure DevOps): executive summary, outcome themes, metrics, highlights.
@@ -134,7 +137,9 @@ def register(app) -> None:
         session_id = most recent session (sprint length/project name). project_id scopes the
         sprint framing to a project's latest plan; blank inherits the session's own link.
         context_deps toggles the run's cross-mode context sources — the 'plan' token gates
-        the sprint framing; null inherits the project default, an empty list is incognito."""
+        the sprint framing; null inherits the project default, an empty list is incognito.
+        solo=true writes a one-person report (the Solo world): first-person narrative, never
+        'the team'."""
         return await run_engine(
             ctx,
             _report_delivery,
@@ -150,6 +155,7 @@ def register(app) -> None:
             sources,
             project_id,
             context_deps,
+            solo,
         )
 
     @app.tool()

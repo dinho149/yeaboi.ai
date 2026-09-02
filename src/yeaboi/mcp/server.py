@@ -73,6 +73,7 @@ def create_app():
         tools_sessions,
         tools_ship,
         tools_slack,
+        tools_solo,
         tools_standup,
         tools_team,
     )
@@ -96,6 +97,7 @@ def create_app():
         tools_ship,
         tools_ceremonies,
         tools_slack,
+        tools_solo,
         tools_niko,
     )
     for module in modules:

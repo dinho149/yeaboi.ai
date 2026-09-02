@@ -2,6 +2,26 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.40.0",
+      "date": "2026-09-02",
+      "headline": "Review your solo week and see today's plan",
+      "summary": "Solo is now single-person on every surface with dedicated prompts and engines. A new Weekly Review mode tracks your solo work week by week, and a today strip shows yesterday's progress.",
+      "highlights": [
+        {
+          "text": "Weekly Review: self-review your solo week with carried-forward actions",
+          "areas": ["retro", "performance"]
+        },
+        {
+          "text": "Today strip shows yesterday's progress and this week's agent spend",
+          "areas": ["general"]
+        },
+        {
+          "text": "Solo standup, planning and reporting now use single-person prompts",
+          "areas": ["standup", "planning", "reporting"]
+        }
+      ]
+    },
+    {
       "version": "3.39.1",
       "date": "2026-09-02",
       "headline": "Desktop projects now expose their planning capabilities",

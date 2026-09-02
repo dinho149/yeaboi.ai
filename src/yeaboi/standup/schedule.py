@@ -72,12 +72,15 @@ def apply_schedule(
     lead_minutes: int,
     delivery_channels: list[str],
     remind_after: int = 0,
+    solo: bool = False,
     db_path=None,
 ) -> str:
     """Merge-save the schedule fields and install (or remove) the OS jobs.
 
     Identity and scope fields pass through untouched — this writes only what a
-    schedule wizard collects. Returns the scheduler's status message.
+    schedule wizard collects. ``solo`` is not saved: it rides on the installed
+    job's command line, so a Solo-world schedule fires a one-person run.
+    Returns the scheduler's status message.
     """
     from yeaboi.ceremonies.scheduler import (
         JOB_TRANSCRIPT_REMINDER,
@@ -122,7 +125,9 @@ def apply_schedule(
             context_deps=existing.get("context_deps"),
         )
     if enabled:
-        message = install_schedule(session_id, time, weekdays, lead_minutes)
+        if solo:
+            logger.info("apply_schedule: solo standup schedule for %s", session_id)
+        message = install_schedule(session_id, time, weekdays, lead_minutes, solo=solo)
         # A reminder is only meaningful alongside a scheduled standup; when the
         # schedule is off, remove_schedule below tears BOTH kinds down, so a
         # disabled standup can never leave notifications firing.

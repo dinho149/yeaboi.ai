@@ -97,6 +97,10 @@ BY_SECTION: dict[str, list[dict]] = {
         _chip("What should I do next?", "Based on my data, what should I work on next?", "compass"),
         _chip("What have I planned?", "List my saved planning sessions and how far each one got.", "layers"),
     ],
+    "/solo": [
+        _chip("How did my week go?", "Summarise my latest weekly review: what went well, what to change.", "calendar"),
+        _chip("Am I on track?", "Am I on track against my sprint plan, based on my standups?", "compass"),
+    ],
     "/agents": [
         _chip("What did my agents cost?", "What have my AI coding agents been costing me?", "bar-chart"),
         _chip("Are my agents safe?", "Summarise the security posture of my AI coding agents.", "shield-check"),

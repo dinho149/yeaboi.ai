@@ -345,6 +345,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         unmet_sources=tuple(str(s) for s in d.get("unmet_sources", ())),
         category_coverage=category_coverage,
         my_name=d.get("my_name", ""),
+        solo=bool(d.get("solo", False)),
         warnings=tuple(d.get("warnings", ())),
         images=tuple(d.get("images", ())),
         annotations=annotations_from(d.get("annotations")),

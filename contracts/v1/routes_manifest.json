@@ -127,6 +127,16 @@
       "title": "Ship · Run"
     },
     {
+      "path": "/solo/review",
+      "capability": "weekly-review",
+      "title": "Weekly Review"
+    },
+    {
+      "path": "/solo/review/report",
+      "capability": "weekly-review",
+      "title": "Weekly Review · Report"
+    },
+    {
       "path": "/agents/usage",
       "capability": "agent-usage",
       "title": "Agent Usage"

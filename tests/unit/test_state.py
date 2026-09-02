@@ -1290,6 +1290,69 @@ class TestDeliveryReport:
         assert restored.metrics == ()
 
 
+class TestWeeklyReview:
+    """The Solo world's WeeklyReview / ReviewAction frozen dataclasses + serialization."""
+
+    def test_defaults_construct_empty(self):
+        from yeaboi.agent.state import ReviewAction, WeeklyReview
+
+        r = WeeklyReview()
+        assert r.week_label == "" and r.actions == () and r.carried_actions == ()
+        a = ReviewAction()
+        assert (a.status, a.origin) == ("pending", "ai")
+
+    def test_frozen(self):
+        from yeaboi.agent.state import WeeklyReview
+
+        r = WeeklyReview(week_label="2026-W36")
+        with pytest.raises(FrozenInstanceError):
+            r.week_label = "2026-W37"  # type: ignore[misc]
+
+    def test_round_trip_via_store_helpers(self):
+        from yeaboi.agent.state import DeliveredItem, ReviewAction, WeeklyReview
+        from yeaboi.solo.store import _dict_to_weekly_review, _review_to_json
+
+        original = WeeklyReview(
+            week_label="2026-W36",
+            week_start="2026-08-31",
+            week_end="2026-09-04",
+            project_id="proj-1",
+            project_name="Apollo",
+            session_id="s1",
+            my_name="Dinho",
+            standup_dates=("2026-08-31",),
+            standup_lines=("Mon: closed S-1",),
+            confidence_start=60,
+            confidence_end=72,
+            confidence_label="On track",
+            sprint_name="Sprint 1",
+            sprint_day=2,
+            sprint_total_days=5,
+            delivered_items=(DeliveredItem(key="S-1", title="Login", status="Done", source="jira", assignee="Dinho"),),
+            planned_story_count=2,
+            plan_status="on_track",
+            plan_line="Day 2/5",
+            summary="ok",
+            went_well=("a",),
+            to_change=("b",),
+            actions=(ReviewAction(id="a1", text="Split S-2", week_label="2026-W36"),),
+            carried_actions=(ReviewAction(id="c1", text="Docs", status="done", origin="carryover", week_label="W35"),),
+            warnings=("w",),
+            generated_at="2026-09-04",
+        )
+        restored = _dict_to_weekly_review(json.loads(_review_to_json(original)))
+        assert restored == original
+        assert isinstance(restored.actions, tuple) and isinstance(restored.actions[0], ReviewAction)
+        assert isinstance(restored.delivered_items[0], DeliveredItem)
+
+    def test_reconstruct_backfills_missing_fields(self):
+        from yeaboi.solo.store import _dict_to_weekly_review
+
+        restored = _dict_to_weekly_review({"week_label": "2026-W36"})
+        assert restored.week_label == "2026-W36"
+        assert restored.actions == () and restored.plan_status == ""
+
+
 class TestRoadmapArtifacts:
     """The Roadmap intake card's frozen dataclasses (RoadmapProject / RoadmapAnalysis)."""
 
@@ -1400,3 +1463,21 @@ class TestPracticeSignal:
 
         assert MemberUpdate().practices == ()
         assert StandupReport().practice_rollup == ()
+
+
+class TestSoloState:
+    def test_scrum_state_declares_solo(self):
+        from yeaboi.agent.state import ScrumState
+
+        assert "solo" in ScrumState.__annotations__
+
+    def test_standup_report_solo_round_trips_and_defaults_off(self):
+        import json as _json
+
+        from yeaboi.standup.store import _dict_to_standup_report, _standup_report_to_json
+
+        solo = StandupReport(date="2026-07-10", team_summary="I shipped it.", solo=True)
+        assert _dict_to_standup_report(_json.loads(_standup_report_to_json(solo))).solo is True
+        assert StandupReport().solo is False
+        # A report stored before the field existed still deserialises.
+        assert _dict_to_standup_report({"date": "2026-07-10"}).solo is False

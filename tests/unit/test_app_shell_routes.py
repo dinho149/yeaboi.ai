@@ -82,6 +82,7 @@ class TestBetaGate:
             "agent-advisor",
             "agent-standup",
             "agent-security",
+            "weekly-review",
         }
         gate = payload["gates"]["ship"]
         assert gate["headline"].endswith("in beta.")

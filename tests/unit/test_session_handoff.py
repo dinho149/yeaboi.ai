@@ -230,3 +230,14 @@ class TestScopeStateKeys:
         db, pid = self._project(tmp_path, {"default_context_deps": ["standup"]})
         keys, _ = self._seed(monkeypatch, db, project=pid, deps=("retro",))
         assert keys["context_deps"] == '["retro"]'
+
+    def test_the_solo_world_seeds_the_solo_key(self, tmp_path, monkeypatch):
+        db, _ = self._project(tmp_path)
+        monkeypatch.setattr("yeaboi.projects.active.is_solo_mode", lambda: True)
+        keys, _ = self._seed(monkeypatch, db)
+        assert keys == {"solo": True}
+
+    def test_the_team_world_leaves_the_solo_key_absent(self, tmp_path, monkeypatch):
+        db, _ = self._project(tmp_path)
+        keys, _ = self._seed(monkeypatch, db)
+        assert "solo" not in keys

@@ -138,3 +138,11 @@ class TestProductionCard:
     def test_the_desktop_gets_the_same_card(self):
         keys = [c["key"] for c in dashboard.cards({"report": _report(ops_signals=_OPS)})]
         assert "production" in keys
+
+
+class TestSoloCards:
+    def test_a_solo_report_has_no_team_card(self):
+        order = dashboard.card_order({"report": _report(solo=True), "team_expanded": True})
+        assert "team" not in order
+        assert not any(key.startswith(dashboard.MEMBER_PREFIX) for key in order)
+        assert order[:2] == ["summary", "my_update"]

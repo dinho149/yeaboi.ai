@@ -1073,9 +1073,10 @@ class TestStandupCLI:
 
         calls = {}
 
-        def fake_run(session_id, channels=None, deliver=True):
+        def fake_run(session_id, channels=None, deliver=True, *, solo=False):
             calls["session_id"] = session_id
             calls["channels"] = channels
+            calls["solo"] = solo
             return StandupReport(session_id=session_id, sprint_day=2, sprint_total_days=10)
 
         monkeypatch.setattr("yeaboi.standup.engine.run_standup", fake_run)
@@ -1086,6 +1087,7 @@ class TestStandupCLI:
         assert calls["session_id"] == "s1"
         # "all" expands to every channel
         assert set(calls["channels"]) == {"terminal", "desktop", "slack", "email"}
+        assert calls["solo"] is False  # the top-level --solo flag is off by default
 
 
 class TestUpdateRestartWiring:

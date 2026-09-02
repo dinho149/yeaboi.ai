@@ -8,7 +8,8 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
 1. **Run it.** Call `standup_run` (blank `session_id` targets the most recent
    planning session). Leave `deliver` false — you present the report; only set
    `deliver: true` if the user explicitly asks to send it to their configured
-   channels (Slack/email/desktop).
+   channels (Slack/email/desktop). Pass `solo: true` when the user is running
+   their own delivery with no team — one card, first-person summary.
 
 2. **Present the report.** From `data`: lead with sprint day and the confidence
    score + rationale, then the team summary, then per-member updates (yesterday

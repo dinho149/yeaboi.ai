@@ -1196,6 +1196,7 @@ def _summarize_members(
     sprint_name: str,
     self_reported_images: dict[str, list[str]] | None = None,
     ops_bundle=None,
+    solo: bool = False,
 ) -> tuple[list[MemberUpdate], str, list[str]]:
     """Produce (member_updates, team_summary, warnings) via one LLM call + deterministic fallback.
 
@@ -1349,6 +1350,7 @@ def _summarize_members(
         activity_counts=activity_counts,
         production=standup_ops.for_prompt(ops_bundle) if ops_bundle else None,
         production_window=standup_ops.window_label(ops_bundle) if ops_bundle else "",
+        solo=solo,
     )
 
     # Screenshots pasted into "My Update" — flattened across members and attached
@@ -1357,9 +1359,10 @@ def _summarize_members(
 
     try:
         logger.info(
-            "standup: invoking LLM to summarize %d member(s) (%d pasted image(s))",
+            "standup: invoking LLM to summarize %d member(s) (%d pasted image(s), solo=%s)",
             len(member_payload),
             len(images),
+            solo,
         )
         response = invoke_json(prompt, image_paths=images)
         parsed = _parse_standup_response(response.content)
@@ -1417,6 +1420,7 @@ def run_standup(
     dry_run: bool = False,
     project_id: str = "",
     context_deps: list[str] | None = None,
+    solo: bool = False,
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -1456,6 +1460,10 @@ def run_standup(
             session's saved standup config, then the project default; an
             empty list is an incognito run. The ``plan`` dep gates the
             sprint-plan substitution above.
+        solo: a one-person run — self-only roster (no tracker or plan roster
+            discovery, an explicit ``team_members`` is ignored) and a
+            first-person summary. Delivery is unchanged: the saved channels
+            are the user's own choice.
         db_path: override sessions.db path (tests); defaults to paths.get_db_path().
         today: override for the current date (tests).
         on_progress: optional ``callable(str)`` invoked (best-effort) as each
@@ -1695,6 +1703,12 @@ def run_standup(
         my_name = display_name
         logger.info("standup: resolved standup user to %r via tracker identity", my_name)
 
+    if solo:
+        if team_members:
+            logger.info("standup: solo run — ignoring %d explicit team member(s)", len(team_members))
+        # The deliberate self-only roster: no tracker discovery, no plan roster.
+        team_members = []
+        logger.info("standup: solo run — self-only roster, roster discovery skipped")
     plan_members = [str(name).strip() for name in (state.get("selected_team_members") or ()) if str(name).strip()]
     roster_configured = bool((config or {}).get("roster_configured"))
     if team_members is not None:
@@ -1812,6 +1826,7 @@ def run_standup(
         sprint_name=ctx.sprint_name,
         self_reported_images=self_reported_images,
         ops_bundle=ops_bundle,
+        solo=solo,
     )
 
     # One rule, two audiences. A skip is worth chasing when the user asked for the
@@ -1934,6 +1949,7 @@ def run_standup(
         unmet_sources=tuple(sorted(advisable_sources)),
         category_coverage=category_coverage,
         my_name=my_name,
+        solo=solo,
         warnings=tuple(warnings),
         # Screenshots pasted into "My Update" — carried on the report so the
         # Markdown/HTML/Notion/Confluence exports can embed them.

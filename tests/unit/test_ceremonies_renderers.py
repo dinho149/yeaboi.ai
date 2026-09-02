@@ -18,7 +18,9 @@ from yeaboi.agent.state import (
     AgentUsageReport,
     DeliveryReport,
     ModelUsageRow,
+    ReviewAction,
     SecurityFinding,
+    WeeklyReview,
 )
 from yeaboi.ceremonies import renderers
 from yeaboi.ceremonies.catalog import CATALOG, renderer_callable
@@ -44,6 +46,29 @@ class TestReportDispatch:
     def test_a_report_with_no_llm_prose_still_has_a_summary(self):
         d = renderers.report_dispatch(DeliveryReport(period_label="Last week", project_name="Apollo"))
         assert "Apollo" in d.summary
+
+
+class TestWeeklyReviewDispatch:
+    def test_leads_with_the_on_track_line_and_carries_the_lists(self):
+        d = renderers.weekly_review_dispatch(
+            WeeklyReview(
+                week_label="2026-W35",
+                plan_line="Day 4/10 · On track",
+                summary="A steady week.",
+                went_well=("Shipped login",),
+                to_change=("Fewer context switches",),
+                actions=(ReviewAction(id="a1", text="Write the ADR"),),
+            )
+        )
+        assert d.title == "Weekly review — 2026-W35"
+        assert d.summary == "Day 4/10 · On track"
+        assert "A steady week." in d.body
+        assert "- Shipped login" in d.body and "- Fewer context switches" in d.body and "- Write the ADR" in d.body
+
+    def test_without_a_plan_line_the_summary_leads(self):
+        d = renderers.weekly_review_dispatch(WeeklyReview(week_start="2026-08-24", summary="Quiet."))
+        assert d.title == "Weekly review — 2026-08-24"
+        assert d.summary == "Quiet."
 
 
 class TestAgentDispatches:

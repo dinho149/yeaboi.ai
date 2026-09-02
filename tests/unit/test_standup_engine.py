@@ -3099,3 +3099,92 @@ class TestProductionReachesTheRun:
         ]
         assert captured["production_window"] == "the last 14 days"
         assert "pagerduty" not in json.dumps(captured["members"])
+
+
+class TestSoloRun:
+    """``solo=True`` is the Solo world: one card, no roster discovery, first-person notes."""
+
+    def _llm(self, monkeypatch, members_json):
+        llm_json = json.dumps({"members": members_json, "team_summary": "I shipped the login page."})
+        monkeypatch.setattr(
+            "yeaboi.agent.llm.get_llm",
+            lambda **k: type("L", (), {"invoke": lambda self, m: _FakeResp(llm_json)})(),
+        )
+
+    def _no_discovery(self, monkeypatch):
+        calls: list = []
+        monkeypatch.setattr(
+            "yeaboi.standup.roster.discover_team_members", lambda *a, **k: calls.append(a) or ["Alice", "Zed"]
+        )
+        return calls
+
+    def test_solo_run_is_self_only_and_never_discovers_a_roster(self, monkeypatch, db_path, seeded_session):
+        calls = self._no_discovery(monkeypatch)
+        _patch_common(
+            monkeypatch,
+            items=[{"author": "Me", "kind": "commit", "title": "login", "source": "github"}],
+            counts=[("github", 1)],
+        )
+        self._llm(monkeypatch, [{"name": "Me", "summary": "Shipped login"}])
+        report = engine.run_standup(seeded_session, deliver=False, solo=True, db_path=db_path, today=date(2026, 7, 10))
+        # The plan's Alice/Bob never get a card, and the tracker is never asked.
+        assert [m.name for m in report.member_updates] == ["Me"]
+        assert calls == []
+        assert report.solo is True
+
+    def test_solo_ignores_an_explicit_roster(self, monkeypatch, db_path, seeded_session):
+        self._no_discovery(monkeypatch)
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._llm(monkeypatch, [{"name": "Me", "summary": "quiet day"}])
+        report = engine.run_standup(
+            seeded_session,
+            deliver=False,
+            solo=True,
+            team_members=["Alice", "Bob"],
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert [m.name for m in report.member_updates] == ["Me"]
+
+    def test_solo_drops_other_authors_activity(self, monkeypatch, db_path, seeded_session):
+        self._no_discovery(monkeypatch)
+        _patch_common(
+            monkeypatch,
+            items=[
+                {"author": "Me", "kind": "commit", "title": "login", "source": "github"},
+                {"author": "Alice", "kind": "pr", "title": "refactor", "source": "github"},
+            ],
+            counts=[("github", 2)],
+        )
+        self._llm(monkeypatch, [{"name": "Me", "summary": "login"}])
+        report = engine.run_standup(seeded_session, deliver=False, solo=True, db_path=db_path, today=date(2026, 7, 10))
+        assert report.activity_counts == (("github", 1),)
+        assert "Alice" not in [m.name for m in report.member_updates]
+
+    def test_solo_reaches_the_prompt(self, monkeypatch, db_path, seeded_session):
+        self._no_discovery(monkeypatch)
+        _patch_common(
+            monkeypatch,
+            items=[{"author": "Me", "kind": "commit", "title": "login", "source": "github"}],
+            counts=[("github", 1)],
+        )
+        self._llm(monkeypatch, [{"name": "Me", "summary": "Shipped login"}])
+        seen: dict = {}
+        from yeaboi.prompts import standup as prompts
+
+        real = prompts.get_standup_summary_prompt
+
+        def spy(**kw):
+            seen["solo"] = kw.get("solo")
+            return real(**kw)
+
+        monkeypatch.setattr(prompts, "get_standup_summary_prompt", spy)
+        engine.run_standup(seeded_session, deliver=False, solo=True, db_path=db_path, today=date(2026, 7, 10))
+        assert seen["solo"] is True
+
+    def test_a_team_run_is_unchanged(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._llm(monkeypatch, [])
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert report.solo is False
+        assert "Alice" in [m.name for m in report.member_updates]

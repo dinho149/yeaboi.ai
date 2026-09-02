@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from yeaboi.agent.nodes import (
     _Q2_REPO_URL_PROMPT,
     _VELOCITY_PER_ENGINEER,
+    _apply_solo_defaults,
     _auto_apply_extractions,
     _batch_defaults_for_phase,
     _build_answers_block,
@@ -28,6 +29,7 @@ from yeaboi.agent.nodes import (
     _next_unskipped_question,
     _parse_edit_intent,
     _parse_first_int,
+    _solo_velocity_from_profile,
     _sync_platform_from_url,
     project_intake,
     route_entry,
@@ -45,6 +47,8 @@ from yeaboi.prompts.intake import (
     QUESTION_METADATA,
     QUICK_FALLBACK_DEFAULTS,
     SMART_ESSENTIALS,
+    SOLO_ROLES_DEFAULT,
+    AnswerSource,
     QuestionMeta,
     is_choice_question,
 )
@@ -3949,3 +3953,90 @@ class TestAnalysisToggleInIntake:
         assert loads == ["jira-DEMO-1"]  # the Q6/Q8/Q9 auto-fill read
         assert qs._analysis_profile_id == "jira-DEMO-1"
         assert qs._analysis_enabled is True
+
+
+class TestSoloIntake:
+    """A Solo-world run plans for one developer: the team questions are defaulted, never asked."""
+
+    @pytest.fixture(autouse=True)
+    def _hermetic(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.agent.nodes._check_vague_answer", lambda q, a, n=0: None)
+        monkeypatch.setattr("yeaboi.agent.nodes._load_user_context", lambda *a, **kw: (None, {}))
+
+    @staticmethod
+    def _run(monkeypatch, extracted, *, solo=True, **state_extra):
+        monkeypatch.setattr("yeaboi.agent.nodes._extract_answers_from_description", lambda desc: dict(extracted))
+        state = {
+            "messages": [HumanMessage(content="Building a todo app")],
+            "_intake_mode": "smart",
+            **({"solo": True} if solo else {}),
+            **state_extra,
+        }
+        return project_intake(state)
+
+    @staticmethod
+    def _profile(monkeypatch, contributors):
+        from types import SimpleNamespace
+
+        profile = SimpleNamespace(velocity_avg=30.0, tech_stack=(), integrations=())
+        examples = {
+            "contributor_stats": [{"name": n, "per_sprint": 15.0, "top_discipline": "backend"} for n in contributors]
+        }
+        monkeypatch.setattr("yeaboi.agent.nodes._effective_analysis_profile_id", lambda state: "team-apollo")
+        monkeypatch.setattr("yeaboi.agent.nodes._load_profile_by_id", lambda pid: (profile, examples))
+
+    def test_team_questions_are_defaulted_not_asked(self, monkeypatch):
+        result = self._run(monkeypatch, {1: "A todo app", 6: "3 engineers"})
+        qs = result["questionnaire"]
+        assert qs.answers[6] == "1"
+        assert qs.answers[7] == SOLO_ROLES_DEFAULT
+        assert qs.answers[30] == "None"
+        for q in (6, 7, 30):
+            assert q in qs.defaulted_questions
+            assert qs.answer_sources[q] is AnswerSource.DEFAULTED
+        # The described "3 engineers" never survives as a suggestion.
+        assert 6 not in qs.suggested_answers
+        assert INTAKE_QUESTIONS[6] not in result["messages"][0].content
+
+    def test_none_of_the_team_questions_is_a_gap(self, monkeypatch):
+        qs = self._run(monkeypatch, {1: "A todo app"})["questionnaire"]
+        assert set(_find_essential_gaps(qs, SMART_ESSENTIALS)) & {6, 7, 30} == set()
+        # The other essentials are still asked.
+        assert 2 in _find_essential_gaps(qs, SMART_ESSENTIALS)
+
+    def test_the_plan_is_sized_for_one_developer(self, monkeypatch):
+        qs = self._run(monkeypatch, {1: "A todo app"})["questionnaire"]
+        sizing = _extract_team_and_velocity(qs)
+        assert sizing["team_size"] == 1
+        assert sizing["velocity_per_sprint"] == _VELOCITY_PER_ENGINEER
+        assert qs._jira_org_team_size == 1
+
+    def test_a_two_contributor_profile_offers_no_member_picker(self, monkeypatch):
+        self._profile(monkeypatch, ["Alice", "Bob"])
+        qs = self._run(monkeypatch, {1: "A todo app"})["questionnaire"]
+        assert not qs._q6_member_select
+        assert 6 not in qs._follow_up_choices
+        assert qs.answers[6] == "1"
+        # The profile's velocity lands as a per-developer rate, not the team's.
+        assert qs.answers[9].startswith("15 points per sprint")
+
+    def test_the_team_world_still_offers_the_picker(self, monkeypatch):
+        self._profile(monkeypatch, ["Alice", "Bob"])
+        qs = self._run(monkeypatch, {1: "A todo app"}, solo=False)["questionnaire"]
+        assert qs._q6_member_select
+
+    def test_apply_solo_defaults_drops_q6_from_the_essentials(self):
+        qs = QuestionnaireState()
+        qs.suggested_answers[6] = "4 engineers"
+        qs.extracted_questions.add(6)
+        assert _apply_solo_defaults(qs, SMART_ESSENTIALS) == SMART_ESSENTIALS - {6}
+        assert qs.answers[6] == "1" and 6 not in qs.suggested_answers and 6 not in qs.extracted_questions
+        assert qs._jira_org_team_size == 1
+
+    def test_solo_velocity_from_profile(self):
+        from types import SimpleNamespace
+
+        contributors = {"contributor_stats": [{"name": "A"}, {"name": "B"}]}
+        assert _solo_velocity_from_profile(SimpleNamespace(velocity_avg=30.0), contributors).startswith("15 points")
+        assert _solo_velocity_from_profile(SimpleNamespace(velocity_avg=30.0), {}).startswith("30 points")
+        assert _solo_velocity_from_profile(SimpleNamespace(velocity_avg=0.0), contributors) == ""

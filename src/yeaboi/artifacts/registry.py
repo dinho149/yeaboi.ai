@@ -318,6 +318,7 @@ _RECONSTRUCTORS: dict[str, tuple[str, str]] = {
     "OneOnOneRecord": ("yeaboi.performance.store", "_dict_to_record"),
     "SixMonthReview": ("yeaboi.performance.store", "_dict_to_review"),
     "PerformanceNote": ("yeaboi.performance.store", "_dict_to_note"),
+    "WeeklyReview": ("yeaboi.solo.store", "_dict_to_weekly_review"),
 }
 
 

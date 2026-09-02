@@ -194,7 +194,7 @@ def _scope_state_keys() -> tuple[dict, frozenset[str] | None]:
     """
     keys: dict = {}
     try:
-        from yeaboi.projects.active import get_active_project, get_context_deps
+        from yeaboi.projects.active import get_active_project, get_context_deps, is_solo_mode
         from yeaboi.projects.scope import resolve_scope
 
         project = get_active_project()
@@ -206,6 +206,9 @@ def _scope_state_keys() -> tuple[dict, frozenset[str] | None]:
         if deps is not None:
             keys["context_deps"] = json.dumps(sorted(deps))
             logger.info("Planning session context deps: %s", keys["context_deps"])
+        if is_solo_mode():
+            keys["solo"] = True
+            logger.info("Planning session runs solo: team questions default to one developer")
         return keys, deps
     except Exception:  # noqa: BLE001 — toggles are best-effort, never block a session
         logger.debug("could not read the active project or context toggles", exc_info=True)

@@ -16,6 +16,7 @@ _HELPERS = [
     (paths.get_retro_export_dir, "retro"),
     (paths.get_performance_export_dir, "performance"),
     (paths.get_reporting_export_dir, "reporting"),
+    (paths.get_solo_export_dir, "solo"),
 ]
 
 
@@ -67,6 +68,24 @@ class TestAgentwatchLogDir:
 
     def test_lives_under_the_logs_root(self):
         assert paths.LOGS_DIR in paths.AGENTWATCH_LOGS_DIR.parents
+
+
+class TestSoloDirs:
+    """The Solo world's own export and log directories."""
+
+    def test_export_empty_key_fallback(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "SOLO_EXPORTS_DIR", tmp_path / "solo")
+        assert paths.get_solo_export_dir("").name == "review"
+
+    def test_log_dir_creates_under_the_constant(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "SOLO_LOGS_DIR", tmp_path / "logs" / "solo")
+        d = paths.get_solo_log_dir()
+        assert d == tmp_path / "logs" / "solo" and d.is_dir()
+        assert paths.get_solo_log_dir() == d
+
+    def test_lives_under_the_roots(self):
+        assert paths.LOGS_DIR in paths.SOLO_LOGS_DIR.parents
+        assert paths.EXPORTS_DIR in paths.SOLO_EXPORTS_DIR.parents
 
 
 class TestTranscriptsDir:

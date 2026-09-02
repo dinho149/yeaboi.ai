@@ -184,6 +184,7 @@ def run_repl(
     non_interactive: bool = False,
     output_format: str | None = None,
     prior_art: list[str] | None = None,
+    solo: bool = False,
 ) -> None:
     """Run the interactive REPL loop.
 
@@ -474,6 +475,10 @@ def run_repl(
     # the saved intake mode from the previous session.
     if resume_state is None:
         graph_state["_intake_mode"] = intake_mode or "smart"
+        if solo:
+            # A declared ScrumState key, like project_id — the intake reads it.
+            graph_state["solo"] = True
+            logger.info("REPL: solo run — team questions default to one developer")
 
     while True:
         # ── Auto-drive for --export-only mode ─────────────────────────

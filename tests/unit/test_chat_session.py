@@ -34,6 +34,7 @@ from yeaboi.agent.chat_session import (
     review_gate,
     review_verdict,
     stage_of,
+    start_state,
 )
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
 
@@ -387,3 +388,11 @@ class TestChatSessionAwaiting:
     def test_dry_run_sessions_carry_the_flag(self):
         session = ChatSession(None, {"capacity_override_target": -4}, dry_run=True)
         assert session.awaiting != "capacity"
+
+
+class TestStartState:
+    def test_solo_seeds_the_declared_key(self):
+        assert start_state("a todo app", intake_mode="smart", solo=True)["solo"] is True
+
+    def test_a_team_conversation_leaves_the_key_absent(self):
+        assert "solo" not in start_state("a todo app", intake_mode="smart")

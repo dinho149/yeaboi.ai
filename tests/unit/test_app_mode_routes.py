@@ -422,3 +422,20 @@ class TestShipRunReads:
 
     def test_no_runs_yet_is_an_empty_list(self, app):
         assert body(request(app, "GET", "/api/ship/runs"))["runs"] == []
+
+
+class TestReportingSolo:
+    def test_solo_reaches_the_engine(self, app, monkeypatch):
+        @dataclass
+        class _Report:
+            delivered_items: tuple = ()
+            period_label: str = "Last month"
+            warnings: tuple = ()
+
+        seen: list = []
+        monkeypatch.setattr(
+            "yeaboi.reporting.engine.run_delivery_report", lambda period, **kw: seen.append(kw["solo"]) or _Report()
+        )
+        drain(request(app, "POST", "/api/reporting/run", {"period": "last_month"}))
+        drain(request(app, "POST", "/api/reporting/run", {"period": "last_month", "solo": True}))
+        assert seen == [False, True]

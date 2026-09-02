@@ -185,6 +185,7 @@ def run_planning_pipeline(
     architecture_spike: str = "auto",
     project_id: str = "",
     context_deps: list[str] | None = None,
+    solo: bool = False,
 ) -> dict:
     """Run the full planning pipeline headlessly and return the final graph state.
 
@@ -226,6 +227,9 @@ def run_planning_pipeline(
             ``analysis`` the team-profile calibration. ``None`` inherits the
             project's ``default_context_deps``, then all-on; an empty list is
             an incognito run (context isolation — the session still persists).
+        solo: A one-developer run (the Solo world). The intake defaults the
+            team questions to one person and never offers a member picker,
+            so the plan is sized for you alone.
 
     Returns:
         The final graph state dict (analysis, features, stories, tasks,
@@ -309,6 +313,9 @@ def run_planning_pipeline(
             # session both carry the run's toggles.
             graph_state["context_deps"] = json.dumps(sorted(effective_deps))
             logger.info("Headless: context deps restricted to %s", sorted(effective_deps))
+        if solo:
+            graph_state["solo"] = True
+            logger.info("Headless: solo run — team questions default to one developer")
 
         store = SessionStore(db_path or get_db_path()) if save_session else None
         session_created = False

@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 31  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair, v27=agentwatch, v28=standup GitHub owner scope, v29=standup GitHub repo exclusions, v30=planning prior-art feedback, v31=projects  # noqa: E501
+CURRENT_SCHEMA_VERSION = 32  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair, v27=agentwatch, v28=standup GitHub owner scope, v29=standup GitHub repo exclusions, v30=planning prior-art feedback, v31=projects, v32=weekly review  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -180,6 +180,7 @@ _SCALAR_KEYS = {
     "context_sources",
     "project_id",
     "context_deps",
+    "solo",
     "_chat_greeting_done",
     "_chat_preamble",
     "_chat_fast_forward",
@@ -908,6 +909,14 @@ class SessionStore:
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_meta_project ON sessions_meta(project_id)")
             if added:
                 logger.info("Migration v31: created projects table and sessions_meta.project_id")
+
+        if from_version < 32:
+            # v32: the Solo world's weekly reviews. Schema lives in solo/store.py
+            # (also created on that store's open, for the CLI and MCP paths).
+            from yeaboi.solo.store import _WEEKLY_REVIEW_SCHEMA
+
+            self._conn.executescript(_WEEKLY_REVIEW_SCHEMA)
+            logger.info("Migration v32: created weekly_review_history table")
 
     def _apply_edit_provenance(self) -> None:
         """The v21 migration body — idempotent, so v26 re-runs it verbatim.

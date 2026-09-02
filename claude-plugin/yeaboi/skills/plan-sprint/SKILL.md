@@ -54,6 +54,8 @@ moving, never rush.
    - `answers` — `{question_number: answer}` for everything the user answered
    - `project_context` — the extra free-form notes from step 2
    - `prior_art` — the repository keys the user approved in step 3, if any
+   - `solo: true` when the user is running their own delivery with no team —
+     the team questions default to one developer and no member picker is offered
    Warn the user it takes a few minutes (several LLM calls); progress
    notifications will stream as the pipeline advances.
 

@@ -2708,8 +2708,18 @@ def _collect_standup_data(message: str = "") -> dict:
     return collect(db_path=_ana_dbp, message=message)
 
 
-def _standup_generate(session_id: str, on_progress=None) -> str:
-    """Run a standup for preview (no delivery) and return a status message."""
+def _is_solo() -> bool:
+    """The session's world, read at launch time so a menu run scopes itself."""
+    from yeaboi.projects.active import is_solo_mode
+
+    return is_solo_mode()
+
+
+def _standup_generate(session_id: str, on_progress=None, *, solo: bool = False) -> str:
+    """Run a standup for preview (no delivery) and return a status message.
+
+    ``solo`` is the Solo world: a self-only run, first-person summary.
+    """
     try:
         from yeaboi.projects.active import get_active_project, get_context_deps
         from yeaboi.standup.engine import run_standup
@@ -2721,6 +2731,7 @@ def _standup_generate(session_id: str, on_progress=None) -> str:
             on_progress=on_progress,
             project_id=get_active_project(),
             context_deps=get_context_deps(),
+            solo=solo,
         )
         warn = f" · {len(report.warnings)} notice(s)" if report.warnings else ""
         logger.info(
@@ -3300,7 +3311,7 @@ def _standup_generate_flow(
     # config on its own. This only skips re-asking: when every applicable step
     # was confirmed on an earlier run, offer those answers instead of walking
     # the five pickers again.
-    saved = _standup_saved_setup(session_id)
+    saved = _standup_saved_setup(session_id, solo=_is_solo())
     reuse = False
     if saved is not None:
         source_id, saved_rows = saved
@@ -3325,18 +3336,23 @@ def _standup_generate_flow(
         # Mirror Analysis mode: confirm tracker sources, discover their roster,
         # then confirm the authoritative member subset. Confirmed choices are
         # persisted immediately, so cancelling the later My Update prompt still
-        # leaves the new defaults ready for scheduled runs.
-        team_ok, team_message = _standup_team_configure(
-            console,
-            live,
-            read_key,
-            frame_time,
-            supports_timeout,
-            session_id,
-        )
-        if not team_ok:
-            logger.info("standup generate: stopped during team selection (session=%s)", session_id)
-            return team_message
+        # leaves the new defaults ready for scheduled runs. A Solo run is
+        # self-only by construction, so the roster step is skipped: the engine
+        # would discard whatever was picked.
+        if _is_solo():
+            logger.info("standup generate: solo run — roster step skipped (session=%s)", session_id)
+        else:
+            team_ok, team_message = _standup_team_configure(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                session_id,
+            )
+            if not team_ok:
+                logger.info("standup generate: stopped during team selection (session=%s)", session_id)
+                return team_message
 
         code_ok, code_message = _standup_code_configure(
             console,
@@ -3401,7 +3417,7 @@ def _standup_generate_flow(
     result_box: list = [None]
 
     def _worker() -> None:
-        result_box[0] = _standup_generate(session_id, on_progress=progress.append)
+        result_box[0] = _standup_generate(session_id, on_progress=progress.append, solo=_is_solo())
 
     thread = duck_working_thread(_worker, name="standup-generate")
     thread.start()
@@ -4027,8 +4043,12 @@ def _standup_last_run_label(row: dict, today: date) -> str | None:
     return " · ".join(parts)
 
 
-def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] | None:
+def _standup_saved_setup(session_id: str, *, solo: bool = False) -> tuple[str, list[tuple[str, str]]] | None:
     """Summarise a reusable saved setup, or None when Generate must ask.
+
+    ``solo`` skips the roster gate: a Solo run is self-only by construction, so
+    an unconfigured roster is not a reason to ask (mirrors analysis's members
+    step).
 
     Returns ``(source_session_id, rows)`` — ``(label, value)`` rows only once
     every *applicable* step has been confirmed at least once. A step whose
@@ -4104,14 +4124,15 @@ def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] |
         return None
     trackers = list(config.get("tracker_sources", ()))
     members = list(config.get("team_members", ()))
-    if not config.get("roster_configured") or not members:
+    if not solo and (not config.get("roster_configured") or not members):
         return None
     if not trackers or not set(trackers) <= trackers_available:
         return None
-    rows = [
-        ("Trackers", _standup_source_labels(trackers)),
-        ("Members", _standup_name_summary(members)),
-    ]
+    rows = [("Trackers", _standup_source_labels(trackers))]
+    if solo:
+        rows.append(("Members", "just you"))
+    else:
+        rows.append(("Members", _standup_name_summary(members)))
 
     # Code scope. Applicable only when an integration exists — otherwise
     # _standup_code_configure returns early and never sets the flag.
@@ -5447,6 +5468,7 @@ def _run_standup_schedule_wizard(
         lead_minutes=lead_val,
         delivery_channels=channels,
         remind_after=remind_after,
+        solo=_is_solo(),
         db_path=_ana_dbp,
     )
 
@@ -7077,6 +7099,99 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
     )
 
 
+def _run_solo_review_hub(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Weekly Review saved-runs hub → landing for the Solo Review card."""
+    from yeaboi.persistence import _relative_time
+    from yeaboi.solo.export import build_weekly_review_markdown, export_weekly_review
+    from yeaboi.solo.store import WeeklyReviewStore
+    from yeaboi.ui.mode_select._solo import run_solo_review_page
+    from yeaboi.ui.mode_select.screens._project_cards import RunSummary
+    from yeaboi.ui.mode_select.screens._screens_solo import _build_solo_review_screen
+    from yeaboi.ui.shared._components import SOLO_THEME, solo_review_title
+
+    def _review(run_id: int):
+        with WeeklyReviewStore(_ana_dbp) as store:
+            return store.get_run_by_id(run_id)
+
+    def load_runs():
+        with WeeklyReviewStore(_ana_dbp) as store:
+            rows = store.get_all_history(100)
+        out = []
+        for r in rows:
+            proj = r.get("project_name") or ""
+            n = r.get("action_count", 0)
+            sub = " · ".join(p for p in (proj, f"{n} action{'s' if n != 1 else ''}") if p)
+            out.append(
+                RunSummary(
+                    "weekly-review",
+                    r["id"],
+                    f"Week {r.get('week_label') or _relative_time(r['run_at'])}",
+                    sub,
+                    _relative_time(r["run_at"]),
+                    session_id=r.get("session_id", ""),
+                )
+            )
+        return out
+
+    def make_detail(run):
+        # A saved review renders through the live detail screen, so a snapshot
+        # looks like the page did the day it was generated.
+        review = _review(run.run_id)
+        if review is None:
+            return None
+
+        def render(*, scroll, action_sel, actions, scroll_meta, width, height, message, shimmer_tick):
+            return _build_solo_review_screen(
+                {"view": "detail", "review": review, "actions": actions, "message": message},
+                scroll_offset=scroll,
+                scroll_meta=scroll_meta,
+                action_sel=action_sel,
+                width=width,
+                height=height,
+                shimmer_tick=shimmer_tick,
+            )
+
+        return render
+
+    def files_export(run):
+        review = _review(run.run_id)
+        if review is None:
+            return "That run is no longer available."
+        paths = export_weekly_review(review)
+        return f"Exported to {paths['markdown'].parent}  (Markdown)"
+
+    def get_document(run):
+        review = _review(run.run_id)
+        if review is None:
+            return "That run is no longer available."
+        return f"Weekly Review — {review.week_label}", build_weekly_review_markdown(review)
+
+    def delete_run(run):
+        with WeeklyReviewStore(_ana_dbp) as store:
+            store.delete_run(run.run_id)
+
+    _run_mode_hub(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        mode="solo",
+        title_fn=solo_review_title,
+        subtitle="Saved weekly reviews",
+        empty_title="No reviews yet",
+        empty_subtitle="Press Enter to review your first week",
+        new_label="+ New review",
+        load_runs=load_runs,
+        make_detail=make_detail,
+        files_export=files_export,
+        get_document=get_document,
+        share_theme=SOLO_THEME,
+        delete_run=delete_run,
+        run_new=lambda: run_solo_review_page(console, live, read_key, frame_time, supports_timeout),
+    )
+
+
 def _run_performance_hub(
     console: Console, live, read_key, frame_time: float, supports_timeout: bool, engineer: str = ""
 ) -> None:
@@ -7320,6 +7435,8 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
     def _actions() -> list[str]:
         if view == "overview":
             base = ["Generate", "Review", "Team", "Sources", "Anonymize", "Identity", "Back"]
+            if _is_solo():
+                base.remove("Team")  # a self-only run has no roster to edit
         else:
             base = ["Back", "Export", "Anonymize"]
             if _votable_practices():
@@ -9909,6 +10026,11 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
         return get_context_deps()
 
+    def _solo() -> bool:
+        # Same rule again: the world can only change on the welcome screen, but
+        # reading it here keeps every launch site on one path.
+        return _is_solo()
+
     q_label, q_start, q_end = quarter_bounds()
     periods = [(o["key"], o["label"], o["description"]) for o in report_setup.period_options()]
     # Loaded once per page entry — custom palettes come from reporting_themes.json;
@@ -10171,6 +10293,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 session_id=session_id,
                 project_id=_active_project(),
                 context_deps=_active_context(),
+                solo=_solo(),
                 db_path=_ana_dbp,
                 theme=state["theme"],
                 sources=state["sources"],
@@ -10197,6 +10320,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 session_id=session_id,
                 project_id=_active_project(),
                 context_deps=_active_context(),
+                solo=_solo(),
                 db_path=_ana_dbp,
                 window_start=window_start,
                 window_end=window_end,
@@ -10261,6 +10385,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 session_id=session_id,
                 project_id=_active_project(),
                 context_deps=_active_context(),
+                solo=_solo(),
                 db_path=_ana_dbp,
                 window_start=start_iso,
                 window_end=end_iso,
@@ -12528,6 +12653,8 @@ def _sweep_menu_in(
     companion_from: float | None = None,
     cards: list[dict] | None = None,
     mascot: str = "duck",
+    today=None,
+    world: str = "",
 ) -> None:
     """Play the diagonal intro wipe that reveals the mode titles top-left →
     bottom-right, then land on the fully-revealed frame.
@@ -12572,6 +12699,8 @@ def _sweep_menu_in(
                     companion_intro=_ci,
                     cards=cards,
                     mascot=mascot,
+                    today=today,
+                    world=world,
                 )
             )
             if _front >= _front_max:
@@ -12591,12 +12720,22 @@ def _sweep_menu_in(
             companion_intro=_ci_final,
             cards=cards,
             mascot=mascot,
+            today=today,
+            world=world,
         )
     )
 
 
 def _slide_menu_in(
-    console: Console, live, selected: int, n: int, *, cards: list[dict] | None = None, mascot: str = "duck"
+    console: Console,
+    live,
+    selected: int,
+    n: int,
+    *,
+    cards: list[dict] | None = None,
+    mascot: str = "duck",
+    today=None,
+    world: str = "",
 ) -> None:
     """Return-to-menu transition: the mode you came from slides back FIRST, then the
     rest scroll in around it exactly like the fresh-load intro.
@@ -12615,7 +12754,7 @@ def _slide_menu_in(
         base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
         base_style = f"bold rgb({base_r},{base_g},{base_b})"
         start_offset = 1  # the top row the select→page lift left the title on
-        target_offset = selected_title_offset(selected, width=w, height=h, cards=cards)
+        target_offset = selected_title_offset(selected, width=w, height=h, cards=cards, today=today)
         # Phase 1: the selected title slides home, on its own.
         slide_frames = 14
         for frame in range(slide_frames + 1):
@@ -12637,6 +12776,8 @@ def _slide_menu_in(
         companion_from=_COMPANION_RETURN_START,
         cards=cards,
         mascot=mascot,
+        today=today,
+        world=world,
     )
 
 
@@ -13272,6 +13413,7 @@ SAVED_SESSION_HUBS = {
     "poker": _run_poker_hub,
     "reporting": _run_reporting_hub,
     "ship": _run_ship_hub,
+    "weekly-review": _run_solo_review_hub,
 }
 
 #: Which menu (card list + companion mascot) each landing category opens.
@@ -13287,9 +13429,10 @@ _CATEGORY_MENUS: dict[str, tuple[list[dict], str]] = {
 def _tip_jump_target(mode_key: str, cards: list[dict]) -> tuple[str, int] | None:
     """Where a cross-category tip jump lands: ``(category, card index)`` or None.
 
-    Team is searched first: Solo's keys are a subset of Team's, so a shared key
-    jumped from any other menu lands on the Team menu — and a retro/poker tip
-    fired while browsing Solo correctly jumps to the world that has the card.
+    Team is searched first: every Solo key but Review is also a Team key, so a
+    shared key jumped from any other menu lands on the Team menu — and a
+    retro/poker tip fired while browsing Solo correctly jumps to the world that
+    has the card. Solo comes last, so only its own Review card lands there.
     """
     for cat in ("team", "agents", "solo"):
         other, _mascot = _CATEGORY_MENUS[cat]
@@ -13329,6 +13472,23 @@ def select_mode(
     cards, mascot = _CATEGORY_MENUS[category]
     _category_pending = True  # show the split on the first pass through the loop
     _back_to_category = False
+
+    # The Solo welcome's Today strip. Built ONCE per (re)entry of the Solo menu —
+    # never inside the frame loop, which re-renders at 60 fps — and None on the
+    # other menus, which is what keeps their renders byte-identical.
+    _today = None
+
+    def _refresh_today():
+        if category != "solo":
+            return None
+        try:
+            from yeaboi.projects.active import get_active_project
+            from yeaboi.solo.today import build_today_snapshot
+
+            return build_today_snapshot(project_id=get_active_project())
+        except Exception as e:  # noqa: BLE001 — a broken strip must never block the menu
+            logger.warning("today strip: snapshot failed, showing none: %s", e)
+            return None
 
     # The TUI is interactive — flip the filesystem sandbox (fs_policy) into
     # consent mode: denials still raise, but ALSO queue a ConsentRequest that
@@ -13385,6 +13545,8 @@ def select_mode(
         _reverse_animated = False
         while _restart_mode_select:
             _restart_mode_select = False
+            # A run may have just written a standup or a plan — read again.
+            _today = _refresh_today()
 
             # _skip_fade_in signals a return from a sub-page (drives the companion's
             # slide-back-from-the-corner entrance); it no longer suppresses the sweep.
@@ -13407,6 +13569,7 @@ def select_mode(
                 cards, mascot = _CATEGORY_MENUS[category]
                 n = len(cards)
                 selected = 0
+                _today = _refresh_today()
                 # A category pick always sweeps its menu in fresh.
                 _returning = False
                 _reverse_animated = False
@@ -13417,11 +13580,11 @@ def select_mode(
             elif _returning:
                 # Cold return from a sub-page: the mode you came from slides home,
                 # then the rest load in around it (the inverse of the select lift).
-                _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
             else:
                 # Fresh load: one diagonal wipe reveals every title top-left →
                 # bottom-right (the inverse of the splash crumble).
-                _sweep_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                _sweep_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
             select_time = time.monotonic()
             # Companion entrance. Fresh load: full slide-in from off-screen right,
             # starting once the wipe has landed. On a RETURN the duck already slid
@@ -13476,6 +13639,8 @@ def select_mode(
                                 compose=_compose,
                                 cards=cards,
                                 mascot=mascot,
+                                today=_today,
+                                world=category,
                             )
                             if update:
                                 live.update(_panel)
@@ -13552,7 +13717,10 @@ def select_mode(
                     # category's card — then the jump switches category too.
                     from yeaboi.ui.shared._tips import resolve_index, tip_at
 
-                    _tip = tip_at(resolve_index(time.monotonic() - start_time, tip_offset))
+                    # Resolve with the menu's world so the tip jumped is the tip shown.
+                    _tip = tip_at(
+                        resolve_index(time.monotonic() - start_time, tip_offset, world=category), world=category
+                    )
                     if _tip.mode_key is not None:
                         _j = next((i for i, m in enumerate(cards) if m["key"] == _tip.mode_key), None)
                         if _j is not None and cards[_j]["available"]:
@@ -13568,6 +13736,7 @@ def select_mode(
                             cards, mascot = _CATEGORY_MENUS[category]
                             n = len(cards)
                             selected = _j
+                            _today = _refresh_today()
                             break
                 elif key == "c":
                     # Open the Changelog page (bottom-left hint). Handled inline
@@ -13578,7 +13747,9 @@ def select_mode(
                     # gallery below keeps its entrance.
                     logger.info("changelog opened from mode select")
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
+                    _slide_menu_in(
+                        console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                    )  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "s":
                     # Ceremonies (bottom-left hint). Handled inline like `c`: the
@@ -13590,7 +13761,7 @@ def select_mode(
                     from yeaboi.ui.mode_select._ceremonies import run_ceremonies_page
 
                     run_ceremonies_page(console, live, read_key, _FRAME_TIME, _supports_timeout, dry_run=dry_run)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
                     select_time = time.monotonic()
                 elif key == "P":
                     # Projects — the switcher for which project scoped runs read
@@ -13601,7 +13772,7 @@ def select_mode(
                     from yeaboi.ui.mode_select._projects import run_projects_page
 
                     run_projects_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
                     select_time = time.monotonic()
                 elif key == "n":
                     # Niko, the global assistant. A keycap and the duck himself
@@ -13609,7 +13780,7 @@ def select_mode(
                     # eleventh card pushes the version row off at 84x40. Clicking
                     # the mascot is the discoverable half; this is the keyboard.
                     _open_niko(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
                     select_time = time.monotonic()
                 elif key == "f":
                     # Quick feedback comes out of the duck: his tip bubble becomes a
@@ -13622,7 +13793,9 @@ def select_mode(
                     if not welcome_shows_companion(_fw, _fh):
                         logger.info("feedback: terminal too small for the bubble, opening the form")
                         _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                        _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                        _slide_menu_in(
+                            console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                        )
                         select_time = time.monotonic()
                         continue
                     logger.info("feedback bubble opened from mode select")
@@ -13648,7 +13821,9 @@ def select_mode(
                     # The full Feedback form, for anything the bubble is too small for.
                     logger.info("feedback opened from mode select")
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
+                    _slide_menu_in(
+                        console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                    )  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "a":
                     # Open the All Tips gallery (bottom-left hint) — same inline
@@ -13656,21 +13831,23 @@ def select_mode(
                     # No wordmark intro here either (see the changelog above).
                     logger.info("all tips opened from mode select")
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
+                    _slide_menu_in(
+                        console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                    )  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "p":
                     # The Privacy page (bottom-left hint) — same inline pattern
                     # as the Changelog above; opens instantly (bundled copy).
                     logger.info("privacy opened from mode select")
                     _run_privacy_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
                     select_time = time.monotonic()
                 elif key == "k":
                     # The System Check page (bottom-left hint). Offline probes
                     # only, so opening it is as cheap as the changelog.
                     logger.info("system check opened from mode select")
                     _run_system_check_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
                     select_time = time.monotonic()
                 elif key == "clear":
                     # Ctrl+U — the update shortcut advertised by the bottom-right
@@ -13714,10 +13891,12 @@ def select_mode(
                                 select_time=select_time,
                             )
                         _open_niko(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                        _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
+                        _slide_menu_in(
+                            console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                        )
                         select_time = time.monotonic()
                         continue
-                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx, cards=cards)
+                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx, cards=cards, today=_today)
                     if _hit is not None:
                         if _hit == selected:
                             if cards[selected]["available"]:
@@ -13746,6 +13925,8 @@ def select_mode(
                         compose=_compose,
                         cards=cards,
                         mascot=mascot,
+                        today=_today,
+                        world=category,
                     )
                 )
 
@@ -13800,6 +13981,8 @@ def select_mode(
                         fade_indices=[selected],
                         cards=cards,
                         mascot=mascot,
+                        today=_today,
+                        world=category,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -13822,6 +14005,8 @@ def select_mode(
                         extras_reveal=1.0 - (_i / _nfade),
                         cards=cards,
                         mascot=mascot,
+                        today=_today,
+                        world=category,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -13830,7 +14015,7 @@ def select_mode(
             # ACTUAL resting row (so a mid-list pick lifts from where it sits, not
             # from a fixed centre) and rises to one line below the top border.
             w, h = console.size
-            start_offset = selected_title_offset(selected, width=w, height=h)
+            start_offset = selected_title_offset(selected, width=w, height=h, cards=cards, today=_today)
             end_offset = 1  # one blank line above title to match project list layout
 
             slide_frames = 15
@@ -14801,6 +14986,20 @@ def select_mode(
                 logger.info("Reporting mode selected")
                 with mode_log("reporting"):
                     SAVED_SESSION_HUBS["reporting"](console, live, read_key, _FRAME_TIME, _supports_timeout)
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
+
+            # ── Route: Weekly Review (Solo) → saved-reviews hub ───────────
+            if chosen["key"] == "weekly-review":
+                logger.info("Weekly Review mode selected")
+                with mode_log("solo"):
+                    # Beta gate first: the review is a draft about the user's own
+                    # week from unverified data. Shown once ever.
+                    if show_beta_notice(
+                        live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="weekly-review"
+                    ):
+                        SAVED_SESSION_HUBS["weekly-review"](console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue
@@ -15843,6 +16042,10 @@ def select_mode(
                                         desc_reveal=0,
                                         fade_style=fade_rgb,
                                         fade_indices=others,
+                                        cards=cards,
+                                        mascot=mascot,
+                                        today=_today,
+                                        world=category,
                                     )
                                 )
                             time.sleep(_FRAME_TIME)

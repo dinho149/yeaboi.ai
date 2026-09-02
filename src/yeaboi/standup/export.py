@@ -38,7 +38,7 @@ from yeaboi.html_theme import prose_bullets as _summary_bullets
 from yeaboi.html_theme import safe_url
 from yeaboi.html_theme import split_sentences as _split_sentences
 from yeaboi.standup import categories, references
-from yeaboi.standup.render import broadcast_skipped
+from yeaboi.standup.render import broadcast_skipped, summary_heading
 
 logger = logging.getLogger(__name__)
 
@@ -477,7 +477,7 @@ def build_standup_markdown(report: StandupReport) -> str:
     # time in the engine. A fuzzy strip here could silently delete a sentence a
     # host hand-edited onto the share — a human's words outrank de-noising.
     if report.team_summary:
-        lines += ["", "## Team Summary", ""]
+        lines += ["", f"## {summary_heading(report).title()}", ""]
         sentences = [_md_runs(runs) for runs in _team_summary_runs(report.team_summary, key_map, member_names)]
         # A single sentence is a paragraph; several are a scannable list.
         lines += sentences if len(sentences) == 1 else [f"- {s}" for s in sentences]
@@ -925,7 +925,7 @@ def standup_export_args(
 
     nav: list[tuple[str, str]] = [("overview", "Overview")]
     if report.team_summary:
-        nav.append(("summary", "Team Summary"))
+        nav.append(("summary", summary_heading(report).title()))
     if getattr(report, "conflicts", ()):
         nav.append(("conflicts", "Conflicts"))
     if getattr(report, "ops_signals", ()):

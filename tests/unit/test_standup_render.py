@@ -5,6 +5,7 @@ promoted to ceremonies/: these exercise standup/render.py, which stayed put.
 """
 
 import dataclasses
+from dataclasses import replace
 
 from rich.console import Group
 
@@ -324,3 +325,13 @@ class TestProduction:
         text = "\n".join(t.plain for t in group.renderables)
         assert "Production (since 2026-06-26)" in text
         assert "2 incidents via pagerduty" in text
+
+
+class TestSoloHeading:
+    def test_a_solo_report_has_no_team_heading(self):
+        solo = replace(_report(), solo=True)
+        text = render.format_standup_plaintext(solo)
+        assert "Summary:" in text
+        assert "Team summary" not in text
+        assert render.summary_heading(_report()) == "Team summary"
+        assert render.summary_heading(solo) == "Summary"

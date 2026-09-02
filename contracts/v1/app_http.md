@@ -34,7 +34,7 @@ The token never appears in URLs. Missing/wrong token → `401 {"error":"unauthor
 | GET | `/api/health` | unauthenticated; `{ok, pid, version, schema}` |
 | GET | `/api/meta/version` | `{version, schema_version, python, platform}` |
 | GET | `/api/meta/capabilities` | the TUI card inventory verbatim: `{categories, solo, modes, agents, intake}` — `modes` is the Team menu, `solo` the Solo menu |
-| GET | `/api/meta/tips` | `{tips: [{key, text, mode_key, is_new, is_beta, surfaces}]}` |
+| GET | `/api/meta/tips` | `{tips: [{key, text, mode_key, is_new, is_beta, surfaces, worlds}]}` — `worlds` names the landing worlds (`solo`/`team`/`agents`) a tip is true in; the Solo home drops the Team-only ones |
 | GET | `/api/meta/changelog` | `{entries: [{version, date, headline, summary, highlights[{text, areas, surfaces}]}], areas: [{name, color}]}` |
 | GET | `/api/meta/privacy` | `{headline, statement: [str…], groups: [{key, title}], switches: [{key, env, on_value}], egress: [{key, group, what, where, when, default, off_switch}]}` — the privacy statement and egress-disclosure table, serialized verbatim from `yeaboi.privacy` (the copy owner every surface renders). Carries no capability and is never gated behind one: disclosure must always answer |
 | GET | `/api/system/check` | `{summary, categories: [{key, title, blurb}], checks: [{key, label, status, detail, hint, feature, category}]}` — the optional-feature doctor. `status` ∈ `ok\|missing\|unsupported\|unknown`; `category` is a `categories[].key` and gives the section a row renders under, in that list's order. Icons are presentation and stay per-surface — the payload carries keys and titles only. **Offline by policy**: every probe is a filesystem/PATH/config read or a loopback-only socket — opening the page causes no egress and never triggers the cloudflared download, so a GET per open is safe |
@@ -137,7 +137,7 @@ rejoins the conversation it left rather than restarting it.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/api/chat/sessions` | body `{description, intake_mode?: "small_project"\|"smart"}` → 201 with the session view. An absent `intake_mode` is classified from the description. |
+| POST | `/api/chat/sessions` | body `{description, intake_mode?: "small_project"\|"smart", solo?: false}` → 201 with the session view. An absent `intake_mode` is classified from the description. `solo: true` opens a one-person intake (the Solo world): the team questions are defaulted to one developer and there is no member picker |
 | GET | `/api/chat/sessions/{project_id}` | the session view; 404 when no such conversation is open or stored |
 | POST | `/api/chat/sessions/{project_id}/send` | body `{text, images?: [..]}` → a chunked NDJSON turn; 409 while a turn is already running |
 | GET | `/api/chat/sessions/{project_id}/questions` | `{questions: [{number, label, answer, remaining, skipped}], total, completed, derived}` |
@@ -250,10 +250,10 @@ The two run-and-read modes. Their read-only pieces are MCP tools already
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/standup/dashboard` | query `session_id?` (blank = the most recent session), `run_id?` (open one past run instead of the latest) → the whole dashboard in one read |
-| POST | `/api/standup/run` | body `{session_id, deliver?: false}` → a chunked NDJSON run. `deliver: false` builds the report without posting it anywhere |
+| POST | `/api/standup/run` | body `{session_id, deliver?: false, solo?: false}` → a chunked NDJSON run. `deliver: false` builds the report without posting it anywhere. `solo: true` is a one-person run (the Solo world): self-only roster, no tracker roster discovery, first-person summary; the stored report carries `solo` so the dashboard drops its team card |
 | POST | `/api/standup/runs/{run_id}/delete` | drop one run from the saved-runs hub; 404 when unknown |
 | GET | `/api/standup/schedule` | query `session_id` → the saved schedule plus the installed reminder offset |
-| POST | `/api/standup/schedule` | body `{session_id, enabled, time, weekdays, lead_minutes, delivery_channels, remind_after}` → `{message, schedule}`; saves the config **and** installs or removes the OS jobs |
+| POST | `/api/standup/schedule` | body `{session_id, enabled, time, weekdays, lead_minutes, delivery_channels, remind_after, solo?: false}` → `{message, schedule}`; saves the config **and** installs or removes the OS jobs. `solo` is not saved — it rides on the installed job's command line, so the scheduled run is a one-person standup |
 | GET | `/api/analysis/options` | what a setup wizard may offer on this machine |
 | POST | `/api/analysis/steps` | a partial selection → `{steps, grid, run}`: which steps still apply, the component rows they may offer, and the payload the answers would run. `solo: true` in the answers marks a Solo-world wizard: the `members` step never applies and stale member picks coerce out of `run` |
 | GET | `/api/analysis/profiles` | the saved team profiles |
@@ -416,7 +416,7 @@ an LLM failure comes back as a warning over the deterministic seed mask.
 | GET | `/api/reporting/options` | periods, configured sources, palettes, the deck style and its vocabulary |
 | GET | `/api/reporting/sprints` | the quarter's sprints for `?session_id=`, pre-checked |
 | POST | `/api/reporting/window` | the window a set of checked sprints makes |
-| POST | `/api/reporting/run` | one delivery report, streamed as NDJSON |
+| POST | `/api/reporting/run` | one delivery report, streamed as NDJSON. The body also takes an optional `solo` (false): a one-person report — first-person narrative, never "the team" |
 | POST | `/api/reporting/style` | persist the deck style, or `{reset: true}` |
 | POST | `/api/reporting/fit` | how many extra slides fitting everything costs |
 | POST | `/api/reporting/export` | the styled deck outputs a plain export cannot write |
@@ -794,3 +794,25 @@ reporting a silent take.
 one installer and a person who has seen one should recognise the other. A failed
 model download is a `done` with a `warning`, not an `error`: the packages are in,
 so the weights simply arrive lazily on the first dictation.
+
+## Solo
+
+The Solo world shares every engine with Team; what it owns is the welcome's
+"where am I" strip. The terminal builds it once when the Solo menu is entered,
+and this route serves the same snapshot to the desktop's Solo home — one
+builder (`yeaboi.solo.today.build_today_snapshot`), so the two surfaces never
+disagree about today.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/solo/today` | `?project_id=` narrows the standup and plan reads to that project ('' = newest of everything). Returns the `TodaySnapshot` fields verbatim, text and numbers only: `project_id`, `project_name`, `standup_date`, `standup_summary`, `standup_blockers`, `sprint_name`, `sprint_day`, `sprint_total_days`, `confidence_pct`, `confidence_label`, `confidence_trend`, `next_story_id`, `next_story_title`, `next_sprint_name`, `plan_session_id`, `plan_scoped`, `spend_usd`, `spend_sessions`, `spend_known`, `warnings`. An empty string or zero is the honest empty state (no standup yet, no plan yet); `warnings` lists the sources that could not be read. The spend is the last agentwatch ingest's, never a fresh scan |
+| GET | `/api/solo/review` | `?session_id=&project_id=` scope the reads (blank = everything). `{latest: {run_id, review} \| null, history: [{id, session_id, project_id, run_at, week_label, week_start, week_end, project_name, action_count}], carried: [ReviewAction], beta_notice}` — `carried` is last review's still-open actions with the `id`s a run's `carried_statuses` takes; `beta_notice` is the gate copy |
+| GET | `/api/solo/review/runs/{run_id}` | one saved review: `{run_id, review}`; 404 when unknown |
+| POST | `/api/solo/review/run` | body `{session_id?, project_id?, context_deps?: [tokens] \| null, week_end?: "YYYY-MM-DD", carried_statuses?: {action_id: "done" \| "dropped" \| "pending" \| "carried"}}` → a chunked NDJSON run in the standup's line shapes: `{type: "op", op_id}` first, then `{type: "progress", phase}` per engine phase (`scope, standups, plan, delivery, carried, model, save`), then `{type: "done", run_id, review}` or `{type: "error", message}`. One `progress` line per phase, in that order; 400 when `week_end` is not an ISO date. Not cancellable — the engine has no cancel seam. The review is stored and exported to Markdown |
+| POST | `/api/solo/review/runs/{run_id}/delete` | drop one review from the saved-runs hub: `{deleted, run_id}`; 404 when unknown |
+
+**Weekly Review** is the Solo world's own capability — a self-review of the
+week (went well, to change, on track against the plan, actions carried forward)
+over the user's own standups, delivered tickets and sprint plan. The desktop
+renders it at `/solo/review` (hub) and `/solo/review/report?id=` (one saved
+run). Export stays on the MCP tool (`/api/tool/weekly_review_export`).

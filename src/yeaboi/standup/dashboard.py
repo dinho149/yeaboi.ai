@@ -61,14 +61,15 @@ def card_order(data: dict) -> list[str]:
 
     With no generated report yet only Schedule is available. With a report the
     standup user's own card is a top-level ``my_update`` row and everyone else
-    lives under a single ``team`` row — expanded inline into ``member:<name>``
+    lives under a single ``team`` row (absent on a solo report) — expanded inline into ``member:<name>``
     sub-rows when ``data["team_expanded"]`` is set.
     """
     report = data.get("report")
     if report is None:
         return ["schedule"]
-    order = ["summary", "my_update", "team"]
-    if data.get("team_expanded"):
+    # A solo report has one card; the team row would be an empty heading.
+    order = ["summary", "my_update"] + ([] if getattr(report, "solo", False) else ["team"])
+    if data.get("team_expanded") and not getattr(report, "solo", False):
         order += [f"{MEMBER_PREFIX}{m.name}" for m in other_members(data)]
     # Only when a disagreement was actually detected — same earn-the-card rule
     # as "gaps" below.

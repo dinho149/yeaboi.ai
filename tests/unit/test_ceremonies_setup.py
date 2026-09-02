@@ -174,7 +174,9 @@ class TestOptions:
             options[0]
         )
         standup = next(o for o in options if o["key"] == "standup")
-        assert [p["name"] for p in standup["params"]] == ["days"]
+        assert [p["name"] for p in standup["params"]] == ["days", "solo"]
+        report = next(o for o in options if o["key"] == "report")
+        assert "solo" in [p["name"] for p in report["params"]]
 
     def test_the_channels_come_from_delivery(self):
         from yeaboi.ceremonies.delivery import ALL_CHANNELS

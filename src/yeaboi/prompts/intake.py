@@ -109,6 +109,9 @@ INTAKE_QUESTIONS: dict[int, str] = {
 # is flagged in the intake summary.
 # ---------------------------------------------------------------------------
 
+# Q7 for a Solo-world run: one person wears every hat.
+SOLO_ROLES_DEFAULT = "Solo developer — fullstack"
+
 QUESTION_DEFAULTS: dict[int, str] = {
     5: "No hard deadlines",
     7: "Roles not specified — assuming generalist/fullstack team",
