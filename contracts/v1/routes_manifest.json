@@ -32,31 +32,6 @@
       "title": "Usage"
     },
     {
-      "path": "/team/planning",
-      "capability": "planning",
-      "title": "Planning"
-    },
-    {
-      "path": "/team/planning/chat",
-      "capability": "planning",
-      "title": "Planning · Chat"
-    },
-    {
-      "path": "/team/planning/plan",
-      "capability": "planning",
-      "title": "The plan"
-    },
-    {
-      "path": "/team/planning/sessions",
-      "capability": "sessions",
-      "title": "Saved plans"
-    },
-    {
-      "path": "/team/planning/roadmap",
-      "capability": "roadmap",
-      "title": "Planning · Roadmap intake"
-    },
-    {
       "path": "/team/analysis",
       "capability": "team-analysis",
       "title": "Analysis"
@@ -243,12 +218,12 @@
     },
     {
       "path": "/projects",
-      "capability": null,
+      "capability": "projects",
       "title": "Projects"
     },
     {
       "path": "/projects/:id",
-      "capability": null,
+      "capability": "projects",
       "title": "Project"
     },
     {
@@ -258,8 +233,18 @@
     },
     {
       "path": "/projects/:id/blueprint",
-      "capability": null,
+      "capability": "planning",
       "title": "Blueprint"
+    },
+    {
+      "path": "/projects/:id/plan",
+      "capability": "planning",
+      "title": "Project · Plan"
+    },
+    {
+      "path": "/projects/new/from-roadmap",
+      "capability": "roadmap",
+      "title": "New project · From roadmap"
     },
     {
       "path": "/projects/:id/sessions/new",
@@ -367,66 +352,5 @@
       ]
     }
   ],
-  "commands": [
-    {
-      "name": "help",
-      "tui": "help",
-      "help": "shortcuts and everything you can type"
-    },
-    {
-      "name": "export",
-      "tui": "export",
-      "help": "save the plan and/or chat transcript"
-    },
-    {
-      "name": "skip",
-      "tui": "skip",
-      "help": "skip the current question"
-    },
-    {
-      "name": "defaults",
-      "tui": "defaults",
-      "help": "accept defaults for all remaining questions"
-    },
-    {
-      "name": "form",
-      "tui": "form",
-      "help": "see every question in one panel and answer them in any order"
-    },
-    {
-      "name": "finish",
-      "tui": "finish",
-      "help": "answer the remaining questions with defaults"
-    },
-    {
-      "name": "summary",
-      "tui": "summary",
-      "help": "show your answers so far"
-    },
-    {
-      "name": "questions",
-      "tui": "questions",
-      "help": "see what I'll ask and what's already answered"
-    },
-    {
-      "name": "edit",
-      "tui": "edit",
-      "help": "browse your answers (/edit 6 re-asks one) or refine the last artifact"
-    },
-    {
-      "name": "small",
-      "tui": "small",
-      "help": "switch to a Small plan"
-    },
-    {
-      "name": "large",
-      "tui": "large",
-      "help": "switch to a Large plan"
-    },
-    {
-      "name": "duck",
-      "tui": "duck",
-      "help": "mute or unmute the duck's speech bubble"
-    }
-  ]
+  "commands": []
 }

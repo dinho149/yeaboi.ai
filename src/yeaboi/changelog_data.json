@@ -2,6 +2,19 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.39.1",
+      "date": "2026-09-02",
+      "headline": "Desktop projects now expose their planning capabilities",
+      "summary": "The desktop project flow was redesigned to fold planning into project navigation. This release corrects the route manifest to match what the desktop app actually has.",
+      "highlights": [
+        {
+          "text": "Desktop projects now correctly expose planning routes",
+          "areas": ["planning"],
+          "surfaces": ["desktop"]
+        }
+      ]
+    },
+    {
       "version": "3.39.0",
       "date": "2026-09-01",
       "headline": "Connect to 20 vendors and build your own integrations",
