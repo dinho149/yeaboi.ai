@@ -125,4 +125,4 @@ class TestHubWiring:
         run = captured["load_runs"]()[0]
         message = captured["files_export"](run)
         assert "Exported to" in message
-        assert (tmp_path / "exports" / "Demo" / "weekly-review-2026-W36.md").exists()
+        assert (tmp_path / "exports" / "demo" / "weekly-review-2026-W36.md").exists()  # _safe_key lowercases
