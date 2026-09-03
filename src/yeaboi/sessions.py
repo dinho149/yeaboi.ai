@@ -1242,6 +1242,11 @@ class SessionStore:
         ).fetchone()
         return row[0] if row else ""
 
+    def session_project_ids(self) -> dict[str, str]:
+        """Every session's project id ('' = unscoped) — ids only, never the state blob."""
+        rows = self._conn.execute("SELECT session_id, project_id FROM sessions_meta").fetchall()
+        return {row[0]: row[1] for row in rows}
+
     def session_ids_for_project(self, project_id: str, *, mode: str = "") -> list[str]:
         """Session ids linked to a project, newest first, optionally one mode.
 

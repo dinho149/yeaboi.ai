@@ -12985,7 +12985,7 @@ def _scope_line(door: str, world: str) -> str:
         repo = str(row["settings"].get("repo_path") or "")
         if repo:
             return f"{name} · agents in {repo}"
-        return f"{name} · no repo path yet — yeaboi project set-defaults {pid} --repo <path>"
+        return f"{name} · no repo path yet — yeaboi project set-defaults --repo <path>"
     return f"{name} · every run here shares context"
 
 

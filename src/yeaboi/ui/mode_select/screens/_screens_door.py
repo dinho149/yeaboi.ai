@@ -25,7 +25,18 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import AGENTS_THEME, SOLO_THEME, TEAM_THEME, Theme, build_page_panel
+from yeaboi.ui.shared._components import (
+    AGENTS_THEME,
+    LANDING_DETAIL_RESTING,
+    LANDING_DETAIL_SELECTED,
+    LANDING_HEADING_STYLE,
+    LANDING_VERB_RESTING,
+    LANDING_VERB_SELECTED,
+    SOLO_THEME,
+    TEAM_THEME,
+    Theme,
+    build_page_panel,
+)
 
 _DOOR_CARDS: list[dict[str, Any]] = [
     {
@@ -53,13 +64,8 @@ _HINT_ROWS = 4  # the active-project line (or its blank) + the key hints + the f
 _GUTTER_COLS = 3
 
 _HEADING = "How do we work today?"
-_HEADING_STYLE = "rgb(152,156,170)"
-_TITLE_RESTING = "rgb(96,100,114)"
-_VERB_SELECTED = "bold rgb(234,237,243)"
-_VERB_RESTING = "rgb(128,132,146)"
-_DETAIL_SELECTED = "rgb(168,172,184)"
-_DETAIL_RESTING = "rgb(96,100,114)"
-_ACTIVE_STYLE = "rgb(128,132,146)"
+_TITLE_RESTING = LANDING_DETAIL_RESTING
+_ACTIVE_STYLE = LANDING_VERB_RESTING
 
 
 def door_index(key: str) -> int:
@@ -109,10 +115,11 @@ def _card(card: dict[str, Any], *, selected: bool, theme: Theme, shimmer_tick: f
     else:
         rule = Text(" ")
 
-    verb = Text(card["verb"], justify="center", style=_VERB_SELECTED if selected else _VERB_RESTING)
+    verb = Text(card["verb"], justify="center", style=LANDING_VERB_SELECTED if selected else LANDING_VERB_RESTING)
     verb.no_wrap = True
     verb.overflow = "ellipsis"
-    detail = Text(card["detail"], justify="center", style=_DETAIL_SELECTED if selected else _DETAIL_RESTING)
+    detail_style = LANDING_DETAIL_SELECTED if selected else LANDING_DETAIL_RESTING
+    detail = Text(card["detail"], justify="center", style=detail_style)
     detail.no_wrap = True
     detail.overflow = "ellipsis"
 
@@ -191,7 +198,7 @@ def _build_door_screen(
         content,
         height=height,
         padding=(1, 2, 0, 2),
-        title=Text(f" {_HEADING} ", style=_HEADING_STYLE),
+        title=Text(f" {_HEADING} ", style=LANDING_HEADING_STYLE),
         title_align="center",
     )
     # Esc goes back to the split, so the back tab stays. No corner duck — the

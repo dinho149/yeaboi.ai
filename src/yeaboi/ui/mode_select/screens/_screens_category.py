@@ -33,7 +33,18 @@ from rich.text import Text
 
 from yeaboi.beta import BETA_LABEL
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import AGENTS_THEME, SOLO_THEME, TEAM_THEME, build_badge, build_page_panel
+from yeaboi.ui.shared._components import (
+    AGENTS_THEME,
+    LANDING_DETAIL_RESTING,
+    LANDING_DETAIL_SELECTED,
+    LANDING_HEADING_STYLE,
+    LANDING_VERB_RESTING,
+    LANDING_VERB_SELECTED,
+    SOLO_THEME,
+    TEAM_THEME,
+    build_badge,
+    build_page_panel,
+)
 from yeaboi.ui.shared._mascot import FRAMES, flock_cells, flock_head_cells, full_cells, mini_cells
 
 _CATEGORY_CARDS: list[dict[str, Any]] = [
@@ -164,12 +175,7 @@ _GUTTER_COLS = 1  # breathing room between the cards — one column, three-up is
 
 # The quiet layer around the living cards.
 _HEADING = "Who are we working with today?"
-_HEADING_STYLE = "rgb(152,156,170)"
 _REST_BORDER = "rgb(58,62,72)"
-_VERB_SELECTED = "bold rgb(234,237,243)"
-_VERB_RESTING = "rgb(128,132,146)"
-_CAPS_SELECTED = "rgb(168,172,184)"
-_CAPS_RESTING = "rgb(96,100,114)"
 
 
 def _category_bounds(width: int) -> list[tuple[int, int]]:
@@ -198,7 +204,7 @@ def _capability_rows(card: dict[str, Any], *, selected: bool, budget: int) -> li
     The middots carry the card's accent while the words stay muted — the list
     reads as structure, not a sentence, and never ellipsizes mid-word.
     """
-    words_style = _CAPS_SELECTED if selected else _CAPS_RESTING
+    words_style = LANDING_DETAIL_SELECTED if selected else LANDING_DETAIL_RESTING
     dot_style = card["bright"] if selected else card["dim"]
     joined = " · ".join(card["capabilities"])
     rows: list[Text] = []
@@ -301,7 +307,7 @@ def _card_half(
     title.no_wrap = True
     title.overflow = "crop"
 
-    verb = Text(card["verb"], justify="center", style=_VERB_SELECTED if selected else _VERB_RESTING)
+    verb = Text(card["verb"], justify="center", style=LANDING_VERB_SELECTED if selected else LANDING_VERB_RESTING)
     verb.no_wrap = True
     verb.overflow = "ellipsis"
 
@@ -390,7 +396,7 @@ def _build_category_screen(
         content,
         height=height,
         padding=(1, 2, 0, 2),
-        title=Text(f" {_HEADING} ", style=_HEADING_STYLE),
+        title=Text(f" {_HEADING} ", style=LANDING_HEADING_STYLE),
         title_align="center",
     )
     panel._no_back_hint = True  # the landing screen's Esc is quit, not "go back"

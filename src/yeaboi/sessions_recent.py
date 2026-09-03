@@ -91,7 +91,7 @@ def _project_ids_by_session(path: Path) -> dict[str, str]:
     from yeaboi.sessions import SessionStore
 
     with SessionStore(path) as store:
-        return {row["session_id"]: row["project_id"] for row in store.list_sessions()}
+        return store.session_project_ids()
 
 
 def _keep(session_id: str, session_ids: tuple[str, ...] | None) -> bool:

@@ -244,7 +244,7 @@ class TestScopeLine:
         active.set_active_project(pid)
         assert ms._scope_line("projects", "team") == "Apollo · every run here shares context"
         assert ms._scope_line("projects", "agents") == (
-            f"Apollo · no repo path yet — yeaboi project set-defaults {pid} --repo <path>"
+            "Apollo · no repo path yet — yeaboi project set-defaults --repo <path>"
         )
         set_project_defaults(pid, {"repo_path": "/srv/apollo"}, db_path=db)
         assert ms._scope_line("projects", "agents") == "Apollo · agents in /srv/apollo"
@@ -266,6 +266,20 @@ class TestScopeLine:
 
         assert "scope" not in inspect.signature(mode_at_row).parameters
         assert "scope" not in inspect.signature(selected_title_offset).parameters
+
+    def test_every_scope_line_fits_the_top_border_at_the_floor(self):
+        from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
+
+        console = Console(width=84, height=40, force_terminal=False)
+        for scope in (
+            "Session · one-off, unscoped",
+            "Apollo · every run here shares context",
+            "Apollo · no repo path yet — yeaboi project set-defaults --repo <path>",
+        ):
+            rows = console.render_lines(
+                _build_mode_screen(0, width=84, height=40, scope=scope), console.options.update(height=40)
+            )
+            assert scope in "".join(seg.text for seg in rows[0])
 
     def test_no_scope_means_no_title(self):
         from yeaboi.ui.mode_select.screens._screens import _build_mode_screen

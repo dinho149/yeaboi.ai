@@ -22,7 +22,7 @@ from rich.text import Text
 from yeaboi.beta import BETA_LABEL, BETA_RGB
 from yeaboi.ui.shared._animations import BLACK_RGB, COLOR_RGB, lerp_color, shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import PAD, SOLO_THEME, build_badge, build_page_panel
+from yeaboi.ui.shared._components import LANDING_HEADING_STYLE, PAD, SOLO_THEME, build_badge, build_page_panel
 from yeaboi.ui.shared._mascot import render_head, render_head_shades
 from yeaboi.ui.shared._tips import TIP_ROTATE_SECONDS
 
@@ -853,10 +853,6 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False, show_compa
     return row
 
 
-# The scope line's colour on the frame border — the landing split's heading grey.
-_SCOPE_STYLE = "rgb(152,156,170)"
-
-
 def _build_mode_screen(
     selected: int,
     *,
@@ -1050,7 +1046,7 @@ def _build_mode_screen(
     # directly on the bottom border, which the frame reroutes up over it.
     # build_page_panel (main #104) applies the neutral base tint so the main
     # menu never shows the terminal's own background.
-    title_kwargs = {"title": Text(f" {scope} ", style=_SCOPE_STYLE), "title_align": "center"} if scope else {}
+    title_kwargs = {"title": Text(f" {scope} ", style=LANDING_HEADING_STYLE), "title_align": "center"} if scope else {}
     panel = build_page_panel(body_renderable, height=height, padding=(1, 2, 0, 2), **title_kwargs)
     # The menu draws its own companion in-panel, but the stamp still matters:
     # MusicLive reads it into the chrome-mascot global, which the screensaver

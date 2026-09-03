@@ -15,6 +15,7 @@ planning-TUI uuid4 "project_id" in ``projects.json`` (persistence.py).
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -91,16 +92,31 @@ def link_session(project_id: str, session_id: str, *, db_path: Path | None = Non
     return {"project_id": project_id, "session_id": session_id}
 
 
+def _validated_repo_path(value: object) -> str:
+    """``repo_path`` as stored: a non-empty absolute path, normalised, never the filesystem root."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("repo_path must be a non-empty absolute path.")
+    path = os.path.normpath(value)
+    if not os.path.isabs(path):
+        raise ValueError(f"repo_path must be an absolute path, got {value!r}.")
+    if os.path.dirname(path) == path:
+        raise ValueError("repo_path must not be the filesystem root.")
+    return path
+
+
 def set_project_defaults(project_id: str, defaults: dict, *, db_path: Path | None = None) -> dict:
     """Merge ``defaults`` into the project's settings and return them.
 
     Accepts only the known keys (``default_analysis_profile_id``,
     ``default_context_deps``, ``repo_path``) — an unknown key is a spelling
-    mistake waiting to become a silent no-op, so it raises instead.
+    mistake waiting to become a silent no-op, so it raises instead. A
+    ``repo_path`` must be absolute and is stored normalised.
     """
     unknown = sorted(set(defaults) - set(_DEFAULT_KEYS))
     if unknown:
         raise ValueError(f"unknown default(s) {unknown} — accepted: {', '.join(_DEFAULT_KEYS)}.")
+    if "repo_path" in defaults:
+        defaults = {**defaults, "repo_path": _validated_repo_path(defaults["repo_path"])}
     from yeaboi.projects.store import ProjectStore
 
     with ProjectStore(_db_path(db_path)) as store:

@@ -283,6 +283,18 @@ class TestSessionProjectLink:
         with SessionStore(tmp_path / "sessions.db") as store:
             assert store.session_project_id("nope") == ""
 
+    def test_session_project_ids_maps_every_row(self, tmp_path):
+        with SessionStore(tmp_path / "sessions.db") as store:
+            assert store.session_project_ids() == {}
+            store.create_session("plan-a", project_id="proj-11112222")
+            store.create_session("analysis-a", mode="analysis", project_id="proj-33334444")
+            store.create_session("plan-unscoped")
+            assert store.session_project_ids() == {
+                "plan-a": "proj-11112222",
+                "analysis-a": "proj-33334444",
+                "plan-unscoped": "",
+            }
+
     def test_session_ids_for_project_filters_and_orders(self, tmp_path):
         with SessionStore(tmp_path / "sessions.db") as store:
             store.create_session("plan-a", project_id="proj-11112222")

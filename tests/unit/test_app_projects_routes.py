@@ -118,6 +118,14 @@ class TestDefaults:
         )
         assert resp == {"project_id": created["project_id"], "settings": {"repo_path": "/srv/app"}}
 
+    @pytest.mark.parametrize("bad", ["srv/app", "/", ""])
+    def test_a_repo_path_that_is_not_absolute_is_400(self, app, db, bad):
+        created = _create(app)
+        resp = request(
+            app, "POST", f"/api/projects/{created['project_id']}/defaults", body={"defaults": {"repo_path": bad}}
+        )
+        assert resp.code == 400
+
     def test_an_unknown_key_is_400(self, app, db):
         created = _create(app)
         resp = request(app, "POST", f"/api/projects/{created['project_id']}/defaults", body={"defaults": {"nope": 1}})

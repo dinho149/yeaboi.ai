@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -142,11 +143,11 @@ def _in_repo(session_project_path: str, project_path: str) -> bool:
     An exact-or-prefix path match, so a worktree under the repo counts. Never a
     basename substring: two repos named ``api`` must not collide.
     """
-    root = (project_path or "").rstrip("/")
-    if not root:
+    if not project_path:
         return True
-    candidate = (session_project_path or "").rstrip("/")
-    return candidate == root or candidate.startswith(root + "/")
+    root = os.path.normpath(project_path)
+    candidate = os.path.normpath(session_project_path or "")
+    return candidate == root or candidate.startswith(root.rstrip(os.sep) + os.sep)
 
 
 def _project_label(project_path: str) -> str:

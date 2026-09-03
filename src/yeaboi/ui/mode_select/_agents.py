@@ -168,10 +168,7 @@ def _run_agent_page(
 
         def _work() -> None:
             try:
-                if project_path:
-                    rq.put(("ok", agents_setup.run(mode, pq.put, project_path=project_path)))
-                else:
-                    rq.put(("ok", agents_setup.run(mode, pq.put)))
+                rq.put(("ok", agents_setup.run(mode, pq.put, project_path=project_path)))
             except Exception as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
                 logger.exception("%s engine failed", label)
                 rq.put(("err", exc))

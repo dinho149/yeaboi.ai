@@ -846,7 +846,7 @@ in sessions.db. It is **unrelated** to the `{project_id}` segment of
 | POST | `/api/projects` | body `{name, description?}` → the new row (no `session_count`). A blank name is a 400 |
 | GET | `/api/projects/{project_id}` | the row plus `session_ids` (the linked planning/analysis sessions, newest first); 404 when unknown |
 | GET | `/api/projects/{project_id}/sessions` | `?mode=&limit=` → `{sessions: [row]}` — the project's runs across every mode (see the row shape below); 404 when the project is unknown |
-| POST | `/api/projects/{project_id}/defaults` | body `{defaults: {…}}` → `{project_id, settings}` (the merged settings). Accepted keys: `default_analysis_profile_id`, `default_context_deps`, `repo_path` (an absolute path — the repo the Agents world scopes to). An unknown key or an empty object is a 400; an unknown project a 404 |
+| POST | `/api/projects/{project_id}/defaults` | body `{defaults: {…}}` → `{project_id, settings}` (the merged settings). Accepted keys: `default_analysis_profile_id`, `default_context_deps`, `repo_path` (an absolute path — the repo the Agents world scopes to). An unknown key, an empty object, or a `repo_path` that is not an absolute path (or is the filesystem root) is a 400; an unknown project a 404 |
 | GET | `/api/sessions/recent` | `?limit=&mode=&project_id=` → `{sessions: [row]}` — the newest runs across every mode, machine-wide or one project's |
 
 A **sessions row** is `{session_id, run_id, mode, title, created_at, last_modified, project_id}`:

@@ -128,6 +128,16 @@ class TestFilters:
 
 
 class TestResilience:
+    def test_the_project_map_never_reads_the_state_blobs(self, seeded, monkeypatch):
+        from yeaboi import sessions_recent
+        from yeaboi.sessions import SessionStore
+
+        def boom(self, **kw):
+            raise AssertionError("list_sessions selects every session_state blob")
+
+        monkeypatch.setattr(SessionStore, "list_sessions", boom)
+        assert sessions_recent._project_ids_by_session(seeded["db"]) == {"p1": seeded["pid"], "a1": ""}
+
     def test_a_broken_store_is_skipped(self, seeded, monkeypatch):
         from yeaboi import sessions_recent
 

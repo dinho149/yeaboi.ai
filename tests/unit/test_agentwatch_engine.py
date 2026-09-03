@@ -260,6 +260,9 @@ class TestRepoScope:
             ("/home/dev/other/webapp", "/home/dev/webapp", False),
             ("/srv/api", "/home/dev/api", False),
             ("/home/dev/webapp", "", True),
+            ("/home/dev/./webapp", "/home/dev/webapp/", True),
+            ("/home/dev/webapp/../webapp/src", "/home/dev/webapp", True),
+            ("/home/dev/webapp/../other", "/home/dev/webapp", False),
         ],
     )
     def test_in_repo(self, session_path, repo, expected):
