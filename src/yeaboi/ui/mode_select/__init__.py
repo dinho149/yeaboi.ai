@@ -6588,7 +6588,7 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
 
     def load_runs():
         with StandupStore(_ana_dbp) as store:
-            rows = store.get_all_history(100)
+            rows = store.get_all_history(100, session_ids=_scope_ids())
         out = []
         for r in rows:
             date = r.get("standup_date") or ""
@@ -6811,7 +6811,7 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         supports_timeout,
         mode="standup",
         title_fn=standup_title,
-        subtitle="Saved standups",
+        subtitle=_hub_subtitle("Saved standups", scoped=True),
         empty_title="No standups yet",
         empty_subtitle="Press Enter to run your first standup",
         new_label="+ New standup",
@@ -6849,7 +6849,7 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
 
     def load_runs():
         with RetroStore(_ana_dbp) as store:
-            rows = store.get_all_history(100)
+            rows = store.get_all_history(100, session_ids=_scope_ids())
         out = []
         for r in rows:
             date = r.get("retro_date") or ""
@@ -6951,7 +6951,7 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
         supports_timeout,
         mode="retro",
         title_fn=retro_title,
-        subtitle="Saved retros",
+        subtitle=_hub_subtitle("Saved retros", scoped=True),
         empty_title="No retros yet",
         empty_subtitle="Press Enter to start your first retro board",
         new_label="+ New retro",
@@ -7083,7 +7083,7 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
         supports_timeout,
         mode="reporting",
         title_fn=reporting_title,
-        subtitle="Saved reports",
+        subtitle=_hub_subtitle("Saved reports", scoped=False),
         empty_title="No reports yet",
         empty_subtitle="Press Enter to generate your first delivery report",
         new_label="+ New report",
@@ -7115,7 +7115,7 @@ def _run_solo_review_hub(console: Console, live, read_key, frame_time: float, su
 
     def load_runs():
         with WeeklyReviewStore(_ana_dbp) as store:
-            rows = store.get_all_history(100)
+            rows = store.get_all_history(100, session_ids=_scope_ids())
         out = []
         for r in rows:
             proj = r.get("project_name") or ""
@@ -7178,7 +7178,7 @@ def _run_solo_review_hub(console: Console, live, read_key, frame_time: float, su
         supports_timeout,
         mode="solo",
         title_fn=solo_review_title,
-        subtitle="Saved weekly reviews",
+        subtitle=_hub_subtitle("Saved weekly reviews", scoped=True),
         empty_title="No reviews yet",
         empty_subtitle="Press Enter to review your first week",
         new_label="+ New review",
@@ -12629,7 +12629,7 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
         supports_timeout,
         mode="poker",
         title_fn=poker_title,
-        subtitle="Saved poker sessions",
+        subtitle=_hub_subtitle("Saved poker sessions", scoped=False),
         empty_title="No poker sessions yet",
         empty_subtitle="Press Enter to start estimating tickets with your team",
         new_label="+ New session",
@@ -12655,6 +12655,7 @@ def _sweep_menu_in(
     mascot: str = "duck",
     today=None,
     world: str = "",
+    scope: str = "",
 ) -> None:
     """Play the diagonal intro wipe that reveals the mode titles top-left →
     bottom-right, then land on the fully-revealed frame.
@@ -12701,6 +12702,7 @@ def _sweep_menu_in(
                     mascot=mascot,
                     today=today,
                     world=world,
+                    scope=scope,
                 )
             )
             if _front >= _front_max:
@@ -12722,6 +12724,7 @@ def _sweep_menu_in(
             mascot=mascot,
             today=today,
             world=world,
+            scope=scope,
         )
     )
 
@@ -12736,6 +12739,7 @@ def _slide_menu_in(
     mascot: str = "duck",
     today=None,
     world: str = "",
+    scope: str = "",
 ) -> None:
     """Return-to-menu transition: the mode you came from slides back FIRST, then the
     rest scroll in around it exactly like the fresh-load intro.
@@ -12778,6 +12782,7 @@ def _slide_menu_in(
         mascot=mascot,
         today=today,
         world=world,
+        scope=scope,
     )
 
 
@@ -12854,6 +12859,155 @@ def _run_category_screen(
                 logger.info("category click-chosen: %s", chosen)
                 return chosen
             selected = hit
+
+
+def _run_door_screen(
+    console: Console,
+    live,
+    read_key,
+    supports_timeout: bool,
+    *,
+    world: str,
+    preselected: str = "sessions",
+) -> str | None:
+    """Phase 0b — the door. Returns "projects"/"sessions", None to go back
+    to the split, or "quit".
+
+    Always shown after the split (the last door is *preselected*, never
+    auto-skipped). Esc steps back one screen; q quits; n opens Niko.
+    """
+    from yeaboi.ui.mode_select.screens._screens_door import (
+        _DOOR_CARDS,
+        _build_door_screen,
+        door_at_pos,
+        door_index,
+    )
+
+    selected = door_index(preselected)
+    start = time.monotonic()
+    active_name = _active_project_name()
+    logger.info("door screen shown (world=%s, preselected=%s, active=%s)", world, preselected, active_name or "-")
+    while True:
+        w, h = console.size
+        if w < _MIN_WIDTH or h < _MIN_HEIGHT:
+            live.update(_build_too_small_screen(w, h))
+            k = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
+            if k in ("q", "esc"):
+                return "quit"
+            continue
+        elapsed = time.monotonic() - start
+        live.update(
+            _build_door_screen(
+                selected,
+                world=world,
+                width=w,
+                height=h,
+                shimmer_tick=elapsed,
+                intro=min(1.0, elapsed / 0.4),
+                active_name=active_name,
+            )
+        )
+        key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
+        if key in ("left", "up"):
+            selected = (selected - 1) % len(_DOOR_CARDS)
+        elif key in ("right", "down", "tab"):
+            selected = (selected + 1) % len(_DOOR_CARDS)
+        elif key == "enter":
+            chosen = _DOOR_CARDS[selected]["key"]
+            logger.info("door chosen: %s", chosen)
+            return chosen
+        elif key == "esc":
+            logger.info("esc from the door — back to the split")
+            return None
+        elif key == "q":
+            logger.info("quit from the door")
+            return "quit"
+        elif key == "n":
+            _open_niko(console, live, read_key, _FRAME_TIME, supports_timeout)
+        elif isinstance(key, str) and key.startswith("click:"):
+            try:
+                cx, cy = (int(p) for p in key.split(":")[1:3])
+            except ValueError:
+                continue
+            hit = door_at_pos(w, h, row=cy, col=cx)
+            if hit is None:
+                continue
+            if hit == selected:
+                chosen = _DOOR_CARDS[selected]["key"]
+                logger.info("door click-chosen: %s", chosen)
+                return chosen
+            selected = hit
+
+
+def _project_row(project_id: str) -> dict | None:
+    """The active project's row, or None when there is none or it cannot be read."""
+    if not project_id:
+        return None
+    try:
+        from yeaboi.projects.store import ProjectStore
+
+        with ProjectStore(_ana_dbp) as store:
+            return store.get(project_id)
+    except Exception:  # noqa: BLE001 — a broken store must not take the menu down
+        logger.warning("could not read project %s", project_id, exc_info=True)
+        return None
+
+
+def _active_project_name() -> str:
+    """The active project's name, "" when runs are unscoped."""
+    from yeaboi.projects.active import get_active_project
+
+    row = _project_row(get_active_project())
+    return row["name"] if row else ""
+
+
+def _active_repo_path() -> str:
+    """The active project's ``repo_path`` setting, "" when unset or unscoped."""
+    from yeaboi.projects.active import get_active_project
+
+    row = _project_row(get_active_project())
+    return str(row["settings"].get("repo_path") or "") if row else ""
+
+
+def _scope_line(door: str, world: str) -> str:
+    """The menu's top-border title: what the next run is scoped to.
+
+    Computed on (re)entry to the menu, never per frame.
+    """
+    from yeaboi.projects.active import get_active_project
+
+    pid = get_active_project()
+    row = _project_row(pid) if door == "projects" else None
+    if row is None:
+        return "Session · one-off, unscoped"
+    name = row["name"]
+    if world == "agents":
+        repo = str(row["settings"].get("repo_path") or "")
+        if repo:
+            return f"{name} · agents in {repo}"
+        return f"{name} · no repo path yet — yeaboi project set-defaults {pid} --repo <path>"
+    return f"{name} · every run here shares context"
+
+
+def _scope_ids() -> tuple[str, ...] | None:
+    """The active project's session ids for a hub's store read; None = every run."""
+    from yeaboi.projects.active import get_active_project
+    from yeaboi.projects.scope import resolve_scope
+
+    pid = get_active_project()
+    if not pid:
+        return None
+    scope = resolve_scope(pid, db_path=_ana_dbp)
+    return scope.session_ids if scope is not None else None
+
+
+def _hub_subtitle(base: str, *, scoped: bool) -> str:
+    """A hub's subtitle under an active project: its name, or "all runs" for a
+    hub whose store cannot filter by project."""
+    name = _active_project_name()
+    if not name:
+        return base
+    return f"{base} — {name}" if scoped else f"{base} — all runs"
 
 
 def _landing_first_frame(category: str, *, width: int, height: int):
@@ -13383,7 +13537,7 @@ def _run_ship_hub(console: Console, live, read_key, frame_time: float, supports_
         mode="ship",
         title_fn=ship_title,
         share_theme=SHIP_THEME,
-        subtitle="Saved ship runs",
+        subtitle=_hub_subtitle("Saved ship runs", scoped=False),
         empty_title="No ship runs yet",
         empty_subtitle="Press Enter to hand a plan item to a supervised coding agent",
         new_label="+ New run",
@@ -13464,14 +13618,34 @@ def select_mode(
     # The landing split (Phase 0). `category` picks which card list Phase 1
     # shows; the last choice is persisted and *preselected* on the next launch
     # (never auto-skipped). Esc from a menu returns here; q quits.
-    from yeaboi.config import get_last_category, set_last_category
-    from yeaboi.projects.active import set_solo_mode
+    from yeaboi.config import get_last_category, get_last_door, set_last_category, set_last_door
+    from yeaboi.projects.active import get_active_project, set_active_project, set_solo_mode
 
     category = get_last_category()
     set_solo_mode(category == "solo")
     cards, mascot = _CATEGORY_MENUS[category]
     _category_pending = True  # show the split on the first pass through the loop
-    _back_to_category = False
+    # The door (Phase 0b): Projects or Sessions, shown after every split pick.
+    # Preselected from the last choice, never auto-skipped; Esc from a menu
+    # steps back here, and from here back to the split.
+    door = get_last_door()
+    _door_pending = True
+    _back_to_door = False
+    scope = ""  # the menu's top-border scope line, computed on each (re)entry
+
+    def _remember_door(chosen: str) -> None:
+        nonlocal door
+        if chosen != door:
+            set_last_door(chosen)
+        door = chosen
+
+    def _open_hub(card_key: str) -> None:
+        # The project-sessions page opens a run's saved-runs hub through this;
+        # the hubs are this module's, so the page cannot import them.
+        _log_name = {"weekly-review": "solo", "daily-standup": "standup"}.get(card_key, card_key)
+        logger.info("hub opened from the project sessions page: %s", card_key)
+        with mode_log(_log_name):
+            SAVED_SESSION_HUBS[card_key](console, live, read_key, _FRAME_TIME, _supports_timeout)
 
     # The Solo welcome's Today strip. Built ONCE per (re)entry of the Solo menu —
     # never inside the frame loop, which re-renders at 60 fps — and None on the
@@ -13569,10 +13743,47 @@ def select_mode(
                 cards, mascot = _CATEGORY_MENUS[category]
                 n = len(cards)
                 selected = 0
-                _today = _refresh_today()
+                _door_pending = True
                 # A category pick always sweeps its menu in fresh.
                 _returning = False
                 _reverse_animated = False
+
+            # ── Phase 0b: the door ───────────────────────────────────────────
+            # Sessions clears the active project; Projects picks one (Esc on
+            # the list returns to the door). Esc here returns to the split.
+            if _door_pending:
+                _door_pending = False
+                _door_pick = None
+                while _door_pick is None:
+                    _door_pick = _run_door_screen(
+                        console, live, read_key, _supports_timeout, world=category, preselected=door
+                    )
+                    if _door_pick == "quit":
+                        return None
+                    if _door_pick is None:
+                        _category_pending = True
+                        break
+                    if _door_pick == "sessions":
+                        set_active_project("")
+                        _remember_door("sessions")
+                        break
+                    from yeaboi.ui.mode_select._projects import run_projects_page
+
+                    _chosen_project = run_projects_page(
+                        console, live, read_key, _FRAME_TIME, _supports_timeout, pick=True, open_hub=_open_hub
+                    )
+                    if _chosen_project is None:
+                        _door_pick = None  # Esc on the list: back to the door
+                        continue
+                    _remember_door("projects")
+                if _category_pending:
+                    _restart_mode_select = True
+                    continue
+                _today = _refresh_today()
+                _returning = False
+                _reverse_animated = False
+
+            scope = _scope_line(door, category)
 
             if _reverse_animated:
                 # The reverse transition already revealed every item — don't re-run.
@@ -13580,11 +13791,15 @@ def select_mode(
             elif _returning:
                 # Cold return from a sub-page: the mode you came from slides home,
                 # then the rest load in around it (the inverse of the select lift).
-                _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
+                _slide_menu_in(
+                    console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category, scope=scope
+                )
             else:
                 # Fresh load: one diagonal wipe reveals every title top-left →
                 # bottom-right (the inverse of the splash crumble).
-                _sweep_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
+                _sweep_menu_in(
+                    console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category, scope=scope
+                )
             select_time = time.monotonic()
             # Companion entrance. Fresh load: full slide-in from off-screen right,
             # starting once the wipe has landed. On a RETURN the duck already slid
@@ -13641,6 +13856,7 @@ def select_mode(
                                 mascot=mascot,
                                 today=_today,
                                 world=category,
+                                scope=scope,
                             )
                             if update:
                                 live.update(_panel)
@@ -13681,8 +13897,8 @@ def select_mode(
                     # Esc backs out to the landing split (the screen this menu
                     # came from). Quitting stays on q, mirroring every sub-page's
                     # esc-goes-back convention.
-                    logger.info("esc from %s menu — back to category screen", category)
-                    _back_to_category = True
+                    logger.info("esc from %s menu — back to the door", category)
+                    _back_to_door = True
                     break
                 elif key == "q":
                     # Courtesy on quit: offer to stop a running local Ollama
@@ -13733,6 +13949,9 @@ def select_mode(
                             set_solo_mode(category == "solo")
                             logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
                             set_last_category(category)
+                            # A jump lands as a one-off session in the other world.
+                            set_active_project("")
+                            _remember_door("sessions")
                             cards, mascot = _CATEGORY_MENUS[category]
                             n = len(cards)
                             selected = _j
@@ -13748,7 +13967,15 @@ def select_mode(
                     logger.info("changelog opened from mode select")
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(
-                        console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                        console,
+                        live,
+                        selected,
+                        n,
+                        cards=cards,
+                        mascot=mascot,
+                        today=_today,
+                        world=category,
+                        scope=scope,
                     )  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "s":
@@ -13761,7 +13988,17 @@ def select_mode(
                     from yeaboi.ui.mode_select._ceremonies import run_ceremonies_page
 
                     run_ceremonies_page(console, live, read_key, _FRAME_TIME, _supports_timeout, dry_run=dry_run)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
+                    _slide_menu_in(
+                        console,
+                        live,
+                        selected,
+                        n,
+                        cards=cards,
+                        mascot=mascot,
+                        today=_today,
+                        world=category,
+                        scope=scope,
+                    )
                     select_time = time.monotonic()
                 elif key == "P":
                     # Projects — the switcher for which project scoped runs read
@@ -13771,8 +14008,22 @@ def select_mode(
                     logger.info("projects opened from mode select")
                     from yeaboi.ui.mode_select._projects import run_projects_page
 
-                    run_projects_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
+                    run_projects_page(console, live, read_key, _FRAME_TIME, _supports_timeout, open_hub=_open_hub)
+                    # Open on the list set a project; the door follows it.
+                    _remember_door("projects" if get_active_project() else "sessions")
+                    scope = _scope_line(door, category)
+                    _today = _refresh_today()
+                    _slide_menu_in(
+                        console,
+                        live,
+                        selected,
+                        n,
+                        cards=cards,
+                        mascot=mascot,
+                        today=_today,
+                        world=category,
+                        scope=scope,
+                    )
                     select_time = time.monotonic()
                 elif key == "n":
                     # Niko, the global assistant. A keycap and the duck himself
@@ -13780,7 +14031,17 @@ def select_mode(
                     # eleventh card pushes the version row off at 84x40. Clicking
                     # the mascot is the discoverable half; this is the keyboard.
                     _open_niko(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
+                    _slide_menu_in(
+                        console,
+                        live,
+                        selected,
+                        n,
+                        cards=cards,
+                        mascot=mascot,
+                        today=_today,
+                        world=category,
+                        scope=scope,
+                    )
                     select_time = time.monotonic()
                 elif key == "f":
                     # Quick feedback comes out of the duck: his tip bubble becomes a
@@ -13794,7 +14055,15 @@ def select_mode(
                         logger.info("feedback: terminal too small for the bubble, opening the form")
                         _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                         _slide_menu_in(
-                            console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                            console,
+                            live,
+                            selected,
+                            n,
+                            cards=cards,
+                            mascot=mascot,
+                            today=_today,
+                            world=category,
+                            scope=scope,
                         )
                         select_time = time.monotonic()
                         continue
@@ -13822,7 +14091,15 @@ def select_mode(
                     logger.info("feedback opened from mode select")
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(
-                        console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                        console,
+                        live,
+                        selected,
+                        n,
+                        cards=cards,
+                        mascot=mascot,
+                        today=_today,
+                        world=category,
+                        scope=scope,
                     )  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "a":
@@ -13832,7 +14109,15 @@ def select_mode(
                     logger.info("all tips opened from mode select")
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(
-                        console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                        console,
+                        live,
+                        selected,
+                        n,
+                        cards=cards,
+                        mascot=mascot,
+                        today=_today,
+                        world=category,
+                        scope=scope,
                     )  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "p":
@@ -13840,14 +14125,34 @@ def select_mode(
                     # as the Changelog above; opens instantly (bundled copy).
                     logger.info("privacy opened from mode select")
                     _run_privacy_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
+                    _slide_menu_in(
+                        console,
+                        live,
+                        selected,
+                        n,
+                        cards=cards,
+                        mascot=mascot,
+                        today=_today,
+                        world=category,
+                        scope=scope,
+                    )
                     select_time = time.monotonic()
                 elif key == "k":
                     # The System Check page (bottom-left hint). Offline probes
                     # only, so opening it is as cheap as the changelog.
                     logger.info("system check opened from mode select")
                     _run_system_check_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category)
+                    _slide_menu_in(
+                        console,
+                        live,
+                        selected,
+                        n,
+                        cards=cards,
+                        mascot=mascot,
+                        today=_today,
+                        world=category,
+                        scope=scope,
+                    )
                     select_time = time.monotonic()
                 elif key == "clear":
                     # Ctrl+U — the update shortcut advertised by the bottom-right
@@ -13892,7 +14197,15 @@ def select_mode(
                             )
                         _open_niko(console, live, read_key, _FRAME_TIME, _supports_timeout)
                         _slide_menu_in(
-                            console, live, selected, n, cards=cards, mascot=mascot, today=_today, world=category
+                            console,
+                            live,
+                            selected,
+                            n,
+                            cards=cards,
+                            mascot=mascot,
+                            today=_today,
+                            world=category,
+                            scope=scope,
                         )
                         select_time = time.monotonic()
                         continue
@@ -13927,14 +14240,15 @@ def select_mode(
                         mascot=mascot,
                         today=_today,
                         world=category,
+                        scope=scope,
                     )
                 )
 
-            # Esc backed out of the menu — return to the landing split rather
-            # than running the select transition below.
-            if _back_to_category:
-                _back_to_category = False
-                _category_pending = True
+            # Esc backed out of the menu — return to the door rather than
+            # running the select transition below.
+            if _back_to_door:
+                _back_to_door = False
+                _door_pending = True
                 _restart_mode_select = True
                 continue
 
@@ -13983,6 +14297,7 @@ def select_mode(
                         mascot=mascot,
                         today=_today,
                         world=category,
+                        scope=scope,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -14007,6 +14322,7 @@ def select_mode(
                         mascot=mascot,
                         today=_today,
                         world=category,
+                        scope=scope,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -14055,6 +14371,7 @@ def select_mode(
                     read_key=read_key,
                     frame_time=_FRAME_TIME,
                     supports_timeout=_supports_timeout,
+                    project_path=_active_repo_path(),
                 )
                 _restart_mode_select = True
                 _skip_fade_in = True
@@ -16046,6 +16363,7 @@ def select_mode(
                                         mascot=mascot,
                                         today=_today,
                                         world=category,
+                                        scope=scope,
                                     )
                                 )
                             time.sleep(_FRAME_TIME)

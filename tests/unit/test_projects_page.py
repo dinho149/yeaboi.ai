@@ -72,21 +72,32 @@ class TestClose:
 
     def test_the_back_button_closes_it(self, env):
         create_project("Apollo", db_path=env["db"])
-        # Set active → Context → Archive → Back, then Enter.
-        live = _run(_keys("right", "right", "right", "enter"))
+        # Open → Sessions → Context → Archive → Back, then Enter.
+        live = _run(_keys("right", "right", "right", "right", "enter"))
         assert "Apollo" in _render(live.frames[-1])
 
-
-class TestSetActive:
-    def test_enter_on_set_active_marks_the_project(self, env):
+    def test_esc_returns_none(self, env):
         create_project("Apollo", db_path=env["db"])
-        _run(_keys("enter", "esc"))
-        assert active.get_active_project().startswith("proj-")
-
-    def test_enter_again_clears_it(self, env):
-        create_project("Apollo", db_path=env["db"])
-        _run(_keys("enter", "enter", "esc"))
+        assert _projects.run_projects_page(_Console(), _Live(), _keys("esc"), 0.05, True, pick=True) is None
         assert active.get_active_project() == ""
+
+
+class TestOpen:
+    def test_enter_on_open_sets_the_project_and_returns_its_id(self, env):
+        created = create_project("Apollo", db_path=env["db"])
+        chosen = _projects.run_projects_page(_Console(), _Live(), _keys("enter"), 0.05, True, pick=True)
+        assert chosen == created["project_id"]
+        assert active.get_active_project() == created["project_id"]
+
+    def test_down_moves_the_selection_so_the_second_project_can_be_opened(self, env):
+        create_project("Apollo", db_path=env["db"])
+        second = create_project("Borealis", db_path=env["db"])  # newest first: Borealis, Apollo
+        chosen = _projects.run_projects_page(_Console(), _Live(), _keys("down", "enter"), 0.05, True)
+        assert chosen != second["project_id"] and chosen.startswith("proj-")
+
+    def test_open_from_the_menu_shortcut_returns_the_id_too(self, env):
+        created = create_project("Apollo", db_path=env["db"])
+        assert _projects.run_projects_page(_Console(), _Live(), _keys("enter"), 0.05, True) == created["project_id"]
 
     def test_empty_page_offers_the_command_instead(self, env):
         live = _run(_keys("enter", "esc"))
@@ -96,24 +107,72 @@ class TestSetActive:
 
 class TestArchive:
     def test_archive_hides_the_row_and_clears_active(self, env):
-        create_project("Apollo", db_path=env["db"])
-        _run(_keys("enter", "right", "right", "enter", "esc"))  # set active, then archive it
+        created = create_project("Apollo", db_path=env["db"])
+        active.set_active_project(created["project_id"])
+        _run(_keys("right", "right", "right", "enter", "esc"))  # Archive the active project
         assert active.get_active_project() == ""
+
+
+class TestSessionsSubPage:
+    @pytest.fixture()
+    def project(self, env):
+        from yeaboi.agent.state import StandupReport
+        from yeaboi.sessions import SessionStore
+        from yeaboi.standup.store import StandupStore
+
+        created = create_project("Apollo", db_path=env["db"])
+        with SessionStore(env["db"]) as store:
+            store.create_session("p1", "Apollo", project_id=created["project_id"])
+        with StandupStore(env["db"]) as store:
+            store.record_run(StandupReport(session_id="p1", date="2026-09-01"))
+        return created
+
+    def test_lists_the_projects_runs(self, env, project):
+        live = _run(_keys("right", "enter", "esc", "esc"))  # Sessions, then back out twice
+        # The subtitle is a typewriter reveal, so the row and the hint are what a keyed walk sees.
+        assert any(
+            "Standup — 2026-09-01" in _render(f) and "Enter opens the run's hub" in _render(f) for f in live.frames
+        )
+
+    def test_enter_opens_the_runs_hub_with_the_project_active(self, env, project):
+        opened: list = []
+
+        def open_hub(key):
+            opened.append((key, active.get_active_project()))
+
+        _projects.run_projects_page(
+            _Console(), _Live(), _keys("right", "enter", "enter", "esc", "esc"), 0.05, True, open_hub=open_hub
+        )
+        assert opened == [("daily-standup", project["project_id"])]
+        assert active.get_active_project() == ""  # restored afterwards
+
+    def test_a_planning_row_points_at_its_card(self, env, project):
+        live = _run(_keys("right", "enter", "down", "enter", "esc", "esc"))  # the planning row is second
+        assert any("Open it from the Planning card." in _render(f) for f in live.frames)
+
+    def test_a_row_without_a_hub_callable_points_at_its_card(self, env, project):
+        live = _run(_keys("right", "enter", "enter", "esc", "esc"))
+        assert any("Open it from the Standup card." in _render(f) for f in live.frames)
+
+    def test_an_empty_project_says_so(self, env):
+        create_project("Bare", db_path=env["db"])
+        live = _run(_keys("right", "enter", "enter", "esc", "esc"))
+        assert any("Nothing has run inside this project yet" in _render(f) for f in live.frames)
 
 
 class TestContextPage:
     def test_space_toggles_one_source_off(self, env):
-        # Open Context (button 1), Space the first row (retro) off, back out.
-        _run(_keys("right", "enter", " ", "esc", "esc"))
+        # Open Context (button 2), Space the first row (retro) off, back out.
+        _run(_keys("right", "right", "enter", " ", "esc", "esc"))
         assert active.get_context_deps() == ("standup", "plan", "performance", "analysis")
 
     def test_incognito_button_switches_everything_off(self, env):
-        _run(_keys("right", "enter", "right", "enter", "esc", "esc"))
+        _run(_keys("right", "right", "enter", "right", "enter", "esc", "esc"))
         assert active.get_context_deps() == ()
 
     def test_all_on_restores_inherit(self, env):
         active.set_context_deps(())
-        _run(_keys("right", "enter", "enter", "esc", "esc"))
+        _run(_keys("right", "right", "enter", "enter", "esc", "esc"))
         assert active.get_context_deps() is None
 
 
@@ -143,9 +202,9 @@ class TestSoloMode:
         assert active.is_solo_mode() is False
 
     def test_incognito_renders_its_own_state_line(self, env):
-        live = _run(_keys("right", "enter", "right", "enter", "esc", "esc"))
+        live = _run(_keys("right", "right", "enter", "right", "enter", "esc", "esc"))
         assert any("Incognito" in _render(f) for f in live.frames)
 
     def test_context_works_with_no_projects(self, env):
-        _run(_keys("right", "enter", "right", "enter", "esc", "esc"))
+        _run(_keys("right", "right", "enter", "right", "enter", "esc", "esc"))
         assert active.get_context_deps() == ()

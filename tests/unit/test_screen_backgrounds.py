@@ -154,6 +154,12 @@ class TestRepresentativeScreens:
         out = _render(build_screensaver(width=18, height=6, elapsed=0.0), width=18, height=6)
         assert _bg_escape(NEUTRAL_BG) in out
 
+    def test_door_uses_neutral_base(self):
+        from yeaboi.ui.mode_select.screens._screens_door import _build_door_screen
+
+        out = _render(_build_door_screen(0, width=100, height=30))
+        assert _bg_escape(NEUTRAL_BG) in out
+
     def test_beta_notice_uses_the_gated_modes_theme(self):
         from yeaboi.ui.shared._beta_notice import _build_beta_notice_screen
 

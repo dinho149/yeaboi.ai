@@ -209,6 +209,29 @@ def set_last_category(category: str) -> None:
     logger.info("Landing category set to %s (persisted to %s)", category, config_file)
 
 
+LAST_DOOR_KEY = "YEABOI_LAST_DOOR"
+_VALID_DOORS = ("projects", "sessions")
+
+
+def get_last_door() -> str:
+    """Return the last-chosen door ("projects"/"sessions", default sessions).
+
+    Preselection only — the door screen always shows after the landing split.
+    Unknown values fall back to "sessions" so a hand-edited .env can't wedge it.
+    """
+    value = os.getenv(LAST_DOOR_KEY, "sessions").strip().lower()
+    return value if value in _VALID_DOORS else "sessions"
+
+
+def set_last_door(door: str) -> None:
+    """Persist the door choice (mirrors :func:`set_last_category`)."""
+    if door not in _VALID_DOORS:
+        return
+    config_file = set_config_value(LAST_DOOR_KEY, door)
+    os.environ[LAST_DOOR_KEY] = door
+    logger.info("Door set to %s (persisted to %s)", door, config_file)
+
+
 def is_duck_enabled() -> bool:
     """Return True if the corner duck's speech bubble may show lines (default on).
 

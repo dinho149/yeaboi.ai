@@ -853,6 +853,10 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False, show_compa
     return row
 
 
+# The scope line's colour on the frame border — the landing split's heading grey.
+_SCOPE_STYLE = "rgb(152,156,170)"
+
+
 def _build_mode_screen(
     selected: int,
     *,
@@ -875,6 +879,7 @@ def _build_mode_screen(
     mascot: str = "duck",
     today: TodaySnapshot | None = None,
     world: str = "",
+    scope: str = "",
 ) -> Panel:
     """Build the full-screen mode selection layout.
 
@@ -890,6 +895,9 @@ def _build_mode_screen(
     today: the Solo welcome's snapshot; when given, the Today strip sits above
     the first card (``mode_at_row``/``selected_title_offset`` take it too).
     world: the landing world whose tips rotate here ("" = every world's).
+    scope: the scope line ("Session · one-off, unscoped", or the active project)
+    drawn as the frame's top-border title — zero rows, so the 40-row budget,
+    ``mode_at_row`` and ``selected_title_offset`` are untouched.
     """
     cards = _MODE_CARDS if cards is None else cards
     show = visible if visible is not None else list(range(len(cards)))
@@ -1042,7 +1050,8 @@ def _build_mode_screen(
     # directly on the bottom border, which the frame reroutes up over it.
     # build_page_panel (main #104) applies the neutral base tint so the main
     # menu never shows the terminal's own background.
-    panel = build_page_panel(body_renderable, height=height, padding=(1, 2, 0, 2))
+    title_kwargs = {"title": Text(f" {scope} ", style=_SCOPE_STYLE), "title_align": "center"} if scope else {}
+    panel = build_page_panel(body_renderable, height=height, padding=(1, 2, 0, 2), **title_kwargs)
     # The menu draws its own companion in-panel, but the stamp still matters:
     # MusicLive reads it into the chrome-mascot global, which the screensaver
     # uses — idling on the Agents menu must save with the robo, not the duck.

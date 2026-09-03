@@ -82,7 +82,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     # the desktop opens a project from the Projects page.
     FeatureTip(
         "projects",
-        "\U0001f5c2️ Tip: Press P to pick a project — scoped runs feed each other's context",
+        "\U0001f5c2️ Tip: Pick Projects at the door — every run inside a project shares context (P switches)",
         is_new=True,
         surfaces=("tui",),
     ),
@@ -200,6 +200,13 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     FeatureTip(
         "sessions",
         "\U0001f5c2️ Tip: every plan is saved — resume any past session with --resume",
+        surfaces=("tui",),
+    ),
+    # The other door. Terminal-only until the desktop's Sessions page lands.
+    FeatureTip(
+        "sessions",
+        "\U0001f5c2️ Tip: Sessions are one-off runs — a standalone standup or analysis that carries nothing over",
+        is_new=True,
         surfaces=("tui",),
     ),
     # No desktop route (CAPABILITIES marks it exempt there), so no desktop tip.

@@ -88,9 +88,16 @@ AREAS: tuple[Area, ...] = (
         src=("contracts/site.json", "scripts/gen_site_contract.py"),
     ),
     Area(
+        # First-class projects, and the cross-mode recent-sessions list the
+        # project pages and /api/sessions/recent read through.
         "projects",
-        src=("src/yeaboi/projects/", "src/yeaboi/mcp/tools_projects.py"),
-        tests=("tests/unit/test_mcp_server.py", "tests/unit/test_projects_*.py"),
+        src=("src/yeaboi/projects/", "src/yeaboi/mcp/tools_projects.py", "src/yeaboi/sessions_recent.py"),
+        tests=(
+            "tests/unit/test_mcp_server.py",
+            "tests/unit/test_projects_*.py",
+            "tests/unit/test_sessions_recent.py",
+            "tests/unit/test_app_projects_routes.py",
+        ),
     ),
     Area(
         # The Solo world's own modules: the welcome's Today snapshot and the

@@ -121,7 +121,7 @@ CAPABILITIES: dict[str, dict] = {
             "project_set_defaults",
         },
         "tui_mode": Exempt(
-            "a welcome-screen keycap (P) opening the project switcher, not a card — "
+            "the Projects door after the landing split (and the P keycap on the menu), not a card — "
             "an eleventh card breaks the 84x40 layout, the ceremonies/niko argument"
         ),
         "cli": {"project"},
@@ -134,12 +134,15 @@ CAPABILITIES: dict[str, dict] = {
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
         "mcp_tools": {"sessions_list", "session_get", "session_delete"},
-        "tui_mode": Exempt("sessions are surfaced inside the planning-mode screens, no dedicated card"),
+        "tui_mode": Exempt(
+            "the Sessions door after the landing split plus each project's sessions page, not a card — "
+            "a one-off run of any mode starts from that mode's own card"
+        ),
         "cli": {"--list-sessions", "--resume", "--clear-sessions"},
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
         "desktop": Exempt(
-            "saved plans surface through each project's plan panel (the iteration carries its "
-            "session id) — a raw session browser would be a second door to the same room"
+            "the manifest carries no /sessions yet — the desktop's Sessions page lands with its rail "
+            "redesign, and this column flips in the same commit as the manifest it vendors"
         ),
     },
     "standup": {

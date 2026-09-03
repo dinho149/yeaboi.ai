@@ -155,6 +155,10 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     # Projects page. "Set active" is the affirmative action (green like Accept);
     # Archive is amber (reversible, but it hides the row).
     "Set active": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    # "Open" is the affirmative action (green like Accept); "Sessions" wears the
+    # projects accent, since it lists what the project holds.
+    "Open": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Sessions": ("rgb(150,170,90)", "rgb(190,215,120)", "rgb(40,46,36)", "rgb(50,56,46)"),
     "Archive": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     # Context sub-page: All on restores every source (green); Incognito switches
     # them all off, deliberate but reversible, so it wears the amber.
