@@ -202,12 +202,11 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "\U0001f5c2️ Tip: every plan is saved — resume any past session with --resume",
         surfaces=("tui",),
     ),
-    # The other door. Terminal-only until the desktop's Sessions page lands.
+    # The other door, on both surfaces: the desktop's Sessions page is the same room.
     FeatureTip(
         "sessions",
         "\U0001f5c2️ Tip: Sessions are one-off runs — a standalone standup or analysis that carries nothing over",
         is_new=True,
-        surfaces=("tui",),
     ),
     # No desktop route (CAPABILITIES marks it exempt there), so no desktop tip.
     FeatureTip(
@@ -366,7 +365,7 @@ _META_TIPS: tuple[FeatureTip, ...] = (
 _DESKTOP_TIPS: tuple[FeatureTip, ...] = (
     FeatureTip(
         "desktop:projects",
-        "\U0001f4c1 Tip: Projects holds every blueprint session, diagram and deliverable you've made",
+        "\U0001f4c1 Tip: Projects is the durable door — every run you start inside one shares its context",
         surfaces=("desktop",),
     ),
     FeatureTip(

@@ -7,6 +7,11 @@
       "title": "Home"
     },
     {
+      "path": "/sessions",
+      "capability": "sessions",
+      "title": "Sessions"
+    },
+    {
       "path": "/whats-new",
       "capability": null,
       "title": "What's New"
@@ -155,6 +160,16 @@
       "path": "/agents/security",
       "capability": "agent-security",
       "title": "Agent Security"
+    },
+    {
+      "path": "/agents/projects",
+      "capability": "projects",
+      "title": "Agent projects"
+    },
+    {
+      "path": "/agents/projects/:id",
+      "capability": "projects",
+      "title": "Agent project"
     },
     {
       "path": "/ceremonies",
