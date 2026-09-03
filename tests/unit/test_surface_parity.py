@@ -670,6 +670,10 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
     "ship run": {"session": "session_id", "check": "check_command"},
     "ship resume": {"check": "check_command"},
     "project link": {"session": "session_id"},
+    # --repo is the repository path the Agents reports scope to (exact-or-prefix
+    # on the session's project directory, never a basename substring).
+    "agents cost": {"repo": "project_path"},
+    "agents standup": {"repo": "project_path"},
     "analyze": {
         # NOT project_id: analysis's --project is the tracker key (Jira/AzDO),
         # a different id space from the projects table's proj-<8hex> ids.
@@ -717,8 +721,8 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "project list": set(),
     "project show": set(),
     "project link": set(),
-    # --analysis-profile and --context are each one key of the engine's `defaults` dict.
-    "project set-defaults": {"analysis_profile", "context"},
+    # --analysis-profile, --context and --repo are each one key of the engine's `defaults` dict.
+    "project set-defaults": {"analysis_profile", "context", "repo"},
     # delivery/code/docs/ops are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -766,7 +770,7 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
     },
     "project set-defaults": {
-        "defaults": "assembled from the per-key flags (--analysis-profile, --context); a raw dict flag invites typos",
+        "defaults": "assembled from the per-key flags (--analysis-profile, --context, --repo); a raw dict flag invites typos",  # noqa: E501
     },
 }
 

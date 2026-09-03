@@ -327,7 +327,7 @@ class TestAgentRun:
     def test_bare_strings_and_component_dicts_are_separate_line_types(self, app, env, monkeypatch):
         from yeaboi.agentwatch import setup
 
-        def _fake(mode, on_progress):
+        def _fake(mode, on_progress, **kw):
             on_progress("scanning")
             on_progress(
                 {
@@ -349,7 +349,7 @@ class TestAgentRun:
     def test_an_engine_that_raises_becomes_an_error_line(self, app, env, monkeypatch):
         from yeaboi.agentwatch import setup
 
-        def _boom(mode, on_progress):
+        def _boom(mode, on_progress, **kw):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(setup, "run", _boom)
@@ -358,6 +358,64 @@ class TestAgentRun:
 
     def test_running_an_unknown_kind_is_a_404_before_the_stream(self, app, env):
         assert request(app, "POST", "/api/agents/nonsense/run", {}).code == 404
+
+
+class TestAgentScope:
+    """`project_id` resolves to the project's repo_path; saved reports are machine-wide."""
+
+    @pytest.fixture
+    def project(self, env):
+        from yeaboi.projects.engine import create_project, set_project_defaults
+
+        pid = create_project("Apollo", db_path=env["db"])["project_id"]
+        set_project_defaults(pid, {"repo_path": "/srv/apollo"}, db_path=env["db"])
+        bare = create_project("Bare", db_path=env["db"])["project_id"]
+        return {"pid": pid, "bare": bare}
+
+    def test_unscoped_latest_carries_an_empty_scope(self, app, env):
+        assert body(request(app, "GET", "/api/agents/usage/latest"))["scoped_to"] == ""
+
+    def test_a_scoped_latest_is_null_with_the_repo_named(self, app, env, project):
+        from yeaboi.agentwatch.store import AgentWatchStore
+
+        with AgentWatchStore(env["db"]) as store:
+            store.record_report("usage", AgentUsageReport(period_start="2026-07-01", total_cost_usd=9.99))
+        payload = body(request(app, "GET", f"/api/agents/usage/latest?project_id={project['pid']}"))
+        assert payload["report"] is None and payload["as_of"] == ""
+        assert payload["scoped_to"] == "/srv/apollo"
+
+    def test_security_ignores_the_project(self, app, env, project):
+        payload = body(request(app, "GET", f"/api/agents/security/latest?project_id={project['pid']}"))
+        assert payload["scoped_to"] == ""
+
+    def test_run_passes_the_repo_to_the_engine_and_echoes_it(self, app, env, project, monkeypatch):
+        from yeaboi.agentwatch import setup
+
+        seen = {}
+
+        def _fake(mode, on_progress, **kw):
+            seen.update(kw)
+            return AgentUsageReport(period_start="2026-07-01")
+
+        monkeypatch.setattr(setup, "run", _fake)
+        lines = drain(request(app, "POST", "/api/agents/usage/run", {"project_id": project["pid"]}))
+        assert seen == {"project_path": "/srv/apollo"}
+        assert lines[-1]["type"] == "done" and lines[-1]["scoped_to"] == "/srv/apollo"
+
+    def test_an_unscoped_run_echoes_an_empty_scope(self, app, env, monkeypatch):
+        from yeaboi.agentwatch import setup
+
+        monkeypatch.setattr(setup, "run", lambda mode, on_progress, **kw: AgentUsageReport(period_start="2026-07-01"))
+        assert drain(request(app, "POST", "/api/agents/usage/run", {}))[-1]["scoped_to"] == ""
+
+    def test_an_unknown_project_is_404(self, app, env, project):
+        assert request(app, "GET", "/api/agents/usage/latest?project_id=proj-00000000").code == 404
+        assert request(app, "POST", "/api/agents/usage/run", {"project_id": "proj-00000000"}).code == 404
+
+    def test_a_project_without_a_repo_path_is_400_naming_the_command(self, app, env, project):
+        resp = request(app, "GET", f"/api/agents/usage/latest?project_id={project['bare']}")
+        assert resp.code == 400
+        assert b"set-defaults" in resp.body
 
 
 class TestAgentExport:

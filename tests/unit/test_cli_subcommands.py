@@ -1591,6 +1591,46 @@ class TestProjectCommand:
         assert _cmd_project(args, _console()) == 0
         assert get_project(project["project_id"], db_path=db)["settings"] == {"default_context_deps": ["retro"]}
 
+    def test_set_defaults_sets_the_repo_path_absolute(self, tmp_path, monkeypatch):
+        from yeaboi.cli import _cmd_project, build_parser
+        from yeaboi.projects.engine import create_project, get_project
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        project = create_project("Apollo", db_path=db)
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        monkeypatch.chdir(tmp_path)
+        args = build_parser().parse_args(["project", "set-defaults", project["project_id"], "--repo", "repo"])
+        assert _cmd_project(args, _console()) == 0
+        assert get_project(project["project_id"], db_path=db)["settings"] == {"repo_path": str(repo.resolve())}
+
+    def test_agents_repo_flag_reaches_the_engines(self, monkeypatch):
+        from yeaboi.agent.state import AgentAdvisorReport, AgentStandupDigest, AgentUsageReport
+        from yeaboi.cli import _cmd_agents, build_parser
+
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.agentwatch.engine.run_agent_usage",
+            lambda **kw: seen.setdefault("cost", kw) and AgentUsageReport(),
+        )
+        monkeypatch.setattr(
+            "yeaboi.agentwatch.advisor.run_agent_advisor",
+            lambda **kw: seen.setdefault("advisor", kw) and AgentAdvisorReport(),
+        )
+        monkeypatch.setattr(
+            "yeaboi.agentwatch.engine.run_agent_standup",
+            lambda **kw: seen.setdefault("standup", kw) and AgentStandupDigest(),
+        )
+        for sub in ("cost", "advisor", "standup"):
+            args = build_parser().parse_args(["agents", sub, "--repo", "/srv/app", "--format", "json"])
+            _cmd_agents(args, _console())
+        assert {k: v["project_path"] for k, v in seen.items()} == {
+            "cost": "/srv/app",
+            "advisor": "/srv/app",
+            "standup": "/srv/app",
+        }
+
     def test_set_defaults_with_no_flags_changes_nothing(self, tmp_path, monkeypatch):
         from yeaboi.cli import _cmd_project, build_parser
         from yeaboi.projects.engine import create_project, get_project

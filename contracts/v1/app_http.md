@@ -590,8 +590,8 @@ already running) is not a failure.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/agents/modes` | the four modes and how fresh each saved report is |
-| GET | `/api/agents/{kind}/latest` | the last saved report, for an instant open |
-| POST | `/api/agents/{kind}/run` | one fresh pass, streamed as NDJSON |
+| GET | `/api/agents/{kind}/latest` | the last saved report, for an instant open; `?project_id=` scopes it (see below) |
+| POST | `/api/agents/{kind}/run` | one fresh pass, streamed as NDJSON; body `{project_id?}` scopes it |
 | POST | `/api/agents/{kind}/export` | write the report, or hand back its Markdown |
 
 `kind` is one of `usage`, `advisor`, `standup`, `security`. Every mode's run and
@@ -608,6 +608,18 @@ checklist draws, which is every phase these engines emit today — then `done:
 a plain phase, so a mode that grows a bare-string step still reaches the
 surface. No `op` line — the agentwatch engines take no cancel event, and backing
 out is free: the pass finishes and stores its report either way.
+
+**Scoping to a project.** `usage`, `advisor` and `standup` take a `project_id`
+(the `proj-<8hex>` id of *Projects and sessions* below) and resolve it to the
+project's `repo_path` setting: only sessions whose project directory is that
+absolute path or sits under it (a worktree counts — never a basename match)
+are read. `security` ignores it and stays machine-wide. Saved reports carry
+no project, so a scoped `latest` answers `{report: null, as_of: "",
+scoped_to: <repo_path>}` and the surface runs fresh; `run` echoes the same
+`scoped_to` on its `done` line. Both answer `scoped_to: ""` when unscoped. An
+unknown project is a 404; a project with no `repo_path` yet is a 400 naming
+`yeaboi project set-defaults <id> --repo <path>` (the same key
+`/api/projects/{project_id}/defaults` takes).
 
 Provenance has no routes here. `provenance_audit` and `provenance_trace` are
 request/response reads with no progress, no cancel and no page-shaped gap, so

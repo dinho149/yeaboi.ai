@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 _VALID_SOURCES = ("claude_code",)
 
 
-def _usage(window_days: int, project: str, source: str):
+def _usage(window_days: int, project: str, source: str, project_path: str = ""):
     if window_days < 1 or window_days > 365:
         raise ValueError("window_days must be between 1 and 365.")
     if source and source not in _VALID_SOURCES:
         raise ValueError(f"source must be one of {', '.join(_VALID_SOURCES)} (or empty for all).")
     from yeaboi.agentwatch.engine import run_agent_usage
 
-    return run_agent_usage(window_days=window_days, project=project, source=source)
+    return run_agent_usage(window_days=window_days, project=project, source=source, project_path=project_path)
 
 
 def _usage_history(limit: int):
@@ -36,12 +36,12 @@ def _usage_history(limit: int):
         return {"reports": store.list_reports("usage", limit=limit)}
 
 
-def _advisor_run(window_days: int):
+def _advisor_run(window_days: int, project_path: str = ""):
     if window_days < 1 or window_days > 365:
         raise ValueError("window_days must be between 1 and 365.")
     from yeaboi.agentwatch.advisor import run_agent_advisor
 
-    return run_agent_advisor(window_days=window_days)
+    return run_agent_advisor(window_days=window_days, project_path=project_path)
 
 
 def _advisor_history(limit: int):
@@ -61,6 +61,7 @@ def _standup_run(
     azdo_projects: list | None,
     include_local_sessions: bool,
     deliver: bool,
+    project_path: str = "",
 ):
     if days < 0 or days > 90:
         raise ValueError("days must be between 0 (previous working day) and 90.")
@@ -75,6 +76,7 @@ def _standup_run(
         azdo_projects=azdo_projects,
         include_local_sessions=include_local_sessions,
         deliver=deliver,
+        project_path=project_path,
     )
 
 
@@ -130,15 +132,17 @@ def register(app) -> None:
         window_days: int = 30,
         project: str = "",
         source: str = "",
+        project_path: str = "",
     ) -> dict:
         """BETA — Report what the user's AI coding agents cost: per-model, per-project and
         per-source token/cost breakdowns plus a daily trend, computed from local agent session
         logs (Claude Code) priced at public rates. project filters by project directory
-        name (substring); source by telemetry source (claude_code).
+        name (substring); source by telemetry source (claude_code); project_path keeps only
+        sessions whose directory is that absolute path or under it (a repo and its worktrees).
 
         The Agents modes are in beta — costs are estimates from local session logs and public
         rate tables, not the provider's bill. Present totals as estimates."""
-        return _with_beta(await run_engine(ctx, _usage, window_days, project, source))
+        return _with_beta(await run_engine(ctx, _usage, window_days, project, source, project_path))
 
     @app.tool()
     async def agents_usage_history(limit: int = 20) -> dict:
@@ -150,18 +154,19 @@ def register(app) -> None:
         return _with_beta(await run_readonly(_usage_history, limit))
 
     @app.tool()
-    async def agents_advisor_run(ctx: Context, window_days: int = 30) -> dict:
+    async def agents_advisor_run(ctx: Context, window_days: int = 30, project_path: str = "") -> dict:
         """BETA — Audit the user's agent sessions for recoverable spend and prompt-cache
         health: how much of the window's cost came from mechanical Read waste (identical
         re-reads, subset re-reads, write read-backs, line-number scaffolding), plus
         context-residency stats, cache-death gaps, and volatile-shaped content in
         prompt-prefix files (CLAUDE.md). Computed locally from agent session logs;
         every dollar figure is an estimate (tokens ≈ bytes/4 at the window's blended
-        input rate) and every count is a floor.
+        input rate) and every count is a floor. project_path keeps only sessions whose
+        directory is that absolute path or under it (a repo and its worktrees).
 
         The Agents modes are in beta — present recoverable figures as estimates of
         opportunity, never as promised savings."""
-        return _with_beta(await run_engine(ctx, _advisor_run, window_days))
+        return _with_beta(await run_engine(ctx, _advisor_run, window_days, project_path))
 
     @app.tool()
     async def agents_advisor_history(limit: int = 20) -> dict:
@@ -181,6 +186,7 @@ def register(app) -> None:
         azdo_projects: list[str] | None = None,
         include_local_sessions: bool = True,
         deliver: bool = False,
+        project_path: str = "",
     ) -> dict:
         """BETA — Run the daily agent standup: what the user's AI coding agents did — local
         sessions worked (with cost) plus agent-authored commits/PRs found in GitHub/Azure DevOps.
@@ -189,7 +195,8 @@ def register(app) -> None:
         include_local_sessions=false is the mirror — a tracker-only digest. Session logs are read
         from the machine this runs on, so set it false anywhere that is not the user's own
         machine, or the digest reports whatever sessions that host happens to have. deliver=true
-        posts to the configured Slack webhook — ask the user before enabling.
+        posts to the configured Slack webhook — ask the user before enabling. project_path keeps
+        only local sessions whose directory is that absolute path or under it.
 
         The Agents modes are in beta — detection is a lower bound; never present absence of
         evidence as agent idleness."""
@@ -203,6 +210,7 @@ def register(app) -> None:
                 azdo_projects,
                 include_local_sessions,
                 deliver,
+                project_path,
             )
         )
 

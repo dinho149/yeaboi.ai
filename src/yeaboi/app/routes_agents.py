@@ -48,32 +48,38 @@ def modes(app, request: Request) -> Response:
 
 
 def latest(app, request: Request) -> Response:
-    """``GET /api/agents/{kind}/latest`` — the last saved report, for an instant open.
+    """``GET /api/agents/{kind}/latest?project_id=`` — the last saved report, for an instant open.
 
     ``report`` is ``null`` when nothing has been stored yet, which is the
-    first-run loading state rather than an error.
+    first-run loading state rather than an error. Saved reports carry no
+    project, so a scoped read (``project_id`` resolving to a ``repo_path``)
+    answers ``null`` with ``scoped_to`` set and the surface runs fresh.
     """
     from yeaboi.agentwatch import setup
 
     mode = _mode(request)
-    loaded = setup.latest_artifact(mode.kind)
+    scoped_to = _repo_path(str(request.query.get("project_id", "")).strip()) if mode.scoped else ""
+    loaded = None if scoped_to else setup.latest_artifact(mode.kind)
     return json_response(
         {
             "kind": mode.kind,
             "label": mode.label,
             "report": to_jsonable(loaded[0]) if loaded else None,
             "as_of": loaded[1] if loaded else "",
+            "scoped_to": scoped_to,
         }
     )
 
 
 def run(app, request: Request) -> Response:
-    """``POST /api/agents/{kind}/run`` — one fresh pass, streamed as NDJSON."""
+    """``POST /api/agents/{kind}/run`` ``{project_id?}`` — one fresh pass, streamed as NDJSON."""
     mode = _mode(request)
-    logger.info("Agents run start: %s", mode.key)
+    project_id = str(request.json().get("project_id", "")).strip()
+    scoped_to = _repo_path(project_id) if mode.scoped else ""
+    logger.info("Agents run start: %s (repo=%s)", mode.key, scoped_to or "-")
     return Response(
         content_type="application/x-ndjson",
-        stream=_lines(_run(mode)),
+        stream=_lines(_run(mode, scoped_to)),
         headers=(("X-Accel-Buffering", "no"),),
     )
 
@@ -127,7 +133,32 @@ def _mode(request: Request):
     return mode
 
 
-def _run(mode) -> Iterator[dict]:
+def _repo_path(project_id: str) -> str:
+    """The ``repo_path`` a project scopes to; "" for no project.
+
+    An unknown project is a 404; a project with no ``repo_path`` yet is a 400
+    naming the command that sets one — a silently machine-wide report under a
+    project's name would be the worse answer.
+    """
+    if not project_id:
+        return ""
+    from yeaboi.paths import get_db_path
+    from yeaboi.projects.store import ProjectStore
+
+    with ProjectStore(get_db_path()) as store:
+        project = store.get(project_id)
+    if project is None:
+        raise HTTPError(404, f"unknown project {project_id!r}")
+    repo_path = str(project["settings"].get("repo_path") or "").strip()
+    if not repo_path:
+        raise HTTPError(
+            400,
+            f"project {project_id!r} has no repo_path yet — yeaboi project set-defaults {project_id} --repo <path>",
+        )
+    return repo_path
+
+
+def _run(mode, project_path: str = "") -> Iterator[dict]:
     from yeaboi.agentwatch import setup
     from yeaboi.mcp.runtime import _ENGINE_LOCK
 
@@ -139,7 +170,7 @@ def _run(mode) -> Iterator[dict]:
         try:
             # Engines are one-at-a-time process-wide. Never fork this lock.
             with _ENGINE_LOCK:
-                result_box[0] = setup.run(mode, progress.put)
+                result_box[0] = setup.run(mode, progress.put, project_path=project_path)
         except BaseException as exc:  # noqa: BLE001 — reported on the stream below
             result_box[1] = exc
         finally:
@@ -161,7 +192,7 @@ def _run(mode) -> Iterator[dict]:
         logger.error("Agents run failed: %s", result_box[1])
         yield {"type": "error", "message": f"The {mode.label} pass stopped unexpectedly — see logs."}
         return
-    yield {"type": "done", "kind": mode.kind, "report": to_jsonable(result_box[0])}
+    yield {"type": "done", "kind": mode.kind, "report": to_jsonable(result_box[0]), "scoped_to": project_path}
 
 
 def _progress_line(event: object) -> dict:

@@ -59,6 +59,31 @@ class TestRun:
         assert setup.run(setup.require("usage"), sink) == "artifact"
         assert seen["cb"] is sink
 
+    def test_a_repo_path_reaches_only_the_scoped_modes(self, monkeypatch):
+        seen: dict = {}
+
+        def _usage(*, on_progress, project_path=""):
+            seen["usage"] = project_path
+            return "u"
+
+        def _security(*, on_progress):
+            seen["security"] = "called without a scope"
+            return "s"
+
+        monkeypatch.setattr("yeaboi.agentwatch.engine.run_agent_usage", _usage)
+        monkeypatch.setattr("yeaboi.agentwatch.engine.run_agent_security", _security)
+        assert setup.run(setup.require("usage"), None, project_path="/srv/app") == "u"
+        assert setup.run(setup.require("security"), None, project_path="/srv/app") == "s"
+        assert seen == {"usage": "/srv/app", "security": "called without a scope"}
+
+    def test_the_scoped_flag_is_pinned(self):
+        assert {m.kind: m.scoped for m in setup.MODES} == {
+            "usage": True,
+            "advisor": True,
+            "standup": True,
+            "security": False,
+        }
+
 
 class TestMarkdown:
     def test_a_usage_report_renders(self):

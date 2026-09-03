@@ -136,6 +136,19 @@ def _distinct_session_count(sessions: list[dict]) -> int:
     return len({s["session_id"] or s["source_path"] for s in sessions})
 
 
+def _in_repo(session_project_path: str, project_path: str) -> bool:
+    """Whether a session's project directory is ``project_path`` or sits under it.
+
+    An exact-or-prefix path match, so a worktree under the repo counts. Never a
+    basename substring: two repos named ``api`` must not collide.
+    """
+    root = (project_path or "").rstrip("/")
+    if not root:
+        return True
+    candidate = (session_project_path or "").rstrip("/")
+    return candidate == root or candidate.startswith(root + "/")
+
+
 def _project_label(project_path: str) -> str:
     """A readable per-project key: the path's last component (repo/dir name)."""
     return Path(project_path).name or project_path or "(unknown)"
@@ -187,6 +200,7 @@ def _deterministic_usage_report(
     window_days: int,
     project: str = "",
     source: str = "",
+    project_path: str = "",
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -227,6 +241,8 @@ def _deterministic_usage_report(
         sessions = [s for s in sessions if project.lower() in _project_label(s["project_path"]).lower()]
     if source:
         sessions = [s for s in sessions if s["source"] == source]
+    if project_path:
+        sessions = [s for s in sessions if _in_repo(s["project_path"], project_path)]
 
     _emit(on_progress, "price", "running", label="Price usage", detail=f"{len(sessions)} transcript(s)")
 
@@ -356,6 +372,7 @@ def run_agent_usage(
     window_days: int = 30,
     project: str = "",
     source: str = "",
+    project_path: str = "",
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -371,16 +388,19 @@ def run_agent_usage(
 
     project: substring filter on the session's project directory name.
     source:  exact filter on the telemetry source (currently "claude_code").
+    project_path: keep only sessions whose project directory is this absolute
+        path or sits under it (a worktree counts) — see ``_in_repo``.
     dry_run: skip the LLM (deterministic artifact only, no warning).
     """
     resolved_today = today or datetime.now(timezone.utc).date()
     window_days = max(1, int(window_days))
     logger.info(
-        "agent usage: %d-day window to %s (project=%r source=%r dry_run=%s)",
+        "agent usage: %d-day window to %s (project=%r source=%r repo=%r dry_run=%s)",
         window_days,
         resolved_today.isoformat(),
         project,
         source,
+        project_path,
         dry_run,
     )
 
@@ -388,6 +408,7 @@ def run_agent_usage(
         window_days=window_days,
         project=project,
         source=source,
+        project_path=project_path,
         db_path=db_path,
         today=resolved_today,
         on_progress=on_progress,
@@ -618,6 +639,7 @@ def _deterministic_standup_digest(
     *,
     window_start: str,
     digest_date: str,
+    project_path: str = "",
     db_path=None,
     on_progress=None,
     roots=None,
@@ -647,6 +669,8 @@ def _deterministic_standup_digest(
         )
         warnings.extend(stats.warnings)
         sessions = store.list_sessions(since=window_start)
+    if project_path:
+        sessions = [s for s in sessions if _in_repo(s["project_path"], project_path)]
     summaries = _summarise_sessions(sessions)
     coverage_notes: tuple[str, ...] = ()
     if not sessions:
@@ -705,6 +729,7 @@ def run_agent_standup(
     azdo_projects: list[str] | None = None,
     include_local_sessions: bool = True,
     deliver: bool = False,
+    project_path: str = "",
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -732,6 +757,10 @@ def run_agent_standup(
 
     deliver=True posts the digest to the configured Slack webhook and raises a
     desktop notification (never raises; failures become warnings).
+
+    ``project_path`` keeps only the local sessions whose project directory is
+    that absolute path or sits under it (``_in_repo``); the tracker leg is
+    unaffected.
     """
     from yeaboi.standup.collector import previous_working_day_start
 
@@ -749,17 +778,22 @@ def run_agent_standup(
     # byte-identical logs, which is the exact confusion the coverage note exists
     # to prevent — and the log is where it is diagnosed after the fact.
     logger.info(
-        "agent standup: window %s..%s (deliver=%s dry_run=%s local=%s)",
+        "agent standup: window %s..%s (deliver=%s dry_run=%s local=%s repo=%r)",
         window_start,
         digest_date,
         deliver,
         dry_run,
         include_local_sessions,
+        project_path,
     )
 
     if include_local_sessions:
         digest = _deterministic_standup_digest(
-            window_start=window_start, digest_date=digest_date, db_path=db_path, on_progress=on_progress
+            window_start=window_start,
+            digest_date=digest_date,
+            project_path=project_path,
+            db_path=db_path,
+            on_progress=on_progress,
         )
     else:
         digest = _tracker_only_digest(window_start=window_start, digest_date=digest_date, on_progress=on_progress)

@@ -264,3 +264,16 @@ class TestPrefixScan:
         assert dict(signals[0].counts) == {"uuid": "1", "iso8601": "1"}
         assert score == 90  # per-file penalty: min(20, 2*5)
         assert "3f2b8a9e" not in json.dumps([asdict(s) for s in signals])
+
+
+class TestRepoScope:
+    def test_project_path_keeps_only_sessions_under_the_repo(self, db_path, tmp_path):
+        _seed_session(db_path, tmp_path / "a.jsonl", sid="a")
+        report = advisor.run_agent_advisor(
+            window_days=30, project_path="/home/dev/webapp", db_path=db_path, today=TODAY, dry_run=True
+        )
+        assert report.session_count == 1
+        none = advisor.run_agent_advisor(
+            window_days=30, project_path="/nowhere", db_path=db_path, today=TODAY, dry_run=True
+        )
+        assert none.session_count == 0
