@@ -29,6 +29,7 @@ from yeaboi.app import (
     routes_meta,
     routes_niko,
     routes_performance,
+    routes_projects,
     routes_reporting,
     routes_roadmap,
     routes_settings,
@@ -72,6 +73,16 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/solo/review/run", routes_solo.review_run, "weekly-review"),
     AppRoute("GET", "/api/solo/review/runs/{run_id}", routes_solo.review_run_get, "weekly-review"),
     AppRoute("POST", "/api/solo/review/runs/{run_id}/delete", routes_solo.review_delete, "weekly-review"),
+    # -- projects and the cross-mode sessions list ---------------------------
+    # The projects engine's five verbs on the wire, plus the one read no engine
+    # owns: every mode's saved runs in one list. `{project_id}` is the engine's
+    # proj-<8hex> id, not the planning chat's handle of the same name.
+    AppRoute("GET", "/api/projects", routes_projects.projects, "projects"),
+    AppRoute("POST", "/api/projects", routes_projects.create, "projects"),
+    AppRoute("GET", "/api/projects/{project_id}", routes_projects.get, "projects"),
+    AppRoute("GET", "/api/projects/{project_id}/sessions", routes_projects.sessions, "projects"),
+    AppRoute("POST", "/api/projects/{project_id}/defaults", routes_projects.defaults, "projects"),
+    AppRoute("GET", "/api/sessions/recent", routes_projects.recent, "sessions"),
     AppRoute("GET", "/api/tools", routes_meta.tools),
     AppRoute("POST", "/api/tool/{name}", routes_meta.call_tool),
     AppRoute("GET", "/api/events", routes_meta.events),

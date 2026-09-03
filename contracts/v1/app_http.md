@@ -816,3 +816,40 @@ week (went well, to change, on track against the plan, actions carried forward)
 over the user's own standups, delivered tickets and sprint plan. The desktop
 renders it at `/solo/review` (hub) and `/solo/review/report?id=` (one saved
 run). Export stays on the MCP tool (`/api/tool/weekly_review_export`).
+
+## Projects and sessions
+
+A project is the durable way to work: every run inside it shares context
+through `ProjectScope`. A session is the other way — one run of one mode,
+unscoped. These routes are the projects engine's verbs on the wire, plus the
+one read no engine owns: the union of every mode's saved runs.
+
+`{project_id}` here is the engine's `proj-<8hex>` id from the `projects` table
+in sessions.db. It is **unrelated** to the `{project_id}` segment of
+`/api/chat/sessions/{project_id}`, which is the planning chat's own handle.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/projects` | `?include_archived=` (`1`/`true`/`yes`/`on`; default off). `{projects: [row]}`, most recently active first. A row is `{project_id, name, description, settings, created_at, last_active, archived, session_count}` |
+| POST | `/api/projects` | body `{name, description?}` → the new row (no `session_count`). A blank name is a 400 |
+| GET | `/api/projects/{project_id}` | the row plus `session_ids` (the linked planning/analysis sessions, newest first); 404 when unknown |
+| GET | `/api/projects/{project_id}/sessions` | `?mode=&limit=` → `{sessions: [row]}` — the project's runs across every mode (see the row shape below); 404 when the project is unknown |
+| POST | `/api/projects/{project_id}/defaults` | body `{defaults: {…}}` → `{project_id, settings}` (the merged settings). Accepted keys: `default_analysis_profile_id`, `default_context_deps`, `repo_path` (an absolute path — the repo the Agents world scopes to). An unknown key or an empty object is a 400; an unknown project a 404 |
+| GET | `/api/sessions/recent` | `?limit=&mode=&project_id=` → `{sessions: [row]}` — the newest runs across every mode, machine-wide or one project's |
+
+A **sessions row** is `{session_id, run_id, mode, title, created_at, last_modified, project_id}`:
+
+- `mode` is one of `planning`, `analysis`, `standup`, `retro`, `reporting`,
+  `ship`, `review`. Planning and analysis rows are `sessions_meta` sessions and
+  carry `run_id: ""`; every other row is one saved run of that mode's store,
+  and `run_id` is that store's own id (the standup/retro/reporting/review
+  history row as a string, the ship run id).
+- `title` is the same label the terminal lists — the planning session's
+  display name, `Standup — <date>`, `Retro — <date>`, `Report — <period>`,
+  `Ship — <item> · <status>`, `Week <label>`.
+- `project_id` is the project the run's planning session is linked to, `""`
+  when unscoped.
+- Newest `last_modified` first; `limit` defaults to 20 and `0` means every
+  row. A mode with no saved runs is simply absent — nothing is invented. An
+  unknown `mode` is a 400; an unknown `project_id` on `/api/sessions/recent`
+  is an empty list.

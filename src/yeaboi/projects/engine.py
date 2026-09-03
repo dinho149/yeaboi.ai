@@ -20,8 +20,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # The settings keys set_project_defaults accepts. default_context_deps is the
-# context-source toggle default a scoped run inherits (scope.resolve_scope).
-_DEFAULT_KEYS = ("default_analysis_profile_id", "default_context_deps")
+# context-source toggle default a scoped run inherits (scope.resolve_scope);
+# repo_path is the absolute path the Agents world scopes its reports to.
+_DEFAULT_KEYS = ("default_analysis_profile_id", "default_context_deps", "repo_path")
 
 
 def _db_path(db_path: Path | None) -> Path:
@@ -94,8 +95,8 @@ def set_project_defaults(project_id: str, defaults: dict, *, db_path: Path | Non
     """Merge ``defaults`` into the project's settings and return them.
 
     Accepts only the known keys (``default_analysis_profile_id``,
-    ``default_context_deps``) — an unknown key is a spelling mistake waiting
-    to become a silent no-op, so it raises instead.
+    ``default_context_deps``, ``repo_path``) — an unknown key is a spelling
+    mistake waiting to become a silent no-op, so it raises instead.
     """
     unknown = sorted(set(defaults) - set(_DEFAULT_KEYS))
     if unknown:

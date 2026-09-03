@@ -339,3 +339,31 @@ class TestContextDepsStateRoundTrip:
             store.save_state("s1", {"messages": [], "context_deps": '["retro", "plan"]'})
             loaded = store.load_state("s1")
         assert loaded["context_deps"] == '["retro", "plan"]'
+
+
+class TestListSessionsFilters:
+    """The additive kwargs the cross-mode recent list reads through."""
+
+    def _seed(self, path):
+        with SessionStore(path) as store:
+            store.create_session("p1", "Apollo", project_id="proj-11112222")
+            store.create_session("a1", "Apollo", mode="analysis")
+            store.create_session("p2", "Borealis")
+        return path
+
+    def test_rows_carry_mode_and_project(self, tmp_path):
+        with SessionStore(self._seed(tmp_path / "s.db")) as store:
+            rows = {r["session_id"]: r for r in store.list_sessions()}
+        assert rows["p1"]["session_mode"] == "planning" and rows["p1"]["project_id"] == "proj-11112222"
+        assert rows["a1"]["session_mode"] == "analysis" and rows["a1"]["project_id"] == ""
+
+    def test_project_and_mode_filters(self, tmp_path):
+        with SessionStore(self._seed(tmp_path / "s.db")) as store:
+            assert [r["session_id"] for r in store.list_sessions(project_id="proj-11112222")] == ["p1"]
+            assert [r["session_id"] for r in store.list_sessions(mode="analysis")] == ["a1"]
+            assert store.list_sessions(project_id="proj-11112222", mode="analysis") == []
+
+    def test_limit_caps_and_zero_means_all(self, tmp_path):
+        with SessionStore(self._seed(tmp_path / "s.db")) as store:
+            assert len(store.list_sessions(limit=2)) == 2
+            assert len(store.list_sessions(limit=0)) == 3

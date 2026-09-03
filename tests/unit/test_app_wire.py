@@ -89,3 +89,32 @@ class TestContractDoc:
 
     def test_doc_pins_the_ready_prefix(self):
         assert "YEABOI_APP_READY" in CONTRACT.read_text(encoding="utf-8")
+
+
+class TestSessionsWire:
+    """The cross-mode sessions row the desktop's Sessions page and project pages parse."""
+
+    def test_row_keys_are_pinned(self):
+        from dataclasses import fields
+
+        from yeaboi.sessions_recent import RecentSession
+
+        assert [f.name for f in fields(RecentSession)] == [
+            "session_id",
+            "run_id",
+            "mode",
+            "title",
+            "created_at",
+            "last_modified",
+            "project_id",
+        ]
+
+    def test_mode_vocabulary_is_pinned(self):
+        from yeaboi.sessions_recent import MODES
+
+        assert MODES == ("planning", "analysis", "standup", "retro", "reporting", "ship", "review")
+
+    def test_doc_names_the_id_space(self):
+        text = CONTRACT.read_text(encoding="utf-8")
+        assert "## Projects and sessions" in text
+        assert "proj-<8hex>" in text

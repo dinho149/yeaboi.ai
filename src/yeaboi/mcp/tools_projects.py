@@ -81,5 +81,6 @@ def register(app) -> None:
         caller passes none — set it after a team analysis) and default_context_deps (the
         context-source toggles a scoped run inherits when the caller passes none — a list of
         retro/standup/plan/performance/analysis; [] makes the project's runs incognito by
-        default). Unknown keys are rejected."""
+        default) and repo_path (the absolute path of the project's repository — the Agents
+        reports scope to sessions under it, worktrees included). Unknown keys are rejected."""
         return await run_readonly(_set_defaults, project_id, defaults)
