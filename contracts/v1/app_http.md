@@ -250,7 +250,7 @@ The two run-and-read modes. Their read-only pieces are MCP tools already
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/standup/dashboard` | query `session_id?` (blank = the most recent session), `run_id?` (open one past run instead of the latest) → the whole dashboard in one read |
-| POST | `/api/standup/run` | body `{session_id, deliver?: false, solo?: false}` → a chunked NDJSON run. `deliver: false` builds the report without posting it anywhere. `solo: true` is a one-person run (the Solo world): self-only roster, no tracker roster discovery, first-person summary; the stored report carries `solo` so the dashboard drops its team card |
+| POST | `/api/standup/run` | body `{session_id, deliver?: false, solo?: false, project_id?}` → a chunked NDJSON run. `deliver: false` builds the report without posting it anywhere. `project_id` (a `proj-<8hex>` projects-table row id) scopes the run to that project; blank inherits the session's own link, an unknown id is a 400. `solo: true` is a one-person run (the Solo world): self-only roster, no tracker roster discovery, first-person summary; the stored report carries `solo` so the dashboard drops its team card |
 | POST | `/api/standup/runs/{run_id}/delete` | drop one run from the saved-runs hub; 404 when unknown |
 | GET | `/api/standup/schedule` | query `session_id` → the saved schedule plus the installed reminder offset |
 | POST | `/api/standup/schedule` | body `{session_id, enabled, time, weekdays, lead_minutes, delivery_channels, remind_after, solo?: false}` → `{message, schedule}`; saves the config **and** installs or removes the OS jobs. `solo` is not saved — it rides on the installed job's command line, so the scheduled run is a one-person standup |
@@ -258,7 +258,7 @@ The two run-and-read modes. Their read-only pieces are MCP tools already
 | POST | `/api/analysis/steps` | a partial selection → `{steps, grid, run}`: which steps still apply, the component rows they may offer, and the payload the answers would run. `solo: true` in the answers marks a Solo-world wizard: the `members` step never applies and stale member picks coerce out of `run` |
 | GET | `/api/analysis/profiles` | the saved team profiles |
 | GET | `/api/analysis/result/{team_id}` | one stored profile plus the cards it earned; 404 when unknown. `?solo=1` drops the Team Members card from `cards` |
-| POST | `/api/analysis/run` | the setup wizard's payload → a chunked NDJSON run |
+| POST | `/api/analysis/run` | the setup wizard's payload (plus an optional `project_id`) → a chunked NDJSON run |
 
 The **standup dashboard** is
 `{session_id, session_name, my_name, run_id, history, cards: [{key, title, member}], report, config, schedule, review, nudge, gap_issues, active: [name]}`.
@@ -293,7 +293,12 @@ feature unselectable rather than merely disappointing. Its result is team-wide
 counts and a per-30-day rate, never anything attributable to a person.
 The run body is the wizard's answers:
 `{source?, project_key?, team_name?, sprint_count?, features?, components?,
-members_map?, analysis_scope?, depth?, window_days?, model?}`.
+members_map?, analysis_scope?, depth?, window_days?, model?, project_id?}`.
+`project_id` (a `proj-<8hex>` projects-table row id) is the edge the terminal
+draws after an analysis: on `done` the run has created an analysis session
+linked to that project and recorded the profile it produced as the project's
+`default_analysis_profile_id`, so the next scoped plan seeds it. Blank creates
+no session, exactly as before; an unknown id is a 400.
 
 A **run** streams: `op` first, then `progress` (and, for standup, `run_id`
 once its history row exists), terminated by `done`, `cancelled` or `error`.
@@ -303,7 +308,7 @@ once its history row exists), terminated by `done`, `cancelled` or `error`.
 | `op` | `{type, op_id}` |
 | `progress` | `{type, phase}` — one pipeline phase, as user-facing text |
 | `run_id` | `{type, run_id}` — standup only; the history row this run writes |
-| `done` | `{type, report}` (standup) or `{type, result}` (analysis) |
+| `done` | `{type, report}` (standup) or `{type, result, session_id?}` (analysis — `session_id` only on a run with a `project_id`: the session it created and linked) |
 | `cancelled` | `{type}` — analysis only; nothing was persisted |
 | `error` | `{type, message}` — a classified, one-line failure |
 
@@ -443,9 +448,10 @@ that project's latest sprint plan; blank inherits the session's own link. It
 also takes an optional `context_deps` (a list drawn from retro, standup, plan,
 performance, analysis): the run's context-source toggles — omitted/null
 inherits the project default, `[]` is an incognito run (no cross-mode
-context). The standup run needs neither field — its session is the scope (an
-unlinked session runs team-wide, exactly as before projects existed), and its
-toggles live in the session's saved standup config (`standup_config_set`'s
+context). The standup run takes the same optional `project_id` (blank inherits
+the session's own link, so an unlinked session runs team-wide exactly as before
+projects existed; an unknown id is a 400) but no `context_deps` — its toggles
+live in the session's saved standup config (`standup_config_set`'s
 `context_deps`).
 
 A delivery report carries `production`: one row per ops roll-up over the

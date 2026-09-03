@@ -23,6 +23,20 @@ logger = logging.getLogger(__name__)
 _TRUE = ("1", "true", "yes", "on")
 
 
+def require_project(project_id: str) -> str:
+    """A run body's optional ``project_id``, stripped: blank is "", an unknown id a 400."""
+    project_id = project_id.strip()
+    if not project_id:
+        return ""
+    from yeaboi.projects.engine import get_project
+
+    try:
+        get_project(project_id)
+    except ValueError as exc:
+        raise HTTPError(400, str(exc)) from None
+    return project_id
+
+
 def projects(app, request: Request) -> Response:
     """``GET /api/projects?include_archived=`` — every project with its session count."""
     from yeaboi.projects.engine import list_projects
