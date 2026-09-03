@@ -4,6 +4,19 @@ The facts the shared `/ship` and `/sync-main` deliberately do not hardcode, beca
 desktop, site and tooling repos answer them differently. The procedures live in the `yeaboi-devkit`
 plugin; this is what they read.
 
+## If `/ship` is missing
+
+The plugin arrives through `.claude/settings.json` alone, and that path is not reliable: Claude
+Code can drop the plugin's install record after the marketplace bumps its version, then orphan the
+cached copy, and every session afterwards starts with no `/ship`, `/sync-main`, `/wt` or `/migrate`
+and no visible error (only a `plugin-cache-miss` line in `claude --debug-file`). The fix:
+
+```
+claude plugin install yeaboi-devkit@yeaboi-tooling --scope user
+```
+
+then restart the session. A user-scope install covers every worktree, so it needs doing once.
+
 ## Commit
 
 Commit with **`SKIP=unit-tests`**. That pre-commit hook is `make test-scoped`, which the Stop hook
