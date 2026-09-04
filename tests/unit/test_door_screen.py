@@ -249,6 +249,20 @@ class TestScopeLine:
         set_project_defaults(pid, {"repo_path": "/srv/apollo"}, db_path=db)
         assert ms._scope_line("projects", "agents") == "Apollo · agents in /srv/apollo"
 
+    @pytest.fixture(autouse=True)
+    def _still_chrome(self, monkeypatch):
+        # The menu's tabs ease in and out per render from module state another
+        # test may have left mid-glide; rest them so two renders draw the same.
+        import yeaboi.ui.shared._music_bar as mb
+
+        for name in ("_back_presence", "_controls_presence", "_controls_tab_presence"):
+            monkeypatch.setattr(mb, name, 0.0)
+        monkeypatch.setattr(mb, "_back_retracting", False)
+        monkeypatch.setattr(mb, "_controls_open", False)
+        quiet = {"update_available": False, "current": "0.0.0", "latest": "", "upgrade_command": "", "is_dev": False}
+        monkeypatch.setattr("yeaboi.update_check.get_update_status", lambda: quiet)
+        monkeypatch.setattr("yeaboi.update_check.is_fresh_restart", lambda: False)
+
     def test_the_menu_draws_it_on_the_top_border_without_moving_a_row(self):
         from yeaboi.ui.mode_select.screens._screens import _build_mode_screen, mode_at_row, selected_title_offset
 
