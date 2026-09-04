@@ -121,6 +121,7 @@ REPORTING_PREFS_FILE = DATA_DIR / "reporting_prefs.json"  # persisted Reporting 
 VOICE_INSTALL_FILE = DATA_DIR / "voice_install.json"  # sticky "this machine cannot run dictation" verdicts
 CHANGELOG_SEEN_FILE = DATA_DIR / "changelog_seen.json"  # newest release the user has already read on the Changelog page
 NEWS_CACHE_FILE = DATA_DIR / "news_cache.json"  # the desktop front page's last paper, refreshed every half hour
+NEWS_ROSTER_FILE = DATA_DIR / "news_roster.json"  # which front-page outlets are on, plus the user's own feeds
 CUSTOM_CONNECTORS_FILE = DATA_DIR / "custom_connectors.json"  # user-created connection descriptors (never credentials)
 
 # Legacy paths (for backward compatibility / migration)
@@ -326,6 +327,12 @@ def get_news_cache_path() -> Path:
     """Return the path of the front page's cached paper (may not exist yet)."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     return NEWS_CACHE_FILE
+
+
+def get_news_roster_path() -> Path:
+    """Return the path of the front page's outlet roster (may not exist yet)."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return NEWS_ROSTER_FILE
 
 
 def _safe_key(key: str, fallback: str) -> str:

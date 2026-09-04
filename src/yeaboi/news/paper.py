@@ -10,7 +10,7 @@ passed in, so a test builds a whole paper with no network and no disk.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
@@ -143,6 +143,22 @@ def _without(sections: Sequence[Section], lead: NewsItem | None) -> tuple[Sectio
         if rows:
             out.append(replace(section, items=rows))
     return tuple(out)
+
+
+def hide_sources(paper: Paper, source_ids: Collection[str], now: datetime) -> Paper:
+    """The paper with those outlets gone: their rows, their status, and a re-picked lead."""
+    if not source_ids:
+        return paper
+    everything = [item for section in paper.sections for item in section.items]
+    if paper.lead is not None:
+        everything.append(paper.lead)
+    statuses = tuple(status for status in paper.sources if status.id not in source_ids)
+    kept = [item for item in everything if item.source_id not in source_ids]
+    if len(kept) == len(everything) and len(statuses) == len(paper.sources):
+        return paper
+    sections = group(kept)
+    lead = pick_lead(sections, now)
+    return replace(paper, lead=lead, sections=_without(sections, lead), sources=statuses)
 
 
 def local_only_paper(local_items: Sequence[NewsItem], now: datetime, *, stale: bool = False) -> Paper:

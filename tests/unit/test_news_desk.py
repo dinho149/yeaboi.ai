@@ -14,6 +14,7 @@ from yeaboi.news.desk import NewsDesk
 from yeaboi.news.fetch import Conditional
 from yeaboi.news.paper import Paper, Section, SourceStatus
 from yeaboi.news.parse import NewsItem
+from yeaboi.news.roster import Roster
 from yeaboi.news.sources import NewsSource
 
 T0 = 1_800_000_000.0
@@ -62,13 +63,14 @@ def _reset_threads(monkeypatch, tmp_path):
     monkeypatch.setattr("yeaboi.paths.LOGS_DIR", tmp_path / "logs")
 
 
-def _desk(tmp_path, *, clock, build=None, local=None, sources=None):
+def _desk(tmp_path, *, clock, build=None, local=None, sources=None, roster=None):
     built = build or (lambda **kw: (_paper("Built lead", "Built row"), {}, {}))
     return NewsDesk(
         cache_path=lambda: tmp_path / "news_cache.json",
         clock=lambda: clock[0],
         build=built,
         sources=sources or (lambda **kw: (NewsSource(id="a", name="A", url="https://a.example/f"),)),
+        roster=roster or (lambda: Roster()),
         local=local or (lambda: (_item("yeaboi 4.1.0", column="yeaboi", kind="release"),)),
         spawn=FakeThread,
     )
@@ -214,6 +216,83 @@ class TestRefreshNow:
 
         _desk(tmp_path, clock=clock, sources=sources).refresh_now()
         assert asked == {"youtube_channel": "UCXuqSBlHAE6Xw-yeJA0Tunw"}
+
+
+class TestRoster:
+    def test_a_switched_off_outlet_is_hidden_from_a_fresh_cache_without_a_refresh(self, tmp_path):
+        clock = [T0]
+        paper = _paper("Lead", "Row")
+        paper = paper.__class__(
+            generated_at=paper.generated_at,
+            lead=_item("Lead", source_id="a"),
+            sections=(
+                Section(column="ai", title="AI", items=(_item("Row", source_id="a"), _item("Other", source_id="b"))),
+            ),
+            sources=(SourceStatus(id="a", name="A", ok=True), SourceStatus(id="b", name="B", ok=True)),
+        )
+        _write(tmp_path, paper, T0 - 60)
+        desk = _desk(tmp_path, clock=clock, roster=lambda: Roster(disabled=frozenset({"a"})))
+        shown, refreshing = desk.get_paper()
+        assert refreshing is False and FakeThread.started == []
+        assert [status.id for status in shown.sources] == ["b"]
+        assert shown.lead is not None and shown.lead.title == "Other"
+        assert shown.stale is False
+
+    def test_invalidate_makes_a_fresh_cache_stale_and_starts_one_refresh(self, tmp_path):
+        clock = [T0]
+        _write(tmp_path, _paper("Lead", "Row"), T0 - 60)
+        desk = _desk(tmp_path, clock=clock)
+        assert desk.invalidate(refresh=False) is False
+        assert FakeThread.started == []
+        clock[0] = T0 + 1
+        paper, refreshing = desk.get_paper()
+        assert paper.stale is True and refreshing is True
+        assert len(FakeThread.started) == 1
+
+    def test_invalidate_with_refresh_starts_one_at_once(self, tmp_path):
+        clock = [T0]
+        _write(tmp_path, _paper("Lead", "Row"), T0 - 60)
+        desk = _desk(tmp_path, clock=clock)
+        assert desk.invalidate() is True
+        assert desk.invalidate() is False  # one is running
+        assert len(FakeThread.started) == 1
+
+    def test_invalidate_starts_nothing_when_off(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("YEABOI_NEWS", "off")
+        assert _desk(tmp_path, clock=[T0]).invalidate() is False
+        assert FakeThread.started == []
+
+    def test_the_refresh_prunes_a_removed_outlet_and_keeps_a_switched_off_one(self, tmp_path, caplog):
+        clock = [T0]
+        entry = news_cache.CacheEntry(
+            paper=_paper("Old"),
+            conditionals={"a": Conditional(etag="a"), "gone": Conditional(etag="g"), "off": Conditional(etag="o")},
+            items_by_source={"a": (_item("A"),), "gone": (_item("G"),), "off": (_item("O"),)},
+            last_fetch_at={"a": T0 - 9, "gone": T0 - 9, "off": T0 - 9},
+            written_at=T0 - 3600,
+        )
+        news_cache.write_cache(tmp_path / "news_cache.json", entry)
+        desk = _desk(tmp_path, clock=clock, roster=lambda: Roster(disabled=frozenset({"off"})))
+        with caplog.at_level(logging.INFO, logger="yeaboi.news.desk"):
+            desk.refresh_now()
+        after = news_cache.read_cache(tmp_path / "news_cache.json")
+        assert after is not None
+        assert set(after.items_by_source) == {"a", "off"}
+        assert set(after.conditionals) == {"a", "off"}
+        assert set(after.last_fetch_at) == {"a", "off"}
+        assert "pruned 1 removed outlet" in caplog.text
+
+    def test_source_rows_merge_the_cached_statuses(self, tmp_path):
+        clock = [T0]
+        _write(tmp_path, _paper("Lead"), T0 - 60)
+        desk = _desk(tmp_path, clock=clock, roster=lambda: Roster(disabled=frozenset({"techmeme"})))
+        rows = {row["id"]: row for row in desk.source_rows()}
+        assert rows["techmeme"]["enabled"] is False and rows["techmeme"]["ok"] is None
+        assert "yeaboi-site" in rows and rows["yeaboi-site"]["builtin"] is True
+
+    def test_no_cache_rows_have_no_health(self, tmp_path):
+        rows = _desk(tmp_path, clock=[T0]).source_rows()
+        assert rows and all(row["ok"] is None for row in rows)
 
 
 class TestOffSwitch:

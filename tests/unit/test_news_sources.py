@@ -39,6 +39,18 @@ class TestRegistry:
         assert by_column["yeaboi"] >= 1
         assert set(by_column) == set(sources.COLUMNS)
 
+    def test_every_registry_outlet_is_builtin(self):
+        assert sources.NewsSource().builtin is True
+        assert all(source.builtin for source in sources.SOURCES)
+
+    def test_the_privacy_disclosure_names_every_outlet_and_the_added_ones(self):
+        from yeaboi import privacy
+
+        row = next(row for row in privacy.EGRESS_DISCLOSURES if row["key"] == "news")
+        for source in sources.SOURCES:
+            assert source.name in row["where"], source.id
+        assert "add" in row["where"] and "Settings" in row["where"]
+
     def test_source_by_id(self):
         assert sources.source_by_id("openai") is not None
         assert sources.source_by_id("nope") is None

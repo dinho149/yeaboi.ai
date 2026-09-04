@@ -30,6 +30,8 @@ class NewsSource:
     min_interval_seconds: int = 0
     # html_listing only: the path every post link starts with.
     link_prefix: str = ""
+    # False for an outlet the user typed in: its URL is guarded on every request.
+    builtin: bool = True
 
 
 SOURCES: tuple[NewsSource, ...] = (

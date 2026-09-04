@@ -207,3 +207,38 @@ class TestGroup:
     def test_when_handles_missing_dates(self):
         assert engine.when(_item("x", published="")) == datetime.fromtimestamp(0, tz=timezone.utc)
         assert engine.when(_item("x", published="2026-09-04T12:00:00")) == NOW
+
+
+class TestHideSources:
+    def _paper(self):
+        lead = _item("Lead", source_id="a", days_ago=0.1)
+        rows = (
+            _item("A row", source_id="a", days_ago=0.2),
+            _item("B row", source_id="b", days_ago=0.3),
+            _item("Release", source_id="yeaboi-changelog", column="yeaboi", kind="release", days_ago=0.4),
+        )
+        sections = engine.group(rows)
+        return engine.Paper(
+            generated_at="t",
+            lead=lead,
+            sections=sections,
+            sources=(engine.SourceStatus(id="a", name="A", ok=True), engine.SourceStatus(id="b", name="B", ok=True)),
+        )
+
+    def test_nothing_to_hide_is_the_same_paper(self):
+        paper = self._paper()
+        assert engine.hide_sources(paper, (), NOW) is paper
+        assert engine.hide_sources(paper, {"zzz"}, NOW) is paper
+
+    def test_rows_status_and_lead_go_and_the_lead_is_repicked(self):
+        hidden = engine.hide_sources(self._paper(), {"a"}, NOW)
+        assert [status.id for status in hidden.sources] == ["b"]
+        assert hidden.lead is not None and hidden.lead.title == "B row"
+        titles = [item.title for section in hidden.sections for item in section.items]
+        assert titles == ["Release"]
+
+    def test_the_release_notes_are_kept_whatever_is_hidden(self):
+        hidden = engine.hide_sources(self._paper(), {"a", "b"}, NOW)
+        assert hidden.lead is None
+        assert [section.column for section in hidden.sections] == ["yeaboi"]
+        assert hidden.sources == ()

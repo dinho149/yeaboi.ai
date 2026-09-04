@@ -734,6 +734,11 @@ never article text. `summary` is the outlet's own teaser, at most 240 characters
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/news` | `?refresh=1` forces a fetch. `{enabled, refreshing, schema, generated_at, stale, lead: item \| null, sections: [{column, title, items: [item]}], sources: [{id, name, home_url, column, ok, fetched_at, error, item_count}]}` — `item` is `{id, title, url, source_id, source_name, published, summary, image_url, kind, topic, persona, column}` |
+| GET | `/api/news/sources` | The Settings list: `{sources: [{id, name, home_url, url, column, kind, builtin, enabled, ok: bool \| null, fetched_at, error, item_count}], max_custom, columns}` — health is the last refresh's status by id; `ok: null` means not read yet. The yeaboi release notes are not an outlet and cannot be turned off |
+| POST | `/api/news/sources/probe` | Body `{url}` → `{ok, url, feed_url, kind: rss \| atom \| json_feed \| "", name, home_url, item_count, sample_titles: [str], error}`. One guarded https GET (public hosts only, every redirect re-checked, the refresh's 6 s / 2 MB caps); never saves. A web page that advertises a feed answers `ok: false` with `feed_url` set |
+| POST | `/api/news/sources` | Body `{url, column, name?}` — add an outlet. Probes first (its error is the 400), then validates: https, public host, name 1–60 characters, `column` one of the three, not a built-in feed, not already added, at most 20 added outlets. `{source: row, refreshing}`; the id is `custom-` + 8 hex derived from the URL |
+| POST | `/api/news/sources/{source_id}/enabled` | Body `{enabled: bool}` — built-in or added. Off hides the outlet on the very next `GET /api/news`; on starts a background refresh. `{source: row, refreshing}`; 404 for an unknown id |
+| POST | `/api/news/sources/{source_id}/delete` | Remove an added outlet; its cached headlines go on the next refresh. `{deleted, refreshing}`; 400 for a built-in (turn it off instead), 404 for an unknown id |
 
 - `column` is one of `yeaboi`, `ai`, `engineering`; `kind` one of
   `article`, `video`, `release`, `post`; `topic` one of `security`, `policy`,
@@ -753,6 +758,11 @@ never article text. `summary` is the outlet's own teaser, at most 240 characters
 - `enabled: false` (`YEABOI_NEWS=off`, Settings ▸ Privacy) answers the yeaboi
   column from the bundled changelog alone and nothing leaves the machine. Every
   outlet is named in `GET /api/meta/privacy` under the `news` row.
+- **The roster** lives in `~/.yeaboi/data/news_roster.json`: the ids switched
+  off and the outlets the user added. An outlet that is off is neither fetched
+  nor shown — `GET /api/news` filters a cached paper on the way out, so its
+  `sources` lists only the outlets that are on. An added outlet's URL is
+  checked against private and loopback addresses on every request.
 
 ## Consent
 

@@ -83,11 +83,15 @@ EGRESS_DISCLOSURES: tuple[dict, ...] = (
     {
         "key": "news",
         "group": "always",
-        "what": "A request for each outlet's public headline feed, carrying nothing but a yeaboi User-Agent",
+        "what": (
+            "A request for each outlet's public headline feed, carrying nothing but a yeaboi User-Agent; "
+            "an outlet you add is fetched the same way"
+        ),
         "where": (
-            "The front page's outlets — Google DeepMind, Google AI, OpenAI, Anthropic, Hacker News, Techmeme, "
-            "MIT Technology Review, Ars Technica, Simon Willison, InfoQ, GitHub, The Pragmatic Engineer, "
-            "yeaboi.ai and, if you set a channel, YouTube"
+            "The front page's outlets you leave on in Settings ▸ Front page — yeaboi.ai, Google DeepMind, "
+            "Google AI, OpenAI, Claude, Anthropic, Hacker News, Techmeme, MIT Technology Review, Ars Technica, "
+            "Anthropic Engineering, Simon Willison, InfoQ, GitHub Changelog, The Pragmatic Engineer — plus any "
+            "outlet you add there and, if you set a channel, YouTube"
         ),
         "when": "Opening the desktop home, at most every 30 minutes",
         "default": "on",

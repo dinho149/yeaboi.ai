@@ -58,6 +58,26 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
+    """Every hop re-checked: a public outlet may not bounce a user's feed onto a private or http address."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        from yeaboi.connectors.http import assert_safe_url
+
+        assert_safe_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _open(source: NewsSource, req: urllib.request.Request, timeout: float):
+    """A built-in outlet is a registry constant; a user's URL is guarded before and during the request."""
+    if source.builtin:
+        return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310 - https constants from the registry
+    from yeaboi.connectors.http import assert_safe_url
+
+    assert_safe_url(source.url)
+    return urllib.request.build_opener(_GuardedRedirect).open(req, timeout=timeout)  # noqa: S310 - guarded above
+
+
 def fetch_one(source: NewsSource, conditional: Conditional, *, timeout: float = FETCH_TIMEOUT_SECONDS) -> FetchResult:
     """GET one outlet. Never raises."""
     if not source.url.startswith("https://"):
@@ -67,9 +87,9 @@ def fetch_one(source: NewsSource, conditional: Conditional, *, timeout: float = 
         headers["If-None-Match"] = conditional.etag
     if conditional.last_modified:
         headers["If-Modified-Since"] = conditional.last_modified
-    req = urllib.request.Request(source.url, headers=headers)  # noqa: S310 - https constants from the registry
+    req = urllib.request.Request(source.url, headers=headers)  # noqa: S310 - https only, checked above
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - https constants from the registry
+        with _open(source, req, timeout) as resp:
             body = resp.read(MAX_BODY_BYTES + 1)
             fresh = Conditional(
                 etag=resp.headers.get("ETag", "") or "",

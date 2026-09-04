@@ -66,6 +66,12 @@ ROUTES: tuple[AppRoute, ...] = (
     # Chrome like the changelog: the desktop home draws the front page, and no
     # capability owns it.
     AppRoute("GET", "/api/news", routes_news.news),
+    # The outlet roster behind it: what is on, what the user added, how each read last.
+    AppRoute("GET", "/api/news/sources", routes_news.sources),
+    AppRoute("POST", "/api/news/sources/probe", routes_news.source_probe),
+    AppRoute("POST", "/api/news/sources", routes_news.source_add),
+    AppRoute("POST", "/api/news/sources/{source_id}/enabled", routes_news.source_enabled),
+    AppRoute("POST", "/api/news/sources/{source_id}/delete", routes_news.source_delete),
     # Chrome like tips/changelog: no capability owns disclosure, and it is
     # deliberately never gated behind one — the privacy page must always answer.
     AppRoute("GET", "/api/meta/privacy", routes_meta.privacy),
