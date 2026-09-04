@@ -87,6 +87,12 @@ class TestFeedIdentity:
     def test_a_feed_with_no_title(self):
         assert feed_identity(b"<rss><channel><item/></channel></rss>", "rss") == ("", "")
 
+    def test_a_home_that_is_not_a_web_link_is_dropped(self):
+        body = b'{"version": "https://jsonfeed.org/version/1.1", "title": "T", "home_page_url": "javascript:alert(1)"}'
+        assert feed_identity(body, "json_feed") == ("T", "")
+        rss = b"<rss><channel><title>T</title><link>file:///etc/passwd</link></channel></rss>"
+        assert feed_identity(rss, "rss") == ("T", "")
+
 
 class TestProbe:
     def test_http_is_refused_before_any_fetch(self):

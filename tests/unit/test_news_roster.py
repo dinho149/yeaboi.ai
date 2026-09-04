@@ -146,6 +146,12 @@ class TestWrites:
         assert added.id == roster.custom_id(FEED) and added.name == "Lobsters" and added.added_at
         assert roster.load_roster().custom == (added,)
         assert "roster added" in caplog.text
+        assert "/rss" not in caplog.text  # the host is named, never the typed URL
+
+    def test_add_custom_keeps_only_a_web_home(self, store):
+        added = roster.add_custom(url=FEED, name="L", column="ai", kind="rss", home_url="javascript:alert(1)")
+        assert added.home_url == ""
+        assert roster.load_roster().custom[0].home_url == ""
 
     def test_add_custom_is_all_or_nothing(self, store, caplog):
         with caplog.at_level(logging.INFO, logger="yeaboi.news.roster"), pytest.raises(ValueError, match="https"):

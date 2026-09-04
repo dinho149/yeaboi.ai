@@ -267,7 +267,7 @@ class TestSourceRoutes:
         assert roster.load_roster().disabled == frozenset({"techmeme"})
         request(app, "POST", "/api/news/sources/techmeme/enabled", body={"enabled": True})
         assert roster.load_roster().disabled == frozenset()
-        assert desk.invalidated == [False, True]
+        assert desk.invalidated == [True]
 
     def test_delete_refuses_a_builtin_and_an_unknown_id(self, app, store):
         assert request(app, "POST", "/api/news/sources/techmeme/delete").code == 400

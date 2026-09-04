@@ -106,6 +106,12 @@ def clip(text: str, limit: int = SUMMARY_MAX) -> str:
     return cut + "…"
 
 
+def web_link(value: object) -> str:
+    """A link a feed states, kept only when it is one the browser may open."""
+    text = str(value or "").strip()
+    return text if text.startswith(("https://", "http://")) else ""
+
+
 def normalise_url(url: str) -> str:
     """The URL as a key: folded host, no fragment, no tracking query, no trailing slash."""
     try:

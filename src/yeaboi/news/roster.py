@@ -17,9 +17,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from yeaboi.news.paper import SourceStatus
-from yeaboi.news.parse import normalise_url
+from yeaboi.news.parse import normalise_url, web_link
 from yeaboi.news.sources import COLUMNS, SOURCES, NewsSource, active_sources
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ def _custom_from_dict(raw: object) -> CustomSource | None:
         url=url,
         kind=kind,
         column=column,
-        home_url=str(raw.get("home_url", "") or "").strip(),
+        home_url=web_link(raw.get("home_url")),
         added_at=str(raw.get("added_at", "") or ""),
     )
 
@@ -191,7 +192,7 @@ def add_custom(
     roster = load_roster()
     problems = roster_problems(url=url, name=name, column=column, kind=kind, roster=roster)
     if problems:
-        logger.info("news: roster rejected %s: %s", url, "; ".join(problems))
+        logger.info("news: roster rejected %s: %s", urlsplit(url.strip()).hostname or "?", "; ".join(problems))
         raise ValueError("; ".join(problems))
     url = url.strip()
     added = CustomSource(
@@ -200,11 +201,11 @@ def add_custom(
         url=url,
         kind=kind,
         column=column,
-        home_url=(home_url or "").strip(),
+        home_url=web_link(home_url),
         added_at=now(),
     )
     save_roster(replace(roster, custom=(*roster.custom, added)))
-    logger.info("news: roster added %s (%s, %s) → %s", added.id, kind, column, url)
+    logger.info("news: roster added %s (%s, %s) at %s", added.id, kind, column, urlsplit(url).hostname or "?")
     return added
 
 

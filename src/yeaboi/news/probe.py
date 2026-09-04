@@ -15,7 +15,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
 from yeaboi.news.fetch import Conditional, Fetcher, fetch_one
-from yeaboi.news.parse import _ATOM, _load_json, _safe_root, _text, clip, parse_feed, strip_html
+from yeaboi.news.parse import _ATOM, _load_json, _safe_root, _text, clip, parse_feed, strip_html, web_link
 from yeaboi.news.sources import NewsSource
 
 logger = logging.getLogger(__name__)
@@ -86,11 +86,16 @@ def feed_links(body: bytes, base_url: str) -> tuple[str, ...]:
     return tuple(link for link in links if link.startswith("https://"))
 
 
+def _host(url: str) -> str:
+    """What the log names a URL by: its host alone, never its path or query."""
+    return urlsplit(url).hostname or "?"
+
+
 def feed_identity(body: bytes, kind: str) -> tuple[str, str]:
     """The feed's own title and home link, as far as it states them."""
     if kind == "json_feed":
         data = _load_json(body) or {}
-        return clip(strip_html(str(data.get("title", "") or "")), NAME_MAX), str(data.get("home_page_url", "") or "")
+        return clip(strip_html(str(data.get("title", "") or "")), NAME_MAX), web_link(data.get("home_page_url"))
     root = _safe_root(body)
     if root is None:
         return "", ""
@@ -103,11 +108,11 @@ def feed_identity(body: bytes, kind: str) -> tuple[str, str]:
             ),
             "",
         )
-        return clip(strip_html(_text(root, f"{_ATOM}title")), NAME_MAX), home
+        return clip(strip_html(_text(root, f"{_ATOM}title")), NAME_MAX), web_link(home)
     channel = root.find("channel")
     if channel is None:
         return "", ""
-    return clip(strip_html(_text(channel, "title")), NAME_MAX), _text(channel, "link")
+    return clip(strip_html(_text(channel, "title")), NAME_MAX), web_link(_text(channel, "link"))
 
 
 def probe(url: str, *, fetch: Fetcher = fetch_one) -> Probe:
@@ -117,23 +122,23 @@ def probe(url: str, *, fetch: Fetcher = fetch_one) -> Probe:
         return Probe(url=url, error="url must start with https://")
     result = fetch(NewsSource(id=PROBE_ID, url=url, kind="rss", builtin=False), Conditional())
     if result.error:
-        logger.info("news: probe %s rejected: %s", url, result.error)
+        logger.info("news: probe %s rejected: %s", _host(url), result.error)
         return Probe(url=url, error=result.error)
     kind = sniff(result.body)
     if kind == "html":
         links = feed_links(result.body, url)
         hint = f"it lists one at {links[0]}" if links else "look for the site's RSS or Atom link"
-        logger.info("news: probe %s is a web page (%d feed links)", url, len(links))
+        logger.info("news: probe %s is a web page (%d feed links)", _host(url), len(links))
         return Probe(url=url, feed_url=links[0] if links else "", error=f"not a feed — this is a web page; {hint}")
     if not kind:
-        logger.info("news: probe %s rejected: not a feed", url)
+        logger.info("news: probe %s rejected: not a feed", _host(url))
         return Probe(url=url, error="not a feed — expected RSS, Atom or JSON Feed")
     name, home_url = feed_identity(result.body, kind)
     items = parse_feed(NewsSource(id=PROBE_ID, name=name, url=url, kind=kind, builtin=False), result.body)
     if not items:
-        logger.info("news: probe %s rejected: %s with no readable items", url, kind)
+        logger.info("news: probe %s rejected: %s with no readable items", _host(url), kind)
         return Probe(url=url, kind=kind, name=name, home_url=home_url, error="feed has no readable items")
-    logger.info("news: probe %s → %s, %d items", url, kind, len(items))
+    logger.info("news: probe %s → %s, %d items", _host(url), kind, len(items))
     return Probe(
         ok=True,
         url=url,
