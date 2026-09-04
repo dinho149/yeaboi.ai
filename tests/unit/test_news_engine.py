@@ -192,9 +192,9 @@ class TestLead:
 
 class TestGroup:
     def test_empty_columns_are_omitted_and_rows_are_capped(self):
-        rows = tuple(_item(f"R{n}", column="research", days_ago=n) for n in range(engine.MAX_PER_COLUMN + 3))
+        rows = tuple(_item(f"R{n}", column="engineering", days_ago=n) for n in range(engine.MAX_PER_COLUMN + 3))
         sections = engine.group(rows)
-        assert [section.column for section in sections] == ["research"]
+        assert [section.column for section in sections] == ["engineering"]
         assert len(sections[0].items) == engine.MAX_PER_COLUMN
         assert sections[0].items[0].title == "R0"
 

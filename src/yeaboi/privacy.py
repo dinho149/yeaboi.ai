@@ -86,7 +86,7 @@ EGRESS_DISCLOSURES: tuple[dict, ...] = (
         "what": "A request for each outlet's public headline feed, carrying nothing but a yeaboi User-Agent",
         "where": (
             "The front page's outlets — Google DeepMind, Google AI, OpenAI, Anthropic, Hacker News, Techmeme, "
-            "MIT Technology Review, Ars Technica, Simon Willison, InfoQ, GitHub, The Pragmatic Engineer, arXiv, "
+            "MIT Technology Review, Ars Technica, Simon Willison, InfoQ, GitHub, The Pragmatic Engineer, "
             "yeaboi.ai and, if you set a channel, YouTube"
         ),
         "when": "Opening the desktop home, at most every 30 minutes",

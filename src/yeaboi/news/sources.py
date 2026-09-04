@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, replace
 
 KINDS = ("rss", "atom", "json_feed", "hn", "youtube", "html_listing")
-COLUMNS = ("yeaboi", "ai", "engineering", "research")
+COLUMNS = ("yeaboi", "ai", "engineering")
 
 
 @dataclass(frozen=True)
@@ -137,15 +137,6 @@ SOURCES: tuple[NewsSource, ...] = (
         "https://newsletter.pragmaticengineer.com/feed",
         column="engineering",
         home_url="https://newsletter.pragmaticengineer.com/",
-    ),
-    NewsSource(
-        "arxiv-cs-ai",
-        "arXiv cs.AI",
-        "https://rss.arxiv.org/rss/cs.AI",
-        column="research",
-        home_url="https://arxiv.org/list/cs.AI/recent",
-        max_items=4,
-        min_interval_seconds=3,
     ),
 )
 

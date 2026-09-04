@@ -726,7 +726,7 @@ capped well under GitHub's 65 536-character body limit.
 ## The front page
 
 The desktop home draws a newspaper: the yeaboi column (release notes, and the
-posts and videos yeaboi.ai lists), then AI, engineering and research headlines
+posts and videos yeaboi.ai lists), then AI and engineering headlines
 from a curated set of outlets. The backend does every fetch, so the desktop
 stays loopback-only; the desktop draws a headline, its source and a link, and
 never article text. `summary` is the outlet's own teaser, at most 240 characters.
@@ -735,7 +735,7 @@ never article text. `summary` is the outlet's own teaser, at most 240 characters
 |---|---|---|
 | GET | `/api/news` | `?refresh=1` forces a fetch. `{enabled, refreshing, schema, generated_at, stale, lead: item \| null, sections: [{column, title, items: [item]}], sources: [{id, name, home_url, column, ok, fetched_at, error, item_count}]}` — `item` is `{id, title, url, source_id, source_name, published, summary, image_url, kind, topic, persona, column}` |
 
-- `column` is one of `yeaboi`, `ai`, `engineering`, `research`; `kind` one of
+- `column` is one of `yeaboi`, `ai`, `engineering`; `kind` one of
   `article`, `video`, `release`, `post`; `topic` one of `security`, `policy`,
   `compute`, `media`, `models`, `research`, `tooling`, `howto`, `general`;
   `persona` one of the desktop's eight duck ids (`engineer`, `teacher`,

@@ -30,20 +30,14 @@ class TestRegistry:
             else:
                 assert source.link_prefix == "", source.id
 
-    def test_arxiv_keeps_its_polite_interval(self):
-        arxiv = sources.source_by_id("arxiv-cs-ai")
-        assert arxiv is not None
-        assert arxiv.min_interval_seconds == 3
-        assert arxiv.max_items <= 4
-
-    def test_every_column_but_research_has_more_than_one_outlet(self):
+    def test_every_column_has_an_outlet(self):
         by_column: dict[str, int] = {}
         for source in sources.SOURCES:
             by_column[source.column] = by_column.get(source.column, 0) + 1
         assert by_column["ai"] >= 5
         assert by_column["engineering"] >= 3
         assert by_column["yeaboi"] >= 1
-        assert by_column["research"] >= 1
+        assert set(by_column) == set(sources.COLUMNS)
 
     def test_source_by_id(self):
         assert sources.source_by_id("openai") is not None

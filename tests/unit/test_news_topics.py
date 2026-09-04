@@ -55,7 +55,7 @@ class TestClassify:
 class TestPersonaFor:
     @pytest.mark.parametrize(
         ("column", "persona"),
-        [("yeaboi", "engineer"), ("ai", "wizard"), ("engineering", "engineer"), ("research", "teacher")],
+        [("yeaboi", "engineer"), ("ai", "wizard"), ("engineering", "engineer")],
     )
     def test_general_falls_back_to_the_column(self, column, persona):
         assert topics.persona_for(Topic.GENERAL, column) == persona

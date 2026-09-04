@@ -24,7 +24,7 @@ from yeaboi.timeparse import parse_datetime
 logger = logging.getLogger(__name__)
 
 COLUMN_ORDER = COLUMNS
-COLUMN_TITLES: dict[str, str] = {"yeaboi": "yeaboi", "ai": "AI", "engineering": "Engineering", "research": "Research"}
+COLUMN_TITLES: dict[str, str] = {"yeaboi": "yeaboi", "ai": "AI", "engineering": "Engineering"}
 MAX_PER_COLUMN = 12
 MAX_AGE_DAYS = 14
 LEAD_MAX_AGE_DAYS = 7

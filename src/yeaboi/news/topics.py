@@ -45,7 +45,6 @@ PERSONA_BY_COLUMN: dict[str, str] = {
     "yeaboi": "engineer",
     "ai": "wizard",
     "engineering": "engineer",
-    "research": "teacher",
 }
 
 # Ordered: an earlier row wins over a later one on the same text.
