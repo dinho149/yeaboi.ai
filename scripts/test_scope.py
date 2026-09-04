@@ -408,6 +408,14 @@ AREAS: tuple[Area, ...] = (
         ),
     ),
     Area(
+        # The desktop home's front page: the outlet registry, the parsers and
+        # the paper, plus the one route that serves it. Named before platform,
+        # which claims src/yeaboi/app/ as a whole.
+        "news",
+        src=("src/yeaboi/news/", "src/yeaboi/app/routes_news.py"),
+        tests=("tests/unit/test_news_*.py", "tests/unit/test_app_news_routes.py"),
+    ),
+    Area(
         "platform",
         src=(
             "src/yeaboi/cli.py",

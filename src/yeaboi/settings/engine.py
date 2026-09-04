@@ -204,6 +204,14 @@ def _build_fields() -> tuple[SettingField, ...]:
             default="true",
         ),
         SettingField(
+            "YEABOI_NEWS",
+            "Front Page News",
+            "privacy",
+            choices=("true", "false"),
+            choice_labels=on_off,
+            default="true",
+        ),
+        SettingField(
             "YEABOI_NO_TUNNEL",
             "Board Sharing Off-Switch",
             "privacy",
@@ -220,6 +228,8 @@ def _build_fields() -> tuple[SettingField, ...]:
         SettingField(
             "DUCK_ENABLED", "Duck", "advanced", choices=("true", "false"), choice_labels=on_off, default="true"
         ),
+        # The front page's yeaboi column reads the channel's public feed; empty means none.
+        SettingField("NEWS_YOUTUBE_CHANNEL", "News YouTube Channel", "advanced"),
         SettingField(
             "SAVER_STYLE",
             "Screensaver",

@@ -120,6 +120,7 @@ REPORTING_THEMES_FILE = DATA_DIR / "reporting_themes.json"  # user-defined Repor
 REPORTING_PREFS_FILE = DATA_DIR / "reporting_prefs.json"  # persisted Reporting deck-style preferences
 VOICE_INSTALL_FILE = DATA_DIR / "voice_install.json"  # sticky "this machine cannot run dictation" verdicts
 CHANGELOG_SEEN_FILE = DATA_DIR / "changelog_seen.json"  # newest release the user has already read on the Changelog page
+NEWS_CACHE_FILE = DATA_DIR / "news_cache.json"  # the desktop front page's last paper, refreshed every half hour
 CUSTOM_CONNECTORS_FILE = DATA_DIR / "custom_connectors.json"  # user-created connection descriptors (never credentials)
 
 # Legacy paths (for backward compatibility / migration)
@@ -184,6 +185,7 @@ CEREMONIES_LOGS_DIR = LOGS_DIR / "ceremonies"
 SLACK_LOGS_DIR = LOGS_DIR / "slack"
 NIKO_LOGS_DIR = LOGS_DIR / "niko"
 SOLO_LOGS_DIR = LOGS_DIR / "solo"
+NEWS_LOGS_DIR = LOGS_DIR / "news"
 
 # Legacy log paths
 LEGACY_TUI_LOG = ROOT_DIR / "scrum-agent.log"
@@ -318,6 +320,12 @@ def get_changelog_seen_path() -> Path:
     """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     return CHANGELOG_SEEN_FILE
+
+
+def get_news_cache_path() -> Path:
+    """Return the path of the front page's cached paper (may not exist yet)."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return NEWS_CACHE_FILE
 
 
 def _safe_key(key: str, fallback: str) -> str:
@@ -558,6 +566,12 @@ def get_solo_log_dir() -> Path:
     """Return the Solo world's logs directory (weekly reviews), creating it if needed."""
     SOLO_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     return SOLO_LOGS_DIR
+
+
+def get_news_log_dir() -> Path:
+    """Return the front page's logs directory (feed refreshes), creating it if needed."""
+    NEWS_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return NEWS_LOGS_DIR
 
 
 def get_ceremonies_log_dir() -> Path:

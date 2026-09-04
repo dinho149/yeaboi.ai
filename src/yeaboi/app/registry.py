@@ -27,6 +27,7 @@ from yeaboi.app import (
     routes_consent,
     routes_feedback,
     routes_meta,
+    routes_news,
     routes_niko,
     routes_performance,
     routes_projects,
@@ -62,6 +63,9 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/meta/capabilities", routes_meta.capabilities),
     AppRoute("GET", "/api/meta/tips", routes_meta.tips),
     AppRoute("GET", "/api/meta/changelog", routes_meta.changelog),
+    # Chrome like the changelog: the desktop home draws the front page, and no
+    # capability owns it.
+    AppRoute("GET", "/api/news", routes_news.news),
     # Chrome like tips/changelog: no capability owns disclosure, and it is
     # deliberately never gated behind one — the privacy page must always answer.
     AppRoute("GET", "/api/meta/privacy", routes_meta.privacy),

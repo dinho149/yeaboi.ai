@@ -49,6 +49,7 @@ EGRESS_GROUPS: tuple[dict, ...] = (
 # tests/unit/test_privacy.py pins every env to a real settings-engine field.
 EGRESS_SWITCHES: tuple[dict, ...] = (
     {"key": "update-check", "env": "YEABOI_UPDATE_CHECK", "on_value": "true"},
+    {"key": "news", "env": "YEABOI_NEWS", "on_value": "true"},
     {"key": "tunnel", "env": "YEABOI_NO_TUNNEL", "on_value": "false"},
     {"key": "doh", "env": "YEABOI_NO_TUNNEL", "on_value": "false"},
     {"key": "cloudflared-download", "env": "YEABOI_NO_TUNNEL", "on_value": "false"},
@@ -78,6 +79,19 @@ EGRESS_DISCLOSURES: tuple[dict, ...] = (
         "when": "Terminal app start",
         "default": "on",
         "off_switch": "YEABOI_UPDATE_CHECK=off (Settings ▸ System ▸ Privacy)",
+    },
+    {
+        "key": "news",
+        "group": "always",
+        "what": "A request for each outlet's public headline feed, carrying nothing but a yeaboi User-Agent",
+        "where": (
+            "The front page's outlets — Google DeepMind, Google AI, OpenAI, Anthropic, Hacker News, Techmeme, "
+            "MIT Technology Review, Ars Technica, Simon Willison, InfoQ, GitHub, The Pragmatic Engineer, arXiv, "
+            "yeaboi.ai and, if you set a channel, YouTube"
+        ),
+        "when": "Opening the desktop home, at most every 30 minutes",
+        "default": "on",
+        "off_switch": "YEABOI_NEWS=off (Settings ▸ System ▸ Privacy) — the yeaboi column still shows the release notes",
     },
     {
         "key": "desktop-update",

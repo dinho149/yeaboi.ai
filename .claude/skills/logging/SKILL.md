@@ -13,7 +13,7 @@ description: Central logging rules — logging_setup.py handlers, mode_log conte
 
 Log files:
 - **Main/TUI**: `~/.yeaboi/logs/tui/yeaboi.log` (always on)
-- **Per mode**: `~/.yeaboi/logs/{standup,retro,performance,reporting,analysis}/<mode>.log` — active while that page runs; the scheduled headless standup (`--standup-run`) also writes `standup/standup.log`
+- **Per mode**: `~/.yeaboi/logs/{standup,retro,performance,reporting,analysis,news}/<mode>.log` — active while that page runs; the scheduled headless standup (`--standup-run`) also writes `standup/standup.log`; the front page's feed refresh (`news/desk.py`) writes `news/news.log`
 - **Planning sessions**: `~/.yeaboi/logs/planning/{session-id}.log` (deleted with the project, including `.log.N` rotation backups)
 - **Desktop backend**: `~/.yeaboi/logs/app/app.log` — everything `yeaboi app` serves, for the whole life of the process. Stdout belongs to the handshake line, so the log is the only place the backend can say anything
 - **Analysis text reports**: `team-analysis-{project}-{timestamp}.log` in `logs/analysis/` — a hand-written product artifact from `team_profile_exporter`, not a logging handler

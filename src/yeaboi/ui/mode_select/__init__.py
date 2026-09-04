@@ -1530,9 +1530,11 @@ def _collect_settings_data() -> dict:
         # Privacy — the switches the privacy page's egress table names.
         "YEABOI_TELEMETRY",
         "YEABOI_UPDATE_CHECK",
+        "YEABOI_NEWS",
         "YEABOI_NO_TUNNEL",
         "TIPS_ENABLED",
         "DUCK_ENABLED",
+        "NEWS_YOUTUBE_CHANNEL",
         "SAVER_STYLE",
         # Slack — a provider now rather than a delivery detail. The webhook
         # posts; the bot token is what lets a reaction or a reply be read back.

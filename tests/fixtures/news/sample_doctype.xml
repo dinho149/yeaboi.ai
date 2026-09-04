@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!DOCTYPE rss [
+  <!ENTITY xxe SYSTEM "file:///etc/hostname">
+]>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>&xxe;</title>
+      <link>https://outlet.example/evil</link>
+    </item>
+  </channel>
+</rss>

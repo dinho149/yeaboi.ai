@@ -723,6 +723,37 @@ The inlined text is redacted and home-relativized first — it is the one thing 
 report publishes that the reporter did not type — and the whole inline share is
 capped well under GitHub's 65 536-character body limit.
 
+## The front page
+
+The desktop home draws a newspaper: the yeaboi column (release notes, and the
+posts and videos yeaboi.ai lists), then AI, engineering and research headlines
+from a curated set of outlets. The backend does every fetch, so the desktop
+stays loopback-only; the desktop draws a headline, its source and a link, and
+never article text. `summary` is the outlet's own teaser, at most 240 characters.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/news` | `?refresh=1` forces a fetch. `{enabled, refreshing, schema, generated_at, stale, lead: item \| null, sections: [{column, title, items: [item]}], sources: [{id, name, home_url, column, ok, fetched_at, error, item_count}]}` — `item` is `{id, title, url, source_id, source_name, published, summary, image_url, kind, topic, persona, column}` |
+
+- `column` is one of `yeaboi`, `ai`, `engineering`, `research`; `kind` one of
+  `article`, `video`, `release`, `post`; `topic` one of `security`, `policy`,
+  `compute`, `media`, `models`, `research`, `tooling`, `howto`, `general`;
+  `persona` one of the desktop's eight duck ids (`engineer`, `teacher`,
+  `martial`, `chef`, `astronaut`, `dj`, `detective`, `wizard`). `published` is
+  ISO 8601 with an offset, or `""` when the outlet gave none. `image_url` is
+  the outlet's own picture URL or `null`; the desktop does not draw it.
+- `lead` is the story the engine put at the top (the newest yeaboi post or
+  video under a week old, else the newest AI headline) and is not repeated in
+  its section.
+- **Stale-while-revalidate.** The cached paper (30-minute TTL) is answered at
+  once. `stale: true` means it has expired and a refresh is running
+  (`refreshing: true`) — ask again in a few seconds. A refresh that fails
+  keeps the last paper; an outlet that fails keeps its last headlines and
+  reports `ok: false` with an `error`.
+- `enabled: false` (`YEABOI_NEWS=off`, Settings ▸ Privacy) answers the yeaboi
+  column from the bundled changelog alone and nothing leaves the machine. Every
+  outlet is named in `GET /api/meta/privacy` under the `news` row.
+
 ## Consent
 
 The asking half is not a route. `fs_policy` in interactive mode queues a

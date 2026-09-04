@@ -118,3 +118,44 @@ class TestSessionsWire:
         text = CONTRACT.read_text(encoding="utf-8")
         assert "## Projects and sessions" in text
         assert "proj-<8hex>" in text
+
+
+class TestNewsWire:
+    """The front page's item shape, pinned field for field against the contract."""
+
+    def test_item_keys_are_pinned(self):
+        from dataclasses import fields
+
+        from yeaboi.news.parse import NewsItem
+
+        assert [f.name for f in fields(NewsItem)] == [
+            "id",
+            "title",
+            "url",
+            "source_id",
+            "source_name",
+            "published",
+            "summary",
+            "image_url",
+            "kind",
+            "topic",
+            "persona",
+            "column",
+        ]
+
+    def test_paper_keys_are_pinned(self):
+        from dataclasses import fields
+
+        from yeaboi.news.paper import Paper, SourceStatus
+
+        assert [f.name for f in fields(Paper)] == ["schema", "generated_at", "stale", "lead", "sections", "sources"]
+        assert [f.name for f in fields(SourceStatus)] == [
+            "id",
+            "name",
+            "home_url",
+            "column",
+            "ok",
+            "fetched_at",
+            "error",
+            "item_count",
+        ]

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <title>Sample Weblog</title>
+  <entry>
+    <title>Prompt injection in the wild</title>
+    <link rel="self" href="https://weblog.example/entry/self" />
+    <link rel="alternate" href="https://weblog.example/2026/Sep/4/prompt-injection/" />
+    <published>2026-09-04T07:15:00Z</published>
+    <updated>2026-09-04T08:00:00Z</updated>
+    <summary type="html">&lt;p&gt;A short note on an &lt;em&gt;attack&lt;/em&gt;.&lt;/p&gt;</summary>
+    <media:thumbnail url="https://weblog.example/img/pi.jpg" />
+  </entry>
+  <entry>
+    <title>Quoting somebody</title>
+    <link href="https://weblog.example/2026/Sep/3/quote/" />
+    <updated>2026-09-03T18:00:00+01:00</updated>
+    <content type="html">Just a quote.</content>
+  </entry>
+</feed>
