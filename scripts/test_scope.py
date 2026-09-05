@@ -570,6 +570,7 @@ ALWAYS: tuple[str, ...] = (
     # repo + CI metadata
     "tests/unit/test_workflow_schema.py",
     "tests/unit/test_workflow_concurrency.py",
+    "tests/unit/test_auto_version_fallback.py",
     "tests/unit/test_publish_workflows.py",
     "tests/unit/test_codeql_triage.py",
     "tests/unit/test_claude_workflow.py",

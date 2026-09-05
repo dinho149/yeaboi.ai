@@ -48,6 +48,8 @@ propose:
       dismissed as accepted risk once that decision was recorded here.
       auto-version.yml:60 checks out the PR head on purpose, and the file already
       carries the reasoning plus the fine-grained-PAT requirement that bounds it.
+      Its fallback bump step (alert #77) runs the same two PR-head scripts the
+      Claude step already runs, under the same same-repo guard: no new exposure.
       Removing the checkout breaks the workflow_run chain that Claude Review and
       Dependabot verify both depend on. publish.yml's `test` job checks out
       `needs.check.outputs.sha` rather than main for the guarantee the whole file
