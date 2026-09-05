@@ -203,8 +203,8 @@ class _CallbackServer:
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):  # noqa: A002 — BaseHTTPRequestHandler's name
-                # The path carries the code; only its route is worth a line.
-                logger.debug("oauth: callback %s", urlparse(self.path).path)
+                # The path carries the code, so nothing of the request is logged.
+                logger.debug("oauth: callback request received")
 
             def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler's convention
                 if urlparse(self.path).path != wanted:
@@ -327,7 +327,11 @@ class OAuthSignIn:
             logger.warning("oauth: %s sign-in could not bind port %d", self.key, port)
             return False
         self.url = authorize_url(provider, client.client_id, self._redirect, self._state, challenge)
-        logger.info("oauth: %s sign-in started (%s client)", self.key, "own" if client.own else "built-in")
+        # Which app, without touching the client object: a field of it is a
+        # secret, and a log line must not be derived from one.
+        own_field = oauth_clients.CLIENT_ID_ENVS.get(self.key, "")
+        kind = "own" if own_field and os.environ.get(own_field, "").strip() else "built-in"
+        logger.info("oauth: %s sign-in started (%s client)", self.key, kind)
         return True
 
     def poll(self) -> None:
