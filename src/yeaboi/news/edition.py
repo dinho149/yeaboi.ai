@@ -8,12 +8,14 @@ parameter, and nothing here touches the network or the disk.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from yeaboi.news.paper import COLUMN_ORDER, Paper
 from yeaboi.news.parse import NewsItem
+from yeaboi.news.topics import PERSONA_BY_COLUMN, PERSONAS
 from yeaboi.timeparse import parse_datetime
 
 # Stories the page turns through before it comes round again.
@@ -33,6 +35,50 @@ REFRESHING_LINE = "Refreshing."
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _SMALL = ("no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_LONG_MONTHS = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+MASTHEAD_WORD = "yeaboi"
+
+# The picture beside a story: which scene the persona stands in, and its caption.
+SCENE_BY_TOPIC: dict[str, str] = {
+    "security": "vault",
+    "policy": "chamber",
+    "compute": "launchpad",
+    "media": "stage",
+    "models": "observatory",
+    "research": "chalkboard",
+    "tooling": "bench",
+    "howto": "kitchen",
+    "general": "newsstand",
+}
+SCENE_BY_KIND: dict[str, str] = {"release": "dock", "video": "studio"}
+DEFAULT_SCENE = "newsstand"
+CAPTIONS: dict[str, str] = {
+    "vault": "The detective, outside the vault.",
+    "chamber": "The martial artist, before the chamber.",
+    "launchpad": "The astronaut, at the pad.",
+    "stage": "The DJ, on stage.",
+    "observatory": "The wizard, under the stars.",
+    "chalkboard": "The teacher, at the board.",
+    "bench": "The engineer, at the bench.",
+    "kitchen": "The chef, at the counter.",
+    "newsstand": "The morning papers, at the stand.",
+    "dock": "The wizard, at the dock, with the crates.",
+    "studio": "The DJ, on the mark.",
+}
 
 
 @dataclass(frozen=True)
@@ -44,6 +90,9 @@ class Page:
     counter: str = ""
     byline: str = ""
     read: str = ""
+    persona: str = ""
+    scene: str = ""
+    caption: str = ""
 
 
 def _known(column: str) -> bool:
@@ -89,6 +138,38 @@ def turn_index(elapsed: float, period: float, offset: int, count: int) -> int:
 
 def kicker(column: str) -> str:
     return KICKERS.get(column, "")
+
+
+def scene_for(item: NewsItem) -> str:
+    """The scene a story is pictured in: by kind first, then by topic."""
+    return SCENE_BY_KIND.get(item.kind) or SCENE_BY_TOPIC.get(item.topic, DEFAULT_SCENE)
+
+
+def caption_for(scene: str) -> str:
+    return CAPTIONS.get(scene, CAPTIONS[DEFAULT_SCENE])
+
+
+def persona_of(item: NewsItem) -> str:
+    """Which costume the duck wears for a story: the wire's, else the desk's, else the engineer."""
+    if item.persona in PERSONAS:
+        return item.persona
+    return PERSONA_BY_COLUMN.get(item.column, "engineer")
+
+
+def dateline(now: datetime) -> str:
+    """``Saturday, 5 September 2026``."""
+    return f"{_WEEKDAYS[now.weekday()]}, {now.day} {_LONG_MONTHS[now.month - 1]} {now.year}"
+
+
+def volume_line(version: str) -> str:
+    """``Vol. 3, No. 41`` from the package version; "" when it does not parse."""
+    match = re.match(r"^(\d+)\.(\d+)", version.strip())
+    return f"Vol. {int(match.group(1))}, No. {int(match.group(2))}" if match else ""
+
+
+def masthead(now: datetime, version: str) -> str:
+    """The nameplate line: the word, the dateline and the volume."""
+    return " · ".join(part for part in (MASTHEAD_WORD, dateline(now), volume_line(version)) if part)
 
 
 def source_tag(item: NewsItem) -> str:
@@ -188,10 +269,14 @@ def page(items: Sequence[NewsItem], index: int, now: datetime) -> Page | None:
     if not items:
         return None
     item = items[index % len(items)]
+    scene = scene_for(item)
     return Page(
         item=item,
         kicker=kicker(item.column),
         counter=counter(index % len(items), len(items)),
         byline=byline(item, now),
         read=read_label(item),
+        persona=persona_of(item),
+        scene=scene,
+        caption=caption_for(scene),
     )

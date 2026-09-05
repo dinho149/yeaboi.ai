@@ -102,3 +102,33 @@ def frontend_root(*, required: bool = True) -> Path | None:
 def frontend_src() -> Path:
     """``src/`` inside that checkout — where generated art lands."""
     return frontend_root() / "src"
+
+
+_DESKTOP_HINT = """Set YEABOI_DESKTOP to your yeaboi-desktop checkout, or clone it beside this repo:
+
+    git clone git@github.com:yeaboi-ai/yeaboi-desktop.git
+    YEABOI_DESKTOP=/path/to/yeaboi-desktop make <target>
+"""
+
+
+def desktop_root(*, required: bool = True) -> Path | None:
+    """The yeaboi-desktop checkout: ``$YEABOI_DESKTOP``, else a sibling of this repo."""
+    if override := os.environ.get("YEABOI_DESKTOP"):
+        found = Path(override).expanduser().resolve()
+        if not found.is_dir():
+            raise SystemExit(f"YEABOI_DESKTOP points at {found}, which is not a directory.\n\n{_DESKTOP_HINT}")
+    else:
+        found = _main_checkout().parent / "yeaboi-desktop"
+
+    # The persona art rather than the directory: it is what the generators here
+    # read, and a checkout from before the personas is no use to them.
+    if (found / "src" / "renderer" / "assets" / "brand" / "persona-wizard.png").is_file():
+        return found
+    if not required:
+        return None
+    raise SystemExit(f"no yeaboi-desktop checkout with the persona art at {found}.\n\n{_DESKTOP_HINT}")
+
+
+def desktop_brand() -> Path:
+    """The desktop's rendered brand art — the persona and robo costumes live here."""
+    return desktop_root() / "src" / "renderer" / "assets" / "brand"

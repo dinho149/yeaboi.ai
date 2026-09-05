@@ -26,6 +26,7 @@ import re
 import textwrap
 from typing import TYPE_CHECKING, Any
 
+from rich import box
 from rich.align import Align
 from rich.console import Group, RenderableType
 from rich.padding import Padding
@@ -177,8 +178,20 @@ def _walk_step(key: str, selected: bool) -> int:
 _CARD_ROWS = 28
 _HINT_ROWS = 4  # blank + the key-hint line + the two rows the footer note lands on
 _GUTTER_COLS = 1  # breathing room between the cards — one column, three-up is tight
-_STRIP_ROWS = 3  # the front page: kicker row, headline, byline — pinned above the hint band
+_STRIP_ROWS = 3  # the front page folded small: kicker row, headline, byline, under a rule
+_SHEET_ROWS = 17  # the front page as a sheet: border, rule, a 13-row spread, the caption, border
+_SHEET_MAX_W = 104
+_SHEET_BG = "rgb(21,21,27)"  # a paper a shade lighter than the desk it lies on
+_KEYCAP = "bold rgb(210,210,220)"
 _EMPTY = "Nothing to read yet."
+_NAMEPLATE = "yeaboi"
+
+
+def paper_rows(height: int) -> int:
+    """Rows the front page takes under the cards: the sheet when it fits, else the rule and the strip."""
+    spare = height - 3 - _HINT_ROWS - _CARD_ROWS
+    return _SHEET_ROWS if spare >= _SHEET_ROWS else _STRIP_ROWS + 1
+
 
 # The quiet layer around the living cards.
 _HEADING = "Who are we working with today?"
@@ -344,9 +357,9 @@ def _card_half(
     return Padding(body, (1, 0))
 
 
-def _joined(parts: list[tuple[str, str]]) -> Text:
-    """One centred row of ``part · part``, empties dropped; a single space when nothing is left."""
-    row = Text(justify="center", no_wrap=True, overflow="ellipsis")
+def _joined(parts: list[tuple[str, str]], *, justify: str = "center") -> Text:
+    """One row of ``part · part``, empties dropped; a single space when nothing is left."""
+    row = Text(justify=justify, no_wrap=True, overflow="ellipsis")
     for part, style in parts:
         if not part:
             continue
@@ -372,6 +385,144 @@ def _strip_rows(page: Page | None, *, edition: str = "", inside: str = "") -> li
     return [top, headline, foot]
 
 
+def _plate_rows(page: Page | None, *, tint: str, mascot: str) -> list[Text]:
+    """The picture: the scene's ink backdrop with the persona duck standing in it, on the tinted plate."""
+    from yeaboi.ui.shared._mascot import persona_cells
+    from yeaboi.ui.shared._scene_backdrops import DUCK_X, PLATE_ROWS, backdrop
+
+    scene = page.scene if page is not None else "newsstand"
+    canvas = [[(" ", None) if ch == "." else (ch, LANDING_DETAIL_RESTING) for ch in row] for row in backdrop(scene)]
+    if page is not None:
+        cells = persona_cells(page.persona, mascot=mascot)
+        top = PLATE_ROWS - len(cells)
+        for y, row in enumerate(cells):
+            for x, cell in enumerate(row):
+                if cell[1] is not None and 0 <= top + y < PLATE_ROWS:
+                    canvas[top + y][DUCK_X + x] = cell
+    rows: list[Text] = []
+    for row in canvas:
+        text = Text(no_wrap=True, overflow="crop")
+        for glyph, style in row:
+            # Two-colour half-blocks carry their own background; everything else sits on the plate.
+            text.append(glyph, style=style if style and " on " in style else f"{style or ''} on {tint}".strip())
+        rows.append(text)
+    return rows
+
+
+def _story_rows(page: Page | None, *, card: dict[str, Any], text_w: int, edition: str) -> list[Text]:
+    """The story beside the picture: kicker, headline, hairline, standfirst, byline, the read link."""
+    rows: list[Text] = []
+    if page is None:
+        rows.append(Text(edition, style=LANDING_DETAIL_RESTING))
+        rows.append(Text(_EMPTY, style=LANDING_VERB_SELECTED))
+    else:
+        source = page.item.source_name or "yeaboi"
+        head = _joined([(page.kicker, LANDING_DETAIL_RESTING), (source, LANDING_DETAIL_SELECTED)], justify="left")
+        gap = text_w - len(head.plain) - len(page.counter)
+        if page.counter and gap > 1:
+            head.append(" " * gap + page.counter, style=LANDING_DETAIL_RESTING)
+        rows.append(head)
+        rows += [Text(line, style=LANDING_VERB_SELECTED) for line in textwrap.wrap(page.item.title, text_w)[:2]]
+        rows.append(Text("─" * min(text_w, 40), style=card["color"]))
+        rows += [Text(line, style=LANDING_DETAIL_SELECTED) for line in textwrap.wrap(page.item.summary, text_w)[:4]]
+        rows.append(Text(" "))
+        rows.append(Text(page.byline, style=LANDING_DETAIL_SELECTED))
+        read = Text()
+        read.append("o", style=_KEYCAP)
+        read.append(f"  {page.read}", style=LANDING_DETAIL_RESTING)
+        rows.append(read)
+    for row in rows:
+        row.no_wrap = True
+        row.overflow = "ellipsis"
+    from yeaboi.ui.shared._scene_backdrops import PLATE_ROWS
+
+    rows = rows[:PLATE_ROWS]
+    rows += [Text(" ") for _ in range(PLATE_ROWS - len(rows))]
+    return rows
+
+
+def _build_sheet(
+    page: Page | None,
+    *,
+    card: dict[str, Any],
+    width: int,
+    edition: str,
+    inside: str,
+    masthead: str,
+    colophon: str,
+) -> RenderableType:
+    """The front page as a sheet on the desk: nameplate on the top edge, the colophon on the bottom."""
+    from yeaboi.ui.shared._scene_backdrops import PLATE_COLS
+
+    sheet_w = min(width - 6, _SHEET_MAX_W)
+    inner_w = sheet_w - 4  # the border and one column of padding a side
+    text_w = max(20, inner_w - PLATE_COLS - 2)
+
+    rule = Text("═" * inner_w, style=card["color"], no_wrap=True, overflow="crop")
+    spread = Table.grid(padding=0)
+    spread.add_column(width=PLATE_COLS)
+    spread.add_column(width=2)
+    spread.add_column(width=text_w)
+    spread.add_row(
+        Group(*_plate_rows(page, tint=card["tint"], mascot=card["mascot"])),
+        Text(""),
+        Group(*_story_rows(page, card=card, text_w=text_w, edition=edition)),
+    )
+    caption = page.caption if page is not None else ""
+    foot = Text(caption, style=LANDING_DETAIL_RESTING, no_wrap=True, overflow="ellipsis")
+    if inside:
+        tail = f"{inside}  i"
+        gap = inner_w - len(caption) - len(tail)
+        if gap > 1:
+            foot.append(" " * gap + inside, style=LANDING_DETAIL_RESTING)
+            foot.append("  i", style=_KEYCAP)
+
+    word, _, rest = masthead.partition(" · ")
+    title = Text(f" {word or _NAMEPLATE}", style=LANDING_VERB_SELECTED)
+    title.append(f" · {rest} " if rest else " ", style=LANDING_HEADING_STYLE)
+    subtitle = Text(" " + " · ".join(part for part in (edition, colophon) if part) + " ", style=LANDING_HEADING_STYLE)
+    panel = Panel(
+        Group(rule, spread, foot),
+        box=box.ROUNDED,
+        border_style=card["color"],
+        style=f"on {_SHEET_BG}",
+        width=sheet_w,
+        padding=(0, 1),
+        title=title,
+        title_align="left",
+        subtitle=subtitle,
+        subtitle_align="left",
+    )
+    return Align.center(panel)
+
+
+def _paper_block(
+    page: Page | None,
+    *,
+    card: dict[str, Any],
+    width: int,
+    height: int,
+    intro: float,
+    edition: str,
+    inside: str,
+    masthead: str,
+    colophon: str,
+) -> list[RenderableType]:
+    """The front page under the cards, exactly ``paper_rows(height)`` rows tall whatever it holds."""
+    rows = paper_rows(height)
+    # The paper enters with the wordmarks; before that (and before the desk has answered) its rows are held blank.
+    if intro < 0.5 or (page is None and not edition):
+        return [Text(" ") for _ in range(rows)]
+    if rows == _SHEET_ROWS:
+        return [
+            _build_sheet(
+                page, card=card, width=width, edition=edition, inside=inside, masthead=masthead, colophon=colophon
+            )
+        ]
+    rule = Text(f"{'═' * 14} {_NAMEPLATE} {'═' * 14}", justify="center", style=card["color"])
+    return [rule, *_strip_rows(page, edition=edition, inside=inside)]
+
+
 def _build_category_screen(
     selected: int,
     *,
@@ -382,8 +533,10 @@ def _build_category_screen(
     page: Page | None = None,
     edition: str = "",
     inside: str = "",
+    masthead: str = "",
+    colophon: str = "",
 ) -> Panel:
-    """Build the full-screen landing split, the front page's strip under the cards."""
+    """Build the full-screen landing split, the front page under the cards."""
     bounds = _category_bounds(width)
     widths = [end - start + 1 for start, end in bounds]
     halves = [
@@ -419,17 +572,26 @@ def _build_category_screen(
 
     inner_h = height - 3  # top border + top pad + bottom border (no bottom pad)
     body_h = _CARD_ROWS
-    body_area = max(0, inner_h - _HINT_ROWS - _STRIP_ROWS)
+    body_area = max(0, inner_h - _HINT_ROWS - paper_rows(height))
     mid_top = max(0, (body_area - body_h) // 2)
     mid_bot = max(0, body_area - body_h - mid_top)
-    # The strip enters with the wordmarks; before that its rows are held blank.
-    strip = _strip_rows(page, edition=edition, inside=inside) if intro >= 0.5 else [Text(" ")] * _STRIP_ROWS
+    paper = _paper_block(
+        page,
+        card=_CATEGORY_CARDS[selected],
+        width=width,
+        height=height,
+        intro=intro,
+        edition=edition,
+        inside=inside,
+        masthead=masthead,
+        colophon=colophon,
+    )
 
     content = Group(
         *[Text("") for _ in range(mid_top)],
         grid,
         *[Text("") for _ in range(mid_bot)],
-        *strip,
+        *paper,
         Text(""),
         hint,
         # Two rows for the chrome's footer note: it is drawn over the last three
@@ -463,9 +625,9 @@ def category_at_pos(width: int, height: int, *, row: int, col: int) -> int | Non
     Any click inside the content band counts for the card region it lands in —
     the cards are the whole screen, so precision clicking isn't required: a
     gutter (and the frame padding either side) counts for the nearest card. The
-    top border row, the front page's strip and the hint band return None.
+    top border row, the front page and the hint band return None.
     """
-    if row <= 2 or row >= height - _HINT_ROWS - _STRIP_ROWS:
+    if row <= 2 or row >= height - _HINT_ROWS - paper_rows(height):
         return None
     bounds = _category_bounds(width)
     for i, (_start, end) in enumerate(bounds[:-1]):
@@ -475,5 +637,5 @@ def category_at_pos(width: int, height: int, *, row: int, col: int) -> int | Non
 
 
 def strip_at_pos(height: int, *, row: int) -> bool:
-    """Whether a 1-based terminal row lands on the front page's strip."""
-    return height - _HINT_ROWS - _STRIP_ROWS <= row < height - _HINT_ROWS
+    """Whether a 1-based terminal row lands on the front page."""
+    return height - _HINT_ROWS - paper_rows(height) <= row < height - _HINT_ROWS

@@ -223,3 +223,51 @@ class TestTurnIndex:
         )
         second = edition.page(items, 1, NOW)
         assert second is not None and second.item.title == "B" and second.read == "Watch on YouTube"
+
+
+class TestPicture:
+    def test_scene_by_kind_then_topic(self):
+        assert edition.scene_for(_item("R", kind="release", topic="security")) == "dock"
+        assert edition.scene_for(_item("V", kind="video")) == "studio"
+        assert edition.scene_for(_item("S", topic="security")) == "vault"
+        assert edition.scene_for(_item("M", topic="models")) == "observatory"
+        assert edition.scene_for(_item("X", topic="sports")) == "newsstand"
+        assert edition.scene_for(_item("N")) == "newsstand"
+
+    def test_every_scene_has_the_desktop_caption(self):
+        assert edition.caption_for("observatory") == "The wizard, under the stars."
+        assert edition.caption_for("dock") == "The wizard, at the dock, with the crates."
+        assert edition.caption_for("nowhere") == "The morning papers, at the stand."
+        assert set(edition.CAPTIONS) == set(edition.SCENE_BY_TOPIC.values()) | set(edition.SCENE_BY_KIND.values())
+
+    def test_persona_of(self):
+        assert edition.persona_of(_item("A", persona="detective")) == "detective"
+        assert edition.persona_of(_item("A", persona="pirate")) == "wizard"  # the AI desk's own
+        assert edition.persona_of(_item("A", persona="", column="engineering")) == "engineer"
+        assert edition.persona_of(_item("A", persona="", column="sports")) == "engineer"
+
+    def test_page_carries_the_picture(self):
+        first = edition.page((_item("A", topic="security", persona="detective"),), 0, NOW)
+        assert first is not None
+        assert (first.persona, first.scene, first.caption) == (
+            "detective",
+            "vault",
+            "The detective, outside the vault.",
+        )
+
+
+class TestMasthead:
+    def test_dateline(self):
+        assert edition.dateline(datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc)) == "Saturday, 5 September 2026"
+        assert edition.dateline(datetime(2026, 1, 1)) == "Thursday, 1 January 2026"
+
+    def test_volume_line(self):
+        assert edition.volume_line("3.41.1") == "Vol. 3, No. 41"
+        assert edition.volume_line(" 4.1.0-rc1 ") == "Vol. 4, No. 1"
+        assert edition.volume_line("0.0.0+dev") == "Vol. 0, No. 0"
+        assert edition.volume_line("dev") == ""
+
+    def test_masthead(self):
+        now = datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc)
+        assert edition.masthead(now, "3.41.1") == "yeaboi · Saturday, 5 September 2026 · Vol. 3, No. 41"
+        assert edition.masthead(now, "dev") == "yeaboi · Saturday, 5 September 2026"

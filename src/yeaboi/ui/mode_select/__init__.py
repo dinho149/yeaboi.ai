@@ -12918,6 +12918,7 @@ def _run_category_screen(
     from datetime import datetime, timezone
     from urllib.parse import urlsplit
 
+    from yeaboi import __version__
     from yeaboi.news import edition
     from yeaboi.ui.mode_select.screens._screens_category import (
         _CATEGORY_CARDS,
@@ -12980,6 +12981,8 @@ def _run_category_screen(
                 page=page,
                 edition=edition.edition_line(paper, now, enabled=news_on),
                 inside=edition.inside_label(len(stories)),
+                masthead=edition.masthead(now.astimezone(), __version__),
+                colophon=edition.sources_line(paper),
             )
         )
         key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()

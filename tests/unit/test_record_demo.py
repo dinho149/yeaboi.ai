@@ -220,14 +220,25 @@ class TestDemoScript:
             counter="1 of 12",
             byline="yeaboi, yesterday",
             read="Read the release notes",
+            persona="wizard",
+            scene="dock",
+            caption="The wizard, at the dock, with the crates.",
         )
-        printed = plain(
-            _build_category_screen(
-                0, width=w, height=h, page=story, edition="Refreshing.", inside="Inside this edition, 11 more stories"
+        for tall in (h, 60):  # the folded strip, and the sheet
+            printed = plain(
+                _build_category_screen(
+                    0,
+                    width=w,
+                    height=tall,
+                    page=story,
+                    edition="Refreshing.",
+                    inside="Inside this edition, 11 more stories",
+                    masthead="yeaboi · Saturday, 5 September 2026 · Vol. 4, No. 2",
+                    colophon="Read from 14 outlets.",
+                )
             )
-        )
-        for marker in record_demo.MODE_SCREEN_MARKERS + record_demo.DOOR_SCREEN_MARKERS:
-            assert marker not in printed, f"marker {marker!r} renders on the landing split's front page"
+            for marker in record_demo.MODE_SCREEN_MARKERS + record_demo.DOOR_SCREEN_MARKERS:
+                assert marker not in printed, f"marker {marker!r} renders on the landing split's front page"
 
         for world in ("solo", "team", "agents"):
             door = plain(_build_door_screen(1, world=world, width=w, height=h, active_name="Apollo"))

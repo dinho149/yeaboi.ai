@@ -346,12 +346,22 @@ class TestHitTest:
     def test_the_strip_is_dead_for_cards_and_live_for_the_story(self):
         from yeaboi.ui.mode_select.screens._screens_category import strip_at_pos
 
-        for row in (33, 34, 35):
+        for row in (32, 33, 34, 35):  # the rule and the three rows under it
             assert category_at_pos(110, 40, row=row, col=50) is None
             assert strip_at_pos(40, row=row)
-        for row in (32, 36, 37):
+        for row in (31, 36, 37):
             assert not strip_at_pos(40, row=row)
-        assert category_at_pos(110, 40, row=32, col=50) == 1
+        assert category_at_pos(110, 40, row=31, col=50) == 1
+
+    def test_the_sheet_is_dead_for_cards_and_live_for_the_story(self):
+        from yeaboi.ui.mode_select.screens._screens_category import strip_at_pos
+
+        for row in (32, 40, 48):
+            assert category_at_pos(110, 53, row=row, col=50) is None
+            assert strip_at_pos(53, row=row)
+        for row in (31, 49, 50):
+            assert not strip_at_pos(53, row=row)
+        assert category_at_pos(110, 53, row=30, col=50) == 1
 
 
 class TestChromeOptOuts:
@@ -536,7 +546,19 @@ def _rows(width=110, height=40, **kwargs) -> list[str]:
     return ["".join(seg.text for seg in row) for row in rows]
 
 
+class TestPaperRows:
+    @pytest.mark.parametrize(("height", "rows"), [(40, 4), (51, 4), (52, 17), (53, 17), (60, 17)])
+    def test_the_sheet_when_it_fits_else_the_strip(self, height, rows):
+        from yeaboi.ui.mode_select.screens._screens_category import paper_rows
+
+        assert paper_rows(height) == rows
+
+
 class TestStrip:
+    def test_the_rule_names_the_paper(self):
+        rows = _rows(page=_story(), edition="Refreshing.")
+        assert "═══ yeaboi ═══" in rows[31]
+
     def test_rows_are_reserved_without_a_page(self):
         bare, printed = _rows(), _rows(page=_story(), edition="Refreshed 8 minutes ago.")
         assert len(bare) == len(printed) == 40
@@ -666,6 +688,93 @@ def _plain(renderable, width=84, height=40) -> str:
     return "\n".join("".join(seg.text for seg in row) for row in rows)
 
 
+def _sheet_story(**kw):
+    from dataclasses import replace
+
+    return replace(
+        _story("OpenAI ships a new reasoning model built for long-running agents"),
+        persona="wizard",
+        scene="observatory",
+        caption="The wizard, under the stars.",
+        **kw,
+    )
+
+
+class TestSheet:
+    def _render(self, **kwargs):
+        return _rows(
+            height=53,
+            page=_sheet_story(),
+            edition="Refreshed just now.",
+            inside="Inside this edition, 11 more stories",
+            masthead="yeaboi · Saturday, 5 September 2026 · Vol. 3, No. 41",
+            colophon="Read from 14 outlets.",
+            **kwargs,
+        )
+
+    def test_exact_height_and_the_hint_where_it_was(self):
+        rows = self._render()
+        assert len(rows) == 53
+        assert "switch" in rows[49]
+
+    def test_the_nameplate_rides_the_top_edge_and_the_colophon_the_bottom(self):
+        rows = self._render()
+        assert "yeaboi · Saturday, 5 September 2026 · Vol. 3, No. 41" in rows[31]
+        assert "Refreshed just now. · Read from 14 outlets." in rows[47]
+
+    def test_the_spread(self):
+        text = "\n".join(self._render())
+        assert "═══════" in text
+        assert "From the AI desk · Techmeme" in text and "2 of 8" in text
+        assert "OpenAI ships a new reasoning model built for" in text
+        assert "Techmeme, 2 hours ago" in text and "o  Read more at Techmeme" in text
+        assert "The wizard, under the stars." in text
+        assert "Inside this edition, 11 more stories  i" in text
+
+    def test_the_picture_carries_the_persona_on_the_plate(self):
+        console = Console(width=110, height=53, force_terminal=True, color_system="truecolor")
+        with console.capture() as cap:
+            console.print(
+                _build_category_screen(
+                    1,
+                    width=110,
+                    height=53,
+                    page=_sheet_story(),
+                    edition="Refreshed just now.",
+                    masthead="yeaboi",
+                )
+            )
+        out = cap.get()
+        assert "48;2;17;28;20" in out  # the Team card's tint is the plate
+        assert "250;176;44" in out  # the bill, and the wizard's stars
+        assert "✦" in out  # the observatory's sky
+
+    def test_the_cards_do_not_move_when_the_paper_arrives(self):
+        bare = _rows(height=53)
+        printed = self._render()
+        assert [i for i, row in enumerate(bare) if "standups" in row] == [
+            i for i, row in enumerate(printed) if "standups" in row
+        ]
+        assert not any("╭" in row for row in bare[30:48])  # no empty sheet before the desk answers
+
+    def test_no_story_yet(self):
+        text = "\n".join(_rows(height=53, page=None, edition="Refreshing.", masthead="yeaboi"))
+        assert "Nothing to read yet." in text and "Refreshing." in text
+
+    def test_fits_the_width_floor(self):
+        rows = _rows(width=84, height=53, page=_sheet_story(), edition="Refreshing.", masthead="yeaboi")
+        assert len(rows) == 53 and "switch" in rows[49]
+        assert all("…" not in row or "Read more" in row or "model" in row for row in rows[31:48])
+
+    def test_the_robo_reads_the_agents_paper(self):
+        console = Console(width=110, height=53, force_terminal=True, color_system="truecolor")
+        with console.capture() as cap:
+            console.print(
+                _build_category_screen(2, width=110, height=53, page=_sheet_story(), edition="x", masthead="yeaboi")
+            )
+        assert "140;160;178" in cap.get()  # steel
+
+
 class TestCategoryLoop:
     @pytest.fixture(autouse=True)
     def _clock(self, monkeypatch):
@@ -769,6 +878,18 @@ class TestCategoryLoop:
         desk = FakeDesk((_paper("One", "Two", "Three", "Four"), False))
         _result, live = _run("q", desk=desk)
         assert "Inside this edition, 3 more stories" in _plain(live.frames[-1])
+
+    def test_a_tall_terminal_gets_the_sheet(self, monkeypatch):
+        import yeaboi.ui.mode_select as ms
+
+        class Tall:
+            size = (110, 53)
+
+        live = _Live()
+        ms._run_category_screen(Tall(), live, _keys("q"), True, preselected="team", desk=FakeDesk())
+        text = _plain(live.frames[-1], width=110, height=53)
+        assert "yeaboi · " in text and "Vol." in text
+        assert "Story one" in text and "The morning papers, at the stand." in text
 
 
 class TestLandingDesk:
