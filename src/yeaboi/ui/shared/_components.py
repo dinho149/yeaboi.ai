@@ -441,6 +441,11 @@ def changelog_title(shimmer_tick: float | None = None, *, width: int | None = No
     return build_ascii_title("Changelog", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
 
 
+def front_page_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Front page ASCII title (silver accent, like the changelog). Optionally shimmering."""
+    return build_ascii_title("Front page", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
+
+
 def feedback_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Feedback ASCII title (silver accent). Optionally shimmering."""
     return build_ascii_title("Feedback", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)

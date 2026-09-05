@@ -404,7 +404,14 @@ def _build_category_screen(
     grid.add_row(*cells)
 
     hint = Text(justify="center")
-    for key, label in (("←/→", "switch"), ("enter", "choose"), ("[/]", "turn"), ("o", "open"), ("q", "quit")):
+    for key, label in (
+        ("←/→", "switch"),
+        ("enter", "choose"),
+        ("[/]", "turn"),
+        ("o", "open"),
+        ("i", "inside"),
+        ("q", "quit"),
+    ):
         if hint.plain:
             hint.append("   ")
         hint.append(key, style="bold rgb(210,210,220)")

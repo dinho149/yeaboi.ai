@@ -582,7 +582,11 @@ class TestStrip:
 
     def test_hint_row_names_the_turn_and_open_keys(self):
         hint = next(row for row in _rows() if "switch" in row)
-        assert "[/] turn" in hint and "o open" in hint and "q quit" in hint
+        assert "[/] turn" in hint and "o open" in hint and "i inside" in hint and "q quit" in hint
+
+    def test_hint_row_fits_the_width_floor(self):
+        hint = next(row for row in _rows(width=84) if "switch" in row)
+        assert "q quit" in hint and "…" not in hint
 
 
 # ---------------------------------------------------------------------------
@@ -751,6 +755,20 @@ class TestCategoryLoop:
         monkeypatch.setattr(ms, "_open_niko", lambda *a, **k: opened.append(True))
         assert _run("n", "enter")[0] == "team"
         assert opened == [True]
+
+    def test_i_opens_the_reader_with_the_same_desk_and_stays(self, monkeypatch):
+        import yeaboi.ui.mode_select as ms
+
+        seen = []
+        monkeypatch.setattr(ms, "_run_front_page_page", lambda *a, **k: seen.append(k["desk"]))
+        desk = FakeDesk()
+        assert _run("i", "enter", desk=desk)[0] == "team"
+        assert seen == [desk]
+
+    def test_the_inside_line_names_the_rest_of_the_edition(self):
+        desk = FakeDesk((_paper("One", "Two", "Three", "Four"), False))
+        _result, live = _run("q", desk=desk)
+        assert "Inside this edition, 3 more stories" in _plain(live.frames[-1])
 
 
 class TestLandingDesk:
