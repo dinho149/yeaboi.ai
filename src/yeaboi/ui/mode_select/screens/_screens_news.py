@@ -30,6 +30,7 @@ from yeaboi.news.parse import NewsItem
 from yeaboi.ui.shared._ascii_font import BLOCK_GLYPHS, render_ascii_text, render_ascii_text_large
 from yeaboi.ui.shared._components import (
     CHANGELOG_THEME,
+    KEYCAP_STYLE,
     LANDING_DETAIL_RESTING,
     LANDING_DETAIL_SELECTED,
     LANDING_VERB_SELECTED,
@@ -49,7 +50,6 @@ LARGE_PAPER_MAX_W = 116  # room for the twice-size picture beside a readable col
 _ROWS_BESIDES_SPREAD = 21 + 4
 _SHEET_BG = "rgb(21,21,27)"  # a paper a shade lighter than the desk it lies on
 _HAIRLINE = "rgb(58,62,72)"
-_KEYCAP = "bold rgb(210,210,220)"
 _OUTLET_COLS = 14
 _HEADLINE_W = 70
 _GUTTER = "   "
@@ -160,7 +160,7 @@ def _story_column(page: Page | None, *, card: dict[str, Any], text_w: int, rows_
         rows.append(_line(page.byline, LANDING_DETAIL_SELECTED))
         rows.append(_line(" "))
         read = _line()
-        read.append("o", style=_KEYCAP)
+        read.append("o", style=KEYCAP_STYLE)
         read.append(f"  {page.read}", style=LANDING_DETAIL_RESTING)
         rows.append(read)
     rows = rows[:rows_h]

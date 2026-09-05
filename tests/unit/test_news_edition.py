@@ -266,8 +266,3 @@ class TestMasthead:
         assert edition.volume_line(" 4.1.0-rc1 ") == "Vol. 4, No. 1"
         assert edition.volume_line("0.0.0+dev") == "Vol. 0, No. 0"
         assert edition.volume_line("dev") == ""
-
-    def test_masthead(self):
-        now = datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc)
-        assert edition.masthead(now, "3.41.1") == "yeaboi · Saturday, 5 September 2026 · Vol. 3, No. 41"
-        assert edition.masthead(now, "dev") == "yeaboi · Saturday, 5 September 2026"

@@ -12959,6 +12959,7 @@ def _run_category_screen(
         category_at_pos,
         category_index,
         informer_hit,
+        shows_informer,
     )
 
     desk = desk or _landing_desk()
@@ -13000,7 +13001,7 @@ def _run_category_screen(
                 stories = fresh
                 logger.info("landing news: edition changed, %d stories", len(stories))
             next_poll = _poll_after(paper, refreshing)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).astimezone()  # the bylines read the same on the split and the page
         index = edition.turn_index(elapsed, edition.PAGE_TURN_SECONDS, offset, len(stories))
         page = edition.page(stories, index, now)
         live.update(
@@ -13026,11 +13027,11 @@ def _run_category_screen(
         elif key in ("q", "esc"):
             logger.info("quit from category screen")
             return None
-        elif key in ("[", "]") and stories:
+        elif key in ("[", "]") and stories and shows_informer(h):
             offset += 1 if key == "]" else -1
             turned = edition.turn_index(time.monotonic() - start, edition.PAGE_TURN_SECONDS, offset, len(stories))
             logger.info("landing news: turned by hand to %d of %d", turned + 1, len(stories))
-        elif key == "i":
+        elif key == "i" and shows_informer(h):
             _open_paper()
         elif key == "n":
             # Niko reaches the landing split too — it is the first screen there

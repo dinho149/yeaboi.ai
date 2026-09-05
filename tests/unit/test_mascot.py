@@ -125,6 +125,9 @@ def test_palette_matches_generator():
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
     assert gen.PALETTE == MASCOT_PALETTE
+    from yeaboi.ui.shared._mascot import ROBO_PALETTE
+
+    assert gen.PERSONA_EXTRA == ROBO_PALETTE  # the costume traces snap to the same steels the robo wears
 
 
 def test_render_head_shades_lift_zero_matches_resting_head():

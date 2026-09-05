@@ -248,6 +248,7 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `STANDUP_SMTP_HOST` / `STANDUP_SMTP_PORT` / `STANDUP_SMTP_USER` / `STANDUP_SMTP_PASSWORD` / `STANDUP_SMTP_SENDER` / `STANDUP_EMAIL_RECIPIENTS` — optional, SMTP email delivery for Daily Standup
 - `YEABOI_WEB_STATIC` — optional, a directory of built front-end bundles that overrides the ones Python would otherwise serve (`web/assets.py`, `_static_dir`). For developing **yeaboi-frontend** against a running board: point it at that checkout's `yeaboi_web_assets/static`. Read once at import, so a rebuild needs a restart, and a path that is not a directory raises rather than silently falling back. Unset, the bundles come from the installed `yeaboi-web-assets` wheel — a hard dependency, so a missing one raises rather than degrading.
 - `YEABOI_FRONTEND` — optional, a yeaboi-frontend checkout for the generators that write into it (`gen_duck_sprites.py`); defaults to a sibling of the main checkout. See `scripts/_sibling_repos.py`.
+- `YEABOI_DESKTOP` — optional, a yeaboi-desktop checkout with the persona brand art, read by `gen_mascot_sprites.py` for the costume traces; defaults to a sibling of the main checkout. Same resolver.
 - `RETRO_PORT` — optional, base loopback port for the Retro collaboration server, which the tunnel forwards to (default 5173; walks upward if busy)
 - `POKER_PORT` — same for the Poker board (default 5273; clear of retro's 5173..5193 walk range)
 - `SHIP_PORT` — same for the Ship board (default 5473), the live view over a supervised ship run

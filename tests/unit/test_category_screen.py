@@ -789,18 +789,19 @@ class TestCategoryLoop:
         assert _run("i", "enter", desk=desk)[0] == "team"
         assert seen == [(desk, "team")]
 
-    def test_a_short_terminal_keeps_the_paper_off_the_split(self):
+    def test_a_short_terminal_keeps_the_paper_off_the_split(self, monkeypatch):
         class Short:
             size = (84, 40)
 
         import yeaboi.ui.mode_select as ms
 
+        opened = []
+        monkeypatch.setattr(ms, "_run_front_page_page", lambda *a, **k: opened.append(True))
         live = _Live()
-        assert (
-            ms._run_category_screen(Short(), live, _keys("]", "enter"), True, preselected="team", desk=FakeDesk())
-            == "team"
-        )
+        keys = _keys("]", "i", "enter")
+        assert ms._run_category_screen(Short(), live, keys, True, preselected="team", desk=FakeDesk()) == "team"
         assert "Story" not in _plain(live.frames[-1], height=40)
+        assert opened == []  # no duck on screen, so no key nothing advertises
 
 
 class TestLandingDesk:

@@ -50,7 +50,6 @@ _LONG_MONTHS = (
     "November",
     "December",
 )
-MASTHEAD_WORD = "yeaboi"
 
 # The picture beside a story: which scene the persona stands in, and its caption.
 SCENE_BY_TOPIC: dict[str, str] = {
@@ -165,11 +164,6 @@ def volume_line(version: str) -> str:
     """``Vol. 3, No. 41`` from the package version; "" when it does not parse."""
     match = re.match(r"^(\d+)\.(\d+)", version.strip())
     return f"Vol. {int(match.group(1))}, No. {int(match.group(2))}" if match else ""
-
-
-def masthead(now: datetime, version: str) -> str:
-    """The nameplate line: the word, the dateline and the volume."""
-    return " · ".join(part for part in (MASTHEAD_WORD, dateline(now), volume_line(version)) if part)
 
 
 def source_tag(item: NewsItem) -> str:

@@ -115,6 +115,7 @@ AGENT_ADVISOR_THEME = Theme(accent="rgb(240,180,70)", accent_bright="rgb(255,210
 # the heading (and the menu's scope line), and a card's verb/detail pair in its
 # selected and resting states.
 LANDING_HEADING_STYLE = "rgb(152,156,170)"
+KEYCAP_STYLE = "bold rgb(210,210,220)"  # a key named in running text, as the hint rows draw it
 LANDING_VERB_SELECTED = "bold rgb(234,237,243)"
 LANDING_VERB_RESTING = "rgb(128,132,146)"
 LANDING_DETAIL_SELECTED = "rgb(168,172,184)"

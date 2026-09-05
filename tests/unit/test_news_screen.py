@@ -211,18 +211,26 @@ class TestLoop:
         assert "▾" in _plain(live.frames[-1])
 
     def test_the_clock_stops_while_the_index_is_open(self, monkeypatch):
+        import re
         import time as _time
+
+        from yeaboi.news import edition as _edition
 
         clock = [0.0]
 
         def _tick():
-            clock[0] += 5.0
+            clock[0] += 1.0
             return clock[0]
 
         monkeypatch.setattr(_time, "monotonic", _tick)
-        desk = FakeDesk((_paper("One", "Two", "Three"), False))
-        live = _run("tab", "esc", "esc", "esc", "esc", desk=desk)
-        assert "‹ 1 of 3 ›" in _plain(live.frames[-1]) or "Inside this edition  ▴" in _plain(live.frames[-1])
+        monkeypatch.setattr(_edition, "PAGE_TURN_SECONDS", 0.5)  # every tick turns the page while the clock runs
+        desk = FakeDesk((_paper("One", "Two", "Three", "Four", "Five"), False))
+        live = _run("tab", "down", "down", "down", "esc", desk=desk)
+        frames = [_plain(frame) for frame in live.frames]
+        open_frames = [frame for frame in frames if "Inside this edition  ▴" in frame]
+        assert len(open_frames) >= 3
+        counters = {re.search(r"‹ (\d) of 5 ›", frame).group(1) for frame in open_frames}
+        assert len(counters) == 1, counters  # the story that is up never changed while the index was open
 
     def test_r_asks_for_a_fresh_paper_only_when_news_is_on(self):
         class Recording(FakeDesk):
