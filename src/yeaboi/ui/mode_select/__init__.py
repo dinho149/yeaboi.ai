@@ -13633,6 +13633,9 @@ def select_mode(
     door = get_last_door()
     _door_pending = True
     _back_to_door = False
+    # A card a project's page asked to run (its Plan button): the menu opens
+    # on it and activates it, the way a stale-token Ctrl+R jumps to Settings.
+    _jump_card = ""
     scope = ""  # the menu's top-border scope line, computed on each (re)entry
 
     def _remember_door(chosen: str) -> None:
@@ -13772,11 +13775,20 @@ def select_mode(
                     from yeaboi.ui.mode_select._projects import run_projects_page
 
                     _chosen_project = run_projects_page(
-                        console, live, read_key, _FRAME_TIME, _supports_timeout, pick=True, open_hub=_open_hub
+                        console,
+                        live,
+                        read_key,
+                        _FRAME_TIME,
+                        _supports_timeout,
+                        pick=True,
+                        open_hub=_open_hub,
+                        world=category,
                     )
                     if _chosen_project is None:
                         _door_pick = None  # Esc on the list: back to the door
                         continue
+                    if isinstance(_chosen_project, tuple):
+                        _jump_card = _chosen_project[0]
                     _remember_door("projects")
                 if _category_pending:
                     _restart_mode_select = True
@@ -13838,6 +13850,14 @@ def select_mode(
                         logger.info("Opening Settings for a stale subscription token")
                         selected = _s_idx
                         key = "enter"
+
+                if _jump_card:
+                    _j_idx = next((i for i, c in enumerate(cards) if c.get("key") == _jump_card), None)
+                    if _j_idx is not None and cards[_j_idx]["available"]:
+                        logger.info("Opening %s from a project's page", _jump_card)
+                        selected = _j_idx
+                        key = "enter"
+                    _jump_card = ""
 
                 if _compose is not None:
                     # The duck's feedback bubble owns every key while it's open —
@@ -14010,11 +14030,15 @@ def select_mode(
                     logger.info("projects opened from mode select")
                     from yeaboi.ui.mode_select._projects import run_projects_page
 
-                    run_projects_page(console, live, read_key, _FRAME_TIME, _supports_timeout, open_hub=_open_hub)
-                    # Open on the list set a project; the door follows it.
+                    _picked = run_projects_page(
+                        console, live, read_key, _FRAME_TIME, _supports_timeout, open_hub=_open_hub, world=category
+                    )
+                    # Start on a project's page set it; the door follows it.
                     _remember_door("projects" if get_active_project() else "sessions")
                     scope = _scope_line(door, category)
                     _today = _refresh_today()
+                    if isinstance(_picked, tuple):
+                        _jump_card = _picked[0]
                     _slide_menu_in(
                         console,
                         live,

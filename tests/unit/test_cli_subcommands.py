@@ -1567,6 +1567,44 @@ class TestProjectCommand:
         with SessionStore(db) as sessions:
             assert sessions.session_project_id("s1") == project["project_id"]
 
+    def test_set_status_marks_done_and_list_says_so(self, tmp_path, monkeypatch):
+        from yeaboi.cli import _cmd_project, build_parser
+        from yeaboi.projects.engine import create_project, get_project
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        project = create_project("Apollo", db_path=db)
+        buf = io.StringIO()
+        args = build_parser().parse_args(["project", "set-status", project["project_id"], "done"])
+        assert _cmd_project(args, _console(buf)) == 0
+        assert "Apollo" in buf.getvalue() and "done" in buf.getvalue()
+        assert get_project(project["project_id"], db_path=db)["status"] == "done"
+
+        buf = io.StringIO()
+        assert _cmd_project(build_parser().parse_args(["project", "list"]), _console(buf)) == 0
+        assert "done" in buf.getvalue()
+
+        buf = io.StringIO()
+        args = build_parser().parse_args(["project", "set-status", project["project_id"], "active"])
+        assert _cmd_project(args, _console(buf)) == 0
+        assert "in progress" in buf.getvalue()
+
+    def test_set_status_only_accepts_the_two_words(self):
+        from yeaboi.cli import build_parser
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["project", "set-status", "proj-1", "finished"])
+
+    def test_draft_prints_the_name_pitch_and_note(self, tmp_path, monkeypatch):
+        from yeaboi.cli import _cmd_project, build_parser
+
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        buf = io.StringIO()
+        args = build_parser().parse_args(["project", "draft", "A pond where ducks plan sprints"])
+        assert _cmd_project(args, _console(buf)) == 0
+        out = buf.getvalue()
+        assert "a pond where ducks" in out and "A pond where ducks plan sprints" in out and "AI unavailable" in out
+
     def test_set_defaults_assembles_the_dict(self, tmp_path, monkeypatch):
         from yeaboi.cli import _cmd_project, build_parser
         from yeaboi.projects.engine import create_project, get_project

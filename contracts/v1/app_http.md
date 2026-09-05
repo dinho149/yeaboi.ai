@@ -889,8 +889,10 @@ in sessions.db. It is **unrelated** to the `{project_id}` segment of
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/projects` | `?include_archived=` (`1`/`true`/`yes`/`on`; default off). `{projects: [row]}`, most recently active first. A row is `{project_id, name, description, settings, created_at, last_active, archived, session_count}` |
+| GET | `/api/projects` | `?include_archived=` (`1`/`true`/`yes`/`on`; default off). `{projects: [row]}`, most recently active first. A row is `{project_id, name, description, settings, created_at, last_active, archived, status, session_count}`; `status` is `active` (in progress) or `done` (the owner marked it complete) — archive is separate and hides a row whatever its status |
 | POST | `/api/projects` | body `{name, description?}` → the new row (no `session_count`). A blank name is a 400 |
+| POST | `/api/projects/draft` | body `{description}` → `{name, description, source, note}` — the name and pitch for a project that does not exist yet, the AI rewrite behind the New project dialog. `source` is `ai` when the LLM rewrote the draft, `original` when it could not (unconfigured, failed, or answered nothing usable) and `description` is the draft as sent with a name made from its first words; `note` says which in one sentence. A blank description is a 400. Never a 502: the fallback is the reader's own words |
+| POST | `/api/projects/{project_id}/status` | body `{status}` (`active` \| `done`) → the row. Anything else is a 400; an unknown project a 404 |
 | GET | `/api/projects/{project_id}` | the row plus `session_ids` (the linked planning/analysis sessions, newest first); 404 when unknown |
 | GET | `/api/projects/{project_id}/sessions` | `?mode=&limit=` → `{sessions: [row]}` — the project's runs across every mode (see the row shape below); 404 when the project is unknown |
 | POST | `/api/projects/{project_id}/defaults` | body `{defaults: {…}}` → `{project_id, settings}` (the merged settings). Accepted keys: `default_analysis_profile_id`, `default_context_deps`, `repo_path` (an absolute path — the repo the Agents world scopes to). An unknown key, an empty object, or a `repo_path` that is not an absolute path (or is the filesystem root) is a 400; an unknown project a 404 |

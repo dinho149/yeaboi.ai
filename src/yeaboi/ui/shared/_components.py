@@ -167,6 +167,18 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Open": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Sessions": ("rgb(150,170,90)", "rgb(190,215,120)", "rgb(40,46,36)", "rgb(50,56,46)"),
     "Archive": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
+    # "New" and "Create" make something (green); "Start" and "Plan" open the
+    # menu inside a project (the projects accent); "Reopen" undoes Done
+    # (amber, like Archive); "Runs" lists what the project holds; "AI rewrite"
+    # and "Cancel" are the quiet greys.
+    "New": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Create": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Start": ("rgb(150,170,90)", "rgb(190,215,120)", "rgb(40,46,36)", "rgb(50,56,46)"),
+    "Plan": ("rgb(110,140,220)", "rgb(140,170,255)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "Runs": ("rgb(150,170,90)", "rgb(190,215,120)", "rgb(40,46,36)", "rgb(50,56,46)"),
+    "Reopen": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
+    "AI rewrite": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "Cancel": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Context sub-page: All on restores every source (green); Incognito switches
     # them all off, deliberate but reversible, so it wears the amber.
     "Context": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),

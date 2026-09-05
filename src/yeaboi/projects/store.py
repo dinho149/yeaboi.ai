@@ -40,8 +40,15 @@ CREATE TABLE IF NOT EXISTS projects (
     settings_json TEXT NOT NULL DEFAULT '{}',
     created_at    TEXT NOT NULL,
     last_active   TEXT NOT NULL,
-    archived      INTEGER NOT NULL DEFAULT 0
+    archived      INTEGER NOT NULL DEFAULT 0,
+    status        TEXT NOT NULL DEFAULT 'active'
 );"""
+
+# The owner's own verdict on a project: ``done`` is complete, ``active`` is
+# in progress. Archive is separate — it hides a row, whatever its status.
+STATUSES = ("active", "done")
+
+_COLUMNS = "project_id, name, description, settings_json, created_at, last_active, archived, status"
 
 
 def new_project_id() -> str:
@@ -69,6 +76,7 @@ def _row_to_dict(row: tuple) -> dict:
         "created_at": row[4],
         "last_active": row[5],
         "archived": bool(row[6]),
+        "status": row[7] or "active",
     }
 
 
@@ -89,6 +97,14 @@ class ProjectStore:
         # Self-healing: the CLI and MCP tools open this store without ever
         # constructing a SessionStore, so create the table here too.
         self._conn.executescript(PROJECTS_SCHEMA)
+        self._ensure_columns()
+
+    def _ensure_columns(self) -> None:
+        """Add columns a pre-status table lacks; sessions.py's v33 does the same."""
+        present = {row[1] for row in self._conn.execute("PRAGMA table_info(projects)").fetchall()}
+        if "status" not in present:
+            self._conn.execute("ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+            logger.info("Added projects.status")
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -119,8 +135,8 @@ class ProjectStore:
         now = self._now()
         self._conn.execute(
             """INSERT INTO projects (project_id, name, description, settings_json,
-                                     created_at, last_active, archived)
-               VALUES (?, ?, ?, '{}', ?, ?, 0)""",
+                                     created_at, last_active, archived, status)
+               VALUES (?, ?, ?, '{}', ?, ?, 0, 'active')""",
             (project_id, name, description, now, now),
         )
         logger.info("Created project %s (%s)", project_id, name)
@@ -132,6 +148,7 @@ class ProjectStore:
             "created_at": now,
             "last_active": now,
             "archived": False,
+            "status": "active",
         }
 
     def touch(self, project_id: str) -> None:
@@ -152,6 +169,19 @@ class ProjectStore:
             logger.info("Archived project %s", project_id)
         return archived
 
+    def set_status(self, project_id: str, status: str) -> bool:
+        """Set the owner's verdict (``active`` | ``done``). True if a row changed."""
+        if status not in STATUSES:
+            raise ValueError(f"status must be one of {', '.join(STATUSES)}, got {status!r}.")
+        cursor = self._conn.execute(
+            "UPDATE projects SET status = ?, last_active = ? WHERE project_id = ?",
+            (status, self._now(), project_id),
+        )
+        changed = (cursor.rowcount or 0) > 0
+        if changed:
+            logger.info("Project %s is now %s", project_id, status)
+        return changed
+
     def set_settings(self, project_id: str, settings: dict) -> None:
         """Replace the project's settings dict wholesale (callers merge)."""
         self._conn.execute(
@@ -165,8 +195,7 @@ class ProjectStore:
     def get(self, project_id: str) -> dict | None:
         """Return a project row as a dict, or None if not found."""
         row = self._conn.execute(
-            "SELECT project_id, name, description, settings_json, created_at, last_active, archived "
-            "FROM projects WHERE project_id = ?",
+            f"SELECT {_COLUMNS} FROM projects WHERE project_id = ?",  # noqa: S608 — column list, not values
             (project_id,),
         ).fetchone()
         return None if row is None else _row_to_dict(row)
@@ -174,8 +203,7 @@ class ProjectStore:
     def list_projects(self, include_archived: bool = False) -> list[dict]:
         """Return projects ordered by ``last_active`` descending."""
         rows = self._conn.execute(
-            "SELECT project_id, name, description, settings_json, created_at, last_active, archived "
-            "FROM projects WHERE archived <= ? ORDER BY last_active DESC",
+            f"SELECT {_COLUMNS} FROM projects WHERE archived <= ? ORDER BY last_active DESC",  # noqa: S608
             (1 if include_archived else 0,),
         ).fetchall()
         return [_row_to_dict(row) for row in rows]

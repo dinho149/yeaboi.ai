@@ -1,10 +1,12 @@
-"""MCP tools: projects (project_create/list/get/link_session/set_defaults)."""
+"""MCP tools: projects (project_create/list/get/link_session/set_defaults/set_status/draft)."""
 
 from __future__ import annotations
 
 import logging
 
-from yeaboi.mcp.runtime import run_readonly
+from mcp.server.fastmcp import Context
+
+from yeaboi.mcp.runtime import run_engine, run_readonly
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,20 @@ def _set_defaults(project_id: str, defaults: dict | None) -> dict:
     return set_project_defaults(project_id.strip(), defaults or {})
 
 
+def _set_status(project_id: str, status: str) -> dict:
+    if not project_id.strip():
+        raise ValueError("project_id is required — see project_list.")
+    from yeaboi.projects.engine import set_project_status
+
+    return set_project_status(project_id.strip(), status.strip())
+
+
+def _draft(description: str) -> dict:
+    from yeaboi.projects.engine import draft_project_idea
+
+    return draft_project_idea(description)
+
+
 def register(app) -> None:
     """Attach the project tools to the FastMCP app."""
 
@@ -84,3 +100,18 @@ def register(app) -> None:
         default) and repo_path (the absolute path of the project's repository — the Agents
         reports scope to sessions under it, worktrees included). Unknown keys are rejected."""
         return await run_readonly(_set_defaults, project_id, defaults)
+
+    @app.tool()
+    async def project_set_status(project_id: str, status: str) -> dict:
+        """Set the owner's verdict on a project: "done" marks it complete (it lists under
+        Completed and can still be opened), "active" reopens it. Archive is separate."""
+        return await run_readonly(_set_status, project_id, status)
+
+    @app.tool()
+    async def project_draft(ctx: Context, description: str) -> dict:
+        """Turn a rough description of what is being built into a project name and a one- or
+        two-sentence pitch — the AI rewrite behind the New project dialog. Returns
+        {name, description, source, note}; when the LLM is unavailable the description comes
+        back as sent, named from its first words (source "original"). Nothing is created:
+        pass the result to project_create."""
+        return await run_engine(ctx, _draft, description)

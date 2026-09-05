@@ -169,7 +169,7 @@ class TestMigration:
     def test_fresh_session_store_creates_agentwatch_tables(self, tmp_path):
         from yeaboi.sessions import CURRENT_SCHEMA_VERSION, SessionStore
 
-        assert CURRENT_SCHEMA_VERSION == 32
+        assert CURRENT_SCHEMA_VERSION == 33
         db = tmp_path / "sessions.db"
         with SessionStore(db) as s:
             assert s.schema_mismatch is False

@@ -112,6 +112,8 @@ CAPABILITIES: dict[str, dict] = {
             ("yeaboi.projects.engine", "get_project"),
             ("yeaboi.projects.engine", "link_session"),
             ("yeaboi.projects.engine", "set_project_defaults"),
+            ("yeaboi.projects.engine", "set_project_status"),
+            ("yeaboi.projects.engine", "draft_project_idea"),
         },
         "mcp_tools": {
             "project_create",
@@ -119,6 +121,8 @@ CAPABILITIES: dict[str, dict] = {
             "project_get",
             "project_link_session",
             "project_set_defaults",
+            "project_set_status",
+            "project_draft",
         },
         "tui_mode": Exempt(
             "the Projects door after the landing split (and the P keycap on the menu), not a card — "
@@ -568,6 +572,8 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "project_get": ("yeaboi.projects.engine", "get_project"),
     "project_link_session": ("yeaboi.projects.engine", "link_session"),
     "project_set_defaults": ("yeaboi.projects.engine", "set_project_defaults"),
+    "project_set_status": ("yeaboi.projects.engine", "set_project_status"),
+    "project_draft": ("yeaboi.projects.engine", "draft_project_idea"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
@@ -644,6 +650,8 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "project show": ("yeaboi.projects.engine", "get_project"),
     "project link": ("yeaboi.projects.engine", "link_session"),
     "project set-defaults": ("yeaboi.projects.engine", "set_project_defaults"),
+    "project set-status": ("yeaboi.projects.engine", "set_project_status"),
+    "project draft": ("yeaboi.projects.engine", "draft_project_idea"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -723,6 +731,8 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "project link": set(),
     # --analysis-profile, --context and --repo are each one key of the engine's `defaults` dict.
     "project set-defaults": {"analysis_profile", "context", "repo"},
+    "project set-status": set(),
+    "project draft": set(),
     # delivery/code/docs/ops are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {

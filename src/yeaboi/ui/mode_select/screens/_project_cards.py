@@ -39,6 +39,7 @@ class ProjectSummary:
     kind: str = "project"  # "project" | "roadmap" — roadmap rows open the roadmap results view
     roadmap_id: int = 0  # RoadmapStore row id when kind == "roadmap"
     updated_at: str = ""  # ISO UTC timestamp — merged-list sort key
+    engine_project_id: str = ""  # the proj-<8hex> the planning run happened inside, "" when unscoped
 
 
 @dataclass

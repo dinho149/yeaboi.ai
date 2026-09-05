@@ -97,6 +97,8 @@ AREAS: tuple[Area, ...] = (
             "tests/unit/test_projects_*.py",
             "tests/unit/test_sessions_recent.py",
             "tests/unit/test_app_projects_routes.py",
+            # The Projects page's Plan fact rides projects.json.
+            "tests/unit/test_persistence_projects.py",
         ),
     ),
     Area(

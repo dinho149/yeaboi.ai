@@ -74,6 +74,34 @@ def get(app, request: Request) -> Response:
     return json_response(project)
 
 
+def status(app, request: Request) -> Response:
+    """``POST /api/projects/{project_id}/status`` ``{status}`` — the row; 400 bad status, 404 unknown."""
+    from yeaboi.projects.engine import set_project_status
+
+    project_id = _project_id(request)
+    value = str(request.json().get("status", "")).strip()
+    try:
+        project = set_project_status(project_id, value)
+    except ValueError as exc:
+        message = str(exc)
+        raise HTTPError(404 if message.startswith("unknown project") else 400, message) from None
+    logger.info("project status set over the wire: %s -> %s", project_id, value)
+    return json_response(project)
+
+
+def draft(app, request: Request) -> Response:
+    """``POST /api/projects/draft`` ``{description}`` — a name and pitch for a new project; 400 when blank."""
+    from yeaboi.projects.engine import draft_project_idea
+
+    description = str(request.json().get("description", "") or "")
+    try:
+        result = draft_project_idea(description)
+    except ValueError as exc:
+        raise HTTPError(400, str(exc)) from None
+    logger.info("project draft over the wire: source=%s", result["source"])
+    return json_response(result)
+
+
 def sessions(app, request: Request) -> Response:
     """``GET /api/projects/{project_id}/sessions?mode=&limit=`` — the project's runs, every mode."""
     from yeaboi.paths import get_db_path

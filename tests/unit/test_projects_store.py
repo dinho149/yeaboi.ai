@@ -103,3 +103,37 @@ class TestLifecycle:
         store = ProjectStore(tmp_path / "sessions.db")
         store.close()
         store.close()
+
+
+class TestStatus:
+    def test_new_projects_are_active(self, store):
+        assert store.create("Apollo")["status"] == "active"
+        assert store.list_projects()[0]["status"] == "active"
+
+    def test_set_status_round_trips_and_bumps_last_active(self, store):
+        created = store.create("Apollo")
+        assert store.set_status(created["project_id"], "done") is True
+        got = store.get(created["project_id"])
+        assert got["status"] == "done"
+        assert got["last_active"] >= created["last_active"]
+        assert store.set_status(created["project_id"], "active") is True
+        assert store.get(created["project_id"])["status"] == "active"
+
+    def test_unknown_status_is_refused(self, store):
+        created = store.create("Apollo")
+        with pytest.raises(ValueError, match="status must be one of"):
+            store.set_status(created["project_id"], "finished")
+
+    def test_missing_project_returns_false(self, store):
+        assert store.set_status("proj-00000000", "done") is False
+
+    def test_a_pre_status_table_gains_the_column_on_open(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(PROJECTS_SCHEMA.replace(",\n    status        TEXT NOT NULL DEFAULT 'active'", ""))
+        conn.execute("INSERT INTO projects VALUES ('proj-0000aaaa', 'Old', '', '{}', '2026-01-01', '2026-01-01', 0)")
+        conn.commit()
+        conn.close()
+        with ProjectStore(db) as s:
+            assert s.get("proj-0000aaaa")["status"] == "active"
+            assert s.set_status("proj-0000aaaa", "done") is True

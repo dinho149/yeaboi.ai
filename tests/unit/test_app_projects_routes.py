@@ -11,7 +11,7 @@ from yeaboi.app.server import AppServer
 
 TOKEN = "test-token"
 
-ROW_KEYS = {"project_id", "name", "description", "settings", "created_at", "last_active", "archived"}
+ROW_KEYS = {"project_id", "name", "description", "settings", "created_at", "last_active", "archived", "status"}
 SESSION_KEYS = {"session_id", "run_id", "mode", "title", "created_at", "last_modified", "project_id"}
 
 
@@ -214,8 +214,46 @@ class TestRegistry:
         assert owned == {
             ("GET", "/api/projects"),
             ("POST", "/api/projects"),
+            ("POST", "/api/projects/draft"),
             ("GET", "/api/projects/{project_id}"),
+            ("POST", "/api/projects/{project_id}/status"),
             ("GET", "/api/projects/{project_id}/sessions"),
             ("POST", "/api/projects/{project_id}/defaults"),
         }
         assert {(r.method, r.path) for r in ROUTES if r.capability == "sessions"} == {("GET", "/api/sessions/recent")}
+
+
+class TestStatus:
+    def test_rows_carry_the_status(self, app, db):
+        created = _create(app)
+        assert created["status"] == "active"
+        assert payload(request(app, "GET", "/api/projects"))["projects"][0]["status"] == "active"
+
+    def test_done_and_reopen(self, app, db):
+        created = _create(app)
+        path = f"/api/projects/{created['project_id']}/status"
+        assert payload(request(app, "POST", path, body={"status": "done"}))["status"] == "done"
+        assert payload(request(app, "GET", f"/api/projects/{created['project_id']}"))["status"] == "done"
+        assert payload(request(app, "POST", path, body={"status": "active"}))["status"] == "active"
+
+    def test_bad_status_is_a_400(self, app, db):
+        created = _create(app)
+        assert request(app, "POST", f"/api/projects/{created['project_id']}/status", body={"status": "x"}).code == 400
+
+    def test_unknown_project_is_a_404(self, app, db):
+        assert request(app, "POST", "/api/projects/proj-00000000/status", body={"status": "done"}).code == 404
+
+
+class TestDraft:
+    def test_blank_description_is_a_400(self, app, db):
+        assert request(app, "POST", "/api/projects/draft", body={"description": " "}).code == 400
+
+    def test_returns_the_engines_draft(self, app, db, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        result = payload(request(app, "POST", "/api/projects/draft", body={"description": "a duck pond"}))
+        assert result["name"] == "a duck pond" and result["source"] == "original"
+        assert set(result) == {"name", "description", "source", "note"}
+
+    def test_needs_a_token(self, app, db):
+        assert request(app, "POST", "/api/projects/draft", authed=False, body={"description": "x"}).code == 401
+        assert request(app, "POST", "/api/projects/proj-1/status", authed=False, body={"status": "done"}).code == 401

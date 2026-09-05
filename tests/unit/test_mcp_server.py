@@ -31,6 +31,8 @@ EXPECTED_TOOLS = {
     "project_get",
     "project_link_session",
     "project_set_defaults",
+    "project_set_status",
+    "project_draft",
     "ceremonies_list",
     "ceremonies_history",
     "artifact_edit_history",

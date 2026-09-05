@@ -833,7 +833,7 @@ def build_parser() -> argparse.ArgumentParser:
     # ── project ───────────────────────────────────────────────────────────
     project_p = subparsers.add_parser("project", help="Manage projects — the identity that links sessions across modes")
     project_sub = project_p.add_subparsers(
-        dest="project_command", metavar="{create,list,show,link,set-defaults}", required=True
+        dest="project_command", metavar="{create,list,show,link,set-defaults,set-status,draft}", required=True
     )
     project_create_p = project_sub.add_parser("create", help="Create a project")
     project_create_p.add_argument("name", help="Short human project name")
@@ -847,6 +847,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     project_link_p.add_argument("project_id", metavar="PROJ_ID", help="Project id")
     project_link_p.add_argument("--session", default="", metavar="ID", help="Session to link (default: most recent)")
+    project_status_p = project_sub.add_parser("set-status", help="Mark a project done, or reopen it")
+    project_status_p.add_argument("project_id", metavar="PROJ_ID", help="Project id")
+    project_status_p.add_argument("status", choices=("active", "done"), help="done = complete; active = in progress")
+    project_draft_p = project_sub.add_parser(
+        "draft", help="Turn a rough description into a project name and pitch (the New project AI rewrite)"
+    )
+    project_draft_p.add_argument("description", metavar="TEXT", help="What you are building, in your own words")
     project_defaults_p = project_sub.add_parser("set-defaults", help="Set a project's default settings")
     project_defaults_p.add_argument("project_id", metavar="PROJ_ID", help="Project id")
     project_defaults_p.add_argument(
@@ -2598,6 +2605,8 @@ def _cmd_project(args: argparse.Namespace, console: Console) -> int:
             return 0
         for project in rows:
             suffix = " [dim](archived)[/dim]" if project["archived"] else ""
+            if project.get("status") == "done":
+                suffix = " [green]done[/green]" + suffix
             console.print(
                 f"  {project['project_id']}  [bold]{project['name']}[/bold]"
                 f"  {project['session_count']} session(s){suffix}"
@@ -2613,6 +2622,23 @@ def _cmd_project(args: argparse.Namespace, console: Console) -> int:
             console.print(project["description"])
         console.print(f"Settings: {project['settings'] or '—'}")
         console.print(f"Sessions: {', '.join(project['session_ids']) or '—'}")
+        return 0
+
+    if args.project_command == "set-status":
+        from yeaboi.projects.engine import set_project_status
+
+        project = set_project_status(args.project_id, args.status)
+        word = "done" if project["status"] == "done" else "in progress"
+        console.print(f"[bold]{project['name']}[/bold] is {word}.")
+        return 0
+
+    if args.project_command == "draft":
+        from yeaboi.projects.engine import draft_project_idea
+
+        result = draft_project_idea(args.description)
+        console.print(f"[bold]{result['name']}[/bold]")
+        console.print(result["description"])
+        console.print(f"[dim]{result['note']}[/dim]")
         return 0
 
     if args.project_command == "link":

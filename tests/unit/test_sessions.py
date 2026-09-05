@@ -379,3 +379,66 @@ class TestListSessionsFilters:
         with SessionStore(self._seed(tmp_path / "s.db")) as store:
             assert len(store.list_sessions(limit=2)) == 2
             assert len(store.list_sessions(limit=0)) == 3
+
+
+class TestProjectStatusMigration:
+    """Migration v33 — projects.status, added to a table that predates it."""
+
+    def _v32_db(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(
+            """CREATE TABLE sessions_meta (
+                   session_id          TEXT PRIMARY KEY,
+                   project_name        TEXT NOT NULL DEFAULT '',
+                   created_at          TEXT NOT NULL,
+                   last_modified       TEXT NOT NULL,
+                   last_node_completed TEXT NOT NULL DEFAULT '',
+                   session_state       TEXT NOT NULL DEFAULT '',
+                   session_mode        TEXT NOT NULL DEFAULT 'planning',
+                   project_id          TEXT NOT NULL DEFAULT ''
+               );
+               CREATE TABLE projects (
+                   project_id    TEXT PRIMARY KEY,
+                   name          TEXT NOT NULL,
+                   description   TEXT NOT NULL DEFAULT '',
+                   settings_json TEXT NOT NULL DEFAULT '{}',
+                   created_at    TEXT NOT NULL,
+                   last_active   TEXT NOT NULL,
+                   archived      INTEGER NOT NULL DEFAULT 0
+               );
+               INSERT INTO projects VALUES ('proj-0000aaaa', 'Old', '', '{}', '2026-01-01', '2026-01-01', 0);
+               CREATE TABLE schema_info (schema_version INT NOT NULL);"""
+        )
+        conn.execute("INSERT INTO schema_info VALUES (32)")
+        conn.commit()
+        conn.close()
+        return db
+
+    def test_v32_db_gains_the_column_with_active_as_the_default(self, tmp_path):
+        from yeaboi.projects.store import ProjectStore
+
+        db = self._v32_db(tmp_path)
+        with SessionStore(db) as store:
+            assert store.schema_mismatch is False
+        with ProjectStore(db) as projects:
+            assert projects.get("proj-0000aaaa")["status"] == "active"
+        conn = sqlite3.connect(str(db))
+        try:
+            (version,) = conn.execute("SELECT schema_version FROM schema_info").fetchone()
+            assert version == CURRENT_SCHEMA_VERSION
+        finally:
+            conn.close()
+
+    def test_fresh_db_has_the_column_once(self, tmp_path):
+        db = tmp_path / "sessions.db"
+        with SessionStore(db) as store:
+            assert store.schema_mismatch is False
+        with SessionStore(db) as store:
+            assert store.schema_mismatch is False
+        conn = sqlite3.connect(str(db))
+        try:
+            columns = [r[1] for r in conn.execute("PRAGMA table_info(projects)")]
+            assert columns.count("status") == 1
+        finally:
+            conn.close()
