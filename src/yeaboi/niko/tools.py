@@ -241,17 +241,9 @@ def agents_advisor_history(limit: int = 10) -> dict:
 
 
 @tool
-def agents_standup_history(limit: int = 10) -> dict:
-    """Recent Agent Standup digests: what the AI agents actually shipped."""
-    from yeaboi.mcp.tools_agentwatch import _standup_history
-
-    return _guard("agents_standup_history", _standup_history, limit)
-
-
-@tool
 def agents_security_history(limit: int = 10) -> dict:
     """Recent Agent Security scans: the posture of the AI coding agents working
-    across the SDLC, and any findings they raised.
+    across the SDLC, the one-line verdict, and the issues with what to do about them.
     """
     from yeaboi.mcp.tools_agentwatch import _security_history
 
@@ -349,7 +341,6 @@ NIKO_TOOLS = [
     ship_history,
     agents_usage_history,
     agents_advisor_history,
-    agents_standup_history,
     agents_security_history,
     llm_usage,
     ceremonies_list,

@@ -8,16 +8,19 @@ module never imports the TUI), and a hardcoded copy held together by a comment
 is drift waiting to happen. This pins the copy to its source instead.
 """
 
+from dataclasses import replace
+
 from rich.console import Console
 
 from yeaboi.agent.state import (
     AgentAdvisorReport,
     AgentSecurityReport,
-    AgentStandupDigest,
     AgentUsageBreakdownRow,
     AgentUsageReport,
     ModelUsageRow,
     SecurityFinding,
+    SecurityFix,
+    SecurityIssue,
     VolatileFileSignal,
     WasteLineItem,
 )
@@ -25,17 +28,14 @@ from yeaboi.agentwatch.render import (
     _ACCENT,
     _ADVISOR_ACCENT,
     _SECURITY_ACCENT,
-    _STANDUP_ACCENT,
     _tokens,
     format_advisor_rich,
     format_security_rich,
-    format_standup_rich,
     format_usage_rich,
 )
 from yeaboi.ui.shared._components import (
     AGENT_ADVISOR_THEME,
     AGENT_SECURITY_THEME,
-    AGENT_STANDUP_THEME,
     AGENT_USAGE_THEME,
 )
 
@@ -58,7 +58,6 @@ class TestThemeParity:
 
     def test_accents_match_their_themes(self):
         assert _ACCENT == AGENT_USAGE_THEME.accent
-        assert _STANDUP_ACCENT == AGENT_STANDUP_THEME.accent
         assert _SECURITY_ACCENT == AGENT_SECURITY_THEME.accent
         assert _ADVISOR_ACCENT == AGENT_ADVISOR_THEME.accent
 
@@ -199,26 +198,6 @@ class TestUsageRender:
         assert "AI output unavailable" in out
 
 
-class TestStandupRender:
-    def test_renders_narrative_and_totals(self):
-        digest = AgentStandupDigest(
-            window_start="2026-07-30",
-            window_end="2026-07-31",
-            sessions_worked=5,
-            total_cost_usd=3.5,
-            agents_seen=("claude_code",),
-            narrative="Agents shipped the collector and two tests.",
-        )
-        out = _plain(format_standup_rich(digest))
-        assert "Agent Standup" in out
-        assert "5 session(s)" in out
-        assert "claude_code" in out
-        assert "shipped the collector" in out
-
-    def test_empty_digest_still_renders(self):
-        assert "Agent Standup" in _plain(format_standup_rich(AgentStandupDigest()))
-
-
 class TestSecurityRender:
     def test_posture_and_findings(self):
         report = AgentSecurityReport(
@@ -237,15 +216,37 @@ class TestSecurityRender:
                 ),
             ),
         )
+        report = replace(
+            report,
+            verdict_line="One thing needs a decision.",
+            verdict_counts=(("needs-decision", 1),),
+            issues=(
+                SecurityIssue(
+                    id="secret:anthropic-api-key",
+                    category="secret",
+                    pattern="anthropic-api-key",
+                    title="An Anthropic API key appeared in a session",
+                    verdict="needs-decision",
+                    severity="high",
+                    signals=1,
+                    sessions=1,
+                    files=1,
+                    last_seen="2026-07-30",
+                    finding_keys=("secret:anthropic-api-key:session.jsonl",),
+                    fixes=(SecurityFix(id="rotate", kind="link", label="Rotate the key"),),
+                ),
+            ),
+        )
         out = _plain(format_security_rich(report))
         assert "Agent Security" in out
         assert "needs-attention" in out
-        assert "Credential-shaped" in out
-        # The detector label must reach the screen: every stored secret signal
-        # shares one per-category title, so the pattern is the only thing that
-        # says which check fired.
-        assert "anthropic-api-key" in out
-        assert "session.jsonl:12" in out
+        assert "One thing needs a decision." in out
+        # The page lists issues in plain words, grouped by verdict, each with
+        # its first fix — not a table of transcript paths.
+        assert "Needs a decision" in out
+        assert "An Anthropic API key appeared in a session" in out
+        assert "→ Rotate the" in out
+        assert "session.jsonl" not in out
 
     def test_never_renders_matched_content(self):
         # The privacy invariant reaches the screen too, not just the store.
@@ -265,3 +266,22 @@ class TestSecurityRender:
 
     def test_empty_report_still_renders(self):
         assert "Agent Security" in _plain(format_security_rich(AgentSecurityReport()))
+
+
+class TestSparkline:
+    def test_scales_to_the_peak_and_names_it(self):
+        from yeaboi.agent.state import DailyUsagePoint
+        from yeaboi.agentwatch.render import sparkline
+
+        points = (
+            DailyUsagePoint(date="2026-08-01", cost_usd=1.0),
+            DailyUsagePoint(date="2026-08-02", cost_usd=4.0),
+            DailyUsagePoint(date="2026-08-03", cost_usd=0.0),
+        )
+        out = sparkline(points).plain
+        assert "█" in out and "08-01 → 08-03" in out and "peak $4.00" in out
+
+    def test_empty_trend_renders_nothing_but_the_label(self):
+        from yeaboi.agentwatch.render import sparkline
+
+        assert sparkline(()).plain.strip() == "trend"

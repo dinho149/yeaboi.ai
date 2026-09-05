@@ -138,7 +138,6 @@ class TestReadsReachTheRealHelpers:
             ("ship_history", "yeaboi.mcp.tools_ship", "_history"),
             ("agents_usage_history", "yeaboi.mcp.tools_agentwatch", "_usage_history"),
             ("agents_advisor_history", "yeaboi.mcp.tools_agentwatch", "_advisor_history"),
-            ("agents_standup_history", "yeaboi.mcp.tools_agentwatch", "_standup_history"),
             ("agents_security_history", "yeaboi.mcp.tools_agentwatch", "_security_history"),
             ("ceremonies_list", "yeaboi.mcp.tools_ceremonies", "_list"),
             ("ceremonies_history", "yeaboi.mcp.tools_ceremonies", "_history"),

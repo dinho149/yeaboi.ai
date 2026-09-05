@@ -232,14 +232,6 @@ _AGENT_CARDS: list[dict[str, Any]] = [
         "color": "rgb(240,180,70)",
     },
     {
-        "key": "agent-standup",
-        "title": "Standup",
-        "description": "A daily digest of what your agents did: sessions worked, commits and PRs, open threads.",
-        "available": True,
-        "badge": BETA_LABEL,
-        "color": "rgb(120,210,170)",
-    },
-    {
         "key": "agent-security",
         "title": "Security",
         "description": "Audit your agent setup: permissions, MCP servers, secrets exposure, risky commands.",

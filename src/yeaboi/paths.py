@@ -145,7 +145,8 @@ NIKO_EXPORTS_DIR = EXPORTS_DIR / "niko"
 REPORTING_EXPORTS_DIR = EXPORTS_DIR / "reporting"
 ROADMAP_EXPORTS_DIR = EXPORTS_DIR / "roadmap"
 ANONYMIZE_EXPORTS_DIR = EXPORTS_DIR / "anonymize"  # privacy-masked, shareable copies of any mode's output
-AGENTWATCH_EXPORTS_DIR = EXPORTS_DIR / "agentwatch"  # the Agents family: usage / standup / security reports
+AGENTWATCH_EXPORTS_DIR = EXPORTS_DIR / "agentwatch"  # the Agents family: usage / advisor / security reports
+AGENTWATCH_DATA_DIR = DATA_DIR / "agentwatch"  # dismissals and other hand-kept agentwatch state
 SOLO_EXPORTS_DIR = EXPORTS_DIR / "solo"  # the Solo world's own modes: weekly reviews
 
 # ---------------------------------------------------------------------------
@@ -447,12 +448,18 @@ def get_solo_export_dir(project_key: str) -> Path:
 def get_agentwatch_export_dir(kind_key: str) -> Path:
     """Return the agentwatch export directory for a report kind, creating it if needed.
 
-    ``kind_key`` is the report kind ("usage", "advisor", "standup", "security"),
-    so the agent modes' exports stay separated the way per-project modes are.
+    ``kind_key`` is the report kind ("usage", "advisor", "security"), so the
+    agent modes' exports stay separated the way per-project modes are.
     """
     d = AGENTWATCH_EXPORTS_DIR / _safe_key(kind_key, "report")
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def get_agentwatch_data_dir() -> Path:
+    """Return the agentwatch data directory (dismissals live here), creating it if needed."""
+    AGENTWATCH_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return AGENTWATCH_DATA_DIR
 
 
 def move_data_tree(new_root: Path) -> tuple[bool, str]:

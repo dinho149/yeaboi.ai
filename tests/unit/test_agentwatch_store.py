@@ -28,7 +28,51 @@ class TestCursor:
     def test_set_then_get(self, store):
         store.set_cursor("/a.jsonl", source="claude_code", size=10, mtime=1.5, first_line_sha="abc")
         cur = store.get_cursor("/a.jsonl")
-        assert cur == {"source": "claude_code", "size": 10, "mtime": 1.5, "first_line_sha": "abc"}
+        assert cur == {
+            "source": "claude_code",
+            "size": 10,
+            "mtime": 1.5,
+            "first_line_sha": "abc",
+            "byte_offset": 0,
+            "line_count": 0,
+            "tail_request": {},
+            "security_scanned": False,
+        }
+
+    def test_resume_fields_round_trip(self, store):
+        tail = {"key": "m:r", "model": "claude-opus-5", "day": "2026-08-07", "usage": {"input": 1, "output": 2}}
+        store.set_cursor(
+            "/a.jsonl",
+            source="claude_code",
+            size=10,
+            mtime=1.5,
+            first_line_sha="abc",
+            byte_offset=9,
+            line_count=3,
+            tail_request=tail,
+            security_scanned=True,
+        )
+        cur = store.get_cursor("/a.jsonl")
+        assert (cur["byte_offset"], cur["line_count"], cur["tail_request"], cur["security_scanned"]) == (
+            9,
+            3,
+            tail,
+            True,
+        )
+
+    def test_an_older_cursor_table_gains_the_resume_columns(self, tmp_path):
+        import sqlite3
+
+        db = tmp_path / "old.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "CREATE TABLE agent_ingest_files (path TEXT PRIMARY KEY, source TEXT NOT NULL DEFAULT '', "
+                "size INTEGER NOT NULL DEFAULT 0, mtime REAL NOT NULL DEFAULT 0, "
+                "first_line_sha TEXT NOT NULL DEFAULT '', last_ingested_at TEXT NOT NULL DEFAULT '')"
+            )
+            conn.execute("INSERT INTO agent_ingest_files (path, size) VALUES ('/old.jsonl', 5)")
+        with AgentWatchStore(db) as store:
+            assert store.get_cursor("/old.jsonl")["byte_offset"] == 0
 
     def test_upsert_replaces(self, store):
         store.set_cursor("/a.jsonl", source="claude_code", size=10, mtime=1.5, first_line_sha="abc")
@@ -124,6 +168,67 @@ class TestSessions:
         assert [r["session_id"] for r in rows] == ["old"]
 
 
+class TestSessionDays:
+    def test_replace_merge_and_window(self, store):
+        store.upsert_session(
+            "s1",
+            source="claude_code",
+            source_path="/a.jsonl",
+            project_path="/p",
+            git_branch="",
+            cli_version="",
+            started_at="2026-08-07T00:00:00+00:00",
+            ended_at="2026-08-08T00:00:00+00:00",
+            turns=1,
+            model_usage={},
+            tool_counts={},
+        )
+        store.replace_session_days("/a.jsonl", {"2026-08-07": {"m": {"input": 10, "calls": 1}}})
+        store.merge_session_days(
+            "/a.jsonl", {"2026-08-07": {"m": {"input": 5, "calls": 1}}, "2026-08-08": {"m": {"input": 1}}}
+        )
+        rows = store.list_session_days(since="2026-08-08")
+        assert [(r["day"], r["input"]) for r in rows] == [("2026-08-08", 1)]
+        rows = store.list_session_days()
+        assert [(r["day"], r["input"], r["calls"], r["project_path"]) for r in rows] == [
+            ("2026-08-07", 15, 2, "/p"),
+            ("2026-08-08", 1, 0, "/p"),
+        ]
+        store.forget_source_path("/a.jsonl")
+        assert store.list_session_days() == []
+
+    def test_an_upgraded_db_with_rollups_but_no_day_rows_forgets_its_cursors(self, tmp_path):
+        db = tmp_path / "old.db"
+        with AgentWatchStore(db) as store:
+            store.set_cursor("/a.jsonl", source="claude_code", size=1, mtime=1.0, first_line_sha="x")
+            store.upsert_session(
+                "s1",
+                source="claude_code",
+                source_path="/a.jsonl",
+                project_path="/p",
+                git_branch="",
+                cli_version="",
+                started_at="",
+                ended_at="2026-08-07T00:00:00+00:00",
+                turns=0,
+                model_usage={"m": {"input": 1}},
+                tool_counts={},
+            )
+            store._conn.execute("DELETE FROM agent_session_days")
+        with AgentWatchStore(db) as store:
+            assert store.get_cursor("/a.jsonl") is None  # the next refresh rebuilds the day rows
+            assert store.get_session("/a.jsonl")["model_usage"] == {"m": {"input": 1}}
+
+    def test_request_keys_are_claimed_once_per_file(self, store):
+        assert store.claim_request_keys("/a.jsonl", ["k1", "k2"]) == set()
+        assert store.claim_request_keys("/b.jsonl", ["k2", "k3"]) == {"k2"}
+        assert store.claim_request_keys("/a.jsonl", ["k1"]) == set()  # its own claim
+        store.release_request_keys("/a.jsonl")
+        assert store.claim_request_keys("/b.jsonl", ["k1"]) == set()
+        store.reset_cursors()
+        assert store.claim_request_keys("/c.jsonl", ["k2", "k3"]) == set()
+
+
 class TestFindings:
     def test_add_and_list(self, store):
         store.add_finding(
@@ -150,7 +255,7 @@ class TestFindings:
 
 class TestReports:
     def test_record_and_list_each_kind(self, store):
-        for kind in ("usage", "standup", "security", "advisor"):
+        for kind in ("usage", "security", "advisor"):
             row_id = store.record_report(kind, _FakeReport(), key_date="2026-08-08")
             assert row_id > 0
             rows = store.list_reports(kind)
@@ -180,6 +285,67 @@ class TestMigration:
         assert {"agent_sessions", "agent_ingest_files", "agent_security_findings"} <= tables
 
 
+class TestSecurityReportRoundTrip:
+    def test_issues_fixes_and_verdicts_survive_the_store(self, tmp_path):
+        from yeaboi.agent.state import AgentSecurityReport, SecurityFinding, SecurityFix, SecurityIssue
+        from yeaboi.agentwatch.store import report_from_payload
+
+        fix = SecurityFix(
+            id="guard-hook", kind="write", label="Block", target="~/.claude/settings.json", detail="d", scope="user"
+        )
+        finding = SecurityFinding(
+            category="risky_tool",
+            pattern="curl-pipe-shell",
+            key="k",
+            verdict="needs-decision",
+            verdict_reason="ran",
+            context="command",
+            target="",
+            snippet="[REDACTED curl-pipe-shell]",
+            at="2026-08-23T10:00:00Z",
+            session_id="s",
+            project_label="repo",
+            sessions=2,
+            fixes=(fix,),
+        )
+        issue = SecurityIssue(
+            id="risky_tool:curl-pipe-shell",
+            category="risky_tool",
+            pattern="curl-pipe-shell",
+            title="t",
+            why="w",
+            verdict="needs-decision",
+            severity="high",
+            signals=3,
+            sessions=2,
+            files=1,
+            last_seen="2026-08-23",
+            finding_keys=("k",),
+            fixes=(fix,),
+        )
+        report = AgentSecurityReport(
+            scan_date="2026-08-23",
+            findings=(finding,),
+            issues=(issue,),
+            verdict_counts=(("needs-decision", 1),),
+            verdict_line="One thing needs a decision.",
+        )
+        with AgentWatchStore(tmp_path / "s.db") as store:
+            store.record_report("security", report, key_date="2026-08-23")
+            back = report_from_payload("security", store.latest_report("security")["report"])
+        assert back == report
+
+    def test_replace_latest_report_overwrites_in_place(self, tmp_path):
+        from yeaboi.agent.state import AgentSecurityReport
+
+        with AgentWatchStore(tmp_path / "s.db") as store:
+            assert not store.replace_latest_report("security", AgentSecurityReport(scan_date="x"))
+            store.record_report("security", AgentSecurityReport(scan_date="2026-08-23"), key_date="2026-08-23")
+            assert store.replace_latest_report("security", AgentSecurityReport(scan_date="2026-08-23", posture="good"))
+            rows = store.list_reports("security", limit=5)
+        assert len(rows) == 1 and rows[0]["report"]["posture"] == "good"
+
+
 class TestRehydration:
     """record_report → latest_report → report_from_payload round-trips."""
 
@@ -187,10 +353,7 @@ class TestRehydration:
     def _artifacts():
         from yeaboi.agent.state import (
             AgentAdvisorReport,
-            AgentRepoActivityRow,
             AgentSecurityReport,
-            AgentSessionSummary,
-            AgentStandupDigest,
             AgentUsageBreakdownRow,
             AgentUsageReport,
             DailyUsagePoint,
@@ -215,33 +378,6 @@ class TestRehydration:
             insights=("opus dominates",),
             recommendations=("try haiku",),
             warnings=("no key",),
-            generated_at="2026-08-08T10:00:00+00:00",
-        )
-        standup = AgentStandupDigest(
-            digest_date="2026-08-08",
-            window_start="2026-08-07",
-            window_end="2026-08-08",
-            sessions_worked=1,
-            total_cost_usd=2.5,
-            agents_seen=("claude_code",),
-            session_summaries=(
-                AgentSessionSummary(
-                    session_id="s1",
-                    source="claude_code",
-                    project="webapp",
-                    models=("claude-opus-5",),
-                    turns=4,
-                    cost_usd=2.5,
-                    top_tools=(("Bash", "7"), ("Edit", "3")),
-                    started_at="2026-08-07T10:00:00+00:00",
-                ),
-            ),
-            repo_activity=(
-                AgentRepoActivityRow(source="github", repo="webapp", kind="pr", title="fix", status="merged"),
-            ),
-            highlights=("merged a fix",),
-            narrative="one session ran.",
-            coverage_notes=("trackers skipped",),
             generated_at="2026-08-08T10:00:00+00:00",
         )
         security = AgentSecurityReport(
@@ -310,7 +446,7 @@ class TestRehydration:
             warnings=("no key",),
             generated_at="2026-08-08T10:00:00+00:00",
         )
-        return {"usage": usage, "standup": standup, "security": security, "advisor": advisor}
+        return {"usage": usage, "security": security, "advisor": advisor}
 
     def test_round_trip_each_kind(self, store):
         from yeaboi.agentwatch.store import report_from_payload

@@ -66,9 +66,6 @@ BY_CAPABILITY: dict[str, list[dict]] = {
     "agent-advisor": [
         _chip("What spend was avoidable?", "How much of my agent spend was recoverable?", "trending-up"),
     ],
-    "agent-standup": [
-        _chip("What did my agents ship?", "Summarise what my AI agents shipped recently.", "play"),
-    ],
     "agent-security": [
         _chip("Are my agents safe?", "Summarise the security posture of my AI coding agents.", "shield-check"),
     ],

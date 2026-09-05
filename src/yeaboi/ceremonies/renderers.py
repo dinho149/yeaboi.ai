@@ -23,7 +23,6 @@ import logging
 from yeaboi.agent.state import (
     AgentAdvisorReport,
     AgentSecurityReport,
-    AgentStandupDigest,
     AgentUsageReport,
     DeliveryReport,
     Dispatch,
@@ -152,25 +151,6 @@ def agent_advisor_dispatch(report: AgentAdvisorReport) -> Dispatch:
             f"across {report.session_count} sessions and {report.files_audited} transcripts.",
             _bullets(report.recommendations),
             "Every figure is an estimate and every count is a floor.",
-        ),
-    )
-
-
-def agent_standup_dispatch(digest: AgentStandupDigest) -> Dispatch:
-    """What the agents did — the same shape as the human standup."""
-    attention = _bullets(digest.attention_items)
-    return Dispatch(
-        title=f"Agent standup — {digest.digest_date}" if digest.digest_date else "Agent standup",
-        summary=(
-            digest.narrative.split("\n")[0]
-            if digest.narrative
-            else f"{digest.sessions_worked} agent session(s), {_money(digest.total_cost_usd)}."
-        ),
-        body=_assemble(
-            digest.narrative,
-            _bullets(digest.highlights),
-            f"Needs attention:\n{attention}" if attention else "",
-            _bullets(digest.in_flight),
         ),
     )
 

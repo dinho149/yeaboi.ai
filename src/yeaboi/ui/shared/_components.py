@@ -107,7 +107,6 @@ SOLO_THEME = Theme(accent="rgb(210,168,80)", accent_bright="rgb(245,200,110)")
 TEAM_THEME = Theme()
 AGENTS_THEME = Theme(accent="rgb(90,160,210)", accent_bright="rgb(130,200,255)")
 AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,255)")
-AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,245,205)")
 AGENT_SECURITY_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
 AGENT_ADVISOR_THEME = Theme(accent="rgb(240,180,70)", accent_bright="rgb(255,210,110)")
 
@@ -218,6 +217,7 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Reset": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     "PowerPoint": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Back": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    "Apply": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     # Integrations catalog browser (Settings ▸ Catalog ▸ Enter).
     "Connect": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     # Advisory action on the analysis review when a Small project looks bigger.
@@ -460,11 +460,6 @@ def system_check_title(shimmer_tick: float | None = None, *, width: int | None =
 def agent_usage_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Agent Usage ASCII title (cyan accent). Optionally shimmering."""
     return build_ascii_title("Usage", "rgb(70,190,230)", shimmer_tick=shimmer_tick, width=width)
-
-
-def agent_standup_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
-    """Return the Agent Standup ASCII title (mint accent). Optionally shimmering."""
-    return build_ascii_title("Standup", "rgb(120,210,170)", shimmer_tick=shimmer_tick, width=width)
 
 
 def agent_security_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:

@@ -12,14 +12,14 @@ coding agents working alongside it. Without leaving your coding agent.
   `standup_review` and `standup_practice_feedback`), delivery reports, retros,
   poker, performance, team analysis, roadmap intake, anonymisation, provenance,
   artifact edits, `ship`, ceremonies, the **Agents family** (`agents_usage`,
-  `agents_advisor_run`, `agents_standup_run`, `agents_security_scan` and their
+  `agents_advisor_run`, `agents_security_scan` and their
   histories), and the two-way **Slack** lane (`slack_inbound_history`,
   `slack_identities_list`). Run `/mcp` in Claude Code for the live list.
 - **Skills**: `/yeaboi:plan-sprint` (guided conversational intake → full sprint
   plan), `/yeaboi:standup`, `/yeaboi:delivery-report`, `/yeaboi:performance`,
   `/yeaboi:team-analysis`, `/yeaboi:ceremonies`, `/yeaboi:provenance`,
   `/yeaboi:ship`, `/yeaboi:slack-inbound`, and the Agents family
-  (`/yeaboi:agents-usage`, `/yeaboi:agents-advisor`, `/yeaboi:agents-standup`,
+  (`/yeaboi:agents-usage`, `/yeaboi:agents-advisor`,
   `/yeaboi:agents-security`).
 
 ## Requirements

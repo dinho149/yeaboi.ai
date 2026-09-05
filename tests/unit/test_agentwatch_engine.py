@@ -55,28 +55,37 @@ def seeded(db_path):
     ]
     with AgentWatchStore(db_path) as store:
         for sid, source, project, ended, usage in rows:
-            store.upsert_session(
-                sid,
-                source=source,
-                source_path=f"/x/{sid}.jsonl",
-                project_path=project,
-                git_branch="main",
-                cli_version="2.1.0",
-                started_at=ended,
-                ended_at=ended,
-                turns=1,
-                model_usage=usage,
-                tool_counts={},
-            )
+            _seed(store, sid, source=source, project=project, ended=ended, usage=usage)
     return db_path
 
 
+def _seed(store, sid, *, source="claude_code", project="/p", ended="2026-08-07T10:00:00+00:00", usage, days=None):
+    """One session row plus its per-day rows (the whole usage on ``ended``'s day unless ``days`` splits it)."""
+    store.upsert_session(
+        sid,
+        source=source,
+        source_path=f"/x/{sid}.jsonl",
+        project_path=project,
+        git_branch="main",
+        cli_version="2.1.0",
+        started_at=ended,
+        ended_at=ended,
+        turns=1,
+        model_usage=usage,
+        tool_counts={},
+    )
+    store.replace_session_days(f"/x/{sid}.jsonl", days or {ended[:10]: usage})
+
+
 @pytest.fixture(autouse=True)
-def no_ingest_no_export(monkeypatch):
+def no_ingest_no_export(monkeypatch, tmp_path):
     """Keep the engine off the real ~/.claude and ~/.yeaboi trees."""
+    from yeaboi.agentwatch import billing
     from yeaboi.agentwatch.collector import IngestStats
 
     monkeypatch.setattr(engine.collector, "refresh", lambda store, **kw: IngestStats())
+    monkeypatch.setattr(engine, "_claude_stats_path", lambda: tmp_path / "no-stats.json")
+    monkeypatch.setattr(billing, "_claude_config_path", lambda: tmp_path / "no-claude.json")
     import yeaboi.agentwatch.export as export_mod
 
     monkeypatch.setattr(export_mod, "export_artifact", lambda artifact, *, kind: {})
@@ -126,22 +135,129 @@ class TestAggregation:
 
     def test_unknown_model_share_flagged(self, db_path):
         with AgentWatchStore(db_path) as store:
-            store.upsert_session(
-                "s9",
-                source="claude_code",
-                source_path="/x/s9.jsonl",
-                project_path="/p",
-                git_branch="",
-                cli_version="",
-                started_at="2026-08-07T10:00:00+00:00",
-                ended_at="2026-08-07T10:00:00+00:00",
-                turns=1,
-                model_usage={"mystery-9000": {"input": 1_000_000, "output": 0, "calls": 1}},
-                tool_counts={},
-            )
+            _seed(store, "s9", usage={"mystery-9000": {"input": 1_000_000, "output": 0, "calls": 1}})
         report = engine.run_agent_usage(window_days=30, db_path=db_path, today=TODAY)
         assert report.unknown_model_cost_share == 1.0
         assert report.by_model[0].known_pricing is False
+
+    def test_a_session_across_the_window_edge_contributes_only_its_inside_days(self, db_path):
+        with AgentWatchStore(db_path) as store:
+            _seed(
+                store,
+                "span",
+                ended="2026-08-07T01:00:00+00:00",
+                usage={"claude-opus-5": {"input": 3_000_000, "output": 0, "calls": 3}},
+                days={
+                    "2026-08-06": {"claude-opus-5": {"input": 2_000_000, "output": 0, "calls": 2}},
+                    "2026-08-07": {"claude-opus-5": {"input": 1_000_000, "output": 0, "calls": 1}},
+                },
+            )
+        one_day = engine.run_agent_usage(window_days=1, db_path=db_path, today=date(2026, 8, 7))
+        assert one_day.total_cost_usd == pytest.approx(5.0)  # 1M in at $5
+        assert [p.date for p in one_day.daily_trend] == ["2026-08-07"]
+        both = engine.run_agent_usage(window_days=2, db_path=db_path, today=date(2026, 8, 7))
+        assert both.total_cost_usd == pytest.approx(15.0)
+        assert [(p.date, p.cost_usd) for p in both.daily_trend] == [("2026-08-06", 10.0), ("2026-08-07", 5.0)]
+
+    def test_rows_stamped_after_today_stay_out_with_a_warning(self, db_path):
+        with AgentWatchStore(db_path) as store:
+            _seed(store, "future", ended="2026-09-01T10:00:00+00:00", usage={"claude-opus-5": {"input": 1_000_000}})
+        report = engine.run_agent_usage(window_days=30, db_path=db_path, today=TODAY)
+        assert report.total_cost_usd == 0
+        assert any("after today" in w for w in report.warnings)
+
+    def test_cache_cost_share_and_window_travel_on_the_artifact(self, seeded):
+        report = engine.run_agent_usage(window_days=30, db_path=seeded, today=TODAY)
+        # haiku's 1M cache read at $0.10 out of $31.10.
+        assert report.cache_cost_share == pytest.approx(0.1 / 31.1, abs=0.001)
+        assert report.window_days == 30
+
+    def test_a_recorded_cost_wins_over_the_rate_table(self, db_path):
+        with AgentWatchStore(db_path) as store:
+            _seed(store, "rec", usage={"claude-opus-5": {"input": 1_000_000, "recorded_cost_usd": 1.5}})
+        report = engine.run_agent_usage(window_days=30, db_path=db_path, today=TODAY)
+        assert report.total_cost_usd == pytest.approx(1.5)
+        assert any("recorded by the CLI" in w for w in report.warnings)
+
+
+class TestBillingAndCrossCheck:
+    def test_subscription_is_named_on_the_artifact(self, seeded, tmp_path, monkeypatch):
+        import json
+
+        from yeaboi.agentwatch import billing
+
+        cfg = tmp_path / "claude.json"
+        cfg.write_text(json.dumps({"oauthAccount": {"billingType": "stripe_subscription"}}))
+        monkeypatch.setattr(billing, "_claude_config_path", lambda: cfg)
+        report = engine.run_agent_usage(window_days=30, db_path=seeded, today=TODAY)
+        assert report.billing_kind == "subscription"
+
+    def test_session_count_drift_against_claude_code_is_a_warning(self, db_path, tmp_path, monkeypatch):
+        import json
+
+        with AgentWatchStore(db_path) as store:
+            for i in range(6):
+                _seed(store, f"s{i}", usage={"claude-opus-5": {"input": 1000, "calls": 1}})
+        stats = tmp_path / "stats.json"
+        stats.write_text(json.dumps({"dailyActivity": [{"date": "2026-08-07", "sessionCount": 20}]}))
+        monkeypatch.setattr(engine, "_claude_stats_path", lambda: stats)
+        report = engine.run_agent_usage(window_days=30, db_path=db_path, today=TODAY)
+        assert any("6 here vs 20" in w for w in report.warnings)
+
+    def test_a_stale_stats_cache_is_compared_only_up_to_its_last_day(self, db_path, tmp_path, monkeypatch):
+        import json
+
+        with AgentWatchStore(db_path) as store:
+            for i in range(6):
+                _seed(store, f"s{i}", usage={"claude-opus-5": {"input": 1000, "calls": 1}})
+        stats = tmp_path / "stats.json"
+        # Computed before any of the seeded sessions: nothing to compare, no warning.
+        stats.write_text(
+            json.dumps(
+                {"lastComputedDate": "2026-08-01", "dailyActivity": [{"date": "2026-08-01", "sessionCount": 40}]}
+            )
+        )
+        monkeypatch.setattr(engine, "_claude_stats_path", lambda: stats)
+        report = engine.run_agent_usage(window_days=30, db_path=db_path, today=TODAY)
+        assert not any("stats cache" in w for w in report.warnings)
+
+
+class TestProjectLabel:
+    def test_a_worktree_labels_as_repo_slash_name(self):
+        assert engine._project_label("/home/dev/yeaboi.ai/.claude/worktrees/agents/ai-native-sdlc") == (
+            "yeaboi.ai/agents"
+        )
+        assert (
+            engine._project_label("/home/dev/yeaboi-desktop/.claude/worktrees/feature-x") == "yeaboi-desktop/feature-x"
+        )
+
+    def test_a_plain_directory_labels_by_basename(self):
+        assert engine._project_label("/home/dev/webapp") == "webapp"
+        assert engine._project_label("") == "(unknown)"
+
+    def test_a_subdirectory_of_a_git_repo_labels_by_the_toplevel(self, tmp_path, monkeypatch):
+        import subprocess
+
+        repo = tmp_path / "myrepo"
+        (repo / "src" / "deep").mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        engine._git_toplevel.cache_clear()
+        assert engine._project_label(str(repo / "src" / "deep")) == "myrepo"
+
+    def test_a_nested_worktree_name_keeps_both_segments_when_checked_out(self, tmp_path):
+        import subprocess
+
+        repo = tmp_path / "yeaboi.ai"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.com"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "T"], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "root"], check=True)
+        wt = repo / ".claude" / "worktrees" / "agents" / "ai-native-sdlc"
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", str(wt)], check=True)
+        (wt / "src").mkdir()
+        engine._git_toplevel.cache_clear()
+        assert engine._project_label(str(wt / "src")) == "yeaboi.ai/agents/ai-native-sdlc"
 
 
 class TestFallbackAndLlm:
@@ -275,32 +391,16 @@ class TestRepoScope:
 
     def test_a_worktree_under_the_repo_counts(self, db_path):
         with AgentWatchStore(db_path) as store:
-            store.upsert_session(
+            _seed(
+                store,
                 "wt",
-                source="claude_code",
-                source_path="/x/wt.jsonl",
-                project_path="/home/dev/webapp/.claude/worktrees/feature",
-                git_branch="feature",
-                cli_version="2.1.0",
-                started_at="2026-08-07T10:00:00+00:00",
-                ended_at="2026-08-07T10:00:00+00:00",
-                turns=1,
-                model_usage={"claude-opus-5": {"input": 1_000, "output": 1_000, "calls": 1}},
-                tool_counts={},
+                project="/home/dev/webapp/.claude/worktrees/feature",
+                usage={"claude-opus-5": {"input": 1_000, "output": 1_000, "calls": 1}},
             )
         report = engine.run_agent_usage(window_days=30, project_path="/home/dev/webapp", db_path=db_path, today=TODAY)
         assert report.session_count == 1
+        assert report.by_project[0].key == "webapp/feature"
 
     def test_no_match_is_an_empty_report_not_a_crash(self, seeded):
         report = engine.run_agent_usage(window_days=30, project_path="/nowhere", db_path=seeded, today=TODAY)
         assert report.session_count == 0 and report.total_cost_usd == 0
-
-    def test_standup_digest_scopes_the_local_half(self, seeded):
-        digest = engine._deterministic_standup_digest(
-            window_start="2026-08-01", digest_date="2026-08-08", project_path="/home/dev/webapp", db_path=seeded
-        )
-        assert digest.sessions_worked == 1
-        empty = engine._deterministic_standup_digest(
-            window_start="2026-08-01", digest_date="2026-08-08", project_path="/nowhere", db_path=seeded
-        )
-        assert empty.sessions_worked == 0 and empty.coverage_notes

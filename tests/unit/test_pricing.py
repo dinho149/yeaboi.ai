@@ -1,5 +1,7 @@
 """Tests for src/yeaboi/pricing.py — the shared per-model cost table."""
 
+import pytest
+
 from yeaboi.pricing import PRICING_AS_OF, CostEstimate, estimate_cost, lookup_price, normalise_model_id
 
 
@@ -114,3 +116,24 @@ class TestOpenAiWireVendors:
         flash = estimate_cost("deepseek-v4-flash", 1_000_000, 1_000_000).usd
         pro = estimate_cost("deepseek-v4-pro", 1_000_000, 1_000_000).usd
         assert 0 < flash < pro
+
+
+class TestCacheToolsAndLongContext:
+    def test_cache_share_and_web_search_are_priced_and_reported(self):
+        from yeaboi.pricing import WEB_SEARCH_USD_PER_CALL, estimate_cost
+
+        est = estimate_cost("claude-opus-5", 1_000_000, 0, cache_read_tokens=1_000_000, web_search_calls=3)
+        assert est.cache_usd == pytest.approx(0.5)  # 1M reads at 0.1 × $5
+        assert est.tools_usd == pytest.approx(3 * WEB_SEARCH_USD_PER_CALL)
+        assert est.usd == pytest.approx(5.0 + 0.5 + est.tools_usd)
+
+    def test_long_context_premium_is_a_surcharge_on_claude_only(self):
+        from yeaboi.pricing import estimate_cost
+
+        plain = estimate_cost("claude-sonnet-5", 1_000_000, 1_000_000)
+        premium = estimate_cost(
+            "claude-sonnet-5", 1_000_000, 1_000_000, premium_input_tokens=1_000_000, premium_output_tokens=1_000_000
+        )
+        assert premium.usd == pytest.approx(plain.usd + 3.0 + 7.5)  # +1× input ($3), +0.5× output ($7.5)
+        other = estimate_cost("gpt-5", 1_000_000, 0, premium_input_tokens=1_000_000)
+        assert other.usd == pytest.approx(estimate_cost("gpt-5", 1_000_000, 0).usd)

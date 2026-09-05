@@ -54,46 +54,78 @@ def _advisor_history(limit: int):
         return {"reports": store.list_reports("advisor", limit=limit)}
 
 
-def _standup_run(
-    days: int,
-    tracker_sources: list | None,
-    github_owners: list | None,
-    azdo_projects: list | None,
-    include_local_sessions: bool,
-    deliver: bool,
-    project_path: str = "",
-):
-    if days < 0 or days > 90:
-        raise ValueError("days must be between 0 (previous working day) and 90.")
-    if tracker_sources and (bad := set(tracker_sources) - {"github", "azdo"}):
-        raise ValueError(f"tracker_sources entries must be github/azdo, got: {', '.join(sorted(bad))}.")
-    from yeaboi.agentwatch.engine import run_agent_standup
+def _security_scan(deep: bool, include_info: bool = False):
+    from yeaboi.agentwatch.engine import run_agent_security
 
-    return run_agent_standup(
-        days=days or None,
-        tracker_sources=tracker_sources,
-        github_owners=github_owners,
-        azdo_projects=azdo_projects,
-        include_local_sessions=include_local_sessions,
-        deliver=deliver,
-        project_path=project_path,
-    )
+    return run_agent_security(deep=deep, include_info=include_info)
 
 
-def _standup_history(limit: int):
-    if limit < 1 or limit > 100:
-        raise ValueError("limit must be between 1 and 100.")
+def _security_dismiss(key: str, reason: str, expires: str = ""):
+    from yeaboi.agentwatch import dismissals
+
+    entry = dismissals.dismiss(key, reason=reason, expires=expires)
+    return {"dismissed": entry.__dict__, "on_file": len(dismissals.load())}
+
+
+def _security_undismiss(key: str):
+    from yeaboi.agentwatch import dismissals
+
+    if not dismissals.undismiss(key):
+        raise ValueError(f"no dismissal on file for {key!r}.")
+    return {"restored": key, "on_file": len(dismissals.load())}
+
+
+def _security_replay(key: str, line: int = 0):
+    from yeaboi.agentwatch import replay as replay_mod
+    from yeaboi.agentwatch.engine import rebuild_security_report
+
+    report = rebuild_security_report(include_info=True, record=False)
+    finding = next((f for f in report.findings if f.key == key), None)
+    if finding is None:
+        raise ValueError(f"no finding {key!r} in the latest scan — run agents_security_scan first.")
+    if finding.category not in ("secret", "risky_tool"):
+        raise ValueError("only transcript findings have a replay.")
+    try:
+        return replay_mod.replay(finding.location, line or finding.line_no, pattern=finding.pattern)
+    except replay_mod.ReplayError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _security_signals(key: str):
+    from yeaboi.agentwatch.engine import rebuild_security_report
     from yeaboi.agentwatch.store import AgentWatchStore
     from yeaboi.paths import get_db_path
 
+    report = rebuild_security_report(include_info=True, record=False)
+    finding = next((f for f in report.findings if f.key == key), None)
+    if finding is None:
+        raise ValueError(f"no finding {key!r} in the latest scan — run agents_security_scan first.")
     with AgentWatchStore(get_db_path()) as store:
-        return {"digests": store.list_reports("standup", limit=limit)}
+        rows = store.list_findings_for_key(
+            category=finding.category, pattern=finding.pattern, source_path=finding.location, context=finding.context
+        )
+    return {"key": key, "signals": rows}
 
 
-def _security_scan(deep: bool):
-    from yeaboi.agentwatch.engine import run_agent_security
+def _security_fix(key: str, fix_id: str, reason: str = "", repo: str = ""):
+    from yeaboi.agentwatch import security_fixes
 
-    return run_agent_security(deep=deep)
+    outcome = security_fixes.apply_fix(key, fix_id, reason=reason, repo=repo)
+    if not outcome.ok:
+        raise ValueError(outcome.detail)
+    return outcome
+
+
+def _security_verdict(keys: list[str], verdict: str, reason: str = ""):
+    from yeaboi.agentwatch import dismissals
+
+    if verdict == "undo":
+        return {"restored": [k for k in keys if dismissals.undismiss(k)]}
+    if verdict == "test-data":
+        reason = reason or "test data: fixture or example text"
+    elif verdict != "dismiss":
+        raise ValueError("verdict must be one of test-data, dismiss, undo.")
+    return {"handled": [dismissals.dismiss(k, reason=reason).key for k in keys]}
 
 
 def _security_history(limit: int):
@@ -178,61 +210,63 @@ def register(app) -> None:
         return _with_beta(await run_readonly(_advisor_history, limit))
 
     @app.tool()
-    async def agents_standup_run(
-        ctx: Context,
-        days: int = 0,
-        tracker_sources: list[str] | None = None,
-        github_owners: list[str] | None = None,
-        azdo_projects: list[str] | None = None,
-        include_local_sessions: bool = True,
-        deliver: bool = False,
-        project_path: str = "",
-    ) -> dict:
-        """BETA — Run the daily agent standup: what the user's AI coding agents did — local
-        sessions worked (with cost) plus agent-authored commits/PRs found in GitHub/Azure DevOps.
-        days=0 covers everything since the previous working day (a Monday run reaches Friday);
-        tracker_sources=[] skips trackers for a local-only digest, and
-        include_local_sessions=false is the mirror — a tracker-only digest. Session logs are read
-        from the machine this runs on, so set it false anywhere that is not the user's own
-        machine, or the digest reports whatever sessions that host happens to have. deliver=true
-        posts to the configured Slack webhook — ask the user before enabling. project_path keeps
-        only local sessions whose directory is that absolute path or under it.
-
-        The Agents modes are in beta — detection is a lower bound; never present absence of
-        evidence as agent idleness."""
-        return _with_beta(
-            await run_engine(
-                ctx,
-                _standup_run,
-                days,
-                tracker_sources,
-                github_owners,
-                azdo_projects,
-                include_local_sessions,
-                deliver,
-                project_path,
-            )
-        )
-
-    @app.tool()
-    async def agents_standup_history(limit: int = 20) -> dict:
-        """BETA — List previously generated agent standup digests (newest first).
-
-        The Agents modes are in beta — detection is a lower bound; never present absence of
-        evidence as agent idleness."""
-        return _with_beta(await run_readonly(_standup_history, limit))
-
-    @app.tool()
-    async def agents_security_scan(ctx: Context, deep: bool = False) -> dict:
+    async def agents_security_scan(ctx: Context, deep: bool = False, include_info: bool = False) -> dict:
         """BETA — Audit the local agent setup: permission-bypass settings, wildcard allow rules,
         risky hooks, MCP server inventory (plain-http, unpinned packages, inlined credentials),
-        secret-shaped text and risky shell commands found in session transcripts. Findings carry
-        pattern + file + line only — matched content is never stored or returned. deep=true
-        re-scans every transcript instead of only new/changed ones.
+        secret-shaped text and risky shell commands found in session transcripts. The report
+        opens with ``verdict_line`` and lists ``issues`` (one per pattern) each with a verdict —
+        needs-decision (the command ran / a live-looking key in a command or prompt), unsure,
+        test-data (written into or read from a test/fixture/docs file — not a risk), handled,
+        info — the ``why`` it matters and its ``fixes`` (apply with agents_security_fix).
+        Findings carry pattern + file + line + the context the match sat in + a redacted snippet;
+        the matched secret is never stored. deep=true re-scans every transcript; include_info=true
+        lists informational findings that are otherwise only counted.
 
         The Agents modes are in beta — deterministic pattern matches are an indicator, not a
         security audit; a clean report means no known pattern matched."""
-        return _with_beta(await run_engine(ctx, _security_scan, deep))
+        return _with_beta(await run_engine(ctx, _security_scan, deep, include_info))
+
+    @app.tool()
+    async def agents_security_dismiss(key: str, reason: str, expires: str = "") -> dict:
+        """BETA — Dismiss one security finding by its key (the ``key`` field on a finding,
+        category:pattern:location) with a mandatory reason, optionally until an ISO date.
+        Dismissed findings leave the report and the posture but stay counted as dismissed;
+        pass an empty reason and the call is refused. Use undo by passing reason="undo" with
+        the same key to restore it."""
+        if reason.strip().lower() == "undo":
+            return _with_beta(await run_readonly(_security_undismiss, key))
+        return _with_beta(await run_readonly(_security_dismiss, key, reason, expires))
+
+    @app.tool()
+    async def agents_security_replay(key: str, line: int = 0) -> dict:
+        """BETA — Replay the transcript turns around one security finding (its ``key``): who
+        spoke, when, which tool ran what, with the flagged turn marked. Every string is redacted
+        and the matched span is masked. ``line`` picks one of the finding's matching lines (see
+        agents_security_signals); the default is the first. Use this to tell whether a signal
+        was a command that ran or text written into a file."""
+        return _with_beta(await run_readonly(_security_replay, key, line))
+
+    @app.tool()
+    async def agents_security_signals(key: str) -> dict:
+        """BETA — Every matching line behind one grouped security finding (its ``key``): line
+        number, timestamp, session, the context the match sat in and a redacted snippet."""
+        return _with_beta(await run_readonly(_security_signals, key))
+
+    @app.tool()
+    async def agents_security_fix(ctx: Context, key: str, fix_id: str, reason: str = "", repo: str = "") -> dict:
+        """BETA — Apply one of a finding's ``fixes`` by id: ``guard-hook`` writes a Claude Code
+        PreToolUse guard into ~/.claude (asks for sandbox consent first), ``guard-hook-pr`` and
+        ``mcp-edit-pr`` open a PR against ``repo`` (or the session's repository), ``settings-edit``
+        removes one settings key or rule after a backup, ``mark-rotated`` / ``mark-test-data`` /
+        ``dismiss`` (needs ``reason``) set the finding aside, ``undo`` brings it back. An applied
+        fix reads as handled on the next report."""
+        return _with_beta(await run_engine(ctx, _security_fix, key, fix_id, reason, repo))
+
+    @app.tool()
+    async def agents_security_verdict(keys: list[str], verdict: str, reason: str = "") -> dict:
+        """BETA — Set many findings aside at once: ``verdict`` is ``test-data`` (reason filled
+        in), ``dismiss`` (needs ``reason``) or ``undo``."""
+        return _with_beta(await run_readonly(_security_verdict, keys, verdict, reason))
 
     @app.tool()
     async def agents_security_history(limit: int = 20) -> dict:

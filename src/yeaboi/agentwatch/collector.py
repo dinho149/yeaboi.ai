@@ -2,25 +2,29 @@
 
 Scans Claude Code session transcripts — append-only JSONL files under
 ``~/.claude/projects/**`` — and rolls each one up into an ``agent_sessions``
-row: per-model token totals (including the 5m/1h cache-write split Claude Code
-reports), tool-use counts, turns, project path, branch, and timestamps.
+row (per-model token totals with the 5m/1h cache-write split, tool-use counts,
+turns, project path, branch, timestamps) plus ``agent_session_days`` rows, the
+same usage split per UTC day so a window and the daily trend see tokens on the
+day they were spent.
 
-Two invariants shape the design:
+Three invariants shape the design:
 
 1. **Privacy** — nothing from a transcript's *content* is persisted. The one
    pass over raw text happens here, in the stream, and emits only
-   ``(pattern label, file, line number)`` security findings.
-2. **Correct token math** — Claude Code splits one assistant API message
-   across multiple JSONL lines that share a ``requestId`` and repeat identical
-   usage, so usage is counted **once per requestId** and tool_use blocks once
-   per block id. That dedup needs whole-file context, which drives the cursor
-   design: a file whose (size, mtime) is unchanged is skipped without being
-   opened; any change triggers a full streaming reparse of just that file,
-   whose rollup *replaces* the previous one. No partial offsets, no
-   double-count.
+   ``(pattern label, severity, file, line number)`` security findings.
+2. **Correct token math** — Claude Code writes one assistant API message
+   across several JSONL lines sharing a ``requestId``, and the *first* of
+   them can be a placeholder (``output_tokens: 1``) that the last line
+   finalises. Usage is therefore kept per request with the last line winning
+   (output as the max seen), tool_use blocks are counted once per block id,
+   and a ``(message id, request id)`` already counted from another file is
+   skipped — a copied or restored transcript must not double a bill.
+3. **Never raise** — malformed lines are counted and skipped, and a failing
+   file becomes a warning.
 
-Malformed lines are counted and skipped, and a failing file becomes a warning
-— ``refresh`` never raises.
+The cursor keys on (size, mtime, first-line hash). An unchanged file is not
+opened; a file that only *grew* is parsed from the byte offset the last parse
+stopped at and merged; anything else is fully reparsed and its rows replaced.
 """
 
 from __future__ import annotations
@@ -39,8 +43,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from yeaboi.agentwatch import security_checks
 from yeaboi.agentwatch.store import AgentWatchStore
 from yeaboi.analysis.progress import send_component_progress
+from yeaboi.pricing import LONG_CONTEXT_THRESHOLD
 from yeaboi.redaction import _TOKEN_PATTERNS
 
 logger = logging.getLogger(__name__)
@@ -61,30 +67,23 @@ _PARALLEL_THRESHOLD = 16
 # pools hurt on shared CI machines.
 _MAX_PARSE_WORKERS = 8
 
+# Lines Claude Code writes that carry usage but bill nothing: a synthetic
+# assistant turn (a local stand-in, no API call) and an API error echo.
+_NON_BILLABLE_MODELS = frozenset({"<synthetic>"})
+
 # ---------------------------------------------------------------------------
 # Security signal patterns (labels only — matched text is never stored)
 # ---------------------------------------------------------------------------
 
 # Risky shell shapes scanned over tool_use inputs that carry a "command".
-# Each entry: (label, severity, compiled regex).
-_RISKY_BASH_PATTERNS: tuple[tuple[str, str, re.Pattern[str]], ...] = (
-    ("curl-pipe-shell", "high", re.compile(r"\b(?:curl|wget)\b[^|;&]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b")),
-    ("base64-decode-pipe-shell", "high", re.compile(r"base64\s+(?:-d|--decode)[^|;&]*\|\s*(?:ba|z|da)?sh\b")),
-    ("rm-rf-root", "high", re.compile(r"\brm\s+-[a-z]*rf?[a-z]*\s+/(?:\s|$)")),
-    ("permission-bypass-flag", "high", re.compile(r"--dangerously-skip-permissions\b")),
-    ("sudo", "medium", re.compile(r"(?:^|[;&|]\s*)sudo\s")),
+# Each entry: (label, compiled regex); severity comes from security_checks.
+_RISKY_BASH_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("curl-pipe-shell", re.compile(r"\b(?:curl|wget)\b[^|;&]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b")),
+    ("base64-decode-pipe-shell", re.compile(r"base64\s+(?:-d|--decode)[^|;&]*\|\s*(?:ba|z|da)?sh\b")),
+    ("rm-rf-root", re.compile(r"\brm\s+-[a-z]*rf?[a-z]*\s+/(?:\s|$)")),
+    ("permission-bypass-flag", re.compile(r"--dangerously-skip-permissions\b")),
+    ("sudo", re.compile(r"(?:^|[;&|]\s*)sudo\s")),
 )
-
-
-def _pattern_label(pattern: str) -> str:
-    """Derive a stable human-readable label from a token regex's literal head.
-
-    Labels are derived rather than hand-listed so redaction._TOKEN_PATTERNS can
-    grow without this module drifting out of sync.
-    """
-    head = re.match(r"[\w./-]+", pattern.replace("\\.", "."))
-    literal = head.group(0) if head else pattern[:12]
-    return f"secret-{literal.rstrip('-_').lower()}" if literal else "secret-token"
 
 
 _BEARER_GUARD_RE = re.compile(r"(?i:bearer|basic)")
@@ -121,7 +120,7 @@ _PATTERN_GUARDS: dict[str, Callable[[str], bool]] = {
 }
 
 _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str], Callable[[str], bool] | None], ...] = tuple(
-    (_pattern_label(p), re.compile(p), _PATTERN_GUARDS.get(p)) for p in _TOKEN_PATTERNS
+    (security_checks.secret_label(p), re.compile(p), _PATTERN_GUARDS.get(p)) for p in _TOKEN_PATTERNS
 )
 
 
@@ -137,10 +136,14 @@ class IngestStats:
     files_seen: int = 0
     files_skipped: int = 0
     files_parsed: int = 0
+    files_resumed: int = 0
     files_pruned: int = 0
     sessions_upserted: int = 0
     findings_added: int = 0
     malformed_lines: int = 0
+    duplicates: int = 0  # requests already counted from another transcript
+    no_request_id: int = 0  # assistant lines with neither requestId nor message id
+    priced_from_log: int = 0  # requests that carried their own costUSD
     warnings: list[str] = field(default_factory=list)
 
 
@@ -176,7 +179,7 @@ def _iter_session_files(root: Path) -> Iterable[Path]:
 
 @dataclass
 class _SessionRollup:
-    """Mutable accumulator for one transcript's aggregates."""
+    """Mutable accumulator for one transcript (or one appended chunk of it)."""
 
     session_id: str = ""
     project_path: str = ""
@@ -185,28 +188,266 @@ class _SessionRollup:
     started_at: str = ""
     ended_at: str = ""
     turns: int = 0
-    model_usage: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Per-request usage in file order: {key: {"global", "model", "day", "usage"}}.
+    # Folded into day/model totals by the parent after global dedup.
+    requests: dict[str, dict] = field(default_factory=dict)
     tool_counts: dict[str, int] = field(default_factory=dict)
+    no_request_id: int = 0
+    priced_from_log: int = 0
+    byte_offset: int = 0  # end of the last complete line consumed
+    line_count: int = 0
+    # Filled by the parent from ``requests``:
+    model_usage: dict[str, dict[str, int]] = field(default_factory=dict)
+    day_usage: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
 
 
-_USAGE_KEYS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "calls")
+_USAGE_KEYS = (
+    "input",
+    "output",
+    "cache_write_5m",
+    "cache_write_1h",
+    "cache_read",
+    "calls",
+    "web_search_calls",
+    "web_fetch_calls",
+    "premium_input",
+    "premium_output",
+    "recorded_cost_usd",
+)
 
 
-def _add_usage(rollup: _SessionRollup, model: str, usage: dict) -> None:
-    """Fold one deduped assistant message's usage into the per-model totals."""
-    bucket = rollup.model_usage.setdefault(model, dict.fromkeys(_USAGE_KEYS, 0))
+def _usage_bucket(usage: dict, recorded_cost: float) -> dict:
+    """One API message's usage in the store's vocabulary."""
     cache_detail = usage.get("cache_creation") or {}
     write_1h = int(cache_detail.get("ephemeral_1h_input_tokens") or 0)
     write_5m = int(cache_detail.get("ephemeral_5m_input_tokens") or 0)
     if not write_1h and not write_5m:
         # Older CLI versions report only the aggregate; treat it as 5m writes.
         write_5m = int(usage.get("cache_creation_input_tokens") or 0)
-    bucket["input"] += int(usage.get("input_tokens") or 0)
-    bucket["output"] += int(usage.get("output_tokens") or 0)
-    bucket["cache_write_5m"] += write_5m
-    bucket["cache_write_1h"] += write_1h
-    bucket["cache_read"] += int(usage.get("cache_read_input_tokens") or 0)
-    bucket["calls"] += 1
+    server = usage.get("server_tool_use") or {}
+    server = server if isinstance(server, dict) else {}
+    input_tokens = int(usage.get("input_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or 0)
+    cache_read = int(usage.get("cache_read_input_tokens") or 0)
+    # The prompt this request carried; past the threshold Anthropic bills the
+    # request's own input and output at the long-context premium.
+    prompt_tokens = input_tokens + cache_read + write_5m + write_1h
+    premium = prompt_tokens > LONG_CONTEXT_THRESHOLD
+    return {
+        "input": input_tokens,
+        "output": output_tokens,
+        "cache_write_5m": write_5m,
+        "cache_write_1h": write_1h,
+        "cache_read": cache_read,
+        "calls": 1,
+        "web_search_calls": int(server.get("web_search_requests") or 0),
+        "web_fetch_calls": int(server.get("web_fetch_requests") or 0),
+        "premium_input": input_tokens if premium else 0,
+        "premium_output": output_tokens if premium else 0,
+        "recorded_cost_usd": float(recorded_cost or 0.0),
+    }
+
+
+def _merge_request(prior: dict | None, fresh: dict) -> dict:
+    """Last line wins, except output tokens, where the largest count is the final one."""
+    if prior is None:
+        return dict(fresh)
+    merged = dict(fresh)
+    merged["output"] = max(int(prior.get("output", 0)), int(fresh.get("output", 0)))
+    return merged
+
+
+def _add_bucket(target: dict[str, int], usage: dict, sign: int = 1) -> None:
+    for key in _USAGE_KEYS:
+        target[key] = target.get(key, 0) + sign * usage.get(key, 0)
+
+
+def fold_requests(rollup: _SessionRollup, *, skip_keys: set[str] | None = None) -> None:
+    """Fill ``model_usage``/``day_usage`` from ``requests``, skipping duplicate keys."""
+    skip_keys = skip_keys or set()
+    rollup.model_usage = {}
+    rollup.day_usage = {}
+    for key, entry in rollup.requests.items():
+        if entry["global"] and key in skip_keys:
+            continue
+        model, day, usage = entry["model"], entry["day"], entry["usage"]
+        _add_bucket(rollup.model_usage.setdefault(model, {}), usage)
+        _add_bucket(rollup.day_usage.setdefault(day, {}).setdefault(model, {}), usage)
+
+
+# Contexts a transcript match can sit in. The verdict engine reads these; a
+# heredoc body is text an agent wrote into a file, a command is text it ran.
+CONTEXT_COMMAND = "command"
+CONTEXT_HEREDOC = "heredoc"
+CONTEXT_INLINE_SCRIPT = "inline-script"
+CONTEXT_WRITE_INPUT = "write-input"
+CONTEXT_TOOL_RESULT = "tool-result"
+CONTEXT_PROSE = "prose"
+CONTEXT_USER_PROMPT = "user-prompt"
+CONTEXT_TOOL_INPUT = "tool-input"  # the argument of a tool other than Bash (a Grep pattern, a fetch URL)
+
+_WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+_HEREDOC_OPEN = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][\w-]*)\1")
+_INLINE_SCRIPT = re.compile(r"(?:python3?|node|ruby|perl|bash|sh)\s+-[ce]\s+(['\"])(.*?)\1", re.S)
+_SNIPPET_RADIUS = 56
+_SNIPPET_LIMIT = 120
+
+
+def split_heredocs(command: str) -> tuple[str, list[str]]:
+    """``(the command with its heredoc bodies removed, the bodies)``.
+
+    A body starts on the line after ``<<TAG`` and ends at the line that is
+    exactly ``TAG``. Text inside is what the agent wrote into a file or fed to
+    an interpreter, not what the shell ran — the distinction every verdict
+    over a risky-looking command rests on.
+    """
+    lines = command.split("\n")
+    kept: list[str] = []
+    bodies: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        kept.append(line)
+        index += 1
+        for match in _HEREDOC_OPEN.finditer(line):
+            tag = match.group(2)
+            body: list[str] = []
+            while index < len(lines) and lines[index].strip() != tag:
+                body.append(lines[index])
+                index += 1
+            index += 1  # the closing tag line
+            bodies.append("\n".join(body))
+    return "\n".join(kept), bodies
+
+
+def _mask_snippet(text: str, start: int, end: int, label: str) -> str:
+    """≤120 redacted characters around ``text[start:end]`` with that span masked."""
+    from yeaboi.redaction import redact
+
+    before = text[max(0, start - _SNIPPET_RADIUS) : start]
+    after = text[end : end + _SNIPPET_RADIUS]
+    joined = " ".join(f"{before}[REDACTED {label}]{after}".split())
+    return redact(joined)[:_SNIPPET_LIMIT]
+
+
+_HEREDOC_TARGET = re.compile(r"(?:>>?|\btee\s+(?:-a\s+)?)\s*[\"']?([^\s\"'<>|;&]+)")
+
+
+def heredoc_bodies(command: str) -> list[tuple[str, str]]:
+    """``(body, target file)`` per heredoc, in order; the target is "" when the body feeds a program.
+
+    Walks the same way :func:`split_heredocs` does, so an opener inside a body
+    is body text, not a second heredoc.
+    """
+    lines = command.split("\n")
+    out: list[tuple[str, str]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        for match in _HEREDOC_OPEN.finditer(line):
+            tag = match.group(2)
+            body: list[str] = []
+            while index < len(lines) and lines[index].strip() != tag:
+                body.append(lines[index])
+                index += 1
+            index += 1
+            redirect = _HEREDOC_TARGET.search(line)
+            out.append(("\n".join(body), redirect.group(1) if redirect else ""))
+    return out
+
+
+def _command_context(command: str, regex: re.Pattern[str], label: str) -> tuple[str, str, str] | None:
+    """``(context, snippet, target)`` for the first place ``regex`` matches in a Bash command."""
+    stripped, _bodies = split_heredocs(command)
+    match = regex.search(stripped)
+    if match:
+        inline = _INLINE_SCRIPT.search(stripped)
+        if inline and inline.start(2) <= match.start() < inline.end(2):
+            return CONTEXT_INLINE_SCRIPT, _mask_snippet(stripped, match.start(), match.end(), label), ""
+        return CONTEXT_COMMAND, _mask_snippet(stripped, match.start(), match.end(), label), ""
+    for body, target in heredoc_bodies(command):
+        match = regex.search(body)
+        if match:
+            return CONTEXT_HEREDOC, _mask_snippet(body, match.start(), match.end(), label), target
+    return None
+
+
+def _result_target(record: dict) -> str:
+    """The file a tool_result came from, when the transcript says so."""
+    result = record.get("toolUseResult")
+    if isinstance(result, dict):
+        if isinstance(result.get("filePath"), str):
+            return result["filePath"]
+        file_info = result.get("file")
+        if isinstance(file_info, dict) and isinstance(file_info.get("filePath"), str):
+            return file_info["filePath"]
+    return ""
+
+
+def _block_strings(block: dict) -> list[tuple[str, str, str]]:
+    """``(context, target, text)`` candidates a content block can carry a match in."""
+    kind = block.get("type")
+    if kind == "text":
+        return [(CONTEXT_PROSE, "", str(block.get("text") or ""))]
+    if kind == "tool_result":
+        content = block.get("content")
+        if isinstance(content, list):
+            text = "\n".join(str(c.get("text") or "") for c in content if isinstance(c, dict))
+        else:
+            text = str(content or "")
+        return [(CONTEXT_TOOL_RESULT, "", text)]
+    if kind == "tool_use":
+        name = str(block.get("name") or "")
+        payload = block.get("input") if isinstance(block.get("input"), dict) else {}
+        if name in _WRITE_TOOLS:
+            target = str(payload.get("file_path") or payload.get("notebook_path") or "")
+            text = "\n".join(str(v) for k, v in payload.items() if k not in ("file_path", "notebook_path"))
+            return [(CONTEXT_WRITE_INPUT, target, text)]
+        if isinstance(payload.get("command"), str):
+            return [(CONTEXT_COMMAND, "", payload["command"])]
+        return [(CONTEXT_TOOL_INPUT, "", json.dumps(payload, ensure_ascii=False))]
+    return []
+
+
+def _locate_secret(record: dict | None, regex: re.Pattern[str], label: str) -> tuple[str, str, str]:
+    """``(context, target, snippet)`` for a secret regex that hit this line."""
+    if record is None:
+        return CONTEXT_PROSE, "", ""
+    message = record.get("message")
+    message = message if isinstance(message, dict) else {}
+    kind = record.get("type")
+    content = message.get("content")
+    if isinstance(content, str):
+        context = CONTEXT_USER_PROMPT if kind == "user" else CONTEXT_PROSE
+        match = regex.search(content)
+        return context, "", _mask_snippet(content, match.start(), match.end(), label) if match else ""
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            for context, target, text in _block_strings(block):
+                if block.get("type") == "tool_use" and context == CONTEXT_COMMAND:
+                    located = _command_context(text, regex, label)
+                    if located:
+                        return located[0], located[2], located[1]
+                    continue
+                match = regex.search(text)
+                if match:
+                    if context == CONTEXT_TOOL_RESULT:
+                        target = _result_target(record)
+                    if context == CONTEXT_PROSE and kind == "user":
+                        context = CONTEXT_USER_PROMPT
+                    return context, target, _mask_snippet(text, match.start(), match.end(), label)
+    # Claude Code keeps a tool's full output on the record itself, beside the
+    # (often truncated) content block — a Read's file text lives here.
+    result = record.get("toolUseResult")
+    if result is not None:
+        text = json.dumps(result, ensure_ascii=False)
+        match = regex.search(text)
+        if match:
+            return CONTEXT_TOOL_RESULT, _result_target(record), _mask_snippet(text, match.start(), match.end(), label)
+    return CONTEXT_PROSE, "", ""
 
 
 def _scan_security(
@@ -214,19 +455,43 @@ def _scan_security(
     line_no: int,
     record: dict | None,
     *,
-    on_finding: Callable[[str, str, str, int, str], None],
+    on_finding: Callable[[dict], None],
     session_id: str,
 ) -> None:
-    """Emit security findings for one raw line. Pattern + location only."""
+    """Emit security findings for one raw line.
+
+    Each finding is a plain dict: pattern, severity, line, session, where the
+    match sat (context + target) and a redacted snippet with the matched span
+    masked. The span itself is classified for a severity and dropped.
+    """
+    timestamp = str(record.get("timestamp") or "") if record else ""
+    seen: set[str] = set()
     for label, regex, guard in _SECRET_PATTERNS:
         if guard is not None and not guard(line):
             continue
-        if regex.search(line):
-            on_finding("secret", "critical", label, line_no, session_id)
+        match = regex.search(line)
+        if not match or label in seen:
+            continue
+        seen.add(label)
+        context, target, snippet = _locate_secret(record, regex, label)
+        on_finding(
+            {
+                "category": "secret",
+                "severity": security_checks.classify_secret(label, match.group(0)),
+                "pattern": label,
+                "line_no": line_no,
+                "session_id": session_id,
+                "context": context,
+                "target": target,
+                "at": timestamp,
+                "tool": "",
+                "snippet": snippet,
+            }
+        )
     if record is None:
         return
     message = record.get("message") or {}
-    content = message.get("content")
+    content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
         return
     for block in content:
@@ -235,47 +500,89 @@ def _scan_security(
         command = (block.get("input") or {}).get("command")
         if not isinstance(command, str):
             continue
-        for label, severity, regex in _RISKY_BASH_PATTERNS:
-            if regex.search(command):
-                on_finding("risky_tool", severity, label, line_no, session_id)
+        for label, regex in _RISKY_BASH_PATTERNS:
+            located = _command_context(command, regex, label)
+            if located is None:
+                continue
+            severity = security_checks.RISKY_TOOL_SEVERITY.get(label, "medium")
+            on_finding(
+                {
+                    "category": "risky_tool",
+                    "severity": severity,
+                    "pattern": label,
+                    "line_no": line_no,
+                    "session_id": session_id,
+                    "context": located[0],
+                    "target": located[2],
+                    "at": timestamp,
+                    "tool": str(block.get("name") or "Bash"),
+                    "snippet": located[1],
+                }
+            )
+
+
+def _day_of(timestamp: str, fallback: str) -> str:
+    """The UTC calendar day of an ISO timestamp, or ``fallback`` when it has none."""
+    return timestamp[:10] if len(timestamp) >= 10 and timestamp[4] == "-" and timestamp[7] == "-" else fallback
 
 
 def _parse_file(
     path: Path,
     *,
     stats: IngestStats,
-    on_finding: Callable[[str, str, str, int, str], None],
+    on_finding: Callable[[dict], None],
+    scan_security: bool = True,
+    start_offset: int = 0,
+    start_line: int = 0,
 ) -> _SessionRollup:
-    """Stream one transcript into a rollup; dedupe usage by requestId."""
-    rollup = _SessionRollup(session_id=path.stem)
-    counted_requests: set[str] = set()
+    """Stream one transcript (from ``start_offset``) into a rollup.
+
+    Lines are read as bytes so the byte offset of the last *complete* line is
+    known; a trailing partial line (still being written) is left for the next
+    run rather than counted as malformed. Usage is kept per request key with
+    the last line winning; tool_use blocks are deduped by block id.
+    """
+    rollup = _SessionRollup(session_id=path.stem, byte_offset=start_offset, line_count=start_line)
     counted_tool_blocks: set[str] = set()
-    with path.open("r", encoding="utf-8", errors="replace") as handle:
-        for line_no, line in enumerate(handle, start=1):
-            line = line.strip()
+    last_day = ""
+    line_no = start_line
+    with path.open("rb") as handle:
+        if start_offset:
+            handle.seek(start_offset)
+        for raw in handle:
+            if not raw.endswith(b"\n"):
+                break  # a partial trailing line: consumed next run
+            line_no += 1
+            rollup.byte_offset += len(raw)
+            rollup.line_count = line_no
+            line = raw.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
             try:
                 record = json.loads(line)
             except ValueError:
                 stats.malformed_lines += 1
-                _scan_security(line, line_no, None, on_finding=on_finding, session_id=rollup.session_id)
+                if scan_security:
+                    _scan_security(line, line_no, None, on_finding=on_finding, session_id=rollup.session_id)
                 continue
             if not isinstance(record, dict):
                 stats.malformed_lines += 1
                 continue
             if sid := record.get("sessionId"):
                 rollup.session_id = str(sid)
-            _scan_security(line, line_no, record, on_finding=on_finding, session_id=rollup.session_id)
+            if scan_security:
+                _scan_security(line, line_no, record, on_finding=on_finding, session_id=rollup.session_id)
             if cwd := record.get("cwd"):
                 rollup.project_path = str(cwd)
             if branch := record.get("gitBranch"):
                 rollup.git_branch = str(branch)
             if version := record.get("version"):
                 rollup.cli_version = str(version)
-            if timestamp := record.get("timestamp"):
-                rollup.started_at = rollup.started_at or str(timestamp)
-                rollup.ended_at = str(timestamp)
+            timestamp = str(record.get("timestamp") or "")
+            if timestamp:
+                rollup.started_at = rollup.started_at or timestamp
+                rollup.ended_at = timestamp
+                last_day = _day_of(timestamp, last_day)
             kind = record.get("type")
             # isinstance rather than `or {}`: these fields are another tool's
             # format, and a record carrying `"origin": "human"` (a string, not
@@ -290,24 +597,41 @@ def _parse_file(
                 if origin == "human" or (origin is None and isinstance(message.get("content"), str)):
                     rollup.turns += 1
             elif kind == "assistant":
-                # One API response spans several lines sharing a requestId,
-                # each repeating identical usage — count it exactly once.
-                request_id = str(record.get("requestId") or record.get("uuid") or line_no)
+                request_id = str(record.get("requestId") or "")
+                message_id = str(message.get("id") or "")
                 usage = message.get("usage")
-                if isinstance(usage, dict) and request_id not in counted_requests:
-                    counted_requests.add(request_id)
-                    _add_usage(rollup, str(message.get("model") or "unknown"), usage)
+                model = str(message.get("model") or "unknown")
+                billable = model not in _NON_BILLABLE_MODELS and not record.get("isApiErrorMessage")
+                if request_id and message_id:
+                    key, is_global = f"{message_id}:{request_id}", True
+                else:
+                    key, is_global = request_id or message_id or str(record.get("uuid") or line_no), False
+                    if not request_id and not message_id:
+                        rollup.no_request_id += 1
+                if isinstance(usage, dict) and billable:
+                    recorded = record.get("costUSD")
+                    recorded = float(recorded) if isinstance(recorded, (int, float)) else 0.0
+                    if recorded:
+                        rollup.priced_from_log += 1
+                    prior = rollup.requests.get(key)
+                    rollup.requests[key] = {
+                        "global": is_global,
+                        "model": model,
+                        "day": _day_of(timestamp, last_day),
+                        "usage": _merge_request(prior["usage"] if prior else None, _usage_bucket(usage, recorded)),
+                    }
                 content = message.get("content")
                 if isinstance(content, list):
                     for block in content:
                         if not isinstance(block, dict) or block.get("type") != "tool_use":
                             continue
-                        block_id = str(block.get("id") or f"{request_id}:{line_no}")
+                        block_id = str(block.get("id") or f"{key}:{line_no}")
                         if block_id in counted_tool_blocks:
                             continue
                         counted_tool_blocks.add(block_id)
                         name = str(block.get("name") or "unknown")
                         rollup.tool_counts[name] = rollup.tool_counts.get(name, 0) + 1
+    fold_requests(rollup)
     return rollup
 
 
@@ -330,8 +654,14 @@ def refresh(
     *,
     roots: tuple[tuple[str, Path], ...] | None = None,
     on_progress: Callable[[object], None] | None = None,
+    scan_security: bool = False,
 ) -> IngestStats:
     """Ingest new/changed session transcripts into the store. Never raises.
+
+    ``scan_security`` runs the secret/risky-command regexes over the lines it
+    parses; it is what the security pass asks for and roughly three quarters
+    of a cold parse's time, so the cost pages leave it off. A file parsed
+    without the scan keeps whatever findings it already had.
 
     ``on_progress`` receives ``analysis_component`` lifecycle dicts (see
     yeaboi.analysis.progress) carrying an aggregate files-scanned meter —
@@ -347,8 +677,9 @@ def refresh(
     compares the first line's hash, which is the only thing that catches a file
     *replaced* at the same size with a preserved mtime (``cp -p`` of a backup,
     a restore, a rewrite): cheap, since it reads one line and only for files we
-    were about to skip anyway. Anything else is fully reparsed and its rollup
-    and findings replaced.
+    were about to skip anyway. A file that grew with its first line intact is
+    parsed from the stored byte offset and merged; anything else is fully
+    reparsed and its rollup and findings replaced.
     """
     stats = IngestStats()
     scan_failed = False
@@ -387,12 +718,13 @@ def refresh(
     if on_progress is not None and total:
         _emit_scan(0)
 
-    # ── Pass 1: disposition every file via the cursor (cheap stat + head
-    # hash). Skips count toward the meter immediately; changed files queue for
-    # parsing WITH their pre-parse stat, so the cursor later records the
-    # size/mtime the parse saw — an append landing mid-parse makes the next
-    # run reparse rather than being silently absorbed.
-    to_parse: list[tuple[str, Path, os.stat_result]] = []
+    # ── Pass 1: disposition every file via the cursor (cheap stat, and a
+    # head hash only when size and mtime already match or the file grew).
+    # Changed files queue for parsing WITH their pre-parse stat, so the cursor
+    # later records the size/mtime the parse saw — an append landing mid-parse
+    # makes the next run reparse rather than being silently absorbed.
+    # Each queue entry: (source, path, stat, first_line_sha, resume cursor|None).
+    to_parse: list[tuple[str, Path, os.stat_result, str, dict | None]] = []
     handled = 0
     for source, path in pending:
         stats.files_seen += 1
@@ -402,16 +734,28 @@ def refresh(
             handled += 1
             continue
         cursor = store.get_cursor(str(path))
+        sha = ""
+        resume: dict | None = None
         skip = False
-        if cursor and cursor["size"] == file_stat.st_size and cursor["mtime"] == file_stat.st_mtime:
+        # A security pass cannot trust a cursor written by a cost-only parse:
+        # those lines were never scanned. Full reparse, findings replaced.
+        needs_scan = scan_security and cursor is not None and not cursor.get("security_scanned")
+        if needs_scan:
+            pass
+        elif cursor and cursor["size"] == file_stat.st_size and cursor["mtime"] == file_stat.st_mtime:
             # Same size AND same mtime — the only remaining way this file
             # differs is a same-size replacement, which the head hash
             # catches. An empty stored hash predates the check; treat it as
             # a match rather than reparsing every file once.
             stored_sha = cursor["first_line_sha"]
-            skip = not stored_sha or stored_sha == _first_line_sha(path)
+            sha = _first_line_sha(path) if stored_sha else stored_sha
+            skip = not stored_sha or stored_sha == sha
+        elif cursor and cursor.get("byte_offset") and file_stat.st_size > cursor["size"]:
+            sha = _first_line_sha(path)
+            if cursor["first_line_sha"] and cursor["first_line_sha"] == sha:
+                resume = cursor
         if not skip:
-            to_parse.append((source, path, file_stat))
+            to_parse.append((source, path, file_stat, sha, resume))
             continue
         stats.files_skipped += 1
         handled += 1
@@ -422,9 +766,8 @@ def refresh(
     # repay spawn cost, inline otherwise (the warm path, 0–2 files, never pays
     # pool spin-up). Processes, not threads: the cold cost is json.loads +
     # regex matching and neither releases the GIL. Each file is fully
-    # independent (the requestId dedup is deliberately whole-file), and the
-    # parent keeps the ONLY SQLite connection — workers return plain data and
-    # every write happens here.
+    # independent, and the parent keeps the ONLY SQLite connection — workers
+    # return plain data and every write happens here.
     #
     # Writes are batched into explicit transactions: the store's connection is
     # autocommit, so per-statement commits made a cold sweep pay ~1,500
@@ -438,7 +781,7 @@ def refresh(
     batch = ExitStack()
     in_batch = 0
 
-    def _apply(source: str, path: Path, file_stat: os.stat_result, result: tuple) -> None:
+    def _apply(source: str, path: Path, file_stat: os.stat_result, sha: str, resume: dict | None, result) -> None:
         nonlocal in_batch, handled
         handled += 1
         if in_batch == 0:
@@ -457,13 +800,22 @@ def refresh(
         else:
             _tag, rollup, findings, malformed = result
             stats.malformed_lines += malformed
-            _store_parsed(store, source, path, rollup, findings, stats)
+            _store_parsed(store, source, path, rollup, findings, stats, scan_security=scan_security, resume=resume)
+            tail_key = next(reversed(rollup.requests), "") if rollup.requests else ""
+            tail = rollup.requests.get(tail_key) if tail_key else None
+            if tail and "cumulative" in tail:
+                tail = {**tail, "usage": tail["cumulative"]}
+                tail.pop("cumulative", None)
             store.set_cursor(
                 str(path),
                 source=source,
                 size=file_stat.st_size,
                 mtime=file_stat.st_mtime,
-                first_line_sha=_first_line_sha(path),
+                first_line_sha=sha or _first_line_sha(path),
+                byte_offset=rollup.byte_offset,
+                line_count=rollup.line_count,
+                tail_request={"key": tail_key, **tail} if tail else (resume or {}).get("tail_request") or None,
+                security_scanned=scan_security and (not resume or bool(resume.get("security_scanned"))),
             )
         if in_batch >= _INGEST_BATCH_SIZE:
             batch.close()  # COMMIT
@@ -472,6 +824,11 @@ def refresh(
             # Every parsed file emits — this is the live meter on a cold run;
             # the consumer folds events per frame.
             _emit_scan(handled)
+
+    def _job(path: Path, resume: dict | None) -> tuple[str, bool, int, int]:
+        offset = int(resume["byte_offset"]) if resume else 0
+        line = int(resume["line_count"]) if resume else 0
+        return (str(path), scan_security, offset, line)
 
     try:
         use_pool = len(to_parse) >= _PARALLEL_THRESHOLD
@@ -494,31 +851,28 @@ def refresh(
         if use_pool:
             with pool:
                 futures = [
-                    (source, path, file_stat, pool.submit(_parse_worker, str(path)))
-                    for source, path, file_stat in to_parse
+                    (source, path, file_stat, sha, resume, pool.submit(_parse_worker, *_job(path, resume)))
+                    for source, path, file_stat, sha, resume in to_parse
                 ]
                 # Drain in SUBMISSION order, not completion order: warnings are
-                # persisted, exported and rendered, and the Go twin
-                # (collector.go) applies results in submission order — draining
-                # as_completed would make the warning order nondeterministic
-                # run-to-run and diverge from the sidecar on any corpus with
-                # two unparseable files. Workers still run in parallel; only
+                # persisted, exported and rendered, so their order must be
+                # deterministic run-to-run. Workers still run in parallel; only
                 # the apply step is ordered.
-                for source, path, file_stat, future in futures:
+                for source, path, file_stat, sha, resume, future in futures:
                     try:
                         result = future.result()
                     except Exception as exc:  # worker died (BrokenProcessPool, pickling)
                         result = ("error", type(exc).__name__, str(exc))
-                    _apply(source, path, file_stat, result)
+                    _apply(source, path, file_stat, sha, resume, result)
         else:
-            for source, path, file_stat in to_parse:
-                _apply(source, path, file_stat, _parse_worker(str(path)))
+            for source, path, file_stat, sha, resume in to_parse:
+                _apply(source, path, file_stat, sha, resume, _parse_worker(*_job(path, resume)))
     except sqlite3.OperationalError as exc:
-        # sessions.db is shared: another writer (a scheduled headless standup,
-        # the TUI saving a session) can hold the write lock past the 5s busy
-        # timeout, and BEGIN/COMMIT then raises. refresh() promises to never
-        # raise — keep what committed, warn, and let the next run reparse the
-        # rest (uncommitted files were never cursored).
+        # sessions.db is shared: another writer (a scheduled ceremony, the TUI
+        # saving a session) can hold the write lock past the 5s busy timeout,
+        # and BEGIN/COMMIT then raises. refresh() promises to never raise —
+        # keep what committed, warn, and let the next run reparse the rest
+        # (uncommitted files were never cursored).
         logger.warning("agentwatch ingest aborted mid-scan: %s", exc)
         stats.warnings.append("scan interrupted: sessions.db was busy — partial results, rerun to complete")
     finally:
@@ -545,23 +899,26 @@ def refresh(
             stats.files_pruned += 1
 
     logger.info(
-        "agentwatch refresh: %d seen, %d parsed, %d skipped, %d pruned, %d sessions, %d findings, %d malformed",
+        "agentwatch refresh: %d seen, %d parsed (%d resumed), %d skipped, %d pruned, %d sessions, "
+        "%d findings, %d malformed, %d duplicate request(s)",
         stats.files_seen,
         stats.files_parsed,
+        stats.files_resumed,
         stats.files_skipped,
         stats.files_pruned,
         stats.sessions_upserted,
         stats.findings_added,
         stats.malformed_lines,
+        stats.duplicates,
     )
     return stats
 
 
-def _parse_worker(path_str: str) -> tuple:
+def _parse_worker(path_str: str, scan_security: bool = True, start_offset: int = 0, start_line: int = 0) -> tuple:
     """Parse one transcript into plain builtins — the process-pool work unit.
 
     Runs in a worker process (or inline below the pool threshold), so the
-    argument and the return value must both survive pickling:
+    arguments and the return value must both survive pickling:
     ``("ok", rollup, findings, malformed_line_count)`` or
     ``("error", exception_class_name, detail)``. Exceptions become the marker
     INSIDE the worker so the parent keeps its class-name-only warning rule —
@@ -570,16 +927,42 @@ def _parse_worker(path_str: str) -> tuple:
     exported, rendered).
     """
     local = IngestStats()
-    findings: list[tuple[str, str, str, int, str]] = []
-
-    def on_finding(category: str, severity: str, pattern: str, line_no: int, session_id: str) -> None:
-        findings.append((category, severity, pattern, line_no, session_id))
+    findings: list[dict] = []
 
     try:
-        rollup = _parse_file(Path(path_str), stats=local, on_finding=on_finding)
+        rollup = _parse_file(
+            Path(path_str),
+            stats=local,
+            on_finding=findings.append,
+            scan_security=scan_security,
+            start_offset=start_offset,
+            start_line=start_line,
+        )
     except Exception as exc:
         return ("error", type(exc).__name__, str(exc))
     return ("ok", rollup, findings, local.malformed_lines)
+
+
+def _subtract_tail(rollup: _SessionRollup, tail: dict) -> None:
+    """On resume, replace the tail request's earlier contribution with the final one.
+
+    The message that was still streaming at the last offset has already been
+    counted from its placeholder line; when its final line arrives in this
+    chunk, the difference (never less than zero per field) is what is new.
+    """
+    key = str(tail.get("key") or "")
+    if not key or key not in rollup.requests:
+        return
+    entry = rollup.requests[key]
+    merged = _merge_request(tail.get("usage") or {}, entry["usage"])
+    prior_usage = tail.get("usage") or {}
+    delta = {k: max(0, merged.get(k, 0) - int(prior_usage.get(k, 0))) for k in _USAGE_KEYS}
+    delta["recorded_cost_usd"] = max(
+        0.0, float(merged.get("recorded_cost_usd", 0.0)) - float(prior_usage.get("recorded_cost_usd", 0.0))
+    )
+    entry["usage"] = delta
+    entry["cumulative"] = merged  # what the cursor must remember, not the delta
+    entry["global"] = False  # already claimed by this file's earlier parse
 
 
 def _store_parsed(
@@ -587,37 +970,84 @@ def _store_parsed(
     source: str,
     path: Path,
     rollup: _SessionRollup,
-    findings: list[tuple[str, str, str, int, str]],
+    findings: list[dict],
     stats: IngestStats,
+    *,
+    scan_security: bool = True,
+    resume: dict | None = None,
 ) -> None:
-    """Write one parsed transcript's rollup + findings (replacing priors)."""
+    """Write one parsed transcript's rollup + findings.
+
+    A full parse replaces the file's rows, findings included — the old rows
+    pointed at lines that may no longer exist. A resumed chunk is added onto
+    them and keeps the earlier findings. Only a scanning parse adds findings;
+    the cursor's ``security_scanned`` flag tells the next security pass
+    whether it can trust what is stored.
+    """
     stats.files_parsed += 1
-    if not rollup.model_usage and not rollup.turns and not rollup.tool_counts:
+    source_path = str(path)
+    if resume:
+        stats.files_resumed += 1
+        _subtract_tail(rollup, resume.get("tail_request") or {})
+    else:
+        store.release_request_keys(source_path)
+    stats.no_request_id += rollup.no_request_id
+    stats.priced_from_log += rollup.priced_from_log
+    global_keys = [k for k, e in rollup.requests.items() if e["global"]]
+    duplicates = store.claim_request_keys(source_path, global_keys) if global_keys else set()
+    stats.duplicates += len(duplicates)
+    fold_requests(rollup, skip_keys=duplicates)
+
+    has_content = bool(rollup.model_usage or rollup.turns or rollup.tool_counts)
+    if not has_content and not resume:
         return  # not a session transcript (some other tool's JSONL)
-    if not rollup.ended_at:
+    if not rollup.ended_at and not resume:
         rollup.ended_at = rollup.started_at or datetime.now(timezone.utc).isoformat()
-    store.upsert_session(
-        rollup.session_id,
-        source=source,
-        source_path=str(path),
-        project_path=rollup.project_path,
-        git_branch=rollup.git_branch,
-        cli_version=rollup.cli_version,
-        started_at=rollup.started_at,
-        ended_at=rollup.ended_at,
-        turns=rollup.turns,
-        model_usage=rollup.model_usage,
-        tool_counts=rollup.tool_counts,
-    )
-    stats.sessions_upserted += 1
-    store.delete_findings_for_path(str(path))
-    for category, severity, pattern, line_no, session_id in findings:
-        store.add_finding(
-            category=category,
-            severity=severity,
-            pattern=pattern,
-            source_path=str(path),
-            line_no=line_no,
-            session_id=session_id,
+
+    if resume:
+        prior = store.get_session(source_path)
+        if prior is None:
+            resume = None  # nothing to merge onto: store the chunk as the row
+        else:
+            model_usage = dict(prior["model_usage"])
+            for model, usage in rollup.model_usage.items():
+                _add_bucket(model_usage.setdefault(model, {}), usage)
+            tool_counts = dict(prior["tool_counts"])
+            for name, count in rollup.tool_counts.items():
+                tool_counts[name] = tool_counts.get(name, 0) + count
+            store.upsert_session(
+                rollup.session_id if rollup.session_id != path.stem else prior["session_id"] or rollup.session_id,
+                source=source,
+                source_path=source_path,
+                project_path=rollup.project_path or prior["project_path"],
+                git_branch=rollup.git_branch or prior["git_branch"],
+                cli_version=rollup.cli_version or prior["cli_version"],
+                started_at=prior["started_at"] or rollup.started_at,
+                ended_at=rollup.ended_at or prior["ended_at"],
+                turns=int(prior["turns"]) + rollup.turns,
+                model_usage=model_usage,
+                tool_counts=tool_counts,
+            )
+            store.merge_session_days(source_path, rollup.day_usage)
+    if not resume:
+        store.upsert_session(
+            rollup.session_id,
+            source=source,
+            source_path=source_path,
+            project_path=rollup.project_path,
+            git_branch=rollup.git_branch,
+            cli_version=rollup.cli_version,
+            started_at=rollup.started_at,
+            ended_at=rollup.ended_at,
+            turns=rollup.turns,
+            model_usage=rollup.model_usage,
+            tool_counts=rollup.tool_counts,
         )
-        stats.findings_added += 1
+        store.replace_session_days(source_path, rollup.day_usage)
+    stats.sessions_upserted += 1
+    if not resume:
+        store.delete_findings_for_path(source_path)
+    if scan_security:
+        for finding in findings:
+            store.add_finding(source_path=source_path, **finding)
+            stats.findings_added += 1

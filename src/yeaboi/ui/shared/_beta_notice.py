@@ -34,7 +34,6 @@ from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import (
     AGENT_ADVISOR_THEME,
     AGENT_SECURITY_THEME,
-    AGENT_STANDUP_THEME,
     AGENT_USAGE_THEME,
     PAD,
     PERFORMANCE_THEME,
@@ -43,7 +42,6 @@ from yeaboi.ui.shared._components import (
     Theme,
     agent_advisor_title,
     agent_security_title,
-    agent_standup_title,
     agent_usage_title,
     build_action_buttons,
     build_badge,
@@ -72,7 +70,6 @@ _BETA_MODES: dict[str, _BetaMode] = {
     "ship": _BetaMode(ship_title, SHIP_THEME),
     "agent-usage": _BetaMode(agent_usage_title, AGENT_USAGE_THEME),
     "agent-advisor": _BetaMode(agent_advisor_title, AGENT_ADVISOR_THEME),
-    "agent-standup": _BetaMode(agent_standup_title, AGENT_STANDUP_THEME),
     "agent-security": _BetaMode(agent_security_title, AGENT_SECURITY_THEME),
     "weekly-review": _BetaMode(solo_review_title, SOLO_THEME),
 }

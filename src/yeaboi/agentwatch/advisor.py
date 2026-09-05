@@ -1,6 +1,6 @@
 """Agent Advisor engine — recoverable spend + cache health over local sessions.
 
-The fourth agentwatch pipeline: where usage answers "what did the agents
+The advisor pipeline: where usage answers "what did the agents
 cost", the advisor answers "how much of that was avoidable, and why". Same
 standalone shape as the rest of the family (engine.py): one deterministic
 gather, a single LLM call for prose, parse → fallback → format, and a run that

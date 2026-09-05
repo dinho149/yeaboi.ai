@@ -5,9 +5,9 @@ description: "(beta) See what the user's AI coding agents cost with yeaboi: per-
 
 # Agent usage workflows with yeaboi
 
-> **Beta.** The Agents modes are in beta — costs and activity are estimates from
-> local session logs and public rate tables, not the provider's bill. Present
-> every number as an estimate to verify, not an invoice, and say so.
+> **Beta.** The Agents modes are in beta — costs are estimates from local
+> session logs and public rate tables, not the provider's bill. Present every
+> number as an estimate to verify, not an invoice, and say so.
 
 1. **Run the report** with `agents_usage`. Defaults cover the last 30 days of
    every project and source; narrow with:
@@ -16,10 +16,16 @@ description: "(beta) See what the user's AI coding agents cost with yeaboi: per-
    - `source` — the telemetry source label (currently `claude_code`).
 
 2. **Present the result** conversationally: lead with the total and the window,
-   then the top models and projects. `unknown_model_cost_share` above 0 means
-   part of the total was priced at a fallback tier — say which share. The
-   `insights`/`recommendations` prose is the model's read over the deterministic
-   aggregates; the numbers themselves never come from the LLM.
+   then the top models and projects. Read `billing_kind` first: on
+   `subscription` the total is what the same work would have cost on the API
+   and is included in the plan — say "API-equivalent", never "you spent".
+   `cache_cost_share` is the part of the estimate that was prompt-cache
+   traffic (usually most of it — context size drives the bill).
+   `unknown_model_cost_share` above 0 means part of the total was priced at a
+   fallback tier — say which share. Tokens are attributed to the day they
+   were spent, so `daily_trend` is real per-day traffic. The
+   `insights`/`recommendations` prose is the model's read over the
+   deterministic aggregates; the numbers themselves never come from the LLM.
 
 3. **Compare across runs** with `agents_usage_history` (newest first) instead of
    recomputing — each row is a previously generated report.

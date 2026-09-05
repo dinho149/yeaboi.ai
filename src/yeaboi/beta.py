@@ -53,9 +53,10 @@ PERFORMANCE_BETA_NOTICE = (
 # bound, and none of it has been validated against a real team's bill yet.
 AGENTWATCH_BETA_PHRASE = "estimates from local session logs"
 AGENTWATCH_BETA_NOTICE = (
-    "The Agents modes are in beta — costs and activity are estimates from local "
-    "session logs and public rate tables, not your provider's bill. Treat every "
-    "number as an estimate to verify, not an invoice."
+    "The Agents modes are in beta — costs are API-equivalent estimates from local "
+    "session logs and public rate tables, not your provider's bill (on a subscription "
+    "they are included in the plan). Treat every number as an estimate to verify, not "
+    "an invoice."
 )
 
 # Ship's pair: the claim is about what it DOES (spends quota, writes branches),
@@ -136,8 +137,9 @@ BETA_GATE_COPY: dict[str, dict] = {
         "headline": "Agent Usage is in beta.",
         "body": (
             "Costs are estimates: token counts come from your local agent session logs",
-            "(Claude Code), priced from a dated public rate table — not your",
-            "provider's bill. Unknown models are priced at a mid-tier guess and flagged.",
+            "(Claude Code), priced from a dated public rate table — not your provider's",
+            "bill. On a subscription the total is what the same work would cost on the",
+            "API, and the page says so. Unknown models are priced at a mid-tier guess.",
             "",
             "Only aggregates are stored. Session transcripts are read on this machine",
             "and never copied, uploaded, or persisted.",
@@ -154,17 +156,6 @@ BETA_GATE_COPY: dict[str, dict] = {
             "keeps counts, byte totals and file paths — never their content.",
         ),
     },
-    "agent-standup": {
-        "headline": "Agent Standup is in beta.",
-        "body": (
-            "The digest combines local agent sessions with agent-authored commits and",
-            "PRs found in your trackers. Detection is a lower bound — agents that leave",
-            "no marker are invisible, so absence of activity is not proof of idleness.",
-            "",
-            "Nothing is sent to anyone unless you deliver it. Exports stay on this",
-            "machine under ~/.yeaboi/exports/agentwatch.",
-        ),
-    },
     "agent-security": {
         "headline": "Agent Security is in beta.",
         "body": (
@@ -173,7 +164,8 @@ BETA_GATE_COPY: dict[str, dict] = {
             "pattern matched, not that your setup is safe.",
             "",
             "Findings reference file and line only; matched secrets are never stored",
-            "or displayed. Everything stays on this machine.",
+            "or displayed. Dismiss a finding with a reason and it stays counted, not",
+            "hidden. Everything stays on this machine.",
         ),
     },
 }

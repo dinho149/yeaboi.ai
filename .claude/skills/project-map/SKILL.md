@@ -78,10 +78,13 @@ src/yeaboi/
     store.py            — PerformanceStore (one_on_ones/reviews/notes tables, schema v8)
     references/         — bundled default competency_framework.md (overridable via env)
   agentwatch/           — the Agents family: what the AI coding agents did, cost, and exposed
-    __init__.py         — public API (run_agent_usage, run_agent_standup, run_agent_security, AgentWatchStore)
-    collector.py        — refresh(): ingest local Claude Code/OpenClaw session JSONL → rollups + in-stream security signals (requestId-deduped, cursor-skipped, never stores transcript text)
+    __init__.py         — public API (run_agent_usage, run_agent_security, AgentWatchStore)
+    collector.py        — refresh(): ingest local Claude Code/OpenClaw session JSONL → rollups + in-stream security signals with the context each match sat in and a ≤120-char redacted snippet (requestId-deduped, cursor-skipped, never stores a secret)
     engine.py           — the 3 pipelines (deterministic numbers → one LLM call for prose → artifact)
     security_checks.py  — deterministic scans of agent settings/MCP config; findings are (pattern, file, line) only
+    security_verdict.py — what a match means: needs-decision / unsure / test-data / handled / info, from where it sat
+    security_fixes.py   — the fix catalogue (why + buttons per pattern) and apply_fix(): guard hook, settings edit, PR, rotate
+    replay.py           — the redacted transcript turns around one signal (the security page's replay)
     render.py           — the 3 artifacts → Rich (CLI + TUI)
     export.py           — the 3 artifacts → Markdown (no HTML yet — see the beta notice)
     store.py            — AgentWatchStore (agent_sessions keyed on source_path, findings, 3 report tables, schema v27)

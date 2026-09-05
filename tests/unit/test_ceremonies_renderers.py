@@ -14,7 +14,6 @@ import pytest
 from yeaboi.agent.state import (
     AgentAdvisorReport,
     AgentSecurityReport,
-    AgentStandupDigest,
     AgentUsageReport,
     DeliveryReport,
     ModelUsageRow,
@@ -104,25 +103,6 @@ class TestAgentDispatches:
         assert "$12.50 recoverable (12% of $100.00)" in d.summary  # 12.5 rounds half-to-even
         # The mode's honesty caveat must survive the trip into a chat message.
         assert "estimate" in d.body
-
-    def test_agent_standup_prefers_the_narrative_for_its_one_liner(self):
-        d = renderers.agent_standup_dispatch(
-            AgentStandupDigest(
-                digest_date="2026-08-17",
-                sessions_worked=3,
-                total_cost_usd=2.0,
-                narrative="Three agents worked.\nMostly on tests.",
-                highlights=("PR #12 merged",),
-                attention_items=("PR #9 stuck",),
-            )
-        )
-        assert d.summary == "Three agents worked."
-        assert "Needs attention:" in d.body
-        assert "PR #9 stuck" in d.body
-
-    def test_agent_standup_without_a_narrative_falls_back_to_the_numbers(self):
-        d = renderers.agent_standup_dispatch(AgentStandupDigest(sessions_worked=3, total_cost_usd=2.0))
-        assert "3 agent session(s)" in d.summary
 
     def test_security_leads_with_posture_and_only_the_serious_findings(self):
         d = renderers.agent_security_dispatch(

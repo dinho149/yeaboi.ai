@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 # Date the rate table below was last transcribed from provider pricing pages.
 # Surfaced on artifacts so stale numbers are visible rather than silent.
-PRICING_AS_OF = "2026-08-31"
+PRICING_AS_OF = "2026-09-05"
 
 # Anthropic cache economics (per the API docs): a 5-minute-TTL cache write
 # bills at 1.25x the input rate, a 1-hour write at 2x, and a cache read at
@@ -31,6 +31,19 @@ _CACHE_WRITE_1H_MULT = 2.0
 # These multipliers are Anthropic's and are applied to every row, but they
 # stay inert off Anthropic: only Claude Code session logs report a cache
 # token split, so every other provider prices with those counts at zero.
+
+# Long-context premium: a request whose prompt exceeds 200K tokens bills its
+# uncached input at 2x and its output at 1.5x on the Anthropic families that
+# offer the 1M window. The collector counts such a request's input/output
+# under ``premium_*``; the surcharge below is the *extra* over the base rate.
+LONG_CONTEXT_THRESHOLD = 200_000
+_LONG_CONTEXT_INPUT_MULT = 2.0
+_LONG_CONTEXT_OUTPUT_MULT = 1.5
+
+# Server-side tools Claude Code can call inside a request, priced per call
+# (web search: $10 per 1,000; web fetch: no per-call charge).
+WEB_SEARCH_USD_PER_CALL = 0.01
+WEB_FETCH_USD_PER_CALL = 0.0
 
 
 @dataclass(frozen=True)
@@ -61,6 +74,8 @@ class CostEstimate:
     known_model: bool = True
     matched_prefix: str = ""
     pricing_as_of: str = PRICING_AS_OF
+    cache_usd: float = 0.0  # the share of ``usd`` that was cache reads + writes
+    tools_usd: float = 0.0  # per-call server tools (web search / fetch)
 
 
 # Longest-prefix table. Order does not matter (matching sorts by length), but
@@ -169,21 +184,40 @@ def estimate_cost(
     cache_write_1h_tokens: int = 0,
     cache_read_tokens: int = 0,
     provider: str = "",
+    web_search_calls: int = 0,
+    web_fetch_calls: int = 0,
+    premium_input_tokens: int = 0,
+    premium_output_tokens: int = 0,
 ) -> CostEstimate:
     """Price a token bundle for one model.
 
     ``cache_write_tokens`` are 5-minute-TTL writes; pass 1-hour writes
-    separately (Claude Code session logs report the split). A free provider
-    (ollama/local) prices to zero and counts as known regardless of model.
+    separately (Claude Code session logs report the split). ``premium_*`` are
+    the input/output tokens of requests whose prompt crossed the long-context
+    threshold — a subset of ``input_tokens``/``output_tokens``, surcharged on
+    top. A free provider (ollama/local) prices to zero and counts as known
+    regardless of model.
     """
     if (provider or "").strip().lower() in _FREE_PROVIDERS:
         return CostEstimate(usd=0.0, known_model=True, matched_prefix="")
     price, matched = lookup_price(model)
-    usd = (
-        input_tokens * price.input_per_mtok
-        + output_tokens * price.output_per_mtok
-        + cache_write_tokens * price.cache_write_5m_per_mtok
+    cache_usd = (
+        cache_write_tokens * price.cache_write_5m_per_mtok
         + cache_write_1h_tokens * price.cache_write_1h_per_mtok
         + cache_read_tokens * price.cache_read_per_mtok
     ) / 1_000_000
-    return CostEstimate(usd=usd, known_model=bool(matched), matched_prefix=matched)
+    base_usd = (input_tokens * price.input_per_mtok + output_tokens * price.output_per_mtok) / 1_000_000
+    premium_usd = 0.0
+    if matched.startswith("claude"):
+        premium_usd = (
+            premium_input_tokens * price.input_per_mtok * (_LONG_CONTEXT_INPUT_MULT - 1)
+            + premium_output_tokens * price.output_per_mtok * (_LONG_CONTEXT_OUTPUT_MULT - 1)
+        ) / 1_000_000
+    tools_usd = web_search_calls * WEB_SEARCH_USD_PER_CALL + web_fetch_calls * WEB_FETCH_USD_PER_CALL
+    return CostEstimate(
+        usd=base_usd + cache_usd + premium_usd + tools_usd,
+        known_model=bool(matched),
+        matched_prefix=matched,
+        cache_usd=cache_usd,
+        tools_usd=tools_usd,
+    )

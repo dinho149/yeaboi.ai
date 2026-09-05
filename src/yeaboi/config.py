@@ -961,6 +961,22 @@ def cloudflared_strict() -> bool:
     return os.getenv("YEABOI_CLOUDFLARED_STRICT", "").strip().lower() in ("1", "true", "yes")
 
 
+def get_agentwatch_fresh_minutes() -> int:
+    """How long a saved Agents report counts as fresh, in minutes (default 60).
+
+    An Agents page opens on its last saved report and re-runs the engine —
+    a full transcript scan plus one LLM call — only when that report is older
+    than this. ``0`` re-runs on every open, which is what the pages used to do
+    and what made "it keeps running in the background" true.
+    """
+    raw = os.getenv("YEABOI_AGENTWATCH_FRESH_MINUTES", "60")
+    try:
+        minutes = int(raw)
+    except ValueError:
+        return 60
+    return max(0, min(minutes, 24 * 60))
+
+
 def get_tunnel_timeout_minutes() -> int:
     """Auto-expiry for Cloudflare share tunnels, in minutes (default 60).
 

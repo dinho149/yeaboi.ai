@@ -15,8 +15,8 @@ from yeaboi.agentwatch.store import AgentWatchStore
 
 
 class TestTable:
-    def test_the_four_modes_are_the_agents_family(self):
-        assert [m.key for m in setup.MODES] == ["agent-usage", "agent-advisor", "agent-standup", "agent-security"]
+    def test_the_three_modes_are_the_agents_family(self):
+        assert [m.key for m in setup.MODES] == ["agent-usage", "agent-advisor", "agent-security"]
 
     def test_every_engine_target_resolves(self):
         for mode in setup.MODES:
@@ -80,7 +80,6 @@ class TestRun:
         assert {m.kind: m.scoped for m in setup.MODES} == {
             "usage": True,
             "advisor": True,
-            "standup": True,
             "security": False,
         }
 
@@ -127,3 +126,35 @@ class TestModeOptions:
         assert [o["key"] for o in options] == [m.key for m in setup.MODES]
         assert next(o for o in options if o["kind"] == "usage")["last_report_at"]
         assert next(o for o in options if o["kind"] == "advisor")["last_report_at"] == ""
+
+
+class TestFreshness:
+    def test_recent_reports_are_fresh_and_old_ones_are_not(self, monkeypatch):
+        from datetime import datetime, timedelta, timezone
+
+        monkeypatch.setenv("YEABOI_AGENTWATCH_FRESH_MINUTES", "60")
+        now = datetime(2026, 8, 8, 12, 0, tzinfo=timezone.utc)
+        assert setup.is_fresh((now - timedelta(minutes=10)).isoformat(), now=now)
+        assert not setup.is_fresh((now - timedelta(minutes=90)).isoformat(), now=now)
+        # A naive stamp reads as UTC; junk and blanks are stale.
+        assert setup.is_fresh("2026-08-08T11:55:00", now=now)
+        assert not setup.is_fresh("", now=now)
+        assert not setup.is_fresh("not a date", now=now)
+
+    def test_zero_minutes_means_always_re_run(self, monkeypatch):
+        from datetime import datetime, timezone
+
+        monkeypatch.setenv("YEABOI_AGENTWATCH_FRESH_MINUTES", "0")
+        assert not setup.is_fresh(datetime.now(timezone.utc).isoformat())
+
+    def test_the_config_accessor_clamps_and_defaults(self, monkeypatch):
+        from yeaboi.config import get_agentwatch_fresh_minutes
+
+        monkeypatch.delenv("YEABOI_AGENTWATCH_FRESH_MINUTES", raising=False)
+        assert get_agentwatch_fresh_minutes() == 60
+        monkeypatch.setenv("YEABOI_AGENTWATCH_FRESH_MINUTES", "lots")
+        assert get_agentwatch_fresh_minutes() == 60
+        monkeypatch.setenv("YEABOI_AGENTWATCH_FRESH_MINUTES", "99999")
+        assert get_agentwatch_fresh_minutes() == 24 * 60
+        monkeypatch.setenv("YEABOI_AGENTWATCH_FRESH_MINUTES", "-5")
+        assert get_agentwatch_fresh_minutes() == 0

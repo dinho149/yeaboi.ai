@@ -74,8 +74,15 @@ def cost_transcript(path: Path) -> RunCost | None:
     """Price one transcript file; None when it cannot be read at all."""
     findings: list[TranscriptFinding] = []
 
-    def _on_finding(kind: str, severity: str, label: str, line_no: int, _session_id: str) -> None:
-        findings.append(TranscriptFinding(kind=kind, severity=severity, label=label, line_no=line_no))
+    def _on_finding(hit: dict) -> None:
+        findings.append(
+            TranscriptFinding(
+                kind=str(hit["category"]),
+                severity=str(hit["severity"]),
+                label=str(hit["pattern"]),
+                line_no=int(hit["line_no"]),
+            )
+        )
 
     stats = IngestStats()
     try:

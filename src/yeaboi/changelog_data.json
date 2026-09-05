@@ -2,6 +2,26 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.43.0",
+      "date": "2026-09-05",
+      "headline": "Agent Usage and Security run with accuracy and confidence",
+      "summary": "Usage tracking now counts tokens per request and shows daily spending trends. Security findings are grouped with dismissals built in, and pages load faster without re-running on every open.",
+      "highlights": [
+        {
+          "text": "See accurate Claude Code costs per request, rolled up by day",
+          "areas": ["usage"]
+        },
+        {
+          "text": "Dismiss security findings with reasons; low-entropy matches hidden",
+          "areas": ["agents"]
+        },
+        {
+          "text": "Pages refresh only when stale instead of re-running on every open",
+          "areas": ["agents"]
+        }
+      ]
+    },
+    {
       "version": "3.42.0",
       "date": "2026-09-05",
       "headline": "The front page comes to the terminal",

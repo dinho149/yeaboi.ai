@@ -8,7 +8,6 @@ surfaces must stamp "robo", everything else must stay unstamped (duck).
 from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
 from yeaboi.ui.mode_select.screens._screens_agents import (
     _build_agent_security_screen,
-    _build_agent_standup_screen,
     _build_agent_usage_screen,
 )
 from yeaboi.ui.shared._beta_notice import _build_beta_notice_screen
@@ -20,7 +19,6 @@ class TestAgentsPagesStamp:
 
         for builder, artifact in (
             (_build_agent_usage_screen, make_report()),
-            (_build_agent_standup_screen, None),
             (_build_agent_security_screen, None),
         ):
             running = builder(None, width=100, height=40, shimmer_tick=0.1, status="working")

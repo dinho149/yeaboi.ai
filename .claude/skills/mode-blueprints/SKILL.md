@@ -138,14 +138,14 @@ The `src/yeaboi/solo/` package holds the Solo world's own modules: `today.py` (t
 
 ## Agents family (agentwatch)
 
-Four modes (`agent-usage`, `agent-advisor`, `agent-standup`, `agent-security`) share one package —
+Three modes (`agent-usage`, `agent-advisor`, `agent-security`) share one package —
 `src/yeaboi/agentwatch/` — and one blueprint deviation worth knowing: the *collector* is the gather
 step. `collector.refresh()` incrementally ingests `~/.claude/projects/**/*.jsonl` (and OpenClaw)
 into `agent_sessions` rollups, deduping usage by `requestId` via full-file reparse (Claude Code
 splits one API response across lines with identical usage — partial offsets would double-count).
 Three invariants:
 
-- **Privacy** — no transcript text in the store, exports, or screens; security findings are
+- **Privacy** — no secret in the store (a finding carries pattern, file, line, the context the match sat in and a ≤120-char redacted snippet with the span masked), exports, or screens; security findings are
   (pattern, file, line). Planted-secret tests enforce it.
 - **Deterministic numbers** — every figure is computed in the engine; the LLM writes
   insights/narrative/summary prose only.
