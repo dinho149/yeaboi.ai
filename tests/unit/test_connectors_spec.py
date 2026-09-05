@@ -142,6 +142,43 @@ class TestSecrets:
                 assert not (f.choices and f.secret), f"{c.key}.{f.env} is both a choice and a secret"
 
 
+class TestSignIn:
+    """A sign-in's fields are minted by a flow: never typed, never a choice, always masked."""
+
+    def test_a_signin_field_is_optional_and_named_by_its_connector(self):
+        for c in ALL:
+            for f in c.fields:
+                if f.action != "signin":
+                    continue
+                assert not f.required, f"{c.key}.{f.env} is minted by a sign-in and cannot be required"
+                assert not f.choices and not f.verify_arg, f"{c.key}.{f.env} is a sign-in field with typed semantics"
+                assert f.env in (c.signin_env, c.account_env), (
+                    f"{c.key}.{f.env} is a sign-in field the descriptor does not name"
+                )
+
+    def test_the_token_is_secret_and_the_name_is_not(self):
+        for c in ALL:
+            if not c.can_sign_in:
+                continue
+            by_env = {f.env: f for f in c.fields}
+            assert by_env[c.signin_env].secret, f"{c.key}'s refresh token would be shown"
+            assert by_env[c.signin_env].action == "signin"
+            if c.account_env:
+                assert not by_env[c.account_env].secret, f"{c.key}'s display name is not a credential"
+                assert by_env[c.account_env].action == "signin"
+
+    def test_a_signin_never_makes_a_connector_connected(self):
+        # Signing in is optional; the playback choice is what switches a service on.
+        for c in ALL:
+            if c.can_sign_in:
+                assert c.signin_env not in c.required_envs, f"{c.key} would count a token as its switch"
+
+    def test_every_signin_has_a_provider(self):
+        from yeaboi.connectors.oauth import PROVIDERS
+
+        assert {c.key for c in ALL if c.can_sign_in} == set(PROVIDERS)
+
+
 class TestVerification:
     def test_every_named_probe_exists(self):
         from yeaboi import provider_verification

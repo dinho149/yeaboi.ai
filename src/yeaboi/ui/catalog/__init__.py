@@ -361,10 +361,11 @@ def run_catalog_browser(console: Console, live, read_key, frame_time: float, sup
                     logger.info("catalog: %s connects via %s", connector.key, method.key)
                     break
 
+        # A sign-in's fields are minted by the flow, never typed here.
         fields = [
             f
             for f in (connector.fields_for(method.key) if method else connector.fields)
-            if not (connector.auth_env and f.env == connector.auth_env)
+            if not (connector.auth_env and f.env == connector.auth_env) and f.action != "signin"
         ]
         entry.update({"stage": "field", "fields": fields})
         set_text_entry(True)

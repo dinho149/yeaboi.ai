@@ -78,9 +78,10 @@ MUSIC_SERVICE_KEYS: tuple[str, ...] = ("spotify", "apple_music", "youtube_music"
 def music_services() -> list[dict]:
     """The streaming services, and whether each is switched on in the catalogue.
 
-    A service is on when its connector is connected, which for these keyless
-    connectors means its one "where it plays" choice has been saved. The choice
-    travels too: it is the only field, and it is never a secret.
+    A service is on when its connector is connected, which means its "where it
+    plays" choice has been saved; signing in is a separate, optional step, and
+    ``signed_in``/``account`` say where it stands. The choice travels too: it
+    is the first field, and it is never a secret.
     """
     import os
 
@@ -99,6 +100,9 @@ def music_services() -> list[dict]:
                 "label": connector.label,
                 "connected": registry.is_connected(connector),
                 "playback": playback if playback in field.choices else field.default,
+                "can_sign_in": connector.can_sign_in,
+                "signed_in": bool(os.environ.get(connector.signin_env, "").strip()) if connector.can_sign_in else False,
+                "account": os.environ.get(connector.account_env, "").strip() if connector.account_env else "",
             }
         )
     return services
