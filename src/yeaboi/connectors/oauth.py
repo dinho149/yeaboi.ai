@@ -209,13 +209,16 @@ class _CallbackServer:
                 if urlparse(self.path).path != wanted:
                     self._page(404, _FAILED_PAGE)
                     return
+                # Settle the result before answering: a client that has read the
+                # page must find the session done, not a moment from it.
                 try:
                     outer.code = parse_callback(self.path, outer.expected_state)
-                    self._page(200, _DONE_PAGE)
+                    status, page = 200, _DONE_PAGE
                 except CallbackError as exc:
                     outer.error = str(exc)
-                    self._page(400, _FAILED_PAGE)
+                    status, page = 400, _FAILED_PAGE
                 outer._event.set()
+                self._page(status, page)
 
             def _page(self, status: int, body: str) -> None:
                 raw = body.encode("utf-8")
