@@ -75,6 +75,59 @@ def _security_undismiss(key: str):
     return {"restored": key, "on_file": len(dismissals.load())}
 
 
+def _security_replay(key: str, line: int = 0):
+    from yeaboi.agentwatch import replay as replay_mod
+    from yeaboi.agentwatch.engine import rebuild_security_report
+
+    report = rebuild_security_report(include_info=True, record=False)
+    finding = next((f for f in report.findings if f.key == key), None)
+    if finding is None:
+        raise ValueError(f"no finding {key!r} in the latest scan — run agents_security_scan first.")
+    if finding.category not in ("secret", "risky_tool"):
+        raise ValueError("only transcript findings have a replay.")
+    try:
+        return replay_mod.replay(finding.location, line or finding.line_no, pattern=finding.pattern)
+    except replay_mod.ReplayError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _security_signals(key: str):
+    from yeaboi.agentwatch.engine import rebuild_security_report
+    from yeaboi.agentwatch.store import AgentWatchStore
+    from yeaboi.paths import get_db_path
+
+    report = rebuild_security_report(include_info=True, record=False)
+    finding = next((f for f in report.findings if f.key == key), None)
+    if finding is None:
+        raise ValueError(f"no finding {key!r} in the latest scan — run agents_security_scan first.")
+    with AgentWatchStore(get_db_path()) as store:
+        rows = store.list_findings_for_key(
+            category=finding.category, pattern=finding.pattern, source_path=finding.location, context=finding.context
+        )
+    return {"key": key, "signals": rows}
+
+
+def _security_fix(key: str, fix_id: str, reason: str = "", repo: str = ""):
+    from yeaboi.agentwatch import security_fixes
+
+    outcome = security_fixes.apply_fix(key, fix_id, reason=reason, repo=repo)
+    if not outcome.ok:
+        raise ValueError(outcome.detail)
+    return outcome
+
+
+def _security_verdict(keys: list[str], verdict: str, reason: str = ""):
+    from yeaboi.agentwatch import dismissals
+
+    if verdict == "undo":
+        return {"restored": [k for k in keys if dismissals.undismiss(k)]}
+    if verdict == "test-data":
+        reason = reason or "test data: fixture or example text"
+    elif verdict != "dismiss":
+        raise ValueError("verdict must be one of test-data, dismiss, undo.")
+    return {"handled": [dismissals.dismiss(k, reason=reason).key for k in keys]}
+
+
 def _security_history(limit: int):
     if limit < 1 or limit > 100:
         raise ValueError("limit must be between 1 and 100.")
@@ -160,12 +213,14 @@ def register(app) -> None:
     async def agents_security_scan(ctx: Context, deep: bool = False, include_info: bool = False) -> dict:
         """BETA — Audit the local agent setup: permission-bypass settings, wildcard allow rules,
         risky hooks, MCP server inventory (plain-http, unpinned packages, inlined credentials),
-        secret-shaped text and risky shell commands found in session transcripts. Findings are
-        grouped per (pattern, file) with an occurrence count and a key; they carry pattern + file
-        + line only — matched content is never stored or returned. The report also lists what is
-        new and what was resolved since the last scan. deep=true re-scans every transcript instead
-        of only new/changed ones; include_info=true lists informational findings that are
-        otherwise only counted.
+        secret-shaped text and risky shell commands found in session transcripts. The report
+        opens with ``verdict_line`` and lists ``issues`` (one per pattern) each with a verdict —
+        needs-decision (the command ran / a live-looking key in a command or prompt), unsure,
+        test-data (written into or read from a test/fixture/docs file — not a risk), handled,
+        info — the ``why`` it matters and its ``fixes`` (apply with agents_security_fix).
+        Findings carry pattern + file + line + the context the match sat in + a redacted snippet;
+        the matched secret is never stored. deep=true re-scans every transcript; include_info=true
+        lists informational findings that are otherwise only counted.
 
         The Agents modes are in beta — deterministic pattern matches are an indicator, not a
         security audit; a clean report means no known pattern matched."""
@@ -181,6 +236,37 @@ def register(app) -> None:
         if reason.strip().lower() == "undo":
             return _with_beta(await run_readonly(_security_undismiss, key))
         return _with_beta(await run_readonly(_security_dismiss, key, reason, expires))
+
+    @app.tool()
+    async def agents_security_replay(key: str, line: int = 0) -> dict:
+        """BETA — Replay the transcript turns around one security finding (its ``key``): who
+        spoke, when, which tool ran what, with the flagged turn marked. Every string is redacted
+        and the matched span is masked. ``line`` picks one of the finding's matching lines (see
+        agents_security_signals); the default is the first. Use this to tell whether a signal
+        was a command that ran or text written into a file."""
+        return _with_beta(await run_readonly(_security_replay, key, line))
+
+    @app.tool()
+    async def agents_security_signals(key: str) -> dict:
+        """BETA — Every matching line behind one grouped security finding (its ``key``): line
+        number, timestamp, session, the context the match sat in and a redacted snippet."""
+        return _with_beta(await run_readonly(_security_signals, key))
+
+    @app.tool()
+    async def agents_security_fix(ctx: Context, key: str, fix_id: str, reason: str = "", repo: str = "") -> dict:
+        """BETA — Apply one of a finding's ``fixes`` by id: ``guard-hook`` writes a Claude Code
+        PreToolUse guard into ~/.claude (asks for sandbox consent first), ``guard-hook-pr`` and
+        ``mcp-edit-pr`` open a PR against ``repo`` (or the session's repository), ``settings-edit``
+        removes one settings key or rule after a backup, ``mark-rotated`` / ``mark-test-data`` /
+        ``dismiss`` (needs ``reason``) set the finding aside, ``undo`` brings it back. An applied
+        fix reads as handled on the next report."""
+        return _with_beta(await run_engine(ctx, _security_fix, key, fix_id, reason, repo))
+
+    @app.tool()
+    async def agents_security_verdict(keys: list[str], verdict: str, reason: str = "") -> dict:
+        """BETA — Set many findings aside at once: ``verdict`` is ``test-data`` (reason filled
+        in), ``dismiss`` (needs ``reason``) or ``undo``."""
+        return _with_beta(await run_readonly(_security_verdict, keys, verdict, reason))
 
     @app.tool()
     async def agents_security_history(limit: int = 20) -> dict:

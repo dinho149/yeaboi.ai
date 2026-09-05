@@ -1632,6 +1632,18 @@ class McpServerRecord:
 
 
 @dataclass(frozen=True)
+class SecurityFix:
+    """One concrete action a finding can be answered with — a button, never a sentence."""
+
+    id: str = ""  # guard-hook | guard-hook-pr | settings-edit | mcp-edit-pr | rotate | mark-test-data | dismiss
+    kind: str = ""  # write | pr | link | dismiss | manual
+    label: str = ""  # the verb on the button, e.g. "Block this in Claude Code"
+    target: str = ""  # the file the fix writes, the URL it opens, or the repo it PRs against
+    detail: str = ""  # one sentence saying what happens
+    scope: str = ""  # user | repo | ""
+
+
+@dataclass(frozen=True)
 class SecurityFinding:
     """One agent-security finding, deterministic and location-referenced."""
 
@@ -1644,8 +1656,37 @@ class SecurityFinding:
     detail: str = ""
     remediation: str = ""
     occurrences: int = 1  # matching lines rolled into this row
-    key: str = ""  # the dismissal key: category:pattern:location
+    key: str = ""  # the dismissal key: category:pattern:location[:context]
     scopes: tuple[str, ...] = ()  # MCP: every scope the same server spec appears in
+    verdict: str = ""  # needs-decision | unsure | test-data | handled | info
+    verdict_reason: str = ""
+    context: str = ""  # command | heredoc | inline-script | write-input | tool-result | prose | user-prompt
+    target: str = ""  # the file a write/read context pointed at (a path, never content)
+    snippet: str = ""  # ≤120 redacted characters around the match, the span masked
+    at: str = ""  # timestamp of the first matching message
+    session_id: str = ""
+    project_label: str = ""
+    sessions: int = 1  # distinct sessions rolled into this row
+    fixes: tuple[SecurityFix, ...] = ()
+
+
+@dataclass(frozen=True)
+class SecurityIssue:
+    """One pattern across every place it fired — what the security page lists."""
+
+    id: str = ""  # category:pattern
+    category: str = ""
+    pattern: str = ""
+    title: str = ""  # plain words: "An agent ran curl piped into a shell"
+    why: str = ""  # one paragraph on why the pattern matters
+    verdict: str = ""  # the worst verdict among its findings
+    severity: str = ""  # the worst severity among its findings
+    signals: int = 0  # matched lines
+    sessions: int = 0
+    files: int = 0
+    last_seen: str = ""  # YYYY-MM-DD
+    finding_keys: tuple[str, ...] = ()
+    fixes: tuple[SecurityFix, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1669,6 +1710,9 @@ class AgentSecurityReport:
     hidden_info_count: int = 0
     posture_reason: str = ""
     pattern_totals: tuple[tuple[str, str], ...] = ()  # (pattern, "N matches across M files")
+    issues: tuple[SecurityIssue, ...] = ()  # the page's rows: one per pattern, worst verdict first
+    verdict_counts: tuple[tuple[str, int], ...] = ()  # (verdict, findings) in display order
+    verdict_line: str = ""  # the deterministic one-sentence answer to "do I need to do anything?"
     warnings: tuple[str, ...] = ()
     generated_at: str = ""
     annotations: tuple[Annotation, ...] = ()

@@ -285,6 +285,67 @@ class TestMigration:
         assert {"agent_sessions", "agent_ingest_files", "agent_security_findings"} <= tables
 
 
+class TestSecurityReportRoundTrip:
+    def test_issues_fixes_and_verdicts_survive_the_store(self, tmp_path):
+        from yeaboi.agent.state import AgentSecurityReport, SecurityFinding, SecurityFix, SecurityIssue
+        from yeaboi.agentwatch.store import report_from_payload
+
+        fix = SecurityFix(
+            id="guard-hook", kind="write", label="Block", target="~/.claude/settings.json", detail="d", scope="user"
+        )
+        finding = SecurityFinding(
+            category="risky_tool",
+            pattern="curl-pipe-shell",
+            key="k",
+            verdict="needs-decision",
+            verdict_reason="ran",
+            context="command",
+            target="",
+            snippet="[REDACTED curl-pipe-shell]",
+            at="2026-08-23T10:00:00Z",
+            session_id="s",
+            project_label="repo",
+            sessions=2,
+            fixes=(fix,),
+        )
+        issue = SecurityIssue(
+            id="risky_tool:curl-pipe-shell",
+            category="risky_tool",
+            pattern="curl-pipe-shell",
+            title="t",
+            why="w",
+            verdict="needs-decision",
+            severity="high",
+            signals=3,
+            sessions=2,
+            files=1,
+            last_seen="2026-08-23",
+            finding_keys=("k",),
+            fixes=(fix,),
+        )
+        report = AgentSecurityReport(
+            scan_date="2026-08-23",
+            findings=(finding,),
+            issues=(issue,),
+            verdict_counts=(("needs-decision", 1),),
+            verdict_line="One thing needs a decision.",
+        )
+        with AgentWatchStore(tmp_path / "s.db") as store:
+            store.record_report("security", report, key_date="2026-08-23")
+            back = report_from_payload("security", store.latest_report("security")["report"])
+        assert back == report
+
+    def test_replace_latest_report_overwrites_in_place(self, tmp_path):
+        from yeaboi.agent.state import AgentSecurityReport
+
+        with AgentWatchStore(tmp_path / "s.db") as store:
+            assert not store.replace_latest_report("security", AgentSecurityReport(scan_date="x"))
+            store.record_report("security", AgentSecurityReport(scan_date="2026-08-23"), key_date="2026-08-23")
+            assert store.replace_latest_report("security", AgentSecurityReport(scan_date="2026-08-23", posture="good"))
+            rows = store.list_reports("security", limit=5)
+        assert len(rows) == 1 and rows[0]["report"]["posture"] == "good"
+
+
 class TestRehydration:
     """record_report → latest_report → report_from_payload round-trips."""
 

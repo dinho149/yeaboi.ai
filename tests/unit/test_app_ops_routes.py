@@ -500,3 +500,103 @@ class TestSecurityDismissals:
 
         monkeypatch.setattr(setup, "run", lambda mode, on_progress, **kw: AgentUsageReport(period_start="2026-07-01"))
         assert drain(request(app, "POST", "/api/agents/usage/run", {}))[-1]["scoped_to"] == ""
+
+
+class TestSecurityActions:
+    """The routes the redesigned page acts through: verdict, fix, replay, signals."""
+
+    @pytest.fixture
+    def seeded(self, env, tmp_path, monkeypatch):
+        from yeaboi.agentwatch import dismissals, engine, security_checks
+        from yeaboi.agentwatch.collector import IngestStats
+        from yeaboi.agentwatch.store import AgentWatchStore
+
+        monkeypatch.setattr(dismissals, "default_path", lambda: tmp_path / "allow.json")
+        monkeypatch.setattr(security_checks, "_config_roots", lambda: (tmp_path / "dot-claude", tmp_path / "c.json"))
+        monkeypatch.setattr(engine.collector, "refresh", lambda store, **kw: IngestStats())
+        with AgentWatchStore(env["db"]) as store:
+            store.add_finding(
+                category="risky_tool",
+                severity="high",
+                pattern="curl-pipe-shell",
+                source_path=str(tmp_path / "gone.jsonl"),
+                line_no=5,
+                session_id="s1",
+                context="command",
+                at="2026-08-23T10:00:00Z",
+                snippet="[REDACTED curl-pipe-shell]",
+            )
+            store.add_finding(
+                category="secret",
+                severity="high",
+                pattern="secret-anthropic-key",
+                source_path=str(tmp_path / "b.jsonl"),
+                line_no=2,
+                session_id="s2",
+                context="tool-result",
+                target="/r/tests/test_x.py",
+            )
+        report = engine.run_agent_security(db_path=env["db"], dry_run=True)
+        return {f.category: f for f in report.findings}
+
+    def test_verdict_sets_many_aside_and_answers_with_the_report(self, app, seeded):
+        assert request(app, "POST", "/api/agents/security/verdict", {"keys": []}).code == 400
+        assert request(app, "POST", "/api/agents/security/verdict", {"keys": ["k"], "verdict": "nope"}).code == 400
+        assert request(app, "POST", "/api/agents/security/verdict", {"keys": ["k"], "verdict": "dismiss"}).code == 400
+        keys = [seeded["secret"].key]
+        payload = body(request(app, "POST", "/api/agents/security/verdict", {"keys": keys, "verdict": "test-data"}))
+        assert payload["handled"] == keys
+        handled = [f for f in payload["report"]["findings"] if f["key"] == keys[0]]
+        assert handled and handled[0]["verdict"] == "handled"
+        assert payload["report"]["verdict_line"].startswith("One thing needs a decision.")
+        undone = body(request(app, "POST", "/api/agents/security/verdict", {"keys": keys, "verdict": "undo"}))
+        assert undone["restored"] == keys
+
+    def test_dismiss_answers_with_the_rebuilt_report(self, app, seeded):
+        key = seeded["risky_tool"].key
+        payload = body(request(app, "POST", "/api/agents/security/dismiss", {"key": key, "reason": "known"}))
+        assert payload["report"]["dismissed_count"] == 1
+        assert payload["report"]["verdict_line"].startswith("Nothing needs a decision.")
+
+    def test_fix_applies_and_reports(self, app, seeded):
+        assert request(app, "POST", "/api/agents/security/fix", {"key": "k"}).code == 400
+        key = seeded["risky_tool"].key
+        payload = body(request(app, "POST", "/api/agents/security/fix", {"key": key, "fix_id": "mark-test-data"}))
+        assert payload["ok"] and payload["handled"] == [key] and payload["report"]["dismissed_count"] == 1
+        missing = body(request(app, "POST", "/api/agents/security/fix", {"key": "nope", "fix_id": "guard-hook"}))
+        assert not missing["ok"] and "re-run" in missing["detail"]
+
+    def test_fix_refused_by_the_sandbox_is_a_403(self, app, seeded, monkeypatch):
+        monkeypatch.setattr("yeaboi.fs_policy.request_consent", lambda p, *, mode="read", context="": False)
+        response = request(
+            app, "POST", "/api/agents/security/fix", {"key": seeded["risky_tool"].key, "fix_id": "guard-hook"}
+        )
+        assert response.code == 403 and b"allow it and try again" in response.body
+
+    def test_replay_and_signals(self, app, seeded):
+        assert request(app, "GET", "/api/agents/security/replay?key=nope").code == 404
+        key = seeded["risky_tool"].key
+        gone = request(app, "GET", f"/api/agents/security/replay?key={key}")
+        assert gone.code == 400 and b"no longer on disk" in gone.body
+        signals = body(request(app, "GET", f"/api/agents/security/signals?key={key}"))
+        assert signals["key"] == key
+        assert [(s["line_no"], s["context"], s["snippet"]) for s in signals["signals"]] == [
+            (5, "command", "[REDACTED curl-pipe-shell]")
+        ]
+
+    def test_latest_lists_info_on_request_without_a_scan(self, app, seeded, env):
+        from yeaboi.agentwatch.store import AgentWatchStore
+
+        with AgentWatchStore(env["db"]) as store:
+            store.add_finding(
+                category="secret",
+                severity="info",
+                pattern="tunnel-hostname",
+                source_path="/t/c.jsonl",
+                line_no=1,
+                context="prose",
+            )
+        plain = body(request(app, "GET", "/api/agents/security/latest"))
+        assert plain["report"]["hidden_info_count"] == 0  # the saved report predates the row
+        shown = body(request(app, "GET", "/api/agents/security/latest?include_info=1"))
+        assert shown["report"]["hidden_info_count"] == 0 and plain["report"]["hidden_info_count"] == 0

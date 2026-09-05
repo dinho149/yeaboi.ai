@@ -145,7 +145,7 @@ into `agent_sessions` rollups, deduping usage by `requestId` via full-file repar
 splits one API response across lines with identical usage — partial offsets would double-count).
 Three invariants:
 
-- **Privacy** — no transcript text in the store, exports, or screens; security findings are
+- **Privacy** — no secret in the store (a finding carries pattern, file, line, the context the match sat in and a ≤120-char redacted snippet with the span masked), exports, or screens; security findings are
   (pattern, file, line). Planted-secret tests enforce it.
 - **Deterministic numbers** — every figure is computed in the engine; the LLM writes
   insights/narrative/summary prose only.

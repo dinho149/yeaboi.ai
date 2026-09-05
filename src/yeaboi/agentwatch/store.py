@@ -132,7 +132,30 @@ CREATE TABLE IF NOT EXISTS agent_security_findings (
     session_id  TEXT NOT NULL DEFAULT '',
     detail      TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT '',
+    -- Where the match sat (command, heredoc, write-input, tool-result, …), the
+    -- file that context pointed at, the message timestamp and tool, and a
+    -- short redacted snippet with the matched span masked — what lets a row
+    -- say what happened without opening the transcript.
+    context     TEXT NOT NULL DEFAULT '',
+    target      TEXT NOT NULL DEFAULT '',
+    at          TEXT NOT NULL DEFAULT '',
+    tool        TEXT NOT NULL DEFAULT '',
+    snippet     TEXT NOT NULL DEFAULT '',
     UNIQUE(category, pattern, source_path, line_no)
+);
+-- Fixes a person applied from a finding: the button pressed, where it wrote,
+-- and what came of it. The finding itself is answered through a dismissal;
+-- this is the audit trail beside it.
+CREATE TABLE IF NOT EXISTS agent_security_fixes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    fix_id      TEXT NOT NULL DEFAULT '',
+    key         TEXT NOT NULL DEFAULT '',
+    pattern     TEXT NOT NULL DEFAULT '',
+    kind        TEXT NOT NULL DEFAULT '',
+    target      TEXT NOT NULL DEFAULT '',
+    applied_at  TEXT NOT NULL DEFAULT '',
+    outcome     TEXT NOT NULL DEFAULT '',
+    pr_url      TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS agent_usage_reports (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,6 +214,7 @@ class AgentWatchStore:
         self._rebuild_sessions_if_keyed_on_session_id()
         self._conn.executescript(_AGENTWATCH_SCHEMA)
         self._ensure_cursor_columns()
+        self._ensure_finding_columns()
         self._rebuild_days_if_missing()
 
     def _rebuild_days_if_missing(self) -> None:
@@ -227,6 +251,17 @@ class AgentWatchStore:
                     self._conn.execute(f"ALTER TABLE agent_ingest_files ADD COLUMN {column} {decl}")
         except sqlite3.DatabaseError as exc:
             logger.warning("agentwatch store: could not widen the cursor table: %s", exc)
+
+    def _ensure_finding_columns(self) -> None:
+        """Add the context columns to a findings table created before they existed."""
+        try:
+            have = {row[1] for row in self._conn.execute("PRAGMA table_info(agent_security_findings)").fetchall()}
+            for column in ("context", "target", "at", "tool", "snippet"):
+                if column not in have:
+                    decl = f"ALTER TABLE agent_security_findings ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                    self._conn.execute(decl)
+        except sqlite3.DatabaseError as exc:
+            logger.warning("agentwatch store: could not widen the findings table: %s", exc)
 
     def _rebuild_sessions_if_keyed_on_session_id(self) -> None:
         """Drop an ``agent_sessions`` table left over from the session_id key.
@@ -623,13 +658,38 @@ class AgentWatchStore:
         line_no: int,
         session_id: str = "",
         detail: str = "",
+        context: str = "",
+        target: str = "",
+        at: str = "",
+        tool: str = "",
+        snippet: str = "",
     ) -> None:
-        """Record one security signal. Location + pattern only — never content."""
+        """Record one security signal.
+
+        Location + pattern + where the match sat. ``snippet`` is the only
+        transcript-derived text: already redacted by the collector, with the
+        matched span masked, and capped at 120 characters.
+        """
         self._conn.execute(
             """INSERT OR IGNORE INTO agent_security_findings
-                   (category, severity, pattern, source_path, line_no, session_id, detail, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (category, severity, pattern, source_path, line_no, session_id, detail, self._now()),
+                   (category, severity, pattern, source_path, line_no, session_id, detail, created_at,
+                    context, target, at, tool, snippet)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                category,
+                severity,
+                pattern,
+                source_path,
+                line_no,
+                session_id,
+                detail,
+                self._now(),
+                context,
+                target,
+                at,
+                tool,
+                snippet[:120],
+            ),
         )
 
     def list_findings(self, *, category: str = "") -> list[dict]:
@@ -647,10 +707,62 @@ class AgentWatchStore:
             self._conn.row_factory = None
         return [dict(row) for row in rows]
 
+    def list_findings_for_key(self, *, category: str, pattern: str, source_path: str, context: str = "") -> list[dict]:
+        """Every stored row behind one grouped finding, in line order."""
+        query = "SELECT * FROM agent_security_findings WHERE category = ? AND pattern = ? AND source_path = ?"
+        params: list[str] = [category, pattern, source_path]
+        if context:
+            query += " AND context = ?"
+            params.append(context)
+        query += " ORDER BY line_no"
+        self._conn.row_factory = sqlite3.Row
+        try:
+            rows = self._conn.execute(query, params).fetchall()
+        finally:
+            self._conn.row_factory = None
+        return [dict(row) for row in rows]
+
+    def findings_without_context(self) -> int:
+        """Rows scanned before the collector recorded where a match sat."""
+        row = self._conn.execute("SELECT COUNT(*) FROM agent_security_findings WHERE context = ''").fetchone()
+        return int(row[0]) if row else 0
+
+    def reset_security_scanned(self) -> None:
+        """Make the next security pass rescan every file (cost cursors stay)."""
+        self._conn.execute("UPDATE agent_ingest_files SET security_scanned = 0")
+
     def reset_cursors(self) -> None:
         """Forget every ingest cursor so the next refresh reparses everything."""
         self._conn.execute("DELETE FROM agent_ingest_files")
         self._conn.execute("DELETE FROM agent_seen_requests")
+
+    # ── Security fixes ────────────────────────────────────────────────────
+
+    def record_fix(
+        self, *, fix_id: str, key: str, pattern: str, kind: str, target: str, outcome: str, pr_url: str = ""
+    ) -> None:
+        """Append one applied fix to the audit trail."""
+        self._conn.execute(
+            """INSERT INTO agent_security_fixes (fix_id, key, pattern, kind, target, applied_at, outcome, pr_url)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (fix_id, key, pattern, kind, target, self._now(), outcome, pr_url),
+        )
+
+    def list_fixes(self, *, key: str = "", limit: int = 100) -> list[dict]:
+        """Applied fixes, newest first, optionally for one finding key."""
+        query = "SELECT * FROM agent_security_fixes"
+        params: list = []
+        if key:
+            query += " WHERE key = ?"
+            params.append(key)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        self._conn.row_factory = sqlite3.Row
+        try:
+            rows = self._conn.execute(query, params).fetchall()
+        finally:
+            self._conn.row_factory = None
+        return [dict(row) for row in rows]
 
     def known_source_paths(self) -> list[str]:
         """Every source path the store currently holds state for."""
@@ -710,6 +822,21 @@ class AgentWatchStore:
             }
             for row in rows
         ]
+
+    def replace_latest_report(self, kind: str, artifact: object) -> bool:
+        """Overwrite the newest saved report's payload in place; False when history is empty.
+
+        A dismissal, a fix or a fold does not make a new run — it changes what
+        the last run means. Appending a row per keystroke would fill the
+        history with one "scan" per click.
+        """
+        table, _date_col = _REPORT_TABLES[kind]
+        row = self._conn.execute(f"SELECT id FROM {table} ORDER BY id DESC LIMIT 1").fetchone()  # noqa: S608
+        if row is None:
+            return False
+        payload = json.dumps(asdict(artifact), ensure_ascii=False)  # type: ignore[call-overload]
+        self._conn.execute(f"UPDATE {table} SET report_json = ? WHERE id = ?", (payload, int(row[0])))  # noqa: S608
+        return True
 
     def latest_report(self, kind: str) -> dict | None:
         """The newest saved report row of one kind, or None when history is empty.
@@ -838,8 +965,24 @@ def _dict_to_security_report(d: dict):
         AgentSecurityReport,
         McpServerRecord,
         SecurityFinding,
+        SecurityFix,
+        SecurityIssue,
         annotations_from,
     )
+
+    def fixes(rows) -> tuple:
+        return tuple(
+            SecurityFix(
+                id=str(x.get("id", "")),
+                kind=str(x.get("kind", "")),
+                label=str(x.get("label", "")),
+                target=str(x.get("target", "")),
+                detail=str(x.get("detail", "")),
+                scope=str(x.get("scope", "")),
+            )
+            for x in rows or ()
+            if isinstance(x, dict)
+        )
 
     return AgentSecurityReport(
         scan_date=str(d.get("scan_date", "")),
@@ -860,6 +1003,16 @@ def _dict_to_security_report(d: dict):
                 occurrences=int(f.get("occurrences", 1)),
                 key=str(f.get("key", "")),
                 scopes=_str_tuple(f.get("scopes")),
+                verdict=str(f.get("verdict", "")),
+                verdict_reason=str(f.get("verdict_reason", "")),
+                context=str(f.get("context", "")),
+                target=str(f.get("target", "")),
+                snippet=str(f.get("snippet", "")),
+                at=str(f.get("at", "")),
+                session_id=str(f.get("session_id", "")),
+                project_label=str(f.get("project_label", "")),
+                sessions=int(f.get("sessions", 1)),
+                fixes=fixes(f.get("fixes")),
             )
             for f in d.get("findings") or ()
             if isinstance(f, dict)
@@ -885,6 +1038,31 @@ def _dict_to_security_report(d: dict):
         hidden_info_count=int(d.get("hidden_info_count", 0)),
         posture_reason=str(d.get("posture_reason", "")),
         pattern_totals=_pair_tuple(d.get("pattern_totals")),
+        issues=tuple(
+            SecurityIssue(
+                id=str(i.get("id", "")),
+                category=str(i.get("category", "")),
+                pattern=str(i.get("pattern", "")),
+                title=str(i.get("title", "")),
+                why=str(i.get("why", "")),
+                verdict=str(i.get("verdict", "")),
+                severity=str(i.get("severity", "")),
+                signals=int(i.get("signals", 0)),
+                sessions=int(i.get("sessions", 0)),
+                files=int(i.get("files", 0)),
+                last_seen=str(i.get("last_seen", "")),
+                finding_keys=_str_tuple(i.get("finding_keys")),
+                fixes=fixes(i.get("fixes")),
+            )
+            for i in d.get("issues") or ()
+            if isinstance(i, dict)
+        ),
+        verdict_counts=tuple(
+            (str(pair[0]), int(pair[1]))
+            for pair in d.get("verdict_counts") or ()
+            if isinstance(pair, (list, tuple)) and len(pair) == 2
+        ),
+        verdict_line=str(d.get("verdict_line", "")),
         warnings=_str_tuple(d.get("warnings")),
         generated_at=str(d.get("generated_at", "")),
         annotations=annotations_from(d.get("annotations")),

@@ -39,6 +39,7 @@ from yeaboi.agent.state import (
     DailyUsagePoint,
     ModelUsageRow,
     SecurityFinding,
+    SecurityIssue,
 )
 from yeaboi.agentwatch import collector
 from yeaboi.agentwatch.store import AgentWatchStore
@@ -633,39 +634,59 @@ _SECRET_REMEDIATION = {
 }
 
 
-def _stored_findings(store: AgentWatchStore) -> list[SecurityFinding]:
-    """Collector-persisted signals → one SecurityFinding per (category, pattern, file).
+def _session_index(store: AgentWatchStore) -> dict[str, dict]:
+    """Session rows by transcript path, for project labels and repos."""
+    return {str(row.get("source_path") or ""): row for row in store.list_sessions()}
 
-    The rows reference (pattern, file, line) only — the collector never stored
-    the matched content, and neither does this report. A file that repeats
-    the same signal on many lines is one finding with an occurrence count
-    and the first line as its location; a CI log pasted with a token on
-    forty lines is one thing to rotate, not forty.
+
+def _stored_findings(store: AgentWatchStore) -> list[SecurityFinding]:
+    """Collector-persisted signals → one SecurityFinding per (category, pattern, file, context).
+
+    A file that repeats the same signal on many lines is one finding with an
+    occurrence count and the first line as its location; the same pattern in
+    a heredoc and in a command that ran are two findings, because they earn
+    different verdicts. The snippet is the first row's — already redacted by
+    the collector with the matched span masked.
     """
     from yeaboi.agentwatch import security_checks
 
-    grouped: dict[tuple[str, str, str], dict] = {}
+    sessions = _session_index(store)
+    grouped: dict[tuple[str, str, str, str], dict] = {}
     for finding in store.list_findings():
         category = finding["category"]
         pattern = security_checks.canonical_label(finding["pattern"])
         severity = security_checks.severity_for(category, finding["pattern"], finding["severity"])
-        key = (category, pattern, finding["source_path"])
+        context = str(finding.get("context") or "")
+        key = (category, pattern, finding["source_path"], context)
         slot = grouped.setdefault(
             key,
-            {"severity": severity, "line_no": int(finding["line_no"]), "count": 0, "session": finding["session_id"]},
+            {
+                "severity": severity,
+                "line_no": int(finding["line_no"]),
+                "count": 0,
+                "session": finding["session_id"],
+                "at": str(finding.get("at") or ""),
+                "target": str(finding.get("target") or ""),
+                "snippet": str(finding.get("snippet") or ""),
+            },
         )
         slot["count"] += 1
         if security_checks.SEVERITY_ORDER.get(severity, 9) < security_checks.SEVERITY_ORDER.get(slot["severity"], 9):
             slot["severity"] = severity
-        slot["line_no"] = min(slot["line_no"], int(finding["line_no"]))
+        if int(finding["line_no"]) < slot["line_no"]:
+            slot["line_no"] = int(finding["line_no"])
+            slot["snippet"] = str(finding.get("snippet") or "") or slot["snippet"]
+        slot["target"] = slot["target"] or str(finding.get("target") or "")
+        at = str(finding.get("at") or "")
+        if at and (not slot["at"] or at < slot["at"]):
+            slot["at"] = at
 
     rows: list[SecurityFinding] = []
-    for (category, pattern, source_path), slot in grouped.items():
+    for (category, pattern, source_path, context), slot in grouped.items():
         title = _SECRET_TITLES.get(pattern) or _STORED_FINDING_TITLES.get(category, "Session security signal")
         remediation = _SECRET_REMEDIATION.get(pattern) or _STORED_FINDING_REMEDIATION.get(category, "")
         detail = f"{slot['count']} matching line(s)" if slot["count"] > 1 else ""
-        if slot["session"]:
-            detail = f"{detail}; session {slot['session']}" if detail else f"session {slot['session']}"
+        session = sessions.get(source_path) or {}
         rows.append(
             SecurityFinding(
                 severity=slot["severity"],
@@ -677,9 +698,51 @@ def _stored_findings(store: AgentWatchStore) -> list[SecurityFinding]:
                 detail=detail,
                 remediation=remediation,
                 occurrences=slot["count"],
+                context=context,
+                target=slot["target"],
+                snippet=slot["snippet"],
+                at=slot["at"],
+                session_id=str(slot["session"] or session.get("session_id") or ""),
+                project_label=_project_label(str(session.get("project_path") or "")) if session else "",
             )
         )
     return rows
+
+
+def _repo_for_finding(finding: SecurityFinding, sessions: dict[str, dict] | None = None) -> str:
+    """The git toplevel a transcript finding's session worked in, or ""."""
+    if finding.category not in ("secret", "risky_tool"):
+        return ""
+    if sessions is None:
+        with AgentWatchStore(_resolve_db_path(None)) as store:
+            sessions = _session_index(store)
+    session = sessions.get(finding.location) or {}
+    return _git_toplevel(str(session.get("project_path") or ""))
+
+
+def _finding_key(finding: SecurityFinding) -> str:
+    """category:pattern:location, plus the context for transcript rows."""
+    from yeaboi.agentwatch import security_checks
+
+    base = security_checks.finding_key(finding)
+    return f"{base}:{finding.context}" if finding.context else base
+
+
+def _legacy_key(finding: SecurityFinding) -> str:
+    from yeaboi.agentwatch import security_checks
+
+    return security_checks.finding_key(finding)
+
+
+_CONTEXTS = frozenset(
+    {"command", "heredoc", "inline-script", "write-input", "tool-result", "prose", "user-prompt", "tool-input"}
+)
+
+
+def _strip_context(key: str) -> str:
+    """A finding key without its context suffix — the form saved before contexts existed."""
+    head, _sep, tail = key.rpartition(":")
+    return head if tail in _CONTEXTS and head else key
 
 
 def _pattern_totals(findings: list[SecurityFinding]) -> tuple[tuple[str, str], ...]:
@@ -725,44 +788,90 @@ def _previous_keys(store: AgentWatchStore) -> set[str] | None:
     return keys
 
 
-def _deterministic_security_report(
+def _issue_title(finding: SecurityFinding) -> str:
+    from yeaboi.agentwatch import security_fixes
+
+    return security_fixes.TITLES.get(finding.pattern) or finding.title
+
+
+def _rank(findings: list[SecurityFinding]) -> tuple[SecurityFinding, ...]:
+    """Verdict first (a decision before a curiosity), then severity, then place."""
+    from yeaboi.agentwatch import security_checks, security_verdict
+
+    return tuple(
+        sorted(
+            findings,
+            key=lambda f: (
+                security_verdict.VERDICT_ORDER.get(f.verdict, 9),
+                security_checks.SEVERITY_ORDER.get(f.severity, 9),
+                f.category,
+                f.pattern,
+                f.location,
+                f.context,
+            ),
+        )
+    )
+
+
+def _issues(findings: tuple[SecurityFinding, ...]) -> tuple[SecurityIssue, ...]:
+    """One row per (category, pattern), carrying the worst verdict among its findings."""
+    from yeaboi.agentwatch import security_checks, security_fixes, security_verdict
+
+    grouped: dict[tuple[str, str], list[SecurityFinding]] = {}
+    for f in findings:
+        grouped.setdefault((f.category, f.pattern), []).append(f)
+    issues: list[SecurityIssue] = []
+    for (category, pattern), rows in grouped.items():
+        ranked = _rank(rows)
+        lead = ranked[0]
+        issues.append(
+            SecurityIssue(
+                id=f"{category}:{pattern}",
+                category=category,
+                pattern=pattern,
+                title=_issue_title(lead),
+                why=security_fixes.WHY.get(pattern, ""),
+                verdict=security_verdict.worst(f.verdict for f in rows),
+                severity=min(rows, key=lambda f: security_checks.SEVERITY_ORDER.get(f.severity, 9)).severity,
+                signals=sum(f.occurrences for f in rows),
+                sessions=len({f.session_id or f.location for f in rows}),
+                files=len({f.location for f in rows}),
+                last_seen=max((f.at[:10] for f in rows if f.at), default=""),
+                finding_keys=tuple(f.key for f in ranked),
+                fixes=lead.fixes,
+            )
+        )
+    issues.sort(
+        key=lambda i: (
+            security_verdict.VERDICT_ORDER.get(i.verdict, 9),
+            security_checks.SEVERITY_ORDER.get(i.severity, 9),
+            -i.signals,
+            i.title,
+        )
+    )
+    return tuple(issues)
+
+
+def _assemble_security(
+    store: AgentWatchStore,
     *,
     scan_date: str,
-    deep: bool = False,
-    include_info: bool = False,
-    db_path=None,
+    include_info: bool,
+    files_scanned: int,
+    warnings: list[str],
     on_progress=None,
-    roots=None,
 ) -> AgentSecurityReport:
-    """Everything in the security pipeline up to (not including) the LLM.
+    """Group, verdict, fix-catalogue, dismiss, diff, rank and score the stored signals.
 
-    Scan (deep forgets the cursors first), group the stored findings, audit the
-    settings files, inventory the MCP servers, drop what the user dismissed,
-    hide ``info`` unless asked, diff against the previous report, rank and
-    score — returns the report with empty ``summary``/``recommendations``/
-    ``generated_at`` for the caller to fill.
+    Shared by the scanning run and the no-scan rebuild, so a dismissal, a fix
+    or an info toggle re-derives the same report the scan would have.
     """
-    from yeaboi.agentwatch import dismissals, security_checks
+    from yeaboi.agentwatch import dismissals, security_checks, security_fixes, security_verdict
 
-    warnings: list[str] = []
-    scan_label = "Re-scan every transcript" if deep else "Scan transcripts"
-    _emit(on_progress, "scan", "running", label=scan_label)
-    with AgentWatchStore(_resolve_db_path(db_path)) as store:
-        if deep:
-            store.reset_cursors()
-        stats = collector.refresh(store, roots=roots, on_progress=on_progress, scan_security=True)
-        _emit(
-            on_progress,
-            "scan",
-            "completed",
-            label=scan_label,
-            detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
-        )
-        warnings.extend(stats.warnings)
-        sessions_scanned = _distinct_session_count(store.list_sessions())
-        files_scanned = stats.files_seen
-        findings = _stored_findings(store)
-        previous_keys = _previous_keys(store)
+    sessions_scanned = _distinct_session_count(store.list_sessions())
+    sessions = _session_index(store)
+    findings = _stored_findings(store)
+    previous_keys = _previous_keys(store)
 
     _emit(on_progress, "settings", "running", label="Audit settings")
     settings_findings = security_checks.audit_settings()
@@ -773,22 +882,46 @@ def _deterministic_security_report(
     findings.extend(mcp_findings)
     _emit(on_progress, "mcp", "completed", label="Inventory MCP servers", detail=f"{len(mcp_servers)} server(s)")
 
-    keyed = [replace(f, key=security_checks.finding_key(f)) for f in findings]
     dismissed = dismissals.active(scan_date)
-    kept = [f for f in keyed if f.key not in dismissed]
-    dismissed_count = len(keyed) - len(kept)
-    visible = [f for f in kept if include_info or f.severity != "info"]
-    hidden_info = len(kept) - len(visible)
+    judged: list[SecurityFinding] = []
+    for f in findings:
+        key = _finding_key(f)
+        entry = dismissed.get(key) or dismissed.get(_legacy_key(f))
+        verdict, reason = security_verdict.verdict(
+            category=f.category,
+            severity=f.severity,
+            context=f.context,
+            target=f.target,
+            generic=security_checks.is_generic(f.pattern),
+            dismissed_reason=entry.reason if entry else None,
+        )
+        keyed = replace(f, key=key, verdict=verdict, verdict_reason=reason)
+        judged.append(replace(keyed, fixes=security_fixes.fixes_for(keyed, repo=_repo_for_finding(keyed, sessions))))
 
-    ranked = security_checks.rank_findings(visible)
-    current_keys = {f.key for f in kept}
+    handled = [f for f in judged if f.verdict == security_verdict.HANDLED]
+    live = [f for f in judged if f.verdict != security_verdict.HANDLED]
+    info_rows = [f for f in live if f.verdict == security_verdict.INFO]
+    visible = [f for f in judged if include_info or f.verdict != security_verdict.INFO]
+    ranked = _rank(visible)
+    # Counted in issues (one per pattern), not findings: "two things need a
+    # decision" has to mean two rows on the page, not two files.
+    counts = {v: 0 for v in security_verdict.VERDICTS}
+    for issue in _issues(_rank(judged)):
+        counts[issue.verdict] = counts.get(issue.verdict, 0) + 1
+    current_keys = {f.key for f in live}
     if previous_keys is None:
         new_keys: tuple[str, ...] = ()
         resolved_keys: tuple[str, ...] = ()
     else:
-        new_keys = tuple(sorted(current_keys - previous_keys))
-        resolved_keys = tuple(sorted(previous_keys - current_keys - set(dismissed)))
-    posture_basis = tuple(f for f in kept if f.severity != "info")
+        # Compared in the legacy form (no context suffix) so the first scan
+        # after an upgrade does not read every finding as new and resolved.
+        previous_legacy = {_strip_context(k) for k in previous_keys}
+        current_legacy = {_strip_context(k) for k in current_keys}
+        new_keys = tuple(sorted(k for k in current_keys if _strip_context(k) not in previous_legacy))
+        resolved_keys = tuple(
+            sorted(k for k in previous_keys if _strip_context(k) not in current_legacy and k not in dismissed)
+        )
+    posture_basis = tuple(f for f in live if f.verdict in (security_verdict.NEEDS_DECISION, security_verdict.UNSURE))
     return AgentSecurityReport(
         scan_date=scan_date,
         posture=security_checks.compute_posture(posture_basis),
@@ -801,12 +934,107 @@ def _deterministic_security_report(
         finding_keys=tuple(sorted(current_keys)),
         new_findings=new_keys,
         resolved_findings=resolved_keys,
-        dismissed_count=dismissed_count,
-        hidden_info_count=hidden_info,
+        dismissed_count=len(handled),
+        hidden_info_count=0 if include_info else len(info_rows),
         posture_reason=security_checks.posture_reason(posture_basis),
-        pattern_totals=_pattern_totals(kept),
+        pattern_totals=_pattern_totals(live),
+        issues=_issues(ranked),
+        verdict_counts=tuple((v, counts.get(v, 0)) for v in security_verdict.VERDICTS),
+        verdict_line=security_verdict.verdict_line(counts),
         warnings=tuple(warnings),
     )
+
+
+def _deterministic_security_report(
+    *,
+    scan_date: str,
+    deep: bool = False,
+    include_info: bool = False,
+    db_path=None,
+    on_progress=None,
+    roots=None,
+) -> AgentSecurityReport:
+    """Everything in the security pipeline up to (not including) the LLM.
+
+    Scan (deep forgets the cursors first; rows scanned before context was
+    recorded force one security rescan), then :func:`_assemble_security` —
+    returns the report with empty ``summary``/``recommendations``/
+    ``generated_at`` for the caller to fill.
+    """
+    warnings: list[str] = []
+    scan_label = "Re-scan every transcript" if deep else "Scan transcripts"
+    _emit(on_progress, "scan", "running", label=scan_label)
+    with AgentWatchStore(_resolve_db_path(db_path)) as store:
+        if deep:
+            store.reset_cursors()
+        elif store.findings_without_context():
+            logger.info("agent security: findings predate context recording — rescanning transcripts once")
+            store.reset_security_scanned()
+        stats = collector.refresh(store, roots=roots, on_progress=on_progress, scan_security=True)
+        _emit(
+            on_progress,
+            "scan",
+            "completed",
+            label=scan_label,
+            detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
+        )
+        warnings.extend(stats.warnings)
+        return _assemble_security(
+            store,
+            scan_date=scan_date,
+            include_info=include_info,
+            files_scanned=stats.files_seen,
+            warnings=warnings,
+            on_progress=on_progress,
+        )
+
+
+def rebuild_security_report(
+    *,
+    include_info: bool = False,
+    db_path=None,
+    today: date | None = None,
+    record: bool = True,
+) -> AgentSecurityReport:
+    """The security report re-derived from what is stored — no scan, no LLM.
+
+    What a dismissal, a fix or the info toggle needs: the same grouping and
+    verdicts the scan would produce, in milliseconds. The narrative and the
+    delta are carried over from the last saved report. With ``record`` the
+    latest saved row is overwritten in place — never appended — and always in
+    its canonical form (info folded), whatever the caller asked to see.
+    """
+    resolved_today = today or datetime.now(timezone.utc).date()
+    scan_date = resolved_today.isoformat()
+    with AgentWatchStore(_resolve_db_path(db_path)) as store:
+        previous = store.latest_report("security")
+        prior = previous["report"] if previous else {}
+
+        def build(listing_info: bool) -> AgentSecurityReport:
+            built = _assemble_security(
+                store,
+                scan_date=str(prior.get("scan_date") or scan_date),
+                include_info=listing_info,
+                files_scanned=int(prior.get("files_scanned") or 0),
+                warnings=[],
+            )
+            return replace(
+                built,
+                summary=str(prior.get("summary") or ""),
+                recommendations=_str_list(prior.get("recommendations")),
+                new_findings=tuple(str(k) for k in prior.get("new_findings") or () if str(k) in built.finding_keys),
+                resolved_findings=_str_list(prior.get("resolved_findings")),
+                generated_at=str(prior.get("generated_at") or ""),
+            )
+
+        report = build(include_info)
+        if record and previous:
+            try:
+                store.replace_latest_report("security", build(False) if include_info else report)
+            except Exception as exc:  # noqa: BLE001 — history is best-effort
+                logger.warning("agent security: could not update the saved report: %s", exc)
+    logger.info("agent security: rebuilt — %s", report.verdict_line)
+    return report
 
 
 def run_agent_security(
@@ -821,8 +1049,9 @@ def run_agent_security(
     """Audit the local agent setup: settings, MCP servers, secrets, risky tools.
 
     Every check is a deterministic pattern scan (see security_checks.py) — an
-    indicator, not a security audit. The single LLM call writes the ``summary``
-    and prioritised ``recommendations`` prose over the finished findings.
+    indicator, not a security audit. Each grouped finding carries a verdict
+    (security_verdict.py) and its fixes (security_fixes.py). The single LLM
+    call writes the ``summary`` and ``recommendations`` prose over the issues.
 
     deep=True forgets the ingest cursors first, so every transcript is
     re-scanned rather than only new/changed files. include_info=True lists
@@ -837,24 +1066,22 @@ def run_agent_security(
     )
 
     warnings = list(report.warnings)
-    ranked = report.findings
-    mcp_servers = report.mcp_servers
-    sessions_scanned = report.sessions_scanned
-    posture = report.posture
 
-    # ── The one LLM call: summary + prioritised advice over the findings ──
+    # ── The one LLM call: summary + prioritised advice over the issues ──
     summary = ""
     recommendations: tuple[str, ...] = ()
-    if ranked and not dry_run:
+    decisions = [i for i in report.issues if i.verdict in ("needs-decision", "unsure")]
+    if decisions and not dry_run:
         _emit(on_progress, "summary", "running", label="Write the summary")
         from yeaboi.prompts.agentwatch import get_security_summary_prompt
 
         prompt = get_security_summary_prompt(
             scan_date=scan_date,
-            posture=posture,
-            findings=[(f.severity, f.category, f.title, f.pattern) for f in ranked[:25]],
-            mcp_count=len(mcp_servers),
-            sessions_scanned=sessions_scanned,
+            posture=report.posture,
+            issues=[(i.severity, i.category, i.title, i.pattern, i.verdict, i.signals) for i in report.issues[:25]],
+            verdict_counts=dict(report.verdict_counts),
+            mcp_count=len(report.mcp_servers),
+            sessions_scanned=report.sessions_scanned,
         )
         parsed, llm_warnings = _invoke_llm(prompt, what="security-summary")
         warnings.extend(llm_warnings)
@@ -864,18 +1091,14 @@ def run_agent_security(
     else:
         _emit(on_progress, "summary", "no_data", label="Write the summary", detail="skipped")
     if not summary:
-        by_severity: dict[str, int] = {}
-        for f in ranked:
-            by_severity[f.severity] = by_severity.get(f.severity, 0) + 1
-        counts = ", ".join(f"{n} {sev}" for sev, n in sorted(by_severity.items(), key=lambda kv: kv[0]))
         summary = (
-            f"{len(ranked)} finding(s) across {sessions_scanned} session(s) and the agent configs"
-            + (f" ({counts})" if counts else "")
-            + "."
-            if ranked
-            else "No known risk patterns matched — remember this is an indicator, not an audit."
+            report.verdict_line
+            if decisions
+            else f"{report.verdict_line} Remember this is an indicator, not a security audit."
         )
-        recommendations = recommendations or tuple(f.remediation for f in ranked[:3] if f.remediation)
+        recommendations = recommendations or tuple(
+            f"{i.title}: {i.fixes[0].label.lower()}" for i in decisions[:3] if i.fixes
+        )
 
     report = replace(
         report,
@@ -898,8 +1121,9 @@ def run_agent_security(
         logger.warning("agent security: export failed: %s", exc)
 
     logger.info(
-        "agent security: %s — %d finding(s) (%d dismissed, %d info hidden), %d MCP server(s)",
+        "agent security: %s — %s (%d finding(s), %d handled, %d info hidden), %d MCP server(s)",
         report.posture,
+        report.verdict_line,
         len(report.findings),
         report.dismissed_count,
         report.hidden_info_count,

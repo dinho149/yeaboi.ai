@@ -1318,6 +1318,16 @@ def build_parser() -> argparse.ArgumentParser:
     asec_p.add_argument("--reason", default="", metavar="TEXT", help="Why the dismissed finding is expected")
     asec_p.add_argument("--undismiss", default="", metavar="KEY", help="Restore a dismissed finding; no scan runs")
     asec_p.add_argument("--list-dismissed", action="store_true", help="Print the dismissals on file; no scan runs")
+    asec_p.add_argument("--replay", default="", metavar="KEY", help="Print the transcript turns around one finding")
+    asec_p.add_argument("--line", type=int, default=0, metavar="N", help="With --replay: a specific matching line")
+    asec_p.add_argument("--signals", default="", metavar="KEY", help="List every matching line behind one finding")
+    asec_p.add_argument("--fix", default="", metavar="KEY", help="Apply a fix to one finding (needs --fix-id)")
+    asec_p.add_argument("--fix-id", default="", metavar="ID", help="Which fix: one of the finding's fixes[].id")
+    asec_p.add_argument("--repo", default="", metavar="PATH", help="With --fix: the repository a PR fix targets")
+    asec_p.add_argument(
+        "--mark-test-data", nargs="*", default=[], metavar="KEY", help="Set findings aside as test data; no scan runs"
+    )
+    asec_p.add_argument("--list-fixes", action="store_true", help="Print the fixes applied so far; no scan runs")
     asec_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     asec_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
 
@@ -3776,6 +3786,84 @@ def _ship_report(args: argparse.Namespace, console: Console, run, *, batch: list
     return 0
 
 
+def _cmd_agents_security_actions(args: argparse.Namespace, console: Console) -> int:
+    """The security verbs that act on the last scan — replay, signals, fixes — never a new one."""
+    import json
+    from dataclasses import asdict
+
+    from yeaboi.agentwatch import security_fixes
+    from yeaboi.agentwatch.engine import rebuild_security_report
+
+    if args.list_fixes:
+        from yeaboi.agentwatch.store import AgentWatchStore
+        from yeaboi.paths import get_db_path
+
+        with AgentWatchStore(get_db_path()) as store:
+            rows = store.list_fixes()
+        if args.format == "json":
+            print(json.dumps(rows, indent=2))
+        elif not rows:
+            console.print("No fixes applied yet.")
+        else:
+            for row in rows:
+                console.print(f"{row['applied_at'][:19]}  {row['fix_id']:<14} {row['pattern']:<26} {row['outcome']}")
+        return 0
+    if args.mark_test_data:
+        from yeaboi.agentwatch import dismissals
+
+        for key in args.mark_test_data:
+            dismissals.dismiss(key, reason="test data: fixture or example text", by=os.environ.get("USER", ""))
+            console.print(f"[green]✓[/green] {key} marked as test data")
+        return 0
+    if args.fix:
+        outcome = security_fixes.apply_fix(args.fix, args.fix_id, reason=args.reason, repo=args.repo)
+        if args.format == "json":
+            print(json.dumps(asdict(outcome), indent=2))
+        elif outcome.ok:
+            console.print(f"[green]✓[/green] {outcome.detail}" + (f"\n  {outcome.pr_url}" if outcome.pr_url else ""))
+        else:
+            print(f"✗ {outcome.detail}", file=sys.stderr)
+        return 0 if outcome.ok else 1
+    report = rebuild_security_report(include_info=True, record=False)
+    key = args.replay or args.signals
+    finding = next((f for f in report.findings if f.key == key), None)
+    if finding is None:
+        print(f"✗ no finding {key!r} in the latest scan — run `yeaboi agents security` first", file=sys.stderr)
+        return 1
+    if args.signals:
+        from yeaboi.agentwatch.store import AgentWatchStore
+        from yeaboi.paths import get_db_path
+
+        with AgentWatchStore(get_db_path()) as store:
+            rows = store.list_findings_for_key(
+                category=finding.category,
+                pattern=finding.pattern,
+                source_path=finding.location,
+                context=finding.context,
+            )
+        if args.format == "json":
+            print(json.dumps(rows, indent=2))
+        else:
+            for row in rows:
+                console.print(
+                    f"line {row['line_no']:<7} {str(row.get('at') or '')[:19]:<20} {row.get('snippet') or ''}"
+                )
+        return 0
+    from yeaboi.agentwatch import replay as replay_mod
+    from yeaboi.agentwatch.render import format_replay_rich
+
+    try:
+        result = replay_mod.replay(finding.location, args.line or finding.line_no, pattern=finding.pattern)
+    except replay_mod.ReplayError as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return 1
+    if args.format == "json":
+        print(json.dumps(asdict(result), indent=2))
+    else:
+        console.print(format_replay_rich(result))
+    return 0
+
+
 def _cmd_agents_dismissals(args: argparse.Namespace, console: Console) -> int:
     """The security dismissal verbs: a hand-kept allowlist, never a scan."""
     import json
@@ -3857,13 +3945,15 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
 
         if args.list_dismissed or args.dismiss or args.undismiss:
             return _cmd_agents_dismissals(args, console)
+        if args.replay or args.signals or args.fix or args.mark_test_data or args.list_fixes:
+            return _cmd_agents_security_actions(args, console)
         report = run_agent_security(deep=args.deep, include_info=args.include_info)
         for warning in report.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
         if args.format == "json":
             print(json.dumps(asdict(report), indent=2))
         else:
-            console.print(format_security_rich(report))
+            console.print(format_security_rich(report, expanded=("needs-decision", "unsure", "test-data", "handled")))
         return _strict_exit(args.strict, report.warnings)
 
     return 1

@@ -82,18 +82,29 @@ def build_usage_markdown(report: AgentUsageReport) -> str:
     return "\n".join(lines)
 
 
+_VERDICT_HEADINGS = (
+    ("needs-decision", "Needs a decision"),
+    ("unsure", "Worth a look"),
+    ("test-data", "Looks like test data"),
+    ("handled", "Handled"),
+    ("info", "Informational"),
+)
+
+
 def build_security_markdown(report: AgentSecurityReport) -> str:
-    """The agent security report as a shareable Markdown document."""
+    """The agent security report as a shareable Markdown document: issues by verdict."""
     lines: list[str] = [
         f"# Agent Security — {report.scan_date}",
         "",
-        f"**Posture: {report.posture}** — {report.sessions_scanned} session(s) scanned, "
-        f"{len(report.mcp_servers)} MCP server(s), {report.secrets_found} distinct secret signal(s)"
-        + (f", {report.dismissed_count} dismissed" if report.dismissed_count else "")
+        f"**{report.verdict_line or report.posture}**",
+        "",
+        f"Posture: {report.posture} — {report.sessions_scanned} session(s) scanned, "
+        f"{len(report.mcp_servers)} MCP server(s)"
+        + (f", {report.dismissed_count} handled" if report.dismissed_count else "")
         + ".",
         "",
         "*Deterministic pattern scan — an indicator, not a security audit. Findings reference "
-        "file and line only; matched content is never stored.*",
+        "file and line; the matched text is never stored.*",
     ]
     if report.posture_reason:
         lines.append(f"*{report.posture_reason}*")
@@ -102,34 +113,43 @@ def build_security_markdown(report: AgentSecurityReport) -> str:
             "",
             f"**+{len(report.new_findings)} new / −{len(report.resolved_findings)} resolved** since the last scan.",
         ]
-    if report.summary:
-        lines += ["", report.summary]
-    if report.pattern_totals:
-        lines += ["", "## Transcript signals", ""] + [
-            f"- `{pattern}` — {total}" for pattern, total in report.pattern_totals
-        ]
-    if report.findings:
-        by_category: dict[str, list] = {}
-        for f in report.findings:
-            by_category.setdefault(f.category, []).append(f)
-        for category, rows in by_category.items():
-            lines += [
-                "",
-                f"## Findings — {category} ({len(rows)})",
-                "",
-                "| severity | finding | where | × | remediation |",
-                "|---|---|---|---|---|",
-            ]
-            for f in rows:
-                where = f"{f.location}:{f.line_no}" if f.line_no else f.location
-                times = str(f.occurrences) if f.occurrences > 1 else ""
-                lines.append(f"| {f.severity} | {f.title} ({f.pattern}) | {where} | {times} | {f.remediation} |")
-    if report.hidden_info_count:
-        lines += ["", f"_{report.hidden_info_count} informational finding(s) hidden — run with `--show-info`._"]
+    by_key = {f.key: f for f in report.findings}
+    for verdict, heading in _VERDICT_HEADINGS:
+        issues = [i for i in report.issues if i.verdict == verdict]
+        if not issues:
+            if verdict == "info" and report.hidden_info_count:
+                lines += [
+                    "",
+                    f"## {heading} ({report.hidden_info_count})",
+                    "",
+                    "_Counted, not listed — run with `--show-info`._",
+                ]
+            continue
+        lines += ["", f"## {heading} ({len(issues)})"]
+        for issue in issues:
+            meta = f"{issue.severity} · {issue.signals} signal(s) · {issue.sessions} session(s) · {issue.files} file(s)"
+            if issue.last_seen:
+                meta += f" · last {issue.last_seen}"
+            lines += ["", f"### {issue.title}", "", meta]
+            if issue.why:
+                lines += ["", issue.why]
+            if issue.fixes:
+                lines += ["", "Fixes:"] + [
+                    f"- **{fix.label}** — {fix.detail}" for fix in issue.fixes if fix.kind != "dismiss"
+                ]
+            rows = [by_key[k] for k in issue.finding_keys if k in by_key]
+            if rows:
+                lines += ["", "| where | line | × | context | verdict |", "|---|---|---|---|---|"]
+                for f in rows:
+                    where = f.project_label or f.location
+                    times = str(f.occurrences) if f.occurrences > 1 else ""
+                    lines.append(f"| {where} | {f.line_no or ''} | {times} | {f.context or '—'} | {f.verdict_reason} |")
     if report.mcp_servers:
         lines += ["", "## MCP servers", "", "| name | scope | transport | flags |", "|---|---|---|---|"]
         for record in report.mcp_servers:
             lines.append(f"| {record.name} | {record.scope} | {record.transport} | {', '.join(record.flags) or '—'} |")
+    if report.summary and report.summary != report.verdict_line:
+        lines += ["", "## Full write-up", "", report.summary]
     if report.recommendations:
         lines += ["", "## Recommendations", ""] + [f"- {item}" for item in report.recommendations]
     if report.warnings:

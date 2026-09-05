@@ -250,11 +250,68 @@ _POSTURE_STYLE = {
 }
 
 
-def format_security_rich(report: AgentSecurityReport, *, focus: int | None = None) -> RenderableType:
-    """The agent security report as terminal output.
+_WARN = "rgb(230,150,60)"  # the one warning tone on the page: a decision, and the turn that matched
+_VERDICT_STYLE = {
+    "needs-decision": f"bold {_WARN}",
+    "unsure": "rgb(220,180,60)",
+    "test-data": _MUTED,
+    "handled": "rgb(120,210,170)",
+    "info": _MUTED,
+}
+_VERDICT_LABEL = {
+    "needs-decision": "Needs a decision",
+    "unsure": "Worth a look",
+    "test-data": "Looks like test data",
+    "handled": "Handled",
+    "info": "Informational",
+}
+_VERDICT_HINT = {
+    "test-data": "written into or read from test, fixture or docs files — not run",
+    "handled": "dismissed, fixed or rotated",
+}
 
-    ``focus`` marks one findings row (the TUI's dismiss target); the CLI
-    passes nothing and no row is marked.
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def short_date(iso: str) -> str:
+    """``2026-08-23…`` → ``Aug 23``; anything else comes back as given."""
+    if len(iso) >= 10 and iso[4] == "-" and iso[7] == "-" and iso[5:7].isdigit() and iso[8:10].isdigit():
+        return f"{_MONTHS[int(iso[5:7]) - 1]} {int(iso[8:10])}"
+    return iso
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def _issue_meta(issue) -> str:
+    parts = []
+    if issue.category in ("secret", "risky_tool"):
+        parts.append(_plural(issue.sessions, "session"))
+    else:
+        parts.append("MCP config" if issue.category == "mcp" else "settings")
+    if issue.signals > 1:
+        parts.append(f"{issue.signals} signals")
+    if issue.last_seen:
+        parts.append(f"last {short_date(issue.last_seen)}")
+    parts.append(issue.severity)
+    return " · ".join(parts)
+
+
+def format_security_rich(
+    report: AgentSecurityReport,
+    *,
+    focus: int | None = None,
+    expanded: tuple[str, ...] = ("needs-decision", "unsure"),
+    mcp_table: bool = True,
+) -> RenderableType:
+    """The agent security report as terminal output: issues grouped by verdict.
+
+    ``focus`` marks one issue row (the TUI's selection); the CLI passes
+    nothing. ``expanded`` names the verdict groups listed in full — the rest
+    fold to one line with a count. The TUI turns ``mcp_table`` off and says
+    how many servers there are in one line instead.
     """
     parts: list[RenderableType] = []
     header = Text()
@@ -262,21 +319,20 @@ def format_security_rich(report: AgentSecurityReport, *, focus: int | None = Non
     header.append(f"scanned {report.scan_date}", style=_MUTED)
     parts.append(header)
 
+    if report.verdict_line:
+        parts.append(Text(report.verdict_line, style="bold white"))
     posture = Text()
     posture.append("Posture: ")
     posture.append(report.posture, style=_POSTURE_STYLE.get(report.posture, "bold white"))
     posture.append(
-        f" — {report.sessions_scanned} session(s), {len(report.mcp_servers)} MCP server(s), "
-        f"{report.secrets_found} distinct secret signal(s)",
+        f" — {_plural(report.sessions_scanned, 'session')}, {_plural(len(report.mcp_servers), 'MCP server')}",
         style=_MUTED,
     )
-    if report.dismissed_count:
-        posture.append(f" · {report.dismissed_count} dismissed", style=_MUTED)
+    if report.posture_reason and not report.verdict_line:
+        posture.append(f" · {report.posture_reason}", style=_MUTED)
     parts.append(posture)
-    if report.posture_reason:
-        parts.append(Text(report.posture_reason, style=_MUTED))
-    delta = Text()
     if report.new_findings or report.resolved_findings:
+        delta = Text()
         delta.append(f"+{len(report.new_findings)} new", style="rgb(220,120,120)" if report.new_findings else _MUTED)
         delta.append(" / ", style=_MUTED)
         delta.append(
@@ -288,46 +344,41 @@ def format_security_rich(report: AgentSecurityReport, *, focus: int | None = Non
     elif report.finding_keys:
         parts.append(Text("no change since the last scan", style=_MUTED))
 
-    if report.summary:
+    counts = dict(report.verdict_counts)
+    issues = list(report.issues)
+    index = 0
+    for verdict in ("needs-decision", "unsure", "test-data", "handled", "info"):
+        rows = [i for i in issues if i.verdict == verdict]
+        count = counts.get(verdict, 0)
+        if not rows and not count:
+            continue
         parts.append(Text(""))
-        parts.append(Text(report.summary, style="white"))
-
-    if report.findings:
-        table = Table(
-            title="Findings", title_style=f"bold {_SECURITY_ACCENT}", header_style=_MUTED, border_style="rgb(50,60,80)"
-        )
-        table.add_column("severity")
-        table.add_column("finding")
-        table.add_column("where")
-        table.add_column("×", justify="right")
-        for index, f in enumerate(report.findings):
-            where = f"{f.location}:{f.line_no}" if f.line_no else f.location
-            if f.scopes and len(f.scopes) > 1:
-                where = f"{where} ({len(f.scopes)} scopes)"
-            # The title is per-category, so every stored secret signal shares
-            # one. The pattern is the detector that actually fired and is the
-            # only part a reader can act on — show it, and it is a label, never
-            # the matched text.
-            what = Text(f.title)
-            if f.pattern:
-                what.append(f"  {f.pattern}", style=_MUTED)
+        title = Text()
+        title.append(_VERDICT_LABEL[verdict], style=_VERDICT_STYLE[verdict])
+        title.append(f"  {count}", style=_MUTED)
+        if verdict == "info" and report.hidden_info_count:
+            title.append(
+                f"  {report.hidden_info_count} finding(s) folded — `--show-info` or i to list them", style=_MUTED
+            )
+        elif verdict in _VERDICT_HINT:
+            title.append(f"  {_VERDICT_HINT[verdict]}", style=_MUTED)
+        parts.append(title)
+        if verdict not in expanded:
+            index += len(rows)
+            continue
+        for issue in rows:
             marker = "▶ " if focus is not None and index == focus else "  "
-            table.add_row(
-                Text(marker + f.severity, style=_SEVERITY_STYLE.get(f.severity, "")),
-                what,
-                where,
-                str(f.occurrences) if f.occurrences > 1 else "",
-            )
-        parts.append(table)
-    if report.hidden_info_count:
-        parts.append(
-            Text(
-                f"{report.hidden_info_count} informational finding(s) hidden — `yeaboi agents security --show-info`",
-                style=_MUTED,
-            )
-        )
+            line = Text(no_wrap=True, overflow="ellipsis")
+            line.append(marker, style=_SECURITY_ACCENT)
+            line.append(issue.title, style="bold white" if verdict == "needs-decision" else "white")
+            line.append(f"  {_issue_meta(issue)}", style=_MUTED)
+            if issue.fixes:
+                line.append(f"  → {issue.fixes[0].label}", style=_VERDICT_STYLE[verdict])
+            parts.append(line)
+            index += 1
 
-    if report.mcp_servers:
+    if report.mcp_servers and mcp_table:
+        parts.append(Text(""))
         table = Table(
             title="MCP servers",
             title_style=f"bold {_SECURITY_ACCENT}",
@@ -342,11 +393,98 @@ def format_security_rich(report: AgentSecurityReport, *, focus: int | None = Non
             table.add_row(record.name, record.scope, record.transport, ", ".join(record.flags) or "—")
         parts.append(table)
 
+    if report.summary and report.summary != report.verdict_line:
+        parts.append(Text(""))
+        parts.append(Text("Full write-up", style=f"bold {_SECURITY_ACCENT}"))
+        parts.append(Text(report.summary, style="white"))
     if report.recommendations:
-        parts.append(Text("Recommendations", style=f"bold {_SECURITY_ACCENT}"))
         parts.extend(Text(f"  • {item}") for item in report.recommendations)
 
     for warning in report.warnings:
         parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))
 
+    return Group(*parts)
+
+
+def format_issue_rich(
+    report: AgentSecurityReport, issue, *, fix_sel: int | None = None, signals: bool = True
+) -> RenderableType:
+    """One issue in detail: the why, its fixes, and (unless ``signals`` is off) every signal behind it."""
+    parts: list[RenderableType] = []
+    head = Text()
+    head.append(issue.title, style="bold white")
+    head.append(
+        f"  {_VERDICT_LABEL.get(issue.verdict, issue.verdict).lower()}", style=_VERDICT_STYLE.get(issue.verdict, "")
+    )
+    parts.append(head)
+    parts.append(Text(_issue_meta(issue), style=_MUTED))
+    if issue.why:
+        parts.append(Text(""))
+        parts.append(Text("Why it matters", style=f"bold {_SECURITY_ACCENT}"))
+        parts.append(Text(issue.why))
+    if issue.fixes:
+        parts.append(Text(""))
+        parts.append(Text("Fix", style=f"bold {_SECURITY_ACCENT}"))
+        for index, fix in enumerate(issue.fixes):
+            line = Text()
+            line.append("▶ " if fix_sel is not None and index == fix_sel else "  ", style=_SECURITY_ACCENT)
+            line.append(fix.label, style="bold white" if index == 0 else "white")
+            if fix.detail:
+                line.append(f"  {fix.detail}", style=_MUTED)
+            parts.append(line)
+    if signals:
+        parts.extend(_signal_rows(report, issue))
+    return Group(*parts)
+
+
+def _signal_rows(report: AgentSecurityReport, issue, *, focus: int | None = None) -> list[RenderableType]:
+    rows = [f for f in report.findings if f.key in issue.finding_keys]
+    if not rows:
+        return []
+    parts: list[RenderableType] = [Text(""), Text(f"Every signal ({len(rows)})", style=f"bold {_SECURITY_ACCENT}")]
+    for index, f in enumerate(rows):
+        line = Text()
+        line.append("▶ " if focus is not None and index == focus else "  ", style=_SECURITY_ACCENT)
+        line.append(f.project_label or f.location, style="white")
+        if f.session_id:
+            line.append(f" · {f.session_id[:8]}", style=_MUTED)
+        if f.at:
+            line.append(f" · {short_date(f.at)}", style=_MUTED)
+        if f.occurrences > 1:
+            line.append(f" · {f.occurrences} lines", style=_MUTED)
+        if f.verdict_reason:
+            line.append(f" — {f.verdict_reason}", style=_VERDICT_STYLE.get(f.verdict, _MUTED))
+        parts.append(line)
+        if f.snippet:
+            parts.append(Text(f"      {f.snippet}", style=_MUTED, no_wrap=True, overflow="ellipsis"))
+    return parts
+
+
+def format_signals_rich(report: AgentSecurityReport, issue, *, focus: int | None = None) -> RenderableType:
+    """Every signal behind one issue, the focused one marked."""
+    return Group(*_signal_rows(report, issue, focus=focus))
+
+
+def format_replay_rich(replay) -> RenderableType:
+    """A replay as a turn list, the flagged turn in the warning tone."""
+    parts: list[RenderableType] = []
+    head = Text()
+    head.append("Replay  ", style=f"bold {_SECURITY_ACCENT}")
+    head.append(f"session {replay.session_id[:8]} · line {replay.line_no}", style=_MUTED)
+    if replay.started_at:
+        head.append(f" · {short_date(replay.started_at)}", style=_MUTED)
+    parts.append(head)
+    for turn in replay.turns:
+        line = Text()
+        style = _WARN if turn.flagged else _MUTED
+        line.append(f"{turn.at or '        '}  ", style=_MUTED)
+        who = turn.tool if turn.kind == "tool_use" else turn.role
+        line.append(f"{who:<10}", style=f"bold {style}" if turn.flagged else style)
+        body = turn.text.replace("\n", " ⏎ ")
+        line.append(body, style="bold white" if turn.flagged else "white")
+        if turn.flagged:
+            line.append("   ← this matched", style=_WARN)
+        parts.append(line)
+    for warning in replay.warnings:
+        parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))
     return Group(*parts)

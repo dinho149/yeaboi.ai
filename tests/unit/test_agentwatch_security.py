@@ -1,6 +1,7 @@
 """Tests for run_agent_security + agentwatch/security_checks.py."""
 
 import json
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -356,7 +357,11 @@ class TestGroupingDismissalsAndDelta:
             dismissals.dismiss(before.findings[0].key, reason="   ")
         dismissals.dismiss(before.findings[0].key, reason="fixture key in the redaction tests")
         after = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
-        assert after.findings == () and after.dismissed_count == 1 and after.posture == "good"
+        # A dismissed finding stays on the page as handled, with the reason.
+        assert [f.verdict for f in after.findings] == ["handled"]
+        assert after.findings[0].verdict_reason == "fixture key in the redaction tests"
+        assert after.dismissed_count == 1 and after.posture == "good"
+        assert [i.verdict for i in after.issues] == ["handled"]
         assert dismissals.undismiss(before.findings[0].key)
         assert engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True).dismissed_count == 0
 
@@ -461,3 +466,279 @@ class TestProgressScreen:
             )
         )
         assert "Refreshing…" in out
+
+
+def _seed_context_rows(db_path):
+    with AgentWatchStore(db_path) as store:
+        store.add_finding(
+            category="risky_tool",
+            severity="high",
+            pattern="curl-pipe-shell",
+            source_path="/t/a.jsonl",
+            line_no=5,
+            session_id="s1",
+            context="command",
+            at="2026-08-23T10:00:00Z",
+            snippet="[REDACTED curl-pipe-shell]",
+        )
+        store.add_finding(
+            category="risky_tool",
+            severity="high",
+            pattern="curl-pipe-shell",
+            source_path="/t/a.jsonl",
+            line_no=9,
+            session_id="s1",
+            context="heredoc",
+            target="/r/plan.md",
+            at="2026-08-23T11:00:00Z",
+        )
+        store.add_finding(
+            category="secret",
+            severity="high",
+            pattern="secret-anthropic-key",
+            source_path="/t/b.jsonl",
+            line_no=2,
+            session_id="s2",
+            context="tool-result",
+            target="/r/tests/test_x.py",
+            at="2026-08-20T10:00:00Z",
+        )
+        store.add_finding(
+            category="secret",
+            severity="medium",
+            pattern="secret-url-credentials",
+            source_path="/t/c.jsonl",
+            line_no=3,
+            session_id="s3",
+            context="command",
+            at="2026-08-21T10:00:00Z",
+        )
+        store.add_finding(
+            category="secret",
+            severity="info",
+            pattern="tunnel-hostname",
+            source_path="/t/c.jsonl",
+            line_no=4,
+            session_id="s3",
+            context="prose",
+        )
+
+
+class TestVerdictsAndIssues:
+    @pytest.fixture(autouse=True)
+    def no_scan(self, monkeypatch):
+        from yeaboi.agentwatch.collector import IngestStats
+
+        monkeypatch.setattr(engine.collector, "refresh", lambda store, **kw: IngestStats())
+
+    def test_context_splits_a_file_into_two_findings_with_their_own_verdicts(self, clean_tree, db_path):
+        _seed_context_rows(db_path)
+        report = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        curl = {f.context: f for f in report.findings if f.pattern == "curl-pipe-shell"}
+        assert curl["command"].verdict == "needs-decision" and curl["heredoc"].verdict == "test-data"
+        assert curl["command"].key == "risky_tool:curl-pipe-shell:/t/a.jsonl:command"
+        assert curl["command"].snippet == "[REDACTED curl-pipe-shell]" and curl["command"].at.startswith("2026-08-23")
+        secret = next(f for f in report.findings if f.pattern == "secret-anthropic-key")
+        assert secret.verdict == "test-data" and "test or docs file" in secret.verdict_reason
+        generic = next(f for f in report.findings if f.pattern == "secret-url-credentials")
+        assert generic.verdict == "unsure"
+
+    def test_issues_group_by_pattern_and_carry_the_worst_verdict(self, clean_tree, db_path):
+        _seed_context_rows(db_path)
+        report = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        by_id = {i.id: i for i in report.issues}
+        curl = by_id["risky_tool:curl-pipe-shell"]
+        assert curl.verdict == "needs-decision" and curl.signals == 2 and curl.sessions == 1 and curl.files == 1
+        assert curl.title == "An agent piped a download into a shell" and curl.why
+        assert curl.last_seen == "2026-08-23"
+        assert [f.id for f in curl.fixes][:1] == ["guard-hook"]
+        assert set(curl.finding_keys) == {f.key for f in report.findings if f.pattern == "curl-pipe-shell"}
+        assert [i.verdict for i in report.issues] == ["needs-decision", "unsure", "test-data"]
+        assert dict(report.verdict_counts) == {
+            "needs-decision": 1,
+            "unsure": 1,
+            "test-data": 1,
+            "handled": 0,
+            "info": 1,
+        }
+        assert (
+            report.verdict_line
+            == "One thing needs a decision. 1 is worth a look, 1 looks like test data and 1 is informational."
+        )
+
+    def test_posture_rests_on_decisions_only(self, clean_tree, db_path):
+        with AgentWatchStore(db_path) as store:
+            store.add_finding(
+                category="secret",
+                severity="high",
+                pattern="secret-anthropic-key",
+                source_path="/t/b.jsonl",
+                line_no=2,
+                context="write-input",
+                target="/r/tests/fixtures/k.py",
+            )
+        report = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        assert report.findings[0].verdict == "test-data"
+        assert report.posture == "good" and report.secrets_found == 0
+
+    def test_fallback_summary_is_the_verdict_line_with_the_first_fix(self, clean_tree, db_path):
+        _seed_context_rows(db_path)
+        report = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        assert report.summary == report.verdict_line
+        assert report.recommendations[0] == "An agent piped a download into a shell: block this in claude code"
+        assert len(report.recommendations) == 2  # one per issue that needs a decision or a look
+
+    def test_rebuild_does_not_scan_and_keeps_the_write_up(self, clean_tree, db_path, monkeypatch):
+        _seed_context_rows(db_path)
+        first = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        with AgentWatchStore(db_path) as store:
+            store.record_report("security", replace(first, summary="the write-up"), key_date=TODAY.isoformat())
+
+        def boom(*a, **k):
+            raise AssertionError("rebuild must not scan")
+
+        monkeypatch.setattr(engine.collector, "refresh", boom)
+        from yeaboi.agentwatch import dismissals
+
+        dismissals.dismiss(first.issues[0].finding_keys[0], reason="known installer")
+        rebuilt = engine.rebuild_security_report(db_path=db_path, today=TODAY)
+        assert rebuilt.summary == "the write-up" and rebuilt.scan_date == TODAY.isoformat()
+        assert rebuilt.dismissed_count == 1 and rebuilt.verdict_line.startswith("Nothing needs a decision.")
+        with AgentWatchStore(db_path) as store:
+            assert store.latest_report("security")["report"]["dismissed_count"] == 1
+            assert store.latest_report("security")["report"]["summary"] == "the write-up"
+        assert engine.rebuild_security_report(db_path=db_path, today=TODAY, include_info=True).hidden_info_count == 0
+
+    def test_the_first_scan_after_the_upgrade_is_not_all_new_and_resolved(self, clean_tree, db_path):
+        _seed_context_rows(db_path)
+        from yeaboi.agent.state import AgentSecurityReport
+
+        with AgentWatchStore(db_path) as store:
+            legacy = AgentSecurityReport(
+                scan_date="2026-08-07",
+                finding_keys=("risky_tool:curl-pipe-shell:/t/a.jsonl", "secret:secret-anthropic-key:/t/b.jsonl"),
+            )
+            store.record_report("security", legacy, key_date="2026-08-07")
+        report = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        assert report.resolved_findings == ()
+        assert set(report.new_findings) == {
+            "secret:secret-url-credentials:/t/c.jsonl:command",
+            "secret:tunnel-hostname:/t/c.jsonl:prose",
+        }
+
+    def test_rebuild_updates_the_saved_row_in_place_and_keeps_info_folded(self, clean_tree, db_path):
+        _seed_context_rows(db_path)
+        engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        from yeaboi.agentwatch import dismissals
+
+        listed = engine.rebuild_security_report(db_path=db_path, today=TODAY, include_info=True)
+        assert listed.hidden_info_count == 0
+        dismissals.dismiss(listed.issues[0].finding_keys[0], reason="known")
+        engine.rebuild_security_report(db_path=db_path, today=TODAY)
+        with AgentWatchStore(db_path) as store:
+            rows = store.list_reports("security", limit=10)
+        assert len(rows) == 1  # a fold or a dismissal changes the last run's meaning, it is not a new run
+        assert rows[0]["report"]["hidden_info_count"] == 1 and rows[0]["report"]["dismissed_count"] == 1
+
+    def test_legacy_dismissal_key_still_applies_to_every_context(self, clean_tree, db_path):
+        from yeaboi.agentwatch import dismissals
+
+        _seed_context_rows(db_path)
+        dismissals.dismiss("risky_tool:curl-pipe-shell:/t/a.jsonl", reason="old key")
+        report = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        assert {f.verdict for f in report.findings if f.pattern == "curl-pipe-shell"} == {"handled"}
+
+    def test_rows_without_context_force_one_security_rescan(self, clean_tree, db_path, monkeypatch):
+        from yeaboi.agentwatch.collector import IngestStats
+
+        with AgentWatchStore(db_path) as store:
+            store.set_cursor(
+                "/t/a.jsonl", source="claude_code", size=1, mtime=1.0, first_line_sha="x", security_scanned=True
+            )
+            store.add_finding(
+                category="secret", severity="high", pattern="secret-anthropic-key", source_path="/t/a.jsonl", line_no=1
+            )
+            assert store.findings_without_context() == 1
+        seen = {}
+
+        def fake_refresh(store, **kw):
+            seen["scanned_flag"] = store.get_cursor("/t/a.jsonl")["security_scanned"]
+            return IngestStats()
+
+        monkeypatch.setattr(engine.collector, "refresh", fake_refresh)
+        report = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        assert not seen["scanned_flag"]
+        assert report.findings[0].verdict == "unsure" and "re-run" in report.findings[0].verdict_reason
+
+
+class TestIssueScreens:
+    def _report(self, db_path):
+        _seed_context_rows(db_path)
+        return engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+
+    @pytest.fixture(autouse=True)
+    def no_scan(self, monkeypatch):
+        from yeaboi.agentwatch.collector import IngestStats
+
+        monkeypatch.setattr(engine.collector, "refresh", lambda store, **kw: IngestStats())
+
+    @staticmethod
+    def _render(panel, width=110):
+        from rich.console import Console
+
+        console = Console(width=width, force_terminal=False)
+        with console.capture() as cap:
+            console.print(panel)
+        return cap.get()
+
+    @pytest.mark.parametrize(("width", "height"), [(80, 40), (120, 50)])
+    def test_list_screen_shows_issues_by_verdict(self, clean_tree, db_path, width, height):
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_security_screen
+
+        report = self._report(db_path)
+        out = self._render(_build_agent_security_screen(report, width=width, height=height, finding_sel=0), width)
+        assert "Needs a decision" in out and "piped a download" in out
+        assert "Looks like test data" in out
+        if width >= 100:
+            assert "Block this" in out  # the row's first fix; a narrow row ellipsises it away
+        assert "/t/a.jsonl" not in out  # paths live in the issue screen, not the list
+        assert "MCP server(s)" in out and "┃ name" not in out  # one line, not the table
+        folded = _build_agent_security_screen(
+            report, width=width, height=height, expanded=("needs-decision", "unsure", "test-data", "handled", "info")
+        )
+        assert "Anthropic API key" in self._render(folded, width)
+
+    def test_issue_screen_with_replay_and_confirm(self, clean_tree, db_path):
+        from yeaboi.agentwatch.replay import Replay, ReplayTurn
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_security_issue_screen
+
+        report = self._report(db_path)
+        issue = report.issues[0]
+        replay = Replay(
+            session_id="s1",
+            line_no=5,
+            focus=1,
+            turns=(
+                ReplayTurn(index=0, at="10:00:00", role="you", kind="text", text="install it"),
+                ReplayTurn(
+                    index=1,
+                    at="10:00:01",
+                    role="agent",
+                    kind="tool_use",
+                    tool="Bash",
+                    text="[REDACTED curl-pipe-shell]",
+                    flagged=True,
+                ),
+            ),
+        )
+        meta: dict = {}
+        panel = _build_agent_security_issue_screen(
+            report, issue, width=110, height=40, replay=replay, confirm="Block this in Claude Code", scroll_meta=meta
+        )
+        out = self._render(panel)
+        assert "Why it matters" in out and "Block this in Claude Code" in out
+        assert "this matched" in out and "install it" in out
+        assert "enter to confirm" in out
+        assert meta["rows"] > 0
+        small = _build_agent_security_issue_screen(report, issue, width=80, height=24, replay=replay, scroll=99)
+        assert "Apply" in self._render(small, 80)

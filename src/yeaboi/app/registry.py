@@ -226,6 +226,10 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/agents/{kind}/export", routes_agents.export, "agent-usage"),
     AppRoute("POST", "/api/agents/security/dismiss", routes_agents.dismiss, "agent-security"),
     AppRoute("GET", "/api/agents/security/dismissed", routes_agents.dismissed, "agent-security"),
+    AppRoute("POST", "/api/agents/security/verdict", routes_agents.verdict, "agent-security"),
+    AppRoute("POST", "/api/agents/security/fix", routes_agents.fix, "agent-security"),
+    AppRoute("GET", "/api/agents/security/replay", routes_agents.replay, "agent-security"),
+    AppRoute("GET", "/api/agents/security/signals", routes_agents.signals, "agent-security"),
     # -- the shell's own furniture (the M10 surface) --------------------------
     # No capability owns these: ambience, the beta gate, the feedback form and
     # the sandbox consent modal are things the shell needs to draw itself, not

@@ -8,6 +8,8 @@ module never imports the TUI), and a hardcoded copy held together by a comment
 is drift waiting to happen. This pins the copy to its source instead.
 """
 
+from dataclasses import replace
+
 from rich.console import Console
 
 from yeaboi.agent.state import (
@@ -17,6 +19,8 @@ from yeaboi.agent.state import (
     AgentUsageReport,
     ModelUsageRow,
     SecurityFinding,
+    SecurityFix,
+    SecurityIssue,
     VolatileFileSignal,
     WasteLineItem,
 )
@@ -212,15 +216,37 @@ class TestSecurityRender:
                 ),
             ),
         )
+        report = replace(
+            report,
+            verdict_line="One thing needs a decision.",
+            verdict_counts=(("needs-decision", 1),),
+            issues=(
+                SecurityIssue(
+                    id="secret:anthropic-api-key",
+                    category="secret",
+                    pattern="anthropic-api-key",
+                    title="An Anthropic API key appeared in a session",
+                    verdict="needs-decision",
+                    severity="high",
+                    signals=1,
+                    sessions=1,
+                    files=1,
+                    last_seen="2026-07-30",
+                    finding_keys=("secret:anthropic-api-key:session.jsonl",),
+                    fixes=(SecurityFix(id="rotate", kind="link", label="Rotate the key"),),
+                ),
+            ),
+        )
         out = _plain(format_security_rich(report))
         assert "Agent Security" in out
         assert "needs-attention" in out
-        assert "Credential-shaped" in out
-        # The detector label must reach the screen: every stored secret signal
-        # shares one per-category title, so the pattern is the only thing that
-        # says which check fired.
-        assert "anthropic-api-key" in out
-        assert "session.jsonl:12" in out
+        assert "One thing needs a decision." in out
+        # The page lists issues in plain words, grouped by verdict, each with
+        # its first fix — not a table of transcript paths.
+        assert "Needs a decision" in out
+        assert "An Anthropic API key appeared in a session" in out
+        assert "→ Rotate the" in out
+        assert "session.jsonl" not in out
 
     def test_never_renders_matched_content(self):
         # The privacy invariant reaches the screen too, not just the store.

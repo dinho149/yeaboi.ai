@@ -62,6 +62,13 @@ def latest(app, request: Request) -> Response:
     mode = _mode(request)
     scoped_to = _repo_path(str(request.query.get("project_id", "")).strip()) if mode.scoped else ""
     loaded = None if scoped_to else setup.latest_artifact(mode.kind)
+    include_info = str(request.query.get("include_info", "")).lower() in ("1", "true", "yes")
+    if loaded and mode.kind == "security" and include_info and getattr(loaded[0], "hidden_info_count", 0):
+        # The saved report folded its informational rows; re-derive with them
+        # listed rather than paying for a scan the toggle does not need.
+        from yeaboi.agentwatch.engine import rebuild_security_report
+
+        loaded = (rebuild_security_report(include_info=True, record=False), loaded[1])
     return json_response(
         {
             "kind": mode.kind,
@@ -110,18 +117,171 @@ def dismiss(app, request: Request) -> Response:
     key = str(body.get("key", "")).strip()
     if not key:
         raise HTTPError(400, "key is required — the finding's category:pattern:location")
+    include_info = bool(body.get("include_info"))
     if body.get("undo"):
         restored = dismissals.undismiss(key)
         if not restored:
             raise HTTPError(404, f"no dismissal on file for {key!r}")
         logger.info("Agents security: restored %s", key)
-        return json_response({"ok": True, "restored": key, "dismissed": [d.__dict__ for d in dismissals.load()]})
+        return json_response(
+            {
+                "ok": True,
+                "restored": key,
+                "dismissed": [d.__dict__ for d in dismissals.load()],
+                "report": _rebuilt(include_info),
+            }
+        )
     try:
         entry = dismissals.dismiss(key, reason=str(body.get("reason", "")), expires=str(body.get("expires", "")))
     except ValueError as exc:
         raise HTTPError(400, str(exc)) from exc
     logger.info("Agents security: dismissed %s", key)
-    return json_response({"ok": True, "entry": entry.__dict__, "dismissed": [d.__dict__ for d in dismissals.load()]})
+    return json_response(
+        {
+            "ok": True,
+            "entry": entry.__dict__,
+            "dismissed": [d.__dict__ for d in dismissals.load()],
+            "report": _rebuilt(include_info),
+        }
+    )
+
+
+def verdict(app, request: Request) -> Response:
+    """``POST /api/agents/security/verdict`` ``{keys, verdict, reason?, include_info?}`` — many findings at once.
+
+    ``verdict`` is ``test-data`` (the reason is filled in), ``dismiss`` (needs
+    ``reason``) or ``undo``. The answer carries the re-derived report, so the
+    page updates without a scan.
+    """
+    from yeaboi.agentwatch import dismissals
+
+    body = request.json()
+    keys = [str(k).strip() for k in (body.get("keys") or []) if str(k).strip()]
+    if not keys:
+        raise HTTPError(400, "keys is required — one or more finding keys")
+    word = str(body.get("verdict", "")).strip()
+    reason = str(body.get("reason", "")).strip()
+    if word == "undo":
+        restored = [k for k in keys if dismissals.undismiss(k)]
+        logger.info("Agents security: restored %d finding(s)", len(restored))
+        return json_response({"ok": True, "restored": restored, "report": _rebuilt(bool(body.get("include_info")))})
+    if word == "test-data":
+        reason = reason or "test data: fixture or example text"
+    elif word != "dismiss":
+        raise HTTPError(400, "verdict must be one of test-data, dismiss, undo")
+    if not reason:
+        raise HTTPError(400, "a dismissal needs a reason — say why these findings are expected")
+    done: list[str] = []
+    for key in keys:
+        try:
+            dismissals.dismiss(key, reason=reason)
+            done.append(key)
+        except ValueError as exc:
+            raise HTTPError(400, str(exc)) from exc
+    logger.info("Agents security: %s on %d finding(s)", word, len(done))
+    return json_response({"ok": True, "handled": done, "report": _rebuilt(bool(body.get("include_info")))})
+
+
+def fix(app, request: Request) -> Response:
+    """``POST /api/agents/security/fix`` ``{key, fix_id, keys?, reason?, repo?, include_info?}`` — apply one fix.
+
+    A refused sandbox path is a 403 carrying the path, the same answer the
+    ship launch gives: the consent modal opens beside it and the retry works.
+    """
+    from yeaboi.agentwatch import security_fixes
+
+    body = request.json()
+    key = str(body.get("key", "")).strip()
+    fix_id = str(body.get("fix_id", "")).strip()
+    if not key or not fix_id:
+        raise HTTPError(400, "key and fix_id are required")
+    keys = tuple(str(k).strip() for k in (body.get("keys") or []) if str(k).strip())
+    outcome = security_fixes.apply_fix(
+        key, fix_id, keys=keys, reason=str(body.get("reason", "")), repo=str(body.get("repo", ""))
+    )
+    if outcome.consent_needed:
+        raise HTTPError(403, outcome.detail)
+    logger.info("Agents security: fix %s on %s → %s", fix_id, key, "ok" if outcome.ok else outcome.detail)
+    payload = {
+        "ok": outcome.ok,
+        "fix_id": outcome.fix_id,
+        "detail": outcome.detail,
+        "pr_url": outcome.pr_url,
+        "paths": list(outcome.paths),
+        "handled": list(outcome.handled_keys),
+    }
+    if outcome.ok and fix_id not in ("rotate", "manual"):
+        payload["report"] = _rebuilt(bool(body.get("include_info")))
+    return json_response(payload)
+
+
+def replay(app, request: Request) -> Response:
+    """``GET /api/agents/security/replay?key=&line=`` — the transcript turns around one signal."""
+    from yeaboi.agentwatch import replay as replay_mod
+
+    key = str(request.query.get("key", "")).strip()
+    finding = _finding(key)
+    try:
+        line = int(request.query.get("line", "") or finding.line_no)
+    except ValueError as exc:
+        raise HTTPError(400, "line must be an integer") from exc
+    try:
+        result = replay_mod.replay(finding.location, line, pattern=finding.pattern)
+    except replay_mod.ReplayError as exc:
+        raise HTTPError(400, str(exc)) from exc
+    return json_response(to_jsonable(result))
+
+
+def signals(app, request: Request) -> Response:
+    """``GET /api/agents/security/signals?key=`` — every stored line behind one finding."""
+    from yeaboi.agentwatch.store import AgentWatchStore
+    from yeaboi.paths import get_db_path
+
+    key = str(request.query.get("key", "")).strip()
+    finding = _finding(key)
+    with AgentWatchStore(get_db_path()) as store:
+        rows = store.list_findings_for_key(
+            category=finding.category, pattern=finding.pattern, source_path=finding.location, context=finding.context
+        )
+    return json_response(
+        {
+            "key": key,
+            "signals": [
+                {
+                    "line_no": int(r.get("line_no") or 0),
+                    "at": str(r.get("at") or ""),
+                    "session_id": str(r.get("session_id") or ""),
+                    "context": str(r.get("context") or ""),
+                    "snippet": str(r.get("snippet") or ""),
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
+def _rebuilt(include_info: bool) -> dict | None:
+    from yeaboi.agentwatch.engine import rebuild_security_report
+
+    try:
+        return to_jsonable(rebuild_security_report(include_info=include_info))
+    except Exception as exc:  # noqa: BLE001 — the action succeeded; the page can re-fetch
+        logger.warning("Agents security: could not rebuild the report: %s", exc)
+        return None
+
+
+def _finding(key: str):
+    from yeaboi.agentwatch.engine import rebuild_security_report
+
+    if not key:
+        raise HTTPError(400, "key is required — the finding's key")
+    report = rebuild_security_report(include_info=True, record=False)
+    finding = next((f for f in report.findings if f.key == key), None)
+    if finding is None:
+        raise HTTPError(404, f"no finding {key!r} in the latest scan")
+    if finding.category not in ("secret", "risky_tool"):
+        raise HTTPError(400, "only transcript findings have a replay")
+    return finding
 
 
 def dismissed(app, request: Request) -> Response:

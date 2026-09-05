@@ -376,3 +376,78 @@ class TestProjectScope:
                 project_path="/srv/app",
             )
         assert seen == ["/srv/app", ""]
+
+
+class TestSecurityIssueFlow:
+    """Enter opens an issue, x marks it test data, esc comes back — no scan in between."""
+
+    def _report(self):
+        from yeaboi.agent.state import AgentSecurityReport, SecurityFinding, SecurityFix, SecurityIssue
+
+        fix = SecurityFix(id="mark-test-data", kind="dismiss", label="Mark as test data")
+        finding = SecurityFinding(
+            category="risky_tool",
+            pattern="curl-pipe-shell",
+            severity="high",
+            location="/t/gone.jsonl",
+            line_no=5,
+            key="risky_tool:curl-pipe-shell:/t/gone.jsonl:command",
+            verdict="needs-decision",
+            context="command",
+            fixes=(fix,),
+        )
+        issue = SecurityIssue(
+            id="risky_tool:curl-pipe-shell",
+            category="risky_tool",
+            pattern="curl-pipe-shell",
+            title="An agent piped a download into a shell",
+            verdict="needs-decision",
+            severity="high",
+            signals=1,
+            sessions=1,
+            files=1,
+            finding_keys=(finding.key,),
+            fixes=(fix,),
+        )
+        return AgentSecurityReport(
+            scan_date="2026-08-08",
+            posture="needs-attention",
+            findings=(finding,),
+            issues=(issue,),
+            verdict_counts=(("needs-decision", 1),),
+            verdict_line="One thing needs a decision.",
+            generated_at="2026-08-08T10:00:00+00:00",
+        )
+
+    def test_enter_opens_the_issue_and_x_marks_it_test_data(self, empty_db, tmp_path, monkeypatch):
+        from yeaboi.agentwatch import dismissals, security_checks
+        from yeaboi.ui.mode_select.screens import _screens_agents
+
+        monkeypatch.setattr(dismissals, "default_path", lambda: tmp_path / "allow.json")
+        monkeypatch.setattr(security_checks, "_config_roots", lambda: (tmp_path / "dot-claude", tmp_path / "c.json"))
+        screens = _Screens()
+        issue_screens = _Screens()
+        monkeypatch.setattr(_agents, "_screen_builder", lambda _mode: screens)
+        monkeypatch.setattr(
+            _screens_agents,
+            "_build_agent_security_issue_screen",
+            lambda report, issue, **kwargs: issue_screens((report, issue), **kwargs),
+        )
+        report = self._report()
+        monkeypatch.setattr(agents_setup, "run", lambda _mode, on_progress, project_path="", options=None: report)
+        keys = iter(["enter", "x", "esc", "esc"])
+
+        def read_key(timeout=None):
+            time.sleep(0.001)
+            if not screens.calls or screens.calls[-1][0] is None:
+                return None  # still loading
+            return next(keys, "esc")
+
+        mode = agents_setup.require("agent-security")
+        _agents._run_agent_page(mode, _Console(), _Live(), read_key, 0.0, True)
+        assert issue_screens.calls, "enter should have opened the issue screen"
+        (opened, kwargs) = issue_screens.calls[0]
+        assert opened[1].id == "risky_tool:curl-pipe-shell"
+        assert "No replay" in kwargs["replay_status"]
+        assert [d.key for d in dismissals.load()] == ["risky_tool:curl-pipe-shell:/t/gone.jsonl:command"]
+        assert dismissals.load()[0].reason.startswith("test data")

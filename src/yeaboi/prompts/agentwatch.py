@@ -119,31 +119,43 @@ def get_security_summary_prompt(
     *,
     scan_date: str,
     posture: str,
-    findings: list[tuple[str, str, str, str]],
+    issues: list[tuple[str, str, str, str, str, int]],
+    verdict_counts: dict[str, int],
     mcp_count: int,
     sessions_scanned: int,
 ) -> str:
     """Build the security-summary prompt.
 
     Args:
-        findings: (severity, category, title, pattern) rows, worst first.
+        issues: (severity, category, title, pattern, verdict, signals) rows, worst first.
+        verdict_counts: findings per verdict word (needs-decision, unsure, test-data, handled, info).
     """
-    finding_lines = (
-        "\n".join(f"- [{sev}/{cat}] {title} ({pattern})" for sev, cat, title, pattern in findings) or "(none)"
+    issue_lines = (
+        "\n".join(
+            f"- [{verdict}] {title} ({pattern}; {sev}/{cat}; {signals} signal(s))"
+            for sev, cat, title, pattern, verdict, signals in issues
+        )
+        or "(none)"
     )
+    counts = ", ".join(f"{n} {verdict}" for verdict, n in verdict_counts.items() if n)
 
     ask = (
-        f"You are summarising a local AI-agent security scan from {scan_date} for an engineering "
-        f"lead (computed posture: {posture}; {sessions_scanned} session(s) scanned, {mcp_count} MCP "
+        f"You are summarising a local AI-agent security scan from {scan_date} for the one engineer who runs "
+        f"these agents (computed posture: {posture}; {sessions_scanned} session(s) scanned, {mcp_count} MCP "
         "server(s) configured). Write a short plain-language summary and prioritised recommendations."
     )
     requirements = (
         "Requirements:\n"
-        "- Ground everything in the findings below — never invent findings or soften a critical one.\n"
-        "- summary: 2-3 sentences, leading with the worst class of finding (or the clean result).\n"
-        "- recommendations: max 5, ordered by risk reduction per effort, each one concrete action.\n"
+        "- Ground everything in the issues below — never invent an issue.\n"
+        "- Each issue carries a verdict. 'needs-decision' means the command ran or a live-looking key was in a "
+        "command or prompt; 'unsure' means a generic shape worth a look; 'test-data' means the text was written "
+        "into or read from a test, fixture or docs file and is NOT a risk; 'handled' and 'info' need nothing.\n"
+        "- Be proportionate: lead with what needs a decision; if nothing does, say so in the first sentence. "
+        "Do not call test data critical, and do not tell the reader to rotate a key that only appeared in a test.\n"
+        "- summary: 2-3 sentences. recommendations: max 5, only for needs-decision and unsure issues, each one "
+        "concrete action (block the command family with a guard hook, rotate the key, narrow the rule).\n"
         "- These are deterministic pattern matches — call them indicators, not a security audit.\n"
         'Return STRICT JSON: {"summary": "...", "recommendations": ["..."]}'
     )
-    context = f"Findings (worst first):\n{finding_lines}"
+    context = f"Verdict counts: {counts or 'none'}\n\nIssues (worst first):\n{issue_lines}"
     return f"{ask}\n\n{requirements}\n\n{context}"

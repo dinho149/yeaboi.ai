@@ -4,12 +4,14 @@ Everything here is a pattern scan producing :class:`SecurityFinding` /
 :class:`McpServerRecord` rows — an *indicator*, not a security audit (the beta
 notice says so to the user). Two invariants:
 
-1. **Never store matched content from a transcript.** A finding carries a
-   pattern label, a file path and (where meaningful) a line number — never the
-   secret it matched, the command it appeared in, or any prompt/code text from
-   an agent session. That is the privacy boundary, and it is test-enforced.
-   The classifier below *inspects* a matched span to decide a severity, inside
-   the scan, and returns only a severity word.
+1. **Never store a matched secret.** A finding carries a pattern label, a
+   file path, a line number, where the match sat (its ``context``) and a
+   snippet of at most 120 characters that has been through
+   ``redaction.redact`` with the matched span itself masked — never the secret,
+   and never more of the transcript than it takes to say what happened. That
+   is the privacy boundary, and it is test-enforced. The classifier below
+   *inspects* a matched span to decide a severity, inside the scan, and
+   returns only a severity word.
 
    ``detail`` is the one field that may quote a *config* value — the permission
    mode, the allow rule — because a finding that says "an allow rule
@@ -106,6 +108,12 @@ LEGACY_LABELS: dict[str, str] = {
 
 _LABEL_SEVERITY: dict[str, str] = {label: severity for label, severity, _generic in SECRET_CLASSES.values()}
 _GENERIC_LABELS: frozenset[str] = frozenset(label for label, _sev, generic in SECRET_CLASSES.values() if generic)
+
+
+def is_generic(label: str) -> bool:
+    """True for the loose shapes (generic sk-, URL credentials, auth headers)."""
+    return canonical_label(label) in _GENERIC_LABELS
+
 
 # Severities for the risky-shell patterns the collector scans tool_use commands
 # for. ``sudo`` is worth a line, not a warning banner.
@@ -233,6 +241,7 @@ def _audit_one_settings(path: Path) -> list[SecurityFinding]:
                 title="Permission prompts bypassed by default",
                 location=str(path),
                 pattern="permission-bypass-default",
+                target="permissions.defaultMode",
                 detail=f"permissions.defaultMode is {permissions.get('defaultMode')!r}",
                 remediation="Remove the bypass default; approve tools per session instead.",
             )
@@ -247,6 +256,7 @@ def _audit_one_settings(path: Path) -> list[SecurityFinding]:
                     title="Wildcard tool allow rule",
                     location=str(path),
                     pattern="wildcard-allow",
+                    target=rule_s,
                     detail=f"allow rule {rule_s!r} auto-approves everything it matches",
                     remediation="Replace the wildcard with the specific commands you trust.",
                 )
@@ -259,6 +269,7 @@ def _audit_one_settings(path: Path) -> list[SecurityFinding]:
                     title="Broad shell allow rule",
                     location=str(path),
                     pattern="broad-bash-allow",
+                    target=rule_s,
                     detail=f"allow rule {rule_s!r} pre-approves a destructive/network command family",
                     remediation="Narrow the rule to exact commands and arguments.",
                 )
@@ -288,6 +299,7 @@ def _audit_one_settings(path: Path) -> list[SecurityFinding]:
                     title="Secret-shaped value in settings env",
                     location=str(path),
                     pattern="secret-in-settings-env",
+                    target=str(key),
                     detail=f"env key {key!r} holds a credential-shaped value",
                     remediation="Move the credential to a secret manager or shell profile.",
                 )

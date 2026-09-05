@@ -243,7 +243,7 @@ def agents_advisor_history(limit: int = 10) -> dict:
 @tool
 def agents_security_history(limit: int = 10) -> dict:
     """Recent Agent Security scans: the posture of the AI coding agents working
-    across the SDLC, and any findings they raised.
+    across the SDLC, the one-line verdict, and the issues with what to do about them.
     """
     from yeaboi.mcp.tools_agentwatch import _security_history
 

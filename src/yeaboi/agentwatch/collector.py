@@ -275,29 +275,223 @@ def fold_requests(rollup: _SessionRollup, *, skip_keys: set[str] | None = None) 
         _add_bucket(rollup.day_usage.setdefault(day, {}).setdefault(model, {}), usage)
 
 
+# Contexts a transcript match can sit in. The verdict engine reads these; a
+# heredoc body is text an agent wrote into a file, a command is text it ran.
+CONTEXT_COMMAND = "command"
+CONTEXT_HEREDOC = "heredoc"
+CONTEXT_INLINE_SCRIPT = "inline-script"
+CONTEXT_WRITE_INPUT = "write-input"
+CONTEXT_TOOL_RESULT = "tool-result"
+CONTEXT_PROSE = "prose"
+CONTEXT_USER_PROMPT = "user-prompt"
+CONTEXT_TOOL_INPUT = "tool-input"  # the argument of a tool other than Bash (a Grep pattern, a fetch URL)
+
+_WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+_HEREDOC_OPEN = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][\w-]*)\1")
+_INLINE_SCRIPT = re.compile(r"(?:python3?|node|ruby|perl|bash|sh)\s+-[ce]\s+(['\"])(.*?)\1", re.S)
+_SNIPPET_RADIUS = 56
+_SNIPPET_LIMIT = 120
+
+
+def split_heredocs(command: str) -> tuple[str, list[str]]:
+    """``(the command with its heredoc bodies removed, the bodies)``.
+
+    A body starts on the line after ``<<TAG`` and ends at the line that is
+    exactly ``TAG``. Text inside is what the agent wrote into a file or fed to
+    an interpreter, not what the shell ran — the distinction every verdict
+    over a risky-looking command rests on.
+    """
+    lines = command.split("\n")
+    kept: list[str] = []
+    bodies: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        kept.append(line)
+        index += 1
+        for match in _HEREDOC_OPEN.finditer(line):
+            tag = match.group(2)
+            body: list[str] = []
+            while index < len(lines) and lines[index].strip() != tag:
+                body.append(lines[index])
+                index += 1
+            index += 1  # the closing tag line
+            bodies.append("\n".join(body))
+    return "\n".join(kept), bodies
+
+
+def _mask_snippet(text: str, start: int, end: int, label: str) -> str:
+    """≤120 redacted characters around ``text[start:end]`` with that span masked."""
+    from yeaboi.redaction import redact
+
+    before = text[max(0, start - _SNIPPET_RADIUS) : start]
+    after = text[end : end + _SNIPPET_RADIUS]
+    joined = " ".join(f"{before}[REDACTED {label}]{after}".split())
+    return redact(joined)[:_SNIPPET_LIMIT]
+
+
+_HEREDOC_TARGET = re.compile(r"(?:>>?|\btee\s+(?:-a\s+)?)\s*[\"']?([^\s\"'<>|;&]+)")
+
+
+def heredoc_bodies(command: str) -> list[tuple[str, str]]:
+    """``(body, target file)`` per heredoc, in order; the target is "" when the body feeds a program.
+
+    Walks the same way :func:`split_heredocs` does, so an opener inside a body
+    is body text, not a second heredoc.
+    """
+    lines = command.split("\n")
+    out: list[tuple[str, str]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        for match in _HEREDOC_OPEN.finditer(line):
+            tag = match.group(2)
+            body: list[str] = []
+            while index < len(lines) and lines[index].strip() != tag:
+                body.append(lines[index])
+                index += 1
+            index += 1
+            redirect = _HEREDOC_TARGET.search(line)
+            out.append(("\n".join(body), redirect.group(1) if redirect else ""))
+    return out
+
+
+def _command_context(command: str, regex: re.Pattern[str], label: str) -> tuple[str, str, str] | None:
+    """``(context, snippet, target)`` for the first place ``regex`` matches in a Bash command."""
+    stripped, _bodies = split_heredocs(command)
+    match = regex.search(stripped)
+    if match:
+        inline = _INLINE_SCRIPT.search(stripped)
+        if inline and inline.start(2) <= match.start() < inline.end(2):
+            return CONTEXT_INLINE_SCRIPT, _mask_snippet(stripped, match.start(), match.end(), label), ""
+        return CONTEXT_COMMAND, _mask_snippet(stripped, match.start(), match.end(), label), ""
+    for body, target in heredoc_bodies(command):
+        match = regex.search(body)
+        if match:
+            return CONTEXT_HEREDOC, _mask_snippet(body, match.start(), match.end(), label), target
+    return None
+
+
+def _result_target(record: dict) -> str:
+    """The file a tool_result came from, when the transcript says so."""
+    result = record.get("toolUseResult")
+    if isinstance(result, dict):
+        if isinstance(result.get("filePath"), str):
+            return result["filePath"]
+        file_info = result.get("file")
+        if isinstance(file_info, dict) and isinstance(file_info.get("filePath"), str):
+            return file_info["filePath"]
+    return ""
+
+
+def _block_strings(block: dict) -> list[tuple[str, str, str]]:
+    """``(context, target, text)`` candidates a content block can carry a match in."""
+    kind = block.get("type")
+    if kind == "text":
+        return [(CONTEXT_PROSE, "", str(block.get("text") or ""))]
+    if kind == "tool_result":
+        content = block.get("content")
+        if isinstance(content, list):
+            text = "\n".join(str(c.get("text") or "") for c in content if isinstance(c, dict))
+        else:
+            text = str(content or "")
+        return [(CONTEXT_TOOL_RESULT, "", text)]
+    if kind == "tool_use":
+        name = str(block.get("name") or "")
+        payload = block.get("input") if isinstance(block.get("input"), dict) else {}
+        if name in _WRITE_TOOLS:
+            target = str(payload.get("file_path") or payload.get("notebook_path") or "")
+            text = "\n".join(str(v) for k, v in payload.items() if k not in ("file_path", "notebook_path"))
+            return [(CONTEXT_WRITE_INPUT, target, text)]
+        if isinstance(payload.get("command"), str):
+            return [(CONTEXT_COMMAND, "", payload["command"])]
+        return [(CONTEXT_TOOL_INPUT, "", json.dumps(payload, ensure_ascii=False))]
+    return []
+
+
+def _locate_secret(record: dict | None, regex: re.Pattern[str], label: str) -> tuple[str, str, str]:
+    """``(context, target, snippet)`` for a secret regex that hit this line."""
+    if record is None:
+        return CONTEXT_PROSE, "", ""
+    message = record.get("message")
+    message = message if isinstance(message, dict) else {}
+    kind = record.get("type")
+    content = message.get("content")
+    if isinstance(content, str):
+        context = CONTEXT_USER_PROMPT if kind == "user" else CONTEXT_PROSE
+        match = regex.search(content)
+        return context, "", _mask_snippet(content, match.start(), match.end(), label) if match else ""
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            for context, target, text in _block_strings(block):
+                if block.get("type") == "tool_use" and context == CONTEXT_COMMAND:
+                    located = _command_context(text, regex, label)
+                    if located:
+                        return located[0], located[2], located[1]
+                    continue
+                match = regex.search(text)
+                if match:
+                    if context == CONTEXT_TOOL_RESULT:
+                        target = _result_target(record)
+                    if context == CONTEXT_PROSE and kind == "user":
+                        context = CONTEXT_USER_PROMPT
+                    return context, target, _mask_snippet(text, match.start(), match.end(), label)
+    # Claude Code keeps a tool's full output on the record itself, beside the
+    # (often truncated) content block — a Read's file text lives here.
+    result = record.get("toolUseResult")
+    if result is not None:
+        text = json.dumps(result, ensure_ascii=False)
+        match = regex.search(text)
+        if match:
+            return CONTEXT_TOOL_RESULT, _result_target(record), _mask_snippet(text, match.start(), match.end(), label)
+    return CONTEXT_PROSE, "", ""
+
+
 def _scan_security(
     line: str,
     line_no: int,
     record: dict | None,
     *,
-    on_finding: Callable[[str, str, str, int, str], None],
+    on_finding: Callable[[dict], None],
     session_id: str,
 ) -> None:
-    """Emit security findings for one raw line. Pattern + severity + location only.
+    """Emit security findings for one raw line.
 
-    The matched span is handed to the classifier for a severity word and then
-    dropped — it never reaches ``on_finding``.
+    Each finding is a plain dict: pattern, severity, line, session, where the
+    match sat (context + target) and a redacted snippet with the matched span
+    masked. The span itself is classified for a severity and dropped.
     """
+    timestamp = str(record.get("timestamp") or "") if record else ""
+    seen: set[str] = set()
     for label, regex, guard in _SECRET_PATTERNS:
         if guard is not None and not guard(line):
             continue
         match = regex.search(line)
-        if match:
-            on_finding("secret", security_checks.classify_secret(label, match.group(0)), label, line_no, session_id)
+        if not match or label in seen:
+            continue
+        seen.add(label)
+        context, target, snippet = _locate_secret(record, regex, label)
+        on_finding(
+            {
+                "category": "secret",
+                "severity": security_checks.classify_secret(label, match.group(0)),
+                "pattern": label,
+                "line_no": line_no,
+                "session_id": session_id,
+                "context": context,
+                "target": target,
+                "at": timestamp,
+                "tool": "",
+                "snippet": snippet,
+            }
+        )
     if record is None:
         return
     message = record.get("message") or {}
-    content = message.get("content")
+    content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
         return
     for block in content:
@@ -307,9 +501,24 @@ def _scan_security(
         if not isinstance(command, str):
             continue
         for label, regex in _RISKY_BASH_PATTERNS:
-            if regex.search(command):
-                severity = security_checks.RISKY_TOOL_SEVERITY.get(label, "medium")
-                on_finding("risky_tool", severity, label, line_no, session_id)
+            located = _command_context(command, regex, label)
+            if located is None:
+                continue
+            severity = security_checks.RISKY_TOOL_SEVERITY.get(label, "medium")
+            on_finding(
+                {
+                    "category": "risky_tool",
+                    "severity": severity,
+                    "pattern": label,
+                    "line_no": line_no,
+                    "session_id": session_id,
+                    "context": located[0],
+                    "target": located[2],
+                    "at": timestamp,
+                    "tool": str(block.get("name") or "Bash"),
+                    "snippet": located[1],
+                }
+            )
 
 
 def _day_of(timestamp: str, fallback: str) -> str:
@@ -321,7 +530,7 @@ def _parse_file(
     path: Path,
     *,
     stats: IngestStats,
-    on_finding: Callable[[str, str, str, int, str], None],
+    on_finding: Callable[[dict], None],
     scan_security: bool = True,
     start_offset: int = 0,
     start_line: int = 0,
@@ -718,16 +927,13 @@ def _parse_worker(path_str: str, scan_security: bool = True, start_offset: int =
     exported, rendered).
     """
     local = IngestStats()
-    findings: list[tuple[str, str, str, int, str]] = []
-
-    def on_finding(category: str, severity: str, pattern: str, line_no: int, session_id: str) -> None:
-        findings.append((category, severity, pattern, line_no, session_id))
+    findings: list[dict] = []
 
     try:
         rollup = _parse_file(
             Path(path_str),
             stats=local,
-            on_finding=on_finding,
+            on_finding=findings.append,
             scan_security=scan_security,
             start_offset=start_offset,
             start_line=start_line,
@@ -764,7 +970,7 @@ def _store_parsed(
     source: str,
     path: Path,
     rollup: _SessionRollup,
-    findings: list[tuple[str, str, str, int, str]],
+    findings: list[dict],
     stats: IngestStats,
     *,
     scan_security: bool = True,
@@ -842,13 +1048,6 @@ def _store_parsed(
     if not resume:
         store.delete_findings_for_path(source_path)
     if scan_security:
-        for category, severity, pattern, line_no, session_id in findings:
-            store.add_finding(
-                category=category,
-                severity=severity,
-                pattern=pattern,
-                source_path=source_path,
-                line_no=line_no,
-                session_id=session_id,
-            )
+        for finding in findings:
+            store.add_finding(source_path=source_path, **finding)
             stats.findings_added += 1

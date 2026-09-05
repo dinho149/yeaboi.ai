@@ -599,8 +599,12 @@ already running) is not a failure.
 | GET | `/api/agents/{kind}/latest` | the last saved report, for an instant open, with `fresh: bool`; `?project_id=` scopes it (see below) |
 | POST | `/api/agents/{kind}/run` | one fresh pass, streamed as NDJSON; body `{project_id?, window_days?, include_info?}` |
 | POST | `/api/agents/{kind}/export` | write the report, or hand back its Markdown |
-| POST | `/api/agents/security/dismiss` | body `{key, reason, expires?, undo?}` — set one finding aside with the reason (400 without one), or restore it |
+| POST | `/api/agents/security/dismiss` | body `{key, reason, expires?, undo?, include_info?}` — set one finding aside with the reason (400 without one), or restore it; answers with the re-derived `report` |
 | GET | `/api/agents/security/dismissed` | `{dismissed: [{key, reason, by, at, expires}]}` |
+| POST | `/api/agents/security/verdict` | body `{keys, verdict: "test-data" \| "dismiss" \| "undo", reason?, include_info?}` — many findings at once; `test-data` fills the reason in; answers `{ok, handled \| restored, report}` |
+| POST | `/api/agents/security/fix` | body `{key, fix_id, keys?, reason?, repo?, include_info?}` — apply one of the finding's `fixes`; answers `{ok, fix_id, detail, pr_url, paths, handled, report?}`; a sandbox refusal is a 403 naming the path (allow it and retry) |
+| GET | `/api/agents/security/replay` `?key=&line=` | the transcript turns around one signal: `{session_id, project_path, started_at, line_no, pattern, focus, turns: [{index, line_no, at, role, kind, tool, text, truncated, flagged}]}`; 400 for a non-transcript finding or a path outside the scanned roots |
+| GET | `/api/agents/security/signals` `?key=` | `{key, signals: [{line_no, at, session_id, context, snippet}]}` — every stored line behind one grouped finding |
 
 `kind` is one of `usage`, `advisor`, `security`. Every mode's run and history is
 an MCP tool already; what is native is the shape of the page. A pass scans every
@@ -614,11 +618,23 @@ otherwise only counted in `hidden_info_count`. Export is native because these
 artifacts write through `agentwatch/export.py` rather than the shared exporter,
 so `/api/export` cannot reach them; `copy` is answered as data, never performed.
 
-A security report's `findings` are grouped per (pattern, file) with
-`occurrences`, a `key` (`category:pattern:location`, what `dismiss` takes) and,
-for MCP findings, `scopes`; the report carries `new_findings` / `resolved_findings`
-(keys, relative to the previous saved report), `dismissed_count`,
-`hidden_info_count`, `posture_reason` and `pattern_totals`. A usage report
+A security report's `findings` are grouped per (pattern, file, context) with
+`occurrences`, a `key` (`category:pattern:location[:context]`, what `dismiss`,
+`verdict`, `fix`, `replay` and `signals` take) and, for MCP findings, `scopes`.
+Each finding carries a `verdict` (`needs-decision` | `unsure` | `test-data` |
+`handled` | `info`) with its `verdict_reason`, the `context` the match sat in
+(`command` | `heredoc` | `inline-script` | `write-input` | `tool-result` |
+`prose` | `user-prompt`), the `target` file that context pointed at, a ≤120-char
+redacted `snippet` with the matched span masked, `at`, `session_id`,
+`project_label` and its `fixes` (`[{id, kind: write | pr | link | dismiss |
+manual, label, target, detail, scope}]`). The report carries `issues` — one row
+per (category, pattern): `{id, category, pattern, title, why, verdict, severity,
+signals, sessions, files, last_seen, finding_keys, fixes}`, worst verdict first —
+`verdict_counts` (`[[verdict, findings]]`), `verdict_line` (the one-sentence
+answer a page opens with), `new_findings` / `resolved_findings` (keys, relative
+to the previous saved report), `dismissed_count`, `hidden_info_count`,
+`posture_reason` and `pattern_totals`. `latest?include_info=1` re-derives the
+saved report with the informational rows listed, without a scan. A usage report
 carries `billing_kind` (`subscription` | `api` | `""`), which decides the
 qualifier a surface prints beside the total, `cache_cost_share` and
 `window_days`.
