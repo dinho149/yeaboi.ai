@@ -2,6 +2,29 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.43.0",
+      "date": "2026-09-05",
+      "headline": "Spotify, Apple Music and YouTube Music join the library",
+      "summary": "Spotify, Apple Music and YouTube Music are now available as music sources on the desktop. Sign in to Spotify or YouTube Music to browse their libraries; Apple Music uses the system's Music app with keyless search.",
+      "highlights": [
+        {
+          "text": "Sign in to browse Spotify and YouTube Music libraries on desktop",
+          "areas": ["general"],
+          "surfaces": ["desktop"]
+        },
+        {
+          "text": "Search Apple Music without signing in or installing apps",
+          "areas": ["general"],
+          "surfaces": ["desktop"]
+        },
+        {
+          "text": "Music page and player settings tabs on the desktop",
+          "areas": ["settings"],
+          "surfaces": ["desktop"]
+        }
+      ]
+    },
+    {
       "version": "3.42.0",
       "date": "2026-09-05",
       "headline": "The front page comes to the terminal",
