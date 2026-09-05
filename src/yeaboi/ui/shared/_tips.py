@@ -364,6 +364,12 @@ _META_TIPS: tuple[FeatureTip, ...] = (
 # what TestDesktopOnlyTips checks against the desktop's own route manifest.
 _DESKTOP_TIPS: tuple[FeatureTip, ...] = (
     FeatureTip(
+        "desktop:music",
+        "\U0001f3b5 Tip: Music lives in the rail's pocket — radio shared with the terminal, "
+        "or Spotify, Apple Music and YouTube Music once they are on in the catalog",
+        surfaces=("desktop",),
+    ),
+    FeatureTip(
         "desktop:projects",
         "\U0001f4c1 Tip: Projects is the durable door — every run you start inside one shares its context",
         surfaces=("desktop",),

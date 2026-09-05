@@ -302,9 +302,19 @@
       "title": "Settings"
     },
     {
+      "path": "/music",
+      "capability": null,
+      "title": "Music"
+    },
+    {
       "path": "/settings/appearance",
       "capability": null,
       "title": "Settings · Appearance"
+    },
+    {
+      "path": "/settings/music",
+      "capability": null,
+      "title": "Settings · Player"
     },
     {
       "path": "/settings/duck",
