@@ -74,7 +74,8 @@ jobs:
           # repository with `Contents: read and write` and nothing else. Do not
           # substitute a classic `repo`-scoped token on rotation: the steps below
           # run `claude-code-action` with unrestricted `Bash` against code checked
-          # out FROM THE PR BRANCH (including `scripts/bump_version.py`), and
+          # out FROM THE PR BRANCH (including `scripts/bump_version.py` and
+          # `scripts/changelog_stub.py`, which the fallback step runs too), and
           # checkout persists this credential into `.git/config`. A fine-grained
           # token bounds a leak to this repo's contents; a classic one would
           # expose the whole account, and the job's `permissions:` block does not
