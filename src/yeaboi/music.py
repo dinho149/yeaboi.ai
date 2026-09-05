@@ -69,7 +69,9 @@ _CAN_SUSPEND = hasattr(signal, "SIGSTOP") and hasattr(signal, "SIGCONT")
 CHANNELS: tuple[dict[str, str], ...] = (
     {"name": "Lofi", "url": "https://ice1.somafm.com/groovesalad-128-mp3"},
     {"name": "Jazz", "url": "https://ice1.somafm.com/sonicuniverse-128-mp3"},
-    {"name": "Classical", "url": "https://stream.srg-ssr.ch/m/rsc_de/mp3_128"},
+    # Radio France serves this one over https end to end; the Swiss stream
+    # redirected to plain http, which a window refuses and a terminal does not.
+    {"name": "Classical", "url": "https://icecast.radiofrance.fr/francemusique-midfi.mp3"},
     {"name": "Ambient", "url": "https://ice1.somafm.com/dronezone-128-mp3"},
 )
 
