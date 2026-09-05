@@ -11,7 +11,7 @@ from tests.unit.test_category_screen import FakeDesk, _Console, _keys, _Live, _p
 from yeaboi.news import edition
 from yeaboi.news.paper import Paper, SourceStatus
 from yeaboi.news.parse import NewsItem
-from yeaboi.ui.mode_select.screens._screens_news import _build_front_page_screen, index_lines
+from yeaboi.ui.mode_select.screens._screens_news import _build_front_page_screen, index_lines, picture_scale
 
 NOW = datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc)
 SUMMARY = "The lab says the model plans over hours rather than minutes, and hands work back with a written trace."
@@ -53,6 +53,35 @@ class TestRender:
     def test_exact_height_at_the_floor_and_above(self):
         assert len(_lines(_stories(3))) == 39
         assert len(_lines(_stories(3), height=52, width=190)) == 52
+        assert len(_lines(_stories(3), height=45, width=120)) == 45
+
+    def test_the_picture_doubles_when_the_rows_are_there(self):
+        assert picture_scale(39, 190) == 1 and picture_scale(51, 190) == 1 and picture_scale(52, 190) == 2
+        assert picture_scale(52, 100) == 1  # a narrow sheet keeps the small picture
+        small = _lines(_stories(3), height=39)
+        large = _lines(_stories(3), height=52, width=190)
+        caption = "The wizard, under the stars."
+        plate_small = [i for i, row in enumerate(small) if "✦" in row or "╱" in row]
+        assert len([row for row in large if "▁▁▁▁" in row]) == 1
+        # The plate spans 13 rows at the floor and 26 rows on a tall terminal.
+        small_plate = next(i for i, row in enumerate(small) if caption in row) - min(plate_small)
+        assert small_plate <= 13
+        large_rows = [i for i, row in enumerate(large) if "██" in row or "▀" in row or "▄" in row]
+        assert max(large_rows) - min(large_rows) > 20
+
+    def test_the_sheet_sits_in_the_middle_of_a_tall_desk(self):
+        rows = _lines(_stories(3), height=48, width=120)
+        first = next(i for i, row in enumerate(rows) if "██" in row)
+        assert first > 3  # not pressed against the top border
+
+    def test_the_kicker_does_not_repeat_the_outlet(self):
+        stories = (
+            NewsItem(
+                id="r", title="yeaboi 3.41.1: a release", url="u", source_name="yeaboi", column="yeaboi", kind="release"
+            ),
+        )
+        text = "\n".join(_lines(stories))
+        assert "From yeaboi" in text and "From yeaboi · yeaboi" not in text
 
     def test_the_nameplate_and_folio(self):
         text = "\n".join(_lines(_stories(3)))

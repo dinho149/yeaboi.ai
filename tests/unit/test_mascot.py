@@ -188,3 +188,5 @@ def test_persona_cells_pack_to_thirteen_rows_and_fall_back_to_the_engineer():
     assert persona_cells("pirate") == persona_cells("engineer")
     robo = persona_cells("wizard", mascot="robo")
     assert any(style and "140,160,178" in style for row in robo for _g, style in row)  # steel
+    large = persona_cells("wizard", scale=2)
+    assert len(large) == 26 and all(len(row) == 36 for row in large)

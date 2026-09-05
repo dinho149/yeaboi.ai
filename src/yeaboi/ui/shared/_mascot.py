@@ -296,17 +296,20 @@ def head_cells(*, flip: bool = False, mascot: str = "duck") -> list[list[tuple[s
     return _pack_cells(grid)
 
 
-def persona_cells(persona: str, *, mascot: str = "duck") -> list[list[tuple[str, str | None]]]:
+def persona_cells(persona: str, *, mascot: str = "duck", scale: int = 1) -> list[list[tuple[str, str | None]]]:
     """The duck in one of the eight costumes as (glyph, style) cells, still, facing right.
 
-    The paper's figure: 13 rows with the hat room, feet on the last row. An
-    unknown persona wears the engineer's hard hat; the robo wears the same costume
-    in steel.
+    The paper's figure: 13 rows with the hat room, feet on the last row (26 at
+    ``scale`` 2). An unknown persona wears the engineer's hard hat; the robo wears
+    the same costume in steel.
     """
     from yeaboi.ui.shared._persona_sprites import PERSONAS, ROBO_PERSONAS
 
     grids = ROBO_PERSONAS if mascot == "robo" else PERSONAS
-    return _pack_cells(grids.get(persona) or grids["engineer"])
+    grid = grids.get(persona) or grids["engineer"]
+    if scale > 1:
+        grid = tuple(line for row in grid for line in ["".join(ch * scale for ch in row)] * scale)
+    return _pack_cells(grid)
 
 
 def mini_cells(frame: int = 0, *, flip: bool = False, mascot: str = "duck") -> list[list[tuple[str, str | None]]]:

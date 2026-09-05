@@ -32,6 +32,19 @@ class TestBackdrops:
         for row in grid[6:-1]:
             assert row[left : left + 18].strip(".") == "", (scene, row)
 
+    @pytest.mark.parametrize("scene", sorted(edition.CAPTIONS))
+    def test_doubled_for_the_large_picture(self, scene):
+        grid = backdrops.scaled(backdrops.backdrop(scene), 2)
+        assert len(grid) == backdrops.PLATE_ROWS * 2
+        assert all(len(row) == backdrops.PLATE_COLS * 2 for row in grid), scene
+        assert grid[-1] == "▁" * (backdrops.PLATE_COLS * 2) and not grid[-2].strip(".")
+        assert set("".join(grid)) - {"."} <= INK | set("▜▛")
+
+    def test_doubling_keeps_the_lines_joined(self):
+        top, bottom = backdrops.scaled(("╭─╮", "│.│", "╰─╯"), 2)[0:2]
+        assert (top, bottom) == ("╭───╮.", "│...│.")
+        assert backdrops.scaled(("x",), 1) == ("x",)
+
     def test_an_unknown_scene_is_bare_ground(self):
         grid = backdrops.backdrop("nowhere")
         assert len(grid) == backdrops.PLATE_ROWS and grid[-1] == backdrops.GROUND

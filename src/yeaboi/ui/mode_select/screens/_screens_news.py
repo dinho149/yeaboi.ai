@@ -39,16 +39,20 @@ from yeaboi.ui.shared._components import (
     build_page_panel,
 )
 from yeaboi.ui.shared._mascot import persona_cells
-from yeaboi.ui.shared._scene_backdrops import DUCK_X, PLATE_COLS, PLATE_ROWS, backdrop
+from yeaboi.ui.shared._scene_backdrops import DUCK_X, PLATE_COLS, PLATE_ROWS, backdrop, scaled
 
 PAPER_MAX_W = 104
+LARGE_PAPER_MAX_W = 116  # room for the twice-size picture beside a readable column
+# The page's rows besides the spread: nameplate 4, hairline, folio, rule, kicker, headline 2,
+# rule, blank, then blank, hairline, inside, blank, colophon, blank, hints, blank; plus the
+# page's own border and padding. The picture doubles when the extra 13 rows fit.
+_ROWS_BESIDES_SPREAD = 21 + 4
 _SHEET_BG = "rgb(21,21,27)"  # a paper a shade lighter than the desk it lies on
 _HAIRLINE = "rgb(58,62,72)"
 _KEYCAP = "bold rgb(210,210,220)"
 _OUTLET_COLS = 14
 _HEADLINE_W = 70
 _GUTTER = "   "
-_SPREAD_ROWS = PLATE_ROWS + 1  # the plate and its caption; the index box takes the same rows
 DEFAULT_CARD: dict[str, Any] = {"color": TEAM_THEME.accent, "tint": "rgb(17,28,20)", "mascot": "duck"}
 _HINTS = [("←/→", "turn"), ("o", "open"), ("tab", "inside"), ("r", "refresh"), ("esc", "back")]
 _INDEX_HINTS = [("↑/↓", "pick"), ("enter", "turn to it"), ("tab", "fold"), ("esc", "back")]
@@ -94,17 +98,28 @@ def _folio(left: str, centre: str, right: str, *, width: int) -> Text:
     return row
 
 
-def _plate_rows(page: Page | None, *, tint: str, mascot: str) -> list[Text]:
+def picture_scale(height: int, width: int) -> int:
+    """Twice the picture when the page has thirteen rows to spare for it and a column left to read."""
+    tall = height >= _ROWS_BESIDES_SPREAD + PLATE_ROWS * 2 + 1
+    wide = width - 6 - 4 >= PLATE_COLS * 2 + len(_GUTTER) + 40
+    return 2 if tall and wide else 1
+
+
+def _plate_rows(page: Page | None, *, tint: str, mascot: str, scale: int = 1) -> list[Text]:
     """The picture: the scene's ink backdrop with the persona duck standing in it, on the tinted plate."""
     scene = page.scene if page is not None else edition.DEFAULT_SCENE
-    canvas = [[(" ", None) if ch == "." else (ch, LANDING_DETAIL_RESTING) for ch in row] for row in backdrop(scene)]
+    plate_rows = PLATE_ROWS * scale
+    canvas = [
+        [(" ", None) if ch == "." else (ch, LANDING_DETAIL_RESTING) for ch in row]
+        for row in scaled(backdrop(scene), scale)
+    ]
     if page is not None:
-        cells = persona_cells(page.persona, mascot=mascot)
-        top = PLATE_ROWS - len(cells)
+        cells = persona_cells(page.persona, mascot=mascot, scale=scale)
+        top = plate_rows - len(cells)
         for y, row in enumerate(cells):
             for x, cell in enumerate(row):
-                if cell[1] is not None and 0 <= top + y < PLATE_ROWS:
-                    canvas[top + y][DUCK_X + x] = cell
+                if cell[1] is not None and 0 <= top + y < plate_rows:
+                    canvas[top + y][DUCK_X * scale + x] = cell
     rows: list[Text] = []
     for row in canvas:
         text = Text(no_wrap=True, overflow="crop")
@@ -133,14 +148,14 @@ def _standfirst(summary: str, *, text_w: int, color: str) -> list[Text]:
     return rows
 
 
-def _story_column(page: Page | None, *, card: dict[str, Any], text_w: int) -> list[Text]:
-    """The words beside the picture: standfirst, byline, the read link — exactly ``PLATE_ROWS`` rows."""
+def _story_column(page: Page | None, *, card: dict[str, Any], text_w: int, rows_h: int) -> list[Text]:
+    """The words beside the picture: standfirst, byline, the read link — exactly ``rows_h`` rows."""
     rows: list[Text] = []
     if page is None:
         rows.append(_line(edition.EMPTY_LINE, LANDING_VERB_SELECTED))
     else:
         if page.item.summary:
-            rows += _standfirst(page.item.summary, text_w=text_w, color=card["color"])[: PLATE_ROWS - 4]
+            rows += _standfirst(page.item.summary, text_w=text_w, color=card["color"])[: rows_h - 4]
             rows.append(_line(" "))
         rows.append(_line(page.byline, LANDING_DETAIL_SELECTED))
         rows.append(_line(" "))
@@ -148,8 +163,8 @@ def _story_column(page: Page | None, *, card: dict[str, Any], text_w: int) -> li
         read.append("o", style=_KEYCAP)
         read.append(f"  {page.read}", style=LANDING_DETAIL_RESTING)
         rows.append(read)
-    rows = rows[:PLATE_ROWS]
-    rows += [_line(" ") for _ in range(PLATE_ROWS - len(rows))]
+    rows = rows[:rows_h]
+    rows += [_line(" ") for _ in range(rows_h - len(rows))]
     return rows
 
 
@@ -172,21 +187,22 @@ def index_lines(stories: Sequence[NewsItem], current: int) -> list[tuple[int, Ne
     return [(i + 1, item) for i, item in enumerate(stories) if i != current]
 
 
-def _index_rows(stories: Sequence[NewsItem], *, current: int, selected: int, theme: Theme) -> list[Text]:
+def _index_rows(stories: Sequence[NewsItem], *, current: int, selected: int, theme: Theme, rows_h: int) -> list[Text]:
     """The index box in the spread's rows: the other stories, the picked one bright."""
     rows = [
         story_row(item, page=number, selected=i == selected, theme=theme)
         for i, (number, item) in enumerate(index_lines(stories, current))
     ]
-    rows = rows[:_SPREAD_ROWS]
-    rows += [_line(" ") for _ in range(_SPREAD_ROWS - len(rows))]
+    rows = rows[:rows_h]
+    rows += [_line(" ") for _ in range(rows_h - len(rows))]
     return rows
 
 
-def _spread_rows(page: Page | None, *, card: dict[str, Any], text_w: int) -> list[Text]:
+def _spread_rows(page: Page | None, *, card: dict[str, Any], text_w: int, scale: int) -> list[Text]:
     """The picture beside the words, one Text per row, then the caption under the picture."""
-    plate = _plate_rows(page, tint=card["tint"], mascot="robo" if card["mascot"] == "robo" else "duck")
-    words = _story_column(page, card=card, text_w=text_w)
+    mascot = "robo" if card["mascot"] == "robo" else "duck"
+    plate = _plate_rows(page, tint=card["tint"], mascot=mascot, scale=scale)
+    words = _story_column(page, card=card, text_w=text_w, rows_h=PLATE_ROWS * scale)
     rows: list[Text] = []
     for left, right in zip(plate, words, strict=True):
         row = Text.assemble(left, _GUTTER, right)
@@ -216,9 +232,10 @@ def _build_front_page_screen(
     theme = CHANGELOG_THEME
     card = card or DEFAULT_CARD
     accent = card["color"]
+    scale = picture_scale(height, width)
     inner_w = width - 6  # the page's border and its (1, 2) padding
-    paper_w = min(inner_w - 4, PAPER_MAX_W)  # the sheet's own two columns of padding a side
-    text_w = max(20, paper_w - PLATE_COLS - len(_GUTTER))
+    paper_w = min(inner_w - 4, LARGE_PAPER_MAX_W if scale > 1 else PAPER_MAX_W)  # less the sheet's own side padding
+    text_w = max(20, paper_w - PLATE_COLS * scale - len(_GUTTER))
     headline_w = min(paper_w, _HEADLINE_W)
 
     rows: list[Text] = [
@@ -237,6 +254,8 @@ def _build_front_page_screen(
 
     if page is not None:
         source = edition.source_tag(page.item)
+        if page.kicker.endswith(f" {source}"):
+            source = ""  # "From yeaboi · yeaboi" says it twice
         kicker = _joined([(page.kicker, LANDING_DETAIL_RESTING), (source, LANDING_DETAIL_SELECTED)])
         counter = Text()
         if page.counter:
@@ -253,10 +272,11 @@ def _build_front_page_screen(
     rows.append(_line("─" * headline_w, accent))
     rows.append(_line(" "))
 
+    spread_h = PLATE_ROWS * scale + 1
     if index_open:
-        rows += _index_rows(stories, current=current, selected=selected, theme=theme)
+        rows += _index_rows(stories, current=current, selected=selected, theme=theme, rows_h=spread_h)
     else:
-        rows += _spread_rows(page, card=card, text_w=text_w)
+        rows += _spread_rows(page, card=card, text_w=text_w, scale=scale)
 
     rows.append(_line(" "))
     rows.append(_line("─" * paper_w, _HAIRLINE))
@@ -265,10 +285,13 @@ def _build_front_page_screen(
         rows.append(_line(f"{edition.INSIDE_TITLE}  ▴" if index_open else f"{inside}  ▾", LANDING_DETAIL_SELECTED))
     else:
         rows.append(_line(" "))
+    rows.append(_line(" "))
     rows.append(_line(edition.sources_line(paper) or " ", LANDING_DETAIL_RESTING))
     rows.append(_line(" "))
     rows.append(build_key_hints(_INDEX_HINTS if index_open else _HINTS))
     rows.append(_line(" "))
 
-    sheet = Align.center(Padding(Group(*rows), (0, 2), style=f"on {_SHEET_BG}"), width=paper_w + 4)
-    return build_page_panel(sheet, theme=theme, height=height)
+    # The sheet lies in the middle of the desk when the desk is taller than it.
+    sheet = Padding(Group(*rows), (0, 2), style=f"on {_SHEET_BG}")
+    placed = Align(sheet, "center", vertical="middle", width=paper_w + 4, height=max(len(rows), height - 4))
+    return build_page_panel(placed, theme=theme, height=height)

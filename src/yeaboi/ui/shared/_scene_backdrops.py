@@ -199,3 +199,58 @@ BACKDROPS: dict[str, tuple[str, ...]] = {
 def backdrop(scene: str) -> tuple[str, ...]:
     """The scene's backdrop, or bare ground for one the plate has no picture of."""
     return BACKDROPS.get(scene) or (*([_SKY] * (PLATE_ROWS - 1)), GROUND)
+
+
+# Each ink glyph as the two-by-two it becomes when the plate is drawn at twice
+# the size: lines stay one cell thick and keep their joins (every vertical sits
+# in the left column of its pair), fills fill, and a rule keeps its row blank.
+_DOUBLE: dict[str, tuple[str, str]] = {
+    ".": ("..", ".."),
+    "─": ("──", ".."),
+    "═": ("══", ".."),
+    "│": ("│.", "│."),
+    "┃": ("┃.", "┃."),
+    "╭": ("╭─", "│."),
+    "╮": ("╮.", "│."),
+    "╰": ("│.", "╰─"),
+    "╯": ("│.", "╯."),
+    "┬": ("┬─", "│."),
+    "┴": ("│.", "┴─"),
+    "├": ("├─", "│."),
+    "┤": ("┤.", "│."),
+    "┼": ("┼─", "│."),
+    "▓": ("▓▓", "▓▓"),
+    "█": ("██", "██"),
+    "▄": ("..", "██"),
+    "▀": ("██", ".."),
+    "▁": ("..", "▁▁"),
+    "▂": ("..", "▂▂"),
+    "▔": ("▔▔", ".."),
+    "▐": (".█", ".█"),
+    "▌": ("█.", "█."),
+    "▟": (".█", "██"),
+    "▙": ("█.", "██"),
+    "▲": ("▟▙", "██"),
+    "●": ("▟▙", "▜▛"),
+    "○": ("╭╮", "╰╯"),
+    "◯": ("╭╮", "╰╯"),
+    "◀": ("◀.", "◀."),
+    "·": ("·.", ".."),
+    "✦": ("✦.", ".."),
+    "╱": (".╱", "╱."),
+    "╲": ("╲.", ".╲"),
+    "╳": ("╲╱", "╱╲"),
+    "~": ("~~", ".."),
+}
+
+
+def scaled(grid: tuple[str, ...], factor: int) -> tuple[str, ...]:
+    """The backdrop at ``factor`` 1 or 2: twice the columns and rows, the ink redrawn to fit."""
+    if factor == 1:
+        return grid
+    out: list[str] = []
+    for row in grid:
+        pairs = [_DOUBLE.get(ch, (ch + ".", "..")) for ch in row]
+        out.append("".join(top for top, _bottom in pairs))
+        out.append("".join(bottom for _top, bottom in pairs))
+    return tuple(out)
