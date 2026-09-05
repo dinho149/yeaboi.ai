@@ -324,7 +324,9 @@ class OAuthSignIn:
                 f"port {port} is busy — set YEABOI_OAUTH_PORT and update the Redirect URI "
                 f"in your own {connector.label} app"
             )
-            logger.warning("oauth: %s sign-in could not bind port %d", self.key, port)
+            # The number is in the message the person sees; a scanner reads a
+            # value named after "oauth" as a credential, so the log names none.
+            logger.warning("oauth: %s sign-in could not bind its callback port", self.key)
             return False
         self.url = authorize_url(provider, client.client_id, self._redirect, self._state, challenge)
         # Which app, without touching the client object: a field of it is a

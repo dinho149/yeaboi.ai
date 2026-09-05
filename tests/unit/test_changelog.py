@@ -118,7 +118,7 @@ class TestCopyContract:
 
     # CamelCase-shaped names that are products, not internals.
     PRODUCT_NAMES = frozenset(
-        {"GitHub", "DevOps", "PyPI", "JetBrains", "OpenAI", "JavaScript", "TypeScript", "DeepSeek"}
+        {"GitHub", "DevOps", "PyPI", "JetBrains", "OpenAI", "JavaScript", "TypeScript", "DeepSeek", "YouTube"}
     )
 
     BANNED = (
