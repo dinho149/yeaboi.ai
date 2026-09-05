@@ -125,7 +125,13 @@ jobs:
           #    pushed after the bump+entry land won't refresh the entry — same
           #    acceptance class as the dual-PR version race documented below.
           if [ "$HEAD_V" != "$BASE_V" ]; then
-            if grep -q "\"version\": \"$HEAD_V\"" src/yeaboi/changelog_data.json; then
+            if python scripts/changelog_stub.py is-stub "$HEAD_V"; then
+              # The fallback below wrote a placeholder while Claude was down: run
+              # changelog-only so a working Claude rewrites it in place.
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              echo "changelog_only=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::version already bumped ($BASE_V -> $HEAD_V) with a placeholder changelog entry; running changelog-only to write the real one."
+            elif grep -q "\"version\": \"$HEAD_V\"" src/yeaboi/changelog_data.json; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
               echo "::notice::version already changed in this PR ($BASE_V -> $HEAD_V) and changelog entry exists; skipping."
             else
@@ -250,9 +256,14 @@ jobs:
           # which is otherwise indistinguishable from the outside.
           echo "::notice::Claude credential present and well-formed (oauth=$([ -n "$OAUTH" ] && echo yes || echo no) len=${#OAUTH}, api_key=$([ -n "$APIKEY" ] && echo yes || echo no) len=${#APIKEY}). If the step after this one still fails with 401, the stored value is intact and the token was revoked or minted against the wrong account — re-mint it rather than re-pasting."
 
+      # A failure here no longer fails the bump: the fallback step below lands a
+      # deterministic bump when Claude cannot, and the explainer still names the
+      # cause. `outcome` (not `conclusion`) is what carries the real result once
+      # continue-on-error is set.
       - name: Classify & bump with Claude
         id: claude
         if: steps.guard.outputs.skip == 'false'
+        continue-on-error: true
         uses: anthropics/claude-code-action@e2a4b761cd77a1138a5b41410eda9b28581f9bcd # v1.0.196
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -370,18 +381,16 @@ jobs:
       # the last investigation after the model instead of the token. Restate it
       # as an annotation with the remediation attached.
       #
-      # `failure()` is required, not decorative: a step-level `if:` that names no
-      # status function is implicitly ANDed with success(), which would stop this
-      # from ever running. `failure()` rather than `always()` so it stays quiet
-      # on cancellation — this workflow sets cancel-in-progress, so cancels are
-      # routine on any PR that gets a follow-up push.
+      # The Claude step carries continue-on-error, so the job is not failing when
+      # this runs and no status function is needed: `outcome` is the step's real
+      # result, and `conclusion` would read success.
       #
       # The log path is the action's internal temp file, so it can move under the
       # floating @v1 tag. If it does, say so rather than going quietly no-op —
       # a diagnostic that silently stops diagnosing is the exact failure class
       # this whole branch exists to remove.
       - name: Explain an auth failure
-        if: failure() && steps.claude.conclusion == 'failure'
+        if: steps.guard.outputs.skip == 'false' && steps.claude.outcome == 'failure'
         run: |
           set -uo pipefail
           LOG="${RUNNER_TEMP}/claude-execution-output.json"
@@ -390,3 +399,67 @@ jobs:
           elif grep -q '"api_error_status": *401' "$LOG"; then
             echo "::error::Claude rejected this repository's credential with HTTP 401. The secret exists and is well-formed, so it has expired or been revoked. Fix: run 'claude setup-token' on a machine logged into the Claude subscription, then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${{ github.repository }}'. This same secret backs claude-review, ci-sentinel, dependabot-auto, flaky-test-hunter, feedback-remediation and claude — they are all down until it is replaced."
           fi
+
+      # When the Claude step fails the bump still lands. The level is mechanical
+      # (labels win; otherwise a new module under src/yeaboi/ reads as a feature,
+      # anything else as a fix) and the release notes are a placeholder the copy
+      # contract accepts. The guard above recognises that placeholder on the next
+      # push and runs Claude in changelog-only mode, so the real notes arrive on
+      # their own once the credential is back — nothing to redo by hand. In
+      # changelog-only mode there is nothing for this step to do: the version is
+      # already bumped and the placeholder is already there. A preflight failure
+      # (no credential, a mangled paste) still reds the job: that is a setting a
+      # human has to fix, and hiding it behind a bump would keep it broken.
+      - name: Fall back to a deterministic bump
+        if: steps.guard.outputs.skip == 'false' && steps.claude.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          CHANGELOG_ONLY: ${{ steps.guard.outputs.changelog_only || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANGELOG_ONLY" = "true" ]; then
+            echo "::warning::Claude is unavailable, so the placeholder release notes stay for now; the next push will try again."
+            exit 0
+          fi
+          # Claude may have failed AFTER editing or pushing (turns ran out, a push
+          # was rejected). Bump only from the untouched PR head: if the branch has
+          # moved since this run started, leave it to the run that push triggers.
+          git fetch --no-tags origin "$HEAD_REF"
+          if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD_SHA" ]; then
+            echo "::notice::the branch moved during this run; leaving the bump to the run that follows."
+            exit 0
+          fi
+          git reset -q --hard "$HEAD_SHA"
+          case ",$LABELS," in
+            *,release:skip,*|*,semver:none,*)
+              gh pr comment "$PR" --body "🏷️ auto-version: no release-worthy change — skipping bump."
+              exit 0 ;;
+            *,semver:major,*) LEVEL="major" ;;
+            *,semver:minor,*) LEVEL="minor" ;;
+            *,semver:patch,*) LEVEL="patch" ;;
+            *)
+              # Into a variable first, as the guard does: `grep -q` closing the
+              # pipe early reads as a failure under pipefail and would bump patch.
+              git fetch --no-tags origin "$BASE_REF"
+              ADDED=$(git diff --name-only --diff-filter=A FETCH_HEAD...HEAD)
+              if printf '%s\n' "$ADDED" | grep -qE '^src/yeaboi/.*\.py$'; then
+                LEVEL="minor"
+              else
+                LEVEL="patch"
+              fi ;;
+          esac
+          NEW=$(python scripts/bump_version.py "$LEVEL")
+          python scripts/changelog_stub.py write "$NEW" --pr "$PR"
+          python -c "import json; json.load(open('src/yeaboi/changelog_data.json'))"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml src/yeaboi/changelog_data.json
+          git commit -q -m "chore: bump version to $NEW [auto]" -m "Fallback bump: Claude was unavailable, so the level came from the labels or the diff and the release notes are a placeholder for the next run to rewrite."
+          git push origin "HEAD:$HEAD_REF"
+          gh pr comment "$PR" --body "🏷️ auto-version (fallback): Claude was unavailable, so this bumped **$LEVEL** to **$NEW** by rule — labels win, else a new module means minor, else patch — and wrote placeholder release notes. The next push rewrites them once the credential works; edit pyproject.toml by hand if the level is wrong."
+          echo "::warning::Claude was unavailable; bumped $LEVEL to $NEW by rule with placeholder release notes."
