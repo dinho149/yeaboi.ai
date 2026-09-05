@@ -2,6 +2,24 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.42.0",
+      "date": "2026-09-05",
+      "headline": "Meet Niko on your home screen",
+      "summary": "The tips duck now greets you on the welcome screen with quick tips and today's edition news. A dedicated news page gives you deeper dives into tips, stories and highlights.",
+      "highlights": [
+        {
+          "text": "Welcome screen now features the tips duck with daily news",
+          "areas": ["general"],
+          "surfaces": ["tui"]
+        },
+        {
+          "text": "Dedicated news page for tips, stories and edition highlights",
+          "areas": ["general"],
+          "surfaces": ["tui"]
+        }
+      ]
+    },
+    {
       "version": "3.41.1",
       "date": "2026-09-05",
       "headline": "Desktop now fully supports Sessions and Projects",
