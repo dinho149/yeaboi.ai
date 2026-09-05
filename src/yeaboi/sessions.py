@@ -1154,16 +1154,32 @@ class SessionStore:
         )
         return dict(zip(keys, row))
 
-    def list_sessions(self) -> list[dict]:
-        """Return all sessions ordered by last_modified descending.
+    def list_sessions(self, *, project_id: str = "", mode: str = "", limit: int = 0) -> list[dict]:
+        """Return sessions ordered by last_modified descending.
 
-        Used by the interactive session picker (--resume) and --list-sessions.
+        Used by the interactive session picker (--resume), --list-sessions and
+        the cross-mode recent list. ``project_id`` and ``mode`` narrow the rows
+        (blank = all); ``limit`` caps them (0 = every row). Each row carries
+        ``session_mode`` and ``project_id`` beside the legacy keys.
         """
-        logger.debug("Listing sessions")
+        logger.debug("Listing sessions (project=%s mode=%s limit=%d)", project_id or "-", mode or "-", limit)
+        clauses: list[str] = []
+        params: list[object] = []
+        if project_id:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if mode:
+            clauses.append("session_mode = ?")
+            params.append(mode)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        tail = " LIMIT ?" if limit > 0 else ""
+        if limit > 0:
+            params.append(limit)
         rows = self._conn.execute(
-            "SELECT session_id, project_name, created_at, last_modified, "
-            "last_node_completed, session_state "
-            "FROM sessions_meta ORDER BY last_modified DESC"
+            "SELECT session_id, project_name, created_at, last_modified, "  # noqa: S608 — placeholders, not values
+            "last_node_completed, session_state, session_mode, project_id "
+            f"FROM sessions_meta{where} ORDER BY last_modified DESC{tail}",
+            params,
         ).fetchall()
         keys = (
             "session_id",
@@ -1172,6 +1188,8 @@ class SessionStore:
             "last_modified",
             "last_node_completed",
             "session_state_raw",
+            "session_mode",
+            "project_id",
         )
         result = [dict(zip(keys, row)) for row in rows]
         logger.debug("Found %d session(s)", len(result))
@@ -1223,6 +1241,11 @@ class SessionStore:
             (session_id,),
         ).fetchone()
         return row[0] if row else ""
+
+    def session_project_ids(self) -> dict[str, str]:
+        """Every session's project id ('' = unscoped) — ids only, never the state blob."""
+        rows = self._conn.execute("SELECT session_id, project_id FROM sessions_meta").fetchall()
+        return {row[0]: row[1] for row in rows}
 
     def session_ids_for_project(self, project_id: str, *, mode: str = "") -> list[str]:
         """Session ids linked to a project, newest first, optionally one mode.

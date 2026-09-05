@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
+from pathlib import PurePath
 
 from rich.console import Group
 from rich.panel import Panel
@@ -205,6 +206,28 @@ def _refreshing_line(as_of: str, *, tick: float, theme, progress: list | None = 
     return line
 
 
+def _repo_tail(path: str) -> str:
+    """A path by its last two components, prefixed with … when that drops any."""
+    pure = PurePath(path)
+    names = pure.parts[1:] if pure.anchor else pure.parts
+    if len(names) <= 2:
+        return path
+    return "…/" + "/".join(names[-2:])
+
+
+def _subtitle(default: str, scope: str) -> str:
+    """The page subtitle, with the repository a scoped run is narrowed to."""
+    return f"{default} · {_repo_tail(scope)}" if scope else default
+
+
+def _subtitle_row(default: str, scope: str) -> Text:
+    """The subtitle pinned to one row, so a long scope never shifts the layout."""
+    row = build_reveal_subtitle(_subtitle(default, scope), None, justify="center")
+    row.no_wrap = True
+    row.overflow = "ellipsis"
+    return row
+
+
 def _result_footer(action_sel: int, notice: str, theme) -> list:
     """The shared footer under a finished report: notice line + action buttons.
 
@@ -254,6 +277,7 @@ def _build_agent_usage_screen(
     progress: list | None = None,
     refreshing: bool = False,
     as_of: str = "",
+    scope: str = "",
 ) -> Panel:
     """The Agent Usage dashboard page.
 
@@ -266,7 +290,7 @@ def _build_agent_usage_screen(
     parts: list = [
         Text(""),
         agent_usage_title(shimmer_tick, width=width),
-        build_reveal_subtitle("What your agents cost", None, justify="center"),
+        _subtitle_row("What your agents cost", scope),
         Text(""),
     ]
 
@@ -325,6 +349,7 @@ def _build_agent_advisor_screen(
     progress: list | None = None,
     refreshing: bool = False,
     as_of: str = "",
+    scope: str = "",
 ) -> Panel:
     """The Agent Advisor page: phase checklist while auditing, capped report when done."""
     from yeaboi.agentwatch.render import format_advisor_rich
@@ -334,7 +359,7 @@ def _build_agent_advisor_screen(
     parts: list = [
         Text(""),
         agent_advisor_title(shimmer_tick, width=width),
-        build_reveal_subtitle("How much of your agent spend is recoverable", None, justify="center"),
+        _subtitle_row("How much of your agent spend is recoverable", scope),
         Text(""),
     ]
     if report is None:
@@ -394,6 +419,7 @@ def _build_agent_standup_screen(
     progress: list | None = None,
     refreshing: bool = False,
     as_of: str = "",
+    scope: str = "",
 ) -> Panel:
     """The Agent Standup page: phase checklist while running, capped digest when done."""
     from yeaboi.agentwatch.render import format_standup_rich
@@ -403,7 +429,7 @@ def _build_agent_standup_screen(
     parts: list = [
         Text(""),
         agent_standup_title(shimmer_tick, width=width),
-        build_reveal_subtitle("What your agents did", None, justify="center"),
+        _subtitle_row("What your agents did", scope),
         Text(""),
     ]
     if digest is None:
@@ -460,6 +486,7 @@ def _build_agent_security_screen(
     progress: list | None = None,
     refreshing: bool = False,
     as_of: str = "",
+    scope: str = "",
 ) -> Panel:
     """The Agent Security page: phase checklist while scanning, capped report when done."""
     from yeaboi.agentwatch.render import format_security_rich
@@ -469,7 +496,7 @@ def _build_agent_security_screen(
     parts: list = [
         Text(""),
         agent_security_title(shimmer_tick, width=width),
-        build_reveal_subtitle("Your agent setup, audited", None, justify="center"),
+        _subtitle_row("Your agent setup, audited", scope),
         Text(""),
     ]
     if report is None:

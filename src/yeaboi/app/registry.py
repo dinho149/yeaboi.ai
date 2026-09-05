@@ -27,8 +27,10 @@ from yeaboi.app import (
     routes_consent,
     routes_feedback,
     routes_meta,
+    routes_news,
     routes_niko,
     routes_performance,
+    routes_projects,
     routes_reporting,
     routes_roadmap,
     routes_settings,
@@ -61,6 +63,15 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("GET", "/api/meta/capabilities", routes_meta.capabilities),
     AppRoute("GET", "/api/meta/tips", routes_meta.tips),
     AppRoute("GET", "/api/meta/changelog", routes_meta.changelog),
+    # Chrome like the changelog: the desktop home draws the front page, and no
+    # capability owns it.
+    AppRoute("GET", "/api/news", routes_news.news),
+    # The outlet roster behind it: what is on, what the user added, how each read last.
+    AppRoute("GET", "/api/news/sources", routes_news.sources),
+    AppRoute("POST", "/api/news/sources/probe", routes_news.source_probe),
+    AppRoute("POST", "/api/news/sources", routes_news.source_add),
+    AppRoute("POST", "/api/news/sources/{source_id}/enabled", routes_news.source_enabled),
+    AppRoute("POST", "/api/news/sources/{source_id}/delete", routes_news.source_delete),
     # Chrome like tips/changelog: no capability owns disclosure, and it is
     # deliberately never gated behind one — the privacy page must always answer.
     AppRoute("GET", "/api/meta/privacy", routes_meta.privacy),
@@ -72,6 +83,16 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/solo/review/run", routes_solo.review_run, "weekly-review"),
     AppRoute("GET", "/api/solo/review/runs/{run_id}", routes_solo.review_run_get, "weekly-review"),
     AppRoute("POST", "/api/solo/review/runs/{run_id}/delete", routes_solo.review_delete, "weekly-review"),
+    # -- projects and the cross-mode sessions list ---------------------------
+    # The projects engine's five verbs on the wire, plus the one read no engine
+    # owns: every mode's saved runs in one list. `{project_id}` is the engine's
+    # proj-<8hex> id, not the planning chat's handle of the same name.
+    AppRoute("GET", "/api/projects", routes_projects.projects, "projects"),
+    AppRoute("POST", "/api/projects", routes_projects.create, "projects"),
+    AppRoute("GET", "/api/projects/{project_id}", routes_projects.get, "projects"),
+    AppRoute("GET", "/api/projects/{project_id}/sessions", routes_projects.sessions, "projects"),
+    AppRoute("POST", "/api/projects/{project_id}/defaults", routes_projects.defaults, "projects"),
+    AppRoute("GET", "/api/sessions/recent", routes_projects.recent, "sessions"),
     AppRoute("GET", "/api/tools", routes_meta.tools),
     AppRoute("POST", "/api/tool/{name}", routes_meta.call_tool),
     AppRoute("GET", "/api/events", routes_meta.events),

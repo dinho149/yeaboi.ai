@@ -373,6 +373,14 @@ class TestSeedFrame:
         text = "\n".join("".join(seg.text for seg in row) for row in rows)
         assert "switch" in text and "choose" in text  # the split's own hint row
 
+    def test_it_is_not_the_door(self):
+        # The door comes AFTER the split; seeding it would flash its heading
+        # over the tail of the splash for a frame.
+        console = Console(width=110, height=40, force_terminal=False)
+        rows = console.render_lines(self._seed(), console.options.update(height=40), pad=True)
+        text = "\n".join("".join(seg.text for seg in row) for row in rows)
+        assert "work today" not in text and "working with" in text
+
     def test_it_is_not_the_mode_menu(self):
         # The row that flashed. If the seed ever goes back to _build_mode_screen
         # this is what reappears, so name it rather than assert a shape.

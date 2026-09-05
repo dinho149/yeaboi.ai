@@ -2,6 +2,31 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.41.0",
+      "date": "2026-09-03",
+      "headline": "Choose between projects and one-off sessions",
+      "summary": "Every world now has two doors: Projects for organized, scoped work that shares context across runs, and Sessions for one-off explorations. Project runs in standup and analysis record defaults to reuse across your team.",
+      "highlights": [
+        {
+          "text": "Projects organize standup, retro, reporting and poker around one codebase",
+          "areas": ["planning", "standup", "retro", "reporting"]
+        },
+        {
+          "text": "Sessions are quick one-off runs that don't tie to a project",
+          "areas": ["general"]
+        },
+        {
+          "text": "See your recent work across all modes in one cross-mode list",
+          "areas": ["general"]
+        },
+        {
+          "text": "Terminal door screen lets you toggle between Projects and Sessions workflows",
+          "areas": ["general"],
+          "surfaces": ["tui"]
+        }
+      ]
+    },
+    {
       "version": "3.40.0",
       "date": "2026-09-02",
       "headline": "Review your solo week and see today's plan",

@@ -19,6 +19,7 @@ import threading
 from collections.abc import Iterator
 
 from yeaboi.app.router import HTTPError, Request, Response, json_response
+from yeaboi.app.routes_projects import require_project
 from yeaboi.mcp.runtime import to_jsonable
 
 logger = logging.getLogger(__name__)
@@ -142,16 +143,23 @@ def run(app, request: Request) -> Response:
     depth = str(payload.get("depth", setup.DEFAULT_DEPTH))
     if depth not in setup.DEPTHS:
         raise HTTPError(400, f"depth must be one of {', '.join(setup.DEPTHS)}")
+    project_id = require_project(str(payload.get("project_id") or ""))
     op = app.ops.create()
-    logger.info("Analysis run start: source=%s depth=%s features=%s", source or "auto", depth, features)
+    logger.info(
+        "Analysis run start: source=%s depth=%s features=%s project=%s",
+        source or "auto",
+        depth,
+        features,
+        project_id or "-",
+    )
     return Response(
         content_type="application/x-ndjson",
-        stream=_lines(_run(app, op, payload, depth)),
+        stream=_lines(_run(app, op, payload, depth, project_id)),
         headers=(("X-Accel-Buffering", "no"),),
     )
 
 
-def _run(app, op, payload: dict, depth: str) -> Iterator[dict]:
+def _run(app, op, payload: dict, depth: str, project_id: str = "") -> Iterator[dict]:
     from yeaboi.analysis.progress import format_analysis_progress
     from yeaboi.mcp.runtime import _ENGINE_LOCK
 
@@ -206,9 +214,46 @@ def _run(app, op, payload: dict, depth: str) -> Iterator[dict]:
         if result_box[1] is not None:
             yield _error_line(result_box[1])
         else:
-            yield {"type": "done", "result": to_jsonable(result_box[0])}
+            done = {"type": "done", "result": to_jsonable(result_box[0])}
+            if project_id:
+                done["session_id"] = _link_session(result_box[0], project_id)
+            yield done
     finally:
         app.ops.remove(op.op_id)
+
+
+def _link_session(result, project_id: str) -> str:
+    """Record a scoped run the way the terminal does: an analysis session linked to
+    the project, and the profile it produced as the project's default."""
+    from yeaboi.paths import get_db_path
+    from yeaboi.projects.engine import set_project_defaults
+    from yeaboi.sessions import SessionStore, make_session_id
+
+    profile = _first_profile(result)
+    session_id = make_session_id()
+    with SessionStore(get_db_path()) as store:
+        store.create_session(session_id, _field(profile, "project_key"), mode="analysis", project_id=project_id)
+    team_id = _field(profile, "team_id")
+    if team_id:
+        set_project_defaults(project_id, {"default_analysis_profile_id": team_id})
+    logger.info("Analysis session %s linked to project %s (profile=%s)", session_id, project_id, team_id or "-")
+    return session_id
+
+
+def _first_profile(result):
+    """The first delivery profile in an engine result, or None."""
+    if not isinstance(result, dict):
+        return None
+    for sub in (result.get("delivery") or {}).values():
+        if isinstance(sub, dict) and sub.get("profile") is not None:
+            return sub["profile"]
+    return None
+
+
+def _field(profile, name: str) -> str:
+    """A profile attribute as a string, whether the profile is a dataclass or a dict."""
+    value = profile.get(name) if isinstance(profile, dict) else getattr(profile, name, "")
+    return str(value or "")
 
 
 def _error_line(error: BaseException) -> dict:

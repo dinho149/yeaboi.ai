@@ -35,7 +35,10 @@ _HEADER_ROWS = 2 + TITLE_ROWS + 1
 # crops from the bottom, and buttons half off screen still answer Enter).
 _ACTION_ROWS = 4
 
-ACTIONS = ["Set active", "Context", "Archive", "Back"]
+ACTIONS = ["Open", "Sessions", "Context", "Archive", "Back"]
+
+# The project-sessions sub-page: every run inside one project.
+SESSIONS_ACTIONS = ["Open", "Back"]
 
 # The context sub-page: which cross-mode sources a run may read.
 CONTEXT_ACTIONS = ["All on", "Incognito", "Back"]
@@ -102,14 +105,14 @@ def _build_projects_screen(
     """Build the Projects page: the project list and the active marker."""
     theme = PROJECTS_THEME
     title = projects_title(shimmer_tick)
-    sub = build_reveal_subtitle("One project, every mode's context", sub_reveal, pad=PAD + "  ")
+    sub = build_reveal_subtitle("Pick a project — every run inside it shares context", sub_reveal, pad=PAD + "  ")
 
     body: list = _build_rows(projects, selected, active_project_id, theme, width)
     body.append(Text(""))
     if active_project_id:
         body.append(Text(f"{PAD}Scoped runs read context through the ● project.", style=theme.dim))
     else:
-        body.append(Text(f"{PAD}No active project — runs stay team-wide until one is set.", style=theme.dim))
+        body.append(Text(f"{PAD}No active project — runs stay team-wide until one is opened.", style=theme.dim))
     body.append(Text(f"{PAD}New projects come from the terminal: yeaboi project create <name>", style=theme.dim))
     if message:
         body.append(Text(""))
@@ -188,4 +191,82 @@ def _build_context_screen(
 
     btn_top, btn_mid, btn_bot = build_action_buttons(list(CONTEXT_ACTIONS), action_sel)
     content = Group(Text(""), title, Text(""), sub, Group(*padded), Text(""), btn_top, btn_mid, btn_bot)
+    return build_page_panel(content, theme=theme, height=height)
+
+
+def _build_session_rows(rows: list, selected: int, theme, width: int) -> list:
+    if not rows:
+        return [
+            Text(""),
+            Text(f"{PAD}Nothing has run inside this project yet.", style=theme.muted),
+            Text(f"{PAD}Open it from the door and start a standup, a report or a review.", style=theme.dim),
+        ]
+    table = Table(show_header=True, show_edge=False, box=None, padding=(0, 1), pad_edge=False, expand=True)
+    table.add_column(Text(f"{PAD}  mode", style=theme.muted), ratio=1)
+    table.add_column(Text("title", style=theme.muted), ratio=3)
+    table.add_column(Text("when", style=theme.muted), ratio=1)
+    for i, row in enumerate(rows):
+        is_selected = i == selected
+        marker = "▸ " if is_selected else "  "
+        style = f"bold {theme.accent_bright}" if is_selected else theme.value
+        table.add_row(
+            _cell(f"{PAD}{marker}{row.mode}", style),
+            _cell(row.title, style if is_selected else theme.desc),
+            _cell(row.last_modified[:10], theme.muted),
+        )
+    return render_to_lines(table, max(24, width - 4))
+
+
+def _build_project_sessions_screen(
+    rows: list,
+    *,
+    project_name: str = "",
+    selected: int = 0,
+    scroll_offset: int = 0,
+    scroll_meta: dict | None = None,
+    width: int = 80,
+    height: int = 24,
+    action_sel: int = 0,
+    actions: list[str] | None = None,
+    shimmer_tick: float | None = None,
+    sub_reveal: float | None = None,
+    message: str = "",
+) -> Panel:
+    """Build the project-sessions sub-page: one row per run, every mode.
+
+    ``rows`` are ``sessions_recent.RecentSession``s (mode · title · when).
+    Enter on a row opens its mode's saved-runs hub; planning and analysis
+    rows have no hub and say so in ``message``.
+    """
+    theme = PROJECTS_THEME
+    title = projects_title(shimmer_tick)
+    sub = build_reveal_subtitle(f"Sessions in {project_name or 'this project'}", sub_reveal, pad=PAD + "  ")
+
+    body: list = _build_session_rows(rows, selected, theme, width)
+    body.append(Text(""))
+    body.append(Text(f"{PAD}Enter opens the run's hub; planning and analysis open from their cards.", style=theme.dim))
+    if message:
+        body.append(Text(""))
+        body.append(Text(f"{PAD}{message}", style=theme.accent))
+
+    viewport_h = calc_viewport(height, header_h=_HEADER_ROWS, action_h=_ACTION_ROWS)
+    total = len(body)
+    max_scroll = max(0, total - viewport_h)
+    offset = min(scroll_offset, max_scroll)
+    publish_geometry(scroll_meta, max_scroll, viewport_h)
+    visible = body[offset : offset + viewport_h]
+    padded = list(visible) + [Text("")] * max(0, viewport_h - len(visible))
+
+    scrollbar = build_scrollbar(viewport_h, total, offset, max_scroll)
+    if scrollbar is not None:
+        frame = Table(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False, expand=True)
+        frame.add_column(ratio=1)
+        frame.add_column(width=1)
+        frame.add_row(Group(*padded), scrollbar)
+        viewport: object = frame
+    else:
+        viewport = Group(*padded)
+
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions or list(SESSIONS_ACTIONS), action_sel)
+    content = Group(Text(""), title, Text(""), sub, viewport, Text(""), btn_top, btn_mid, btn_bot)
     return build_page_panel(content, theme=theme, height=height)

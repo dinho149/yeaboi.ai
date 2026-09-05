@@ -11,7 +11,11 @@ import io
 import pytest
 from rich.console import Console
 
-from yeaboi.ui.mode_select.screens._screens_projects import _build_context_screen, _build_projects_screen
+from yeaboi.ui.mode_select.screens._screens_projects import (
+    _build_context_screen,
+    _build_project_sessions_screen,
+    _build_projects_screen,
+)
 
 _W, _H = 84, 40
 
@@ -62,7 +66,7 @@ class TestTheListDoesNotCropTheButtons:
     @pytest.mark.parametrize("count", [1, 3, 6, 12, 40])
     def test_actions_survive_any_project_count(self, count):
         out = _render(projects=self._many(count))
-        assert "Set active" in out
+        assert "Open" in out and "Sessions" in out
         assert "Back" in out
 
     def test_a_long_list_can_actually_scroll(self):
@@ -86,6 +90,9 @@ class TestTheRow:
     def test_no_active_project_says_runs_stay_teamwide(self):
         out = _render(projects=[_project()])
         assert "team-wide" in out
+
+    def test_the_subtitle_is_the_doors_promise(self):
+        assert "every run inside it shares context" in _render(projects=[_project()], sub_reveal=999)
 
     def test_an_archived_row_says_so(self):
         out = _render(projects=[_project(archived=True)])
@@ -129,3 +136,56 @@ class TestContextScreen:
 
     def test_a_message_reaches_the_page(self):
         assert "saved" in _render_context(None, message="saved")
+
+
+def _row(**overrides):
+    from yeaboi.sessions_recent import RecentSession
+
+    base = dict(
+        session_id="p1",
+        run_id="1",
+        mode="standup",
+        title="Standup — 2026-09-01",
+        created_at="2026-09-01T09:00:00+00:00",
+        last_modified="2026-09-01T09:00:00+00:00",
+        project_id="proj-11112222",
+    )
+    return RecentSession(**{**base, **overrides})
+
+
+def _render_sessions(rows, **kwargs) -> str:
+    panel = _build_project_sessions_screen(rows, width=_W, height=_H, **kwargs)
+    console = Console(file=io.StringIO(), width=_W, height=_H)
+    console.print(panel)
+    return console.file.getvalue()
+
+
+class TestProjectSessionsScreen:
+    def test_names_the_project_and_lists_mode_title_and_when(self):
+        out = _render_sessions([_row()], project_name="Apollo", sub_reveal=999)
+        assert "Sessions in Apollo" in out
+        assert "standup" in out and "Standup — 2026-09-01" in out and "2026-09-01" in out
+
+    def test_empty_state_says_nothing_ran_yet(self):
+        out = _render_sessions([], project_name="Apollo")
+        assert "Nothing has run inside this project yet" in out
+
+    def test_draws_its_buttons(self):
+        out = _render_sessions([_row()])
+        assert "Open" in out and "Back" in out
+
+    @pytest.mark.parametrize("count", [1, 12, 40])
+    def test_actions_survive_any_row_count(self, count):
+        rows = [_row(run_id=str(i), title=f"Standup — day {i}") for i in range(count)]
+        out = _render_sessions(rows)
+        assert "Back" in out
+
+    def test_a_long_list_can_scroll(self):
+        meta: dict = {}
+        _render_sessions([_row(run_id=str(i)) for i in range(40)], scroll_meta=meta)
+        assert meta["max_offset"] > 0
+
+    def test_a_message_reaches_the_page(self):
+        assert "Open it from the Planning card." in _render_sessions(
+            [_row()], message="Open it from the Planning card."
+        )

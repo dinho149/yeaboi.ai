@@ -91,6 +91,9 @@ MODE_SCREEN_MARKERS = ("changelog", "Tip:", "channel")
 # transition — and would hide a swallowed Esc instead of failing loudly.
 # test_record_demo.py renders both screens and asserts the disjointness.
 CATEGORY_SCREEN_MARKERS = ("working with",)
+# Chrome of the door (Projects vs Sessions), which renders between the split
+# and a menu. One fragment of its heading, for the same disjointness reason.
+DOOR_SCREEN_MARKERS = ("work today",)
 _ANSI_RE = re.compile(
     r"\x1b\[[0-9;?]*[a-zA-Z]"
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
@@ -105,7 +108,7 @@ KEY_UP, KEY_DOWN, KEY_RIGHT, KEY_LEFT = b"\x1b[A", b"\x1b[B", b"\x1b[C", b"\x1b[
 KEY_ENTER, KEY_ESC = b"\r", b"\x1b"
 
 # The demo choreography — the whole product in one take: the landing split, the
-# Humans menu, back out, then the Agents family.
+# door, the Humans menu, back out, then the Agents family.
 #
 # Two rules hold this together, both load-bearing:
 #
@@ -127,6 +130,9 @@ DEMO_SCRIPT: list[tuple] = [
     ("key", KEY_LEFT),
     ("pause", 1.0),  # back on Humans
     ("key", KEY_ENTER),
+    ("await", DOOR_SCREEN_MARKERS, 15.0),  # the door: Projects or Sessions
+    ("pause", 0.8),
+    ("key", KEY_ENTER),  # Sessions is preselected
     ("await", MODE_SCREEN_MARKERS, 15.0),  # the nine Humans cards sweep in
     ("pause", 1.2),
     ("key", KEY_DOWN),
@@ -137,11 +143,16 @@ DEMO_SCRIPT: list[tuple] = [
     ("pause", 0.8),
     ("key", KEY_UP),
     ("pause", 1.2),  # settle on a card, let the description reveal finish
-    ("key", KEY_ESC),  # esc from a menu returns to the split (q would quit)
+    ("key", KEY_ESC),  # esc from a menu returns to the door (q would quit)
+    ("await", DOOR_SCREEN_MARKERS, 15.0),
+    ("key", KEY_ESC),  # and esc from the door returns to the split
     ("await", CATEGORY_SCREEN_MARKERS, 15.0),
     ("pause", 0.8),
     ("key", KEY_RIGHT),
     ("pause", 0.6),
+    ("key", KEY_ENTER),
+    ("await", DOOR_SCREEN_MARKERS, 15.0),
+    ("pause", 0.8),
     ("key", KEY_ENTER),
     ("await", MODE_SCREEN_MARKERS, 15.0),  # Agents: same builder, three cards
     ("pause", 1.2),

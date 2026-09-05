@@ -22,6 +22,7 @@ import threading
 from collections.abc import Iterator
 
 from yeaboi.app.router import HTTPError, Request, Response, json_response
+from yeaboi.app.routes_projects import require_project
 from yeaboi.mcp.runtime import to_jsonable
 
 logger = logging.getLogger(__name__)
@@ -128,16 +129,19 @@ def run(app, request: Request) -> Response:
         raise HTTPError(400, "session_id is required")
     deliver = bool(payload.get("deliver", False))
     solo = bool(payload.get("solo", False))
+    project_id = require_project(str(payload.get("project_id") or ""))
     op = app.ops.create()
-    logger.info("Standup run start: session=%s deliver=%s solo=%s", session_id, deliver, solo)
+    logger.info(
+        "Standup run start: session=%s deliver=%s solo=%s project=%s", session_id, deliver, solo, project_id or "-"
+    )
     return Response(
         content_type="application/x-ndjson",
-        stream=_lines(_run(app, op, session_id, deliver, solo)),
+        stream=_lines(_run(app, op, session_id, deliver, solo, project_id)),
         headers=(("X-Accel-Buffering", "no"),),
     )
 
 
-def _run(app, op, session_id: str, deliver: bool, solo: bool = False) -> Iterator[dict]:
+def _run(app, op, session_id: str, deliver: bool, solo: bool = False, project_id: str = "") -> Iterator[dict]:
     from yeaboi.mcp.runtime import _ENGINE_LOCK
 
     events: queue.Queue = queue.Queue()
@@ -153,6 +157,7 @@ def _run(app, op, session_id: str, deliver: bool, solo: bool = False) -> Iterato
                     session_id,
                     deliver=deliver,
                     solo=solo,
+                    project_id=project_id,
                     # A preview must not post to Slack on its way to the screen.
                     dry_run=not deliver,
                     on_progress=lambda phase: events.put({"type": "progress", "phase": phase}),

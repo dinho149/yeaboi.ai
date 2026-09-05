@@ -30,6 +30,7 @@ class AgentMode:
     blurb: str
     engine: tuple[str, str]  # (module, attribute) — imported lazily
     artifact: tuple[str, str]  # the frozen dataclass a failure is reported as
+    scoped: bool = True  # whether the engine takes ``project_path``; security stays machine-wide
 
 
 MODES: tuple[AgentMode, ...] = (
@@ -64,6 +65,7 @@ MODES: tuple[AgentMode, ...] = (
         blurb="The security posture of the agent setup those sessions ran under.",
         engine=("yeaboi.agentwatch.engine", "run_agent_security"),
         artifact=("yeaboi.agent.state", "AgentSecurityReport"),
+        scoped=False,
     ),
 )
 
@@ -93,9 +95,16 @@ def _resolve(target: tuple[str, str]) -> Callable:
     return getattr(import_module(module), attribute)
 
 
-def run(mode: AgentMode, on_progress: Callable[[object], None] | None = None):
-    """Run one mode's pipeline. The engines never raise — parse → fallback → format."""
-    return _resolve(mode.engine)(on_progress=on_progress)
+def run(mode: AgentMode, on_progress: Callable[[object], None] | None = None, *, project_path: str = ""):
+    """Run one mode's pipeline. The engines never raise — parse → fallback → format.
+
+    ``project_path`` reaches only the modes that scope to a repository
+    (``AgentMode.scoped``); the security audit is always machine-wide.
+    """
+    engine = _resolve(mode.engine)
+    if project_path and mode.scoped:
+        return engine(on_progress=on_progress, project_path=project_path)
+    return engine(on_progress=on_progress)
 
 
 def failure_artifact(mode: AgentMode, exc: object):

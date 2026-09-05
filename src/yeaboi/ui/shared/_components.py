@@ -110,6 +110,15 @@ AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,2
 AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,245,205)")
 AGENT_SECURITY_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
 AGENT_ADVISOR_THEME = Theme(accent="rgb(240,180,70)", accent_bright="rgb(255,210,110)")
+
+# The landing split's quiet greys, shared by the category, door and menu pages:
+# the heading (and the menu's scope line), and a card's verb/detail pair in its
+# selected and resting states.
+LANDING_HEADING_STYLE = "rgb(152,156,170)"
+LANDING_VERB_SELECTED = "bold rgb(234,237,243)"
+LANDING_VERB_RESTING = "rgb(128,132,146)"
+LANDING_DETAIL_SELECTED = "rgb(168,172,184)"
+LANDING_DETAIL_RESTING = "rgb(96,100,114)"
 SHIP_THEME = Theme(accent="rgb(235,140,60)", accent_bright="rgb(255,175,95)")
 # Niko, the global assistant. Duck gold — the same hue the desktop window uses
 # for its own --primary, because the duck is the brand on both surfaces.
@@ -152,9 +161,11 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Linear": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Trello": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Configure": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
-    # Projects page. "Set active" is the affirmative action (green like Accept);
-    # Archive is amber (reversible, but it hides the row).
-    "Set active": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    # Projects page. "Open" is the affirmative action (green like Accept);
+    # "Sessions" wears the projects accent, since it lists what the project
+    # holds; Archive is amber (reversible, but it hides the row).
+    "Open": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Sessions": ("rgb(150,170,90)", "rgb(190,215,120)", "rgb(40,46,36)", "rgb(50,56,46)"),
     "Archive": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
     # Context sub-page: All on restores every source (green); Incognito switches
     # them all off, deliberate but reversible, so it wears the amber.

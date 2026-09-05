@@ -862,6 +862,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SPEC",
         help="Cross-mode sources a scoped run reads by default ('all', 'none', or a csv)",
     )
+    project_defaults_p.add_argument(
+        "--repo",
+        default="",
+        metavar="PATH",
+        help="The project's repository — Agents reports scope to sessions under it (worktrees included)",
+    )
 
     perf_p = subparsers.add_parser(
         "perf",
@@ -1288,6 +1294,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cost_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
     cost_p.add_argument("--project", default="", metavar="NAME", help="Filter by project directory name (substring)")
+    cost_p.add_argument("--repo", default="", metavar="PATH", help="Only sessions under this repository path")
     cost_p.add_argument("--source", default="", choices=["", "claude_code"], help="Filter by telemetry source")
     cost_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     cost_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
@@ -1297,6 +1304,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=AGENTWATCH_BETA_NOTICE,
     )
     advisor_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
+    advisor_p.add_argument("--repo", default="", metavar="PATH", help="Only sessions under this repository path")
     advisor_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     advisor_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     astandup_p = agents_sub.add_parser(
@@ -1339,6 +1347,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Skip local session logs for a tracker-only digest (use off this machine)",
     )
+    astandup_p.add_argument("--repo", default="", metavar="PATH", help="Only sessions under this repository path")
     astandup_p.add_argument("--deliver", action="store_true", help="Post the digest to the configured Slack webhook")
     astandup_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     astandup_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
@@ -2621,10 +2630,14 @@ def _cmd_project(args: argparse.Namespace, console: Console) -> int:
         defaults["default_analysis_profile_id"] = args.analysis_profile
     if args.context is not None:
         defaults["default_context_deps"] = args.context
+    if args.repo:
+        from pathlib import Path
+
+        defaults["repo_path"] = str(Path(args.repo).expanduser().resolve())
     if not defaults:
         # Nothing to merge — say so rather than printing a success line for a
         # call that changed nothing.
-        console.print("[yellow]Nothing to set — pass --analysis-profile and/or --context.[/yellow]")
+        console.print("[yellow]Nothing to set — pass --analysis-profile, --context and/or --repo.[/yellow]")
         return 2
     result = set_project_defaults(args.project_id, defaults)
     console.print(f"Defaults for {args.project_id}: {result['settings'] or '—'}")
@@ -3813,7 +3826,9 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
         from yeaboi.agentwatch.engine import run_agent_usage
         from yeaboi.agentwatch.render import format_usage_rich
 
-        report = run_agent_usage(window_days=args.window_days, project=args.project, source=args.source)
+        report = run_agent_usage(
+            window_days=args.window_days, project=args.project, source=args.source, project_path=args.repo
+        )
         for warning in report.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
         if args.format == "json":
@@ -3829,7 +3844,7 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
         from yeaboi.agentwatch.advisor import run_agent_advisor
         from yeaboi.agentwatch.render import format_advisor_rich
 
-        report = run_agent_advisor(window_days=args.window_days)
+        report = run_agent_advisor(window_days=args.window_days, project_path=args.repo)
         for warning in report.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
         if args.format == "json":
@@ -3852,6 +3867,7 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
             azdo_projects=args.azdo_projects,
             include_local_sessions=args.include_local_sessions,
             deliver=args.deliver,
+            project_path=args.repo,
         )
         for warning in digest.warnings:
             print(f"⚠ {warning}", file=sys.stderr)

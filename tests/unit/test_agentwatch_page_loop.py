@@ -61,7 +61,7 @@ def _run_page(read_key, run_engine, screens, monkeypatch):
     """Drive the shared loop with the usage mode's table row, faked end to end."""
     mode = agents_setup.require("agent-usage")
     monkeypatch.setattr(_agents, "_screen_builder", lambda _mode: screens)
-    monkeypatch.setattr(agents_setup, "run", lambda _mode, on_progress: run_engine(on_progress))
+    monkeypatch.setattr(agents_setup, "run", lambda _mode, on_progress, project_path="": run_engine(on_progress))
     monkeypatch.setattr(agents_setup, "failure_artifact", lambda _mode, exc: _FakeArtifact(name="failure"))
     _agents._run_agent_page(mode, _Console(), _Live(), read_key, 0.0, True)
 
@@ -288,3 +288,86 @@ class TestHistoryErrors:
         assert first_artifact is None, "a broken history store must cold-start, not crash the page"
         assert "progress" in first_kwargs
         assert getattr(screens.last[0], "name", "") == "fresh"
+
+
+class TestProjectScope:
+    """A scoped page skips the instant open and hands the repo to the engine."""
+
+    def test_scoped_page_runs_fresh_with_the_repo(self, empty_db, monkeypatch):
+        mode = agents_setup.require("agent-usage")
+        screens = _Screens()
+        seen: dict = {}
+        monkeypatch.setattr(_agents, "_screen_builder", lambda _mode: screens)
+        # A saved report exists; a scoped page must never open on it.
+        monkeypatch.setattr(agents_setup, "latest_artifact", lambda kind: (_FakeArtifact(name="stale"), "2026-07-01"))
+
+        def run(_mode, on_progress, **kw):
+            seen.update(kw)
+            return _FakeArtifact()
+
+        monkeypatch.setattr(agents_setup, "run", run)
+        frames = 0
+
+        def read_key(timeout=None):
+            nonlocal frames
+            frames += 1
+            assert frames < _MAX_FRAMES
+            return "q" if screens.calls and screens.calls[-1][0] is not None else _tick()
+
+        _agents._run_agent_page(mode, _Console(), _Live(), read_key, 0.0, True, project_path="/srv/app")
+        assert seen == {"project_path": "/srv/app"}
+        # No instant open: the stale machine-wide report never reaches a frame.
+        assert all(getattr(artifact, "name", "") != "stale" for artifact, _k in screens.calls)
+        assert all(kwargs.get("as_of", "") != "2026-07-01" for _a, kwargs in screens.calls)
+        assert all(kwargs["scope"] == "/srv/app" for _a, kwargs in screens.calls)
+        assert screens.last[0].name == "fresh"
+
+    def test_the_repo_shows_in_the_subtitle(self):
+        import io
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_usage_screen
+
+        console = Console(file=io.StringIO(), width=100, height=40)
+        console.print(_build_agent_usage_screen(None, width=100, height=40, scope="/srv/app"))
+        assert "What your agents cost · /srv/app" in console.file.getvalue()
+
+    def test_a_deep_repo_shows_its_tail_on_one_row_at_the_floor(self):
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_usage_screen, _repo_tail
+
+        assert _repo_tail("/srv/app") == "/srv/app"
+        assert _repo_tail("/Users/dev/Documents/yeaboi/yeaboi.ai") == "…/yeaboi/yeaboi.ai"
+        console = Console(width=84, height=40, force_terminal=False)
+        for scope in ("/Users/dev/Documents/yeaboi/yeaboi.ai", "/x/" + "a" * 120):
+            panel = _build_agent_usage_screen(None, width=84, height=40, scope=scope)
+            rows = console.render_lines(panel, console.options.update(height=40), pad=True)
+            text = ["".join(seg.text for seg in row) for row in rows]
+            hits = [i for i, line in enumerate(text) if "What your agents cost" in line]
+            assert len(hits) == 1
+            assert text[hits[0] + 1].strip("│ ") == ""  # the blank under it is still blank: no second row
+        assert "What your agents cost · …/yeaboi/yeaboi.ai" in "\n".join(
+            "".join(seg.text for seg in row)
+            for row in console.render_lines(
+                _build_agent_usage_screen(None, width=84, height=40, scope="/Users/dev/Documents/yeaboi/yeaboi.ai"),
+                console.options.update(height=40),
+            )
+        )
+
+    def test_route_hands_the_repo_to_scoped_modes_only(self, monkeypatch):
+        seen: list = []
+        monkeypatch.setattr(_agents, "show_beta_notice", lambda *a, **k: True)
+        monkeypatch.setattr(_agents, "_run_agent_page", lambda mode, *a, project_path="": seen.append(project_path))
+        for key in ("agent-usage", "agent-security"):
+            _agents.route_agent_mode(
+                key,
+                console=_Console(),
+                live=_Live(),
+                read_key=_tick,
+                frame_time=0.0,
+                supports_timeout=True,
+                project_path="/srv/app",
+            )
+        assert seen == ["/srv/app", ""]

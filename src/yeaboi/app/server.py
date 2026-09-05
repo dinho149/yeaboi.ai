@@ -26,6 +26,7 @@ from yeaboi.app.ops import OperationTable
 from yeaboi.app.router import Request, Response, Router, parse_request
 from yeaboi.app.ships import ShipSupervisor
 from yeaboi.app.supervisor import BoardSupervisor
+from yeaboi.news.desk import NewsDesk
 from yeaboi.web.security import policy, send_document, send_headers
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,7 @@ class AppServer:
         boards: BoardSupervisor | None = None,
         ships: ShipSupervisor | None = None,
         consent: ConsentDesk | None = None,
+        news: NewsDesk | None = None,
         on_shutdown=None,
     ) -> None:
         self.token = token
@@ -204,6 +206,9 @@ class AppServer:
         # The open sandbox-consent requests (routes_consent) — a denial can come
         # from any thread, so the desk drains the queue rather than a handler.
         self.consent = consent if consent is not None else ConsentDesk(self.bus)
+        # The front page's paper and its background refresh (routes_news) —
+        # one cache and one refresh lock per process, not per window.
+        self.news = news if news is not None else NewsDesk()
         self._on_shutdown = on_shutdown
         self._shutdown_once = threading.Event()
         if router is not None:

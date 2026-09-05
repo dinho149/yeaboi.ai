@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Sample Outlet</title>
+    <link>https://outlet.example/</link>
+    <item>
+      <title>A new model &amp; a new benchmark</title>
+      <link>https://outlet.example/posts/new-model?utm_source=rss&amp;utm_medium=feed</link>
+      <pubDate>Thu, 03 Sep 2026 14:05:00 GMT</pubDate>
+      <description><![CDATA[<p>The lab <b>released</b> weights today.&nbsp;A long paragraph follows so the summary has to be clipped somewhere sensible, well past the two hundred and forty character mark that the wire allows for a teaser, and then a little more text after that to make sure.</p>]]></description>
+      <media:thumbnail url="https://outlet.example/img/new-model.jpg" />
+    </item>
+    <item>
+      <title>Second story</title>
+      <link>https://outlet.example/posts/second</link>
+      <dc:date>2026-09-02T09:30:00Z</dc:date>
+      <content:encoded><![CDATA[Plain teaser.]]></content:encoded>
+      <enclosure url="https://outlet.example/img/second.png" type="image/png" length="1" />
+    </item>
+    <item>
+      <title>No link here</title>
+      <pubDate>Tue, 01 Sep 2026 08:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

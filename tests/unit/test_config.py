@@ -1261,3 +1261,38 @@ class TestAccessConfig:
         monkeypatch.setenv("CLOUDFLARE_TUNNEL_CREDENTIALS", "~/.cloudflared/x.json")
         assert access_credentials_file().startswith(os.path.expanduser("~"))
         assert "~" not in access_credentials_file()
+
+
+class TestLastDoor:
+    """The door's persisted preselection (Projects vs Sessions)."""
+
+    def test_default_is_sessions(self, monkeypatch):
+        monkeypatch.delenv("YEABOI_LAST_DOOR", raising=False)
+        from yeaboi.config import get_last_door
+
+        assert get_last_door() == "sessions"
+
+    def test_round_trip(self, monkeypatch, tmp_path):
+        from yeaboi import config as cfg
+
+        monkeypatch.setenv("YEABOI_LAST_DOOR", "sessions")
+        monkeypatch.setattr(cfg, "get_config_file", lambda: tmp_path / ".env")
+        cfg.set_last_door("projects")
+        assert os.environ["YEABOI_LAST_DOOR"] == "projects"
+        assert cfg.get_last_door() == "projects"
+        assert "YEABOI_LAST_DOOR" in (tmp_path / ".env").read_text()
+
+    def test_unknown_value_falls_back(self, monkeypatch):
+        monkeypatch.setenv("YEABOI_LAST_DOOR", "windows!!")
+        from yeaboi.config import get_last_door
+
+        assert get_last_door() == "sessions"
+
+    def test_an_unknown_value_is_never_written(self, monkeypatch, tmp_path):
+        from yeaboi import config as cfg
+
+        monkeypatch.delenv("YEABOI_LAST_DOOR", raising=False)
+        monkeypatch.setattr(cfg, "get_config_file", lambda: tmp_path / ".env")
+        cfg.set_last_door("windows")
+        assert "YEABOI_LAST_DOOR" not in os.environ
+        assert not (tmp_path / ".env").exists()

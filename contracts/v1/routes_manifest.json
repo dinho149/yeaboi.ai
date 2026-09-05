@@ -297,6 +297,11 @@
       "title": "Settings · Duck"
     },
     {
+      "path": "/settings/news",
+      "capability": null,
+      "title": "Settings · Front page"
+    },
+    {
       "path": "/settings/themes",
       "capability": null,
       "title": "Themes"

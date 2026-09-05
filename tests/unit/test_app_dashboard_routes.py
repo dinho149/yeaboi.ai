@@ -363,6 +363,82 @@ class TestAnalysisRun:
         assert app.ops.get(op_id) is None  # released when the stream ended
 
 
+@pytest.fixture
+def db(tmp_path, monkeypatch):
+    path = tmp_path / "sessions.db"
+    monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: path)
+    return path
+
+
+class TestStandupProject:
+    def test_a_project_id_reaches_the_engine(self, app, db, monkeypatch):
+        from yeaboi.projects.engine import create_project
+
+        pid = create_project("Apollo", db_path=db)["project_id"]
+        seen: list = []
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.run_standup", lambda sid, **kw: seen.append(kw["project_id"]) or _report()
+        )
+        drain(request(app, "POST", "/api/standup/run", {"session_id": "s1"}))
+        drain(request(app, "POST", "/api/standup/run", {"session_id": "s1", "project_id": None}))
+        drain(request(app, "POST", "/api/standup/run", {"session_id": "s1", "project_id": pid}))
+        assert seen == ["", "", pid]
+
+    def test_an_unknown_project_is_400(self, app, db, monkeypatch):
+        monkeypatch.setattr("yeaboi.standup.engine.run_standup", lambda sid, **kw: _report())
+        resp = request(app, "POST", "/api/standup/run", {"session_id": "s1", "project_id": "proj-00000000"})
+        assert resp.code == 400
+        assert b"unknown project" in resp.body
+
+
+class TestAnalysisProject:
+    def test_a_project_id_links_the_created_session(self, app, db, monkeypatch):
+        from types import SimpleNamespace
+
+        from yeaboi.projects.engine import create_project, get_project
+        from yeaboi.sessions import SessionStore
+
+        pid = create_project("Apollo", db_path=db)["project_id"]
+        profile = SimpleNamespace(team_id="team-x", project_key="APOLLO")
+        monkeypatch.setattr(
+            "yeaboi.analysis.engine.run_team_analysis", lambda **kw: {"delivery": {"jira": {"profile": profile}}}
+        )
+        lines = drain(request(app, "POST", "/api/analysis/run", {"project_id": pid}))
+        assert lines[-1]["type"] == "done"
+        session_id = lines[-1]["session_id"]
+        with SessionStore(db) as store:
+            assert store.session_project_id(session_id) == pid
+            assert store.list_sessions(mode="analysis")[0]["project_name"] == "APOLLO"
+        project = get_project(pid, db_path=db)
+        assert project["session_ids"] == [session_id]
+        assert project["settings"] == {"default_analysis_profile_id": "team-x"}
+
+    def test_a_blank_project_creates_no_session(self, app, db, monkeypatch):
+        from yeaboi.sessions import SessionStore
+
+        monkeypatch.setattr("yeaboi.analysis.engine.run_team_analysis", lambda **kw: {"delivery": {}})
+        lines = drain(request(app, "POST", "/api/analysis/run", {}))
+        assert "session_id" not in lines[-1]
+        with SessionStore(db) as store:
+            assert store.list_sessions() == []
+
+    def test_a_result_without_a_profile_still_links_the_session(self, app, db, monkeypatch):
+        from yeaboi.projects.engine import create_project, get_project
+
+        pid = create_project("Apollo", db_path=db)["project_id"]
+        monkeypatch.setattr("yeaboi.analysis.engine.run_team_analysis", lambda **kw: {"delivery": {}})
+        lines = drain(request(app, "POST", "/api/analysis/run", {"project_id": pid}))
+        project = get_project(pid, db_path=db)
+        assert project["session_ids"] == [lines[-1]["session_id"]]
+        assert project["settings"] == {}
+
+    def test_an_unknown_project_is_400(self, app, db, monkeypatch):
+        monkeypatch.setattr("yeaboi.analysis.engine.run_team_analysis", lambda **kw: {"delivery": {}})
+        resp = request(app, "POST", "/api/analysis/run", {"project_id": "proj-00000000"})
+        assert resp.code == 400
+        assert b"unknown project" in resp.body
+
+
 class TestStandupSolo:
     def test_solo_reaches_the_engine(self, app, monkeypatch):
         seen: list = []

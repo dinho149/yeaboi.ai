@@ -121,7 +121,7 @@ CAPABILITIES: dict[str, dict] = {
             "project_set_defaults",
         },
         "tui_mode": Exempt(
-            "a welcome-screen keycap (P) opening the project switcher, not a card — "
+            "the Projects door after the landing split (and the P keycap on the menu), not a card — "
             "an eleventh card breaks the 84x40 layout, the ceremonies/niko argument"
         ),
         "cli": {"project"},
@@ -134,12 +134,15 @@ CAPABILITIES: dict[str, dict] = {
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
         "mcp_tools": {"sessions_list", "session_get", "session_delete"},
-        "tui_mode": Exempt("sessions are surfaced inside the planning-mode screens, no dedicated card"),
+        "tui_mode": Exempt(
+            "the Sessions door after the landing split plus each project's sessions page, not a card — "
+            "a one-off run of any mode starts from that mode's own card"
+        ),
         "cli": {"--list-sessions", "--resume", "--clear-sessions"},
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
         "desktop": Exempt(
-            "saved plans surface through each project's plan panel (the iteration carries its "
-            "session id) — a raw session browser would be a second door to the same room"
+            "the manifest carries no /sessions yet — the desktop's Sessions page lands with its rail "
+            "redesign, and this column flips in the same commit as the manifest it vendors"
         ),
     },
     "standup": {
@@ -670,6 +673,10 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
     "ship run": {"session": "session_id", "check": "check_command"},
     "ship resume": {"check": "check_command"},
     "project link": {"session": "session_id"},
+    # --repo is the repository path the Agents reports scope to (exact-or-prefix
+    # on the session's project directory, never a basename substring).
+    "agents cost": {"repo": "project_path"},
+    "agents standup": {"repo": "project_path"},
     "analyze": {
         # NOT project_id: analysis's --project is the tracker key (Jira/AzDO),
         # a different id space from the projects table's proj-<8hex> ids.
@@ -717,8 +724,8 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "project list": set(),
     "project show": set(),
     "project link": set(),
-    # --analysis-profile and --context are each one key of the engine's `defaults` dict.
-    "project set-defaults": {"analysis_profile", "context"},
+    # --analysis-profile, --context and --repo are each one key of the engine's `defaults` dict.
+    "project set-defaults": {"analysis_profile", "context", "repo"},
     # delivery/code/docs/ops are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {
@@ -766,7 +773,7 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "driver": "AgentDriver injection seam for tests; every wire surface runs the real Claude Code driver",
     },
     "project set-defaults": {
-        "defaults": "assembled from the per-key flags (--analysis-profile, --context); a raw dict flag invites typos",
+        "defaults": "assembled from the per-key flags (--analysis-profile, --context, --repo); a raw dict flag invites typos",  # noqa: E501
     },
 }
 

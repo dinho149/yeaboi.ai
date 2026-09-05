@@ -245,3 +245,62 @@ class TestProgressPhases:
         seq = [(e["component_id"], e["status"]) for e in events]
         assert ("insights", "running") in seq
         assert ("insights", "fallback") in seq
+
+
+class TestRepoScope:
+    """project_path is an exact-or-prefix match on the session's directory, never a basename."""
+
+    @pytest.mark.parametrize(
+        ("session_path", "repo", "expected"),
+        [
+            ("/home/dev/webapp", "/home/dev/webapp", True),
+            ("/home/dev/webapp/", "/home/dev/webapp", True),
+            ("/home/dev/webapp/.claude/worktrees/feature", "/home/dev/webapp", True),
+            ("/home/dev/webapp-v2", "/home/dev/webapp", False),
+            ("/home/dev/other/webapp", "/home/dev/webapp", False),
+            ("/srv/api", "/home/dev/api", False),
+            ("/home/dev/webapp", "", True),
+            ("/home/dev/./webapp", "/home/dev/webapp/", True),
+            ("/home/dev/webapp/../webapp/src", "/home/dev/webapp", True),
+            ("/home/dev/webapp/../other", "/home/dev/webapp", False),
+        ],
+    )
+    def test_in_repo(self, session_path, repo, expected):
+        assert engine._in_repo(session_path, repo) is expected
+
+    def test_usage_keeps_only_sessions_under_the_repo(self, seeded):
+        report = engine.run_agent_usage(window_days=30, project_path="/home/dev/api", db_path=seeded, today=TODAY)
+        assert report.session_count == 1
+        assert report.by_project[0].key == "api"
+
+    def test_a_worktree_under_the_repo_counts(self, db_path):
+        with AgentWatchStore(db_path) as store:
+            store.upsert_session(
+                "wt",
+                source="claude_code",
+                source_path="/x/wt.jsonl",
+                project_path="/home/dev/webapp/.claude/worktrees/feature",
+                git_branch="feature",
+                cli_version="2.1.0",
+                started_at="2026-08-07T10:00:00+00:00",
+                ended_at="2026-08-07T10:00:00+00:00",
+                turns=1,
+                model_usage={"claude-opus-5": {"input": 1_000, "output": 1_000, "calls": 1}},
+                tool_counts={},
+            )
+        report = engine.run_agent_usage(window_days=30, project_path="/home/dev/webapp", db_path=db_path, today=TODAY)
+        assert report.session_count == 1
+
+    def test_no_match_is_an_empty_report_not_a_crash(self, seeded):
+        report = engine.run_agent_usage(window_days=30, project_path="/nowhere", db_path=seeded, today=TODAY)
+        assert report.session_count == 0 and report.total_cost_usd == 0
+
+    def test_standup_digest_scopes_the_local_half(self, seeded):
+        digest = engine._deterministic_standup_digest(
+            window_start="2026-08-01", digest_date="2026-08-08", project_path="/home/dev/webapp", db_path=seeded
+        )
+        assert digest.sessions_worked == 1
+        empty = engine._deterministic_standup_digest(
+            window_start="2026-08-01", digest_date="2026-08-08", project_path="/nowhere", db_path=seeded
+        )
+        assert empty.sessions_worked == 0 and empty.coverage_notes

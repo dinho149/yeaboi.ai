@@ -82,6 +82,18 @@ class TestSetDefaults:
         with pytest.raises(ValueError, match="unknown default"):
             engine.set_project_defaults(project["project_id"], {"default_analysis_profile": "typo"}, db_path=db_path)
 
+    @pytest.mark.parametrize("bad", ["", "   ", "srv/app", "./app", "../app", "/", 42, None])
+    def test_a_repo_path_that_is_not_absolute_is_rejected(self, db_path, bad):
+        project = engine.create_project("Apollo", db_path=db_path)
+        with pytest.raises(ValueError, match="repo_path"):
+            engine.set_project_defaults(project["project_id"], {"repo_path": bad}, db_path=db_path)
+        assert engine.get_project(project["project_id"], db_path=db_path)["settings"] == {}
+
+    def test_a_repo_path_is_stored_normalised(self, db_path):
+        project = engine.create_project("Apollo", db_path=db_path)
+        result = engine.set_project_defaults(project["project_id"], {"repo_path": "/srv//app/../app/"}, db_path=db_path)
+        assert result["settings"] == {"repo_path": "/srv/app"}
+
     def test_unknown_project_raises(self, db_path):
         with pytest.raises(ValueError, match="unknown project"):
             engine.set_project_defaults("proj-00000000", {}, db_path=db_path)

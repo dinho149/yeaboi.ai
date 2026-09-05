@@ -1,0 +1,22 @@
+{
+  "hits": [
+    {
+      "title": "Show HN: An open source coding agent",
+      "url": "https://example.dev/agent",
+      "created_at": "2026-09-04T06:00:00.000Z",
+      "points": 312,
+      "num_comments": 88,
+      "objectID": "45000001"
+    },
+    {
+      "title": "Ask HN: Which model do you use for code?",
+      "url": null,
+      "created_at": "2026-09-03T21:00:00.000Z",
+      "points": 150,
+      "num_comments": 200,
+      "objectID": "45000002"
+    },
+    { "title": "", "url": "https://example.dev/blank", "objectID": "45000003" }
+  ],
+  "nbHits": 3
+}

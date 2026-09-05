@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+  <title>yeaboi</title>
+  <entry>
+    <id>yt:video:EWvNQjAaOHw</id>
+    <yt:videoId>EWvNQjAaOHw</yt:videoId>
+    <title>Planning a sprint with yeaboi</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=EWvNQjAaOHw" />
+    <published>2026-09-02T16:00:00+00:00</published>
+    <updated>2026-09-02T16:30:00+00:00</updated>
+    <media:group>
+      <media:title>Planning a sprint with yeaboi</media:title>
+      <media:thumbnail url="https://i2.ytimg.com/vi/EWvNQjAaOHw/hqdefault.jpg" width="480" height="360" />
+      <media:description>Epics, stories and a sprint plan in four minutes.</media:description>
+    </media:group>
+  </entry>
+  <entry>
+    <id>yt:video:missing</id>
+    <title>No video id</title>
+    <published>2026-09-01T16:00:00+00:00</published>
+  </entry>
+</feed>

@@ -36,18 +36,24 @@ def route_agent_mode(
     read_key,
     frame_time: float,
     supports_timeout: bool,
+    project_path: str = "",
 ) -> None:
-    """Enter one Agents mode from the menu; returns when the user backs out."""
+    """Enter one Agents mode from the menu; returns when the user backs out.
+
+    ``project_path`` is the active project's repository: the scoped modes
+    read only the sessions under it, security stays machine-wide.
+    """
     mode = agents_setup.lookup(key)
     if mode is None:
         logger.warning("agents: no such mode %r", key)
         return
+    scoped_to = project_path if mode.scoped else ""
     with mode_log("agentwatch"):
-        logger.info("%s opened", mode.label)
+        logger.info("%s opened (repo=%s)", mode.label, scoped_to or "-")
         if not show_beta_notice(live, console, read_key, frame_time, supports_timeout, mode_key=key):
             logger.info("%s beta notice declined — back to menu", mode.label)
             return
-        _run_agent_page(mode, console, live, read_key, frame_time, supports_timeout)
+        _run_agent_page(mode, console, live, read_key, frame_time, supports_timeout, project_path=scoped_to)
         logger.info("%s closed", mode.label)
 
 
@@ -108,8 +114,13 @@ def _run_agent_page(
     read_key,
     frame_time: float,
     supports_timeout: bool,
+    project_path: str = "",
 ) -> None:
     """Shared page loop: engine on a worker thread, instant last report, result.
+
+    A scoped page (``project_path`` set) skips the instant open: saved reports
+    are machine-wide, so the last one would be the wrong report under a
+    project's name. The repository shows in the subtitle instead.
 
     The page opens on the *last saved* report (stamped with its age) whenever
     one exists, while a daemon thread runs a fresh engine pass behind a
@@ -139,7 +150,7 @@ def _run_agent_page(
     logger.info("%s page opened", label)
     artifact = None
     as_of = ""
-    loaded = agents_setup.latest_artifact(mode.kind)
+    loaded = None if project_path else agents_setup.latest_artifact(mode.kind)
     if loaded is not None:
         artifact, as_of = loaded
         logger.info("%s page: showing last saved report (from %s) while refreshing", label, as_of or "unknown time")
@@ -157,7 +168,7 @@ def _run_agent_page(
 
         def _work() -> None:
             try:
-                rq.put(("ok", agents_setup.run(mode, pq.put)))
+                rq.put(("ok", agents_setup.run(mode, pq.put, project_path=project_path)))
             except Exception as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
                 logger.exception("%s engine failed", label)
                 rq.put(("err", exc))
@@ -230,6 +241,7 @@ def _run_agent_page(
                     shimmer_tick=tick,
                     status=status,
                     progress=list(events_by_id.values()),
+                    scope=project_path,
                 )
             )
         else:
@@ -247,6 +259,7 @@ def _run_agent_page(
                     # progress is visible on the common path too — not only on
                     # the first-ever run's full checklist.
                     progress=list(events_by_id.values()) if refreshing else None,
+                    scope=project_path,
                 )
             )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()

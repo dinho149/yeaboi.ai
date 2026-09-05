@@ -12,6 +12,7 @@ SRC = Path(privacy.__file__).parent
 # a stale disclosure row is exactly the drift this pins down.
 _SWITCH_OWNERS = {
     "YEABOI_UPDATE_CHECK": "update_check.py",
+    "YEABOI_NEWS": "news/desk.py",
     "YEABOI_NO_TUNNEL": "config.py",
     "YEABOI_TELEMETRY": "telemetry.py",
     "LANGSMITH_TRACING": "config.py",

@@ -3804,6 +3804,7 @@ _PRIVACY_GROUP_GLYPHS = {"always": "◉", "tunnel": "↗", "opt-in": "◌", "you
 _PRIVACY_PATH_GLYPHS = {
     "llm": "◈",
     "update-check": "↻",
+    "news": "▣",
     "desktop-update": "▽",
     "tunnel": "↗",
     "doh": "◍",
@@ -6812,6 +6813,7 @@ SETTINGS_CHOICES: dict[str, tuple[str, ...]] = {
     "LANGSMITH_TRACING": ("true", "false"),
     "YEABOI_TELEMETRY": ("true", "false"),
     "YEABOI_UPDATE_CHECK": ("true", "false"),
+    "YEABOI_NEWS": ("true", "false"),
     "YEABOI_NO_TUNNEL": ("true", "false"),
     "LOG_LEVEL": VALID_LOG_LEVELS,
     "LLM_PROVIDER": LLM_PROVIDERS,
@@ -6830,6 +6832,7 @@ SETTINGS_CHOICE_LABELS: dict[str, dict[str, str]] = {
     "LANGSMITH_TRACING": {"true": "enabled", "false": "disabled"},
     "YEABOI_TELEMETRY": {"true": "on", "false": "off"},
     "YEABOI_UPDATE_CHECK": {"true": "on", "false": "off"},
+    "YEABOI_NEWS": {"true": "on", "false": "off"},
     "YEABOI_NO_TUNNEL": {"true": "tunnels off", "false": "tunnels allowed"},
     "ANTHROPIC_AUTH_MODE": {"api_key": "api key", "subscription": "subscription"},
 }
@@ -6846,6 +6849,7 @@ SETTINGS_CHOICE_DEFAULTS: dict[str, str] = {
     # opt-in; the update check runs unless the literal opt-out.
     "YEABOI_TELEMETRY": "false",
     "YEABOI_UPDATE_CHECK": "true",
+    "YEABOI_NEWS": "true",
     "YEABOI_NO_TUNNEL": "false",
     "LOG_LEVEL": "WARNING",
     # Matches agent/llm.py's own default when LLM_PROVIDER is unset.
@@ -6884,7 +6888,7 @@ _SETTINGS_FOCUS_BG = "rgb(44,52,68)"
 # is simply left as space below the column. The balancing pass keeps the shortfall
 # small, so this is enough to land level in practice — it exists to stop a lone
 # one-row box being blown up to match a column of six-row ones.
-_SETTINGS_MAX_STRETCH = 5  # per-box leveling allowance — grew with the Advanced box (Tunnel Timeout row)
+_SETTINGS_MAX_STRETCH = 6  # per-box leveling allowance — grew with the Advanced and Privacy boxes (news rows)
 
 _TAB_NOT_READY = "rgb(74,74,90)"  # visibly present, clearly behind the ready ones
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
@@ -7550,6 +7554,7 @@ def _build_settings_screen(
         _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"), env="SESSION_PRUNE_DAYS")
         _choice_row("Tips", "TIPS_ENABLED")
         _choice_row("Duck", "DUCK_ENABLED")
+        _row("News YouTube Channel", config_data.get("NEWS_YOUTUBE_CHANNEL", ""), env="NEWS_YOUTUBE_CHANNEL")
         _choice_row("Screensaver", "SAVER_STYLE")
         _choice_row("LangSmith", "LANGSMITH_TRACING")
         _row("Config File", config_data.get("_config_path", ""))  # read-only path
@@ -7563,6 +7568,7 @@ def _build_settings_screen(
         _heading("Privacy")
         _choice_row("Telemetry", "YEABOI_TELEMETRY")
         _choice_row("Update Check", "YEABOI_UPDATE_CHECK")
+        _choice_row("Front Page News", "YEABOI_NEWS")
         _choice_row("Board Sharing Off-Switch", "YEABOI_NO_TUNNEL")
 
     def _sec_sharing() -> None:

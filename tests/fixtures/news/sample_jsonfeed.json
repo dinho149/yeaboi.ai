@@ -1,0 +1,33 @@
+{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "yeaboi news",
+  "home_page_url": "https://yeaboi.ai/",
+  "feed_url": "https://yeaboi.ai/news/feed.json",
+  "items": [
+    {
+      "id": "https://yeaboi.ai/blog/hello",
+      "url": "https://yeaboi.ai/blog/hello",
+      "title": "Hello from the pond",
+      "summary": "The first post.",
+      "date_published": "2026-09-03T10:00:00+00:00",
+      "image": "https://yeaboi.ai/assets/og-card.png",
+      "_yeaboi": { "kind": "post" }
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=abc123",
+      "url": "https://www.youtube.com/watch?v=abc123",
+      "title": "yeaboi in two minutes",
+      "content_text": "A walkthrough.",
+      "date_published": "2026-09-01T10:00:00Z",
+      "_yeaboi": { "kind": "video" }
+    },
+    {
+      "id": "https://yeaboi.ai/desktop.html",
+      "url": "https://yeaboi.ai/desktop.html",
+      "title": "The Mac app",
+      "date_published": "2026-08-20T10:00:00Z",
+      "_yeaboi": { "kind": "pirate" }
+    },
+    { "id": "no-url", "title": "Broken item" }
+  ]
+}

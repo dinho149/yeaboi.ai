@@ -227,6 +227,7 @@ def _fallback_advisor_prose(report: AgentAdvisorReport) -> tuple[tuple[str, ...]
 def run_agent_advisor(
     *,
     window_days: int = 30,
+    project_path: str = "",
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -241,13 +242,17 @@ def run_agent_advisor(
     numbers. Every dollar figure is an estimate and every mechanism count is a
     floor: an unreadable transcript under-reports rather than failing the run.
 
+    project_path: keep only sessions whose project directory is this absolute
+        path or sits under it (``engine._in_repo``).
     dry_run: skip the LLM (deterministic artifact only, no warning).
     """
     resolved_today = today or datetime.now(timezone.utc).date()
     window_days = max(1, int(window_days))
     period_start = (resolved_today - timedelta(days=window_days - 1)).isoformat()
     period_end = resolved_today.isoformat()
-    logger.info("agent advisor: %d-day window to %s (dry_run=%s)", window_days, period_end, dry_run)
+    logger.info(
+        "agent advisor: %d-day window to %s (repo=%r dry_run=%s)", window_days, period_end, project_path, dry_run
+    )
 
     warnings: list[str] = []
     with AgentWatchStore(_resolve_db_path(db_path)) as store:
@@ -262,6 +267,10 @@ def run_agent_advisor(
         )
         warnings.extend(stats.warnings)
         sessions = store.list_sessions(since=period_start)
+    if project_path:
+        from yeaboi.agentwatch.engine import _in_repo
+
+        sessions = [s for s in sessions if _in_repo(s["project_path"], project_path)]
 
     # One audit per transcript file: rollup rows are keyed per file, so the
     # distinct source paths ARE the window's transcript set. A session is

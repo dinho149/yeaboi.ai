@@ -41,6 +41,9 @@ _MODE_SCREEN_MARKERS = ("changelog", "Tip:", "channel")
 # menu. Fragments of the heading/hints so a copy tweak can't break the test.
 _CATEGORY_SCREEN_MARKERS = ("working with", "choose", "switch")
 
+# Chrome of the door (Projects vs Sessions), between the split and the menu.
+_DOOR_SCREEN_MARKERS = ("work today",)
+
 _ANSI_RE = re.compile(
     r"\x1b\[[0-9;?]*[a-zA-Z]"  # CSI sequences (colours, cursor movement, modes)
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC sequences (window title etc.)
@@ -140,7 +143,20 @@ class TestTuiLiveSmoke:
                 f"category screen never rendered; exit={proc.poll()}; last output:\n{text[-2000:]}"
             )
 
-            # Enter picks the preselected category (Humans) → the mode menu.
+            # Enter picks the preselected category (Team) → the door.
+            os.write(master_fd, b"\r")
+            door = _read_until(
+                master_fd,
+                proc,
+                lambda b: any(m in _strip_ansi(b[-262_144:]) for m in _DOOR_SCREEN_MARKERS),
+                timeout=30.0,
+            )
+            text = _strip_ansi(door[-262_144:])
+            assert any(m in text for m in _DOOR_SCREEN_MARKERS), (
+                f"door screen never rendered; exit={proc.poll()}; last output:\n{text[-2000:]}"
+            )
+
+            # Enter picks the preselected door (Sessions) → the mode menu.
             os.write(master_fd, b"\r")
             booted = _read_until(
                 master_fd,
@@ -154,7 +170,7 @@ class TestTuiLiveSmoke:
             )
             # Alt-screen must have been entered — the strongest signal that the
             # live terminal path (not a fallback print) is actually running.
-            assert b"\x1b[?1049h" in landed + booted, "TUI never entered the alternate screen buffer"
+            assert b"\x1b[?1049h" in landed + door + booted, "TUI never entered the alternate screen buffer"
 
             os.write(master_fd, b"q")
             # Drain until the pty hits EOF or the process exits, so the pty
