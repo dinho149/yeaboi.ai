@@ -75,6 +75,13 @@ def music_channels() -> list[dict[str, str]]:
 MUSIC_SERVICE_KEYS: tuple[str, ...] = ("spotify", "apple_music", "youtube_music")
 
 
+def _client_kind(key: str) -> str:
+    from yeaboi.connectors import oauth_clients
+
+    client = oauth_clients.resolve(key)
+    return "none" if client is None else ("own" if client.own else "builtin")
+
+
 def music_services() -> list[dict]:
     """The streaming services, and whether each is switched on in the catalogue.
 
@@ -103,6 +110,9 @@ def music_services() -> list[dict]:
                 "can_sign_in": connector.can_sign_in,
                 "signed_in": bool(os.environ.get(connector.signin_env, "").strip()) if connector.can_sign_in else False,
                 "account": os.environ.get(connector.account_env, "").strip() if connector.account_env else "",
+                # Which OAuth app a sign-in would use: the user's own, yeaboi's
+                # built-in, or none — so the page can ask for one before a click.
+                "client": _client_kind(key) if connector.can_sign_in else "none",
             }
         )
     return services

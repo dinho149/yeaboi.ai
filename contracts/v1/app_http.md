@@ -663,14 +663,16 @@ not accepted as an index — `bool` is an `int` in Python, and silently selectin
 station 1 is worse than a 400.
 
 `music.services` lists the streaming services the desktop can also play —
-`[{key, label, connected, playback, can_sign_in, signed_in, account}]` for
+`[{key, label, connected, playback, can_sign_in, signed_in, account, client}]` for
 Spotify, Apple Music and YouTube Music. Each is a connector in the integrations
 catalogue: `connected` is whether its "where it plays" choice has been saved
 (through `POST /api/settings/set`, like every connector field), and `playback`
 is that choice. Signing in is a separate, optional step: `can_sign_in` is false
 for Apple Music (the desktop browses the Music app on the Mac itself),
-`signed_in` says whether a token is held, and `account` is the display name it
-was minted for. A desktop that finds no `signed_in` key is talking to an older
+`signed_in` says whether a token is held, `account` is the display name it
+was minted for, and `client` says which OAuth app a sign-in would use —
+`own` (the user's `*_CLIENT_ID`), `builtin` (yeaboi's), or `none`, in which
+case the desktop asks for one before offering Sign in. A desktop that finds no `signed_in` key is talking to an older
 backend and hides Sign in and Browse. Playback itself happens in the desktop's
 embedded player or the vendor's own app and never touches this API; the
 terminal ignores the block.

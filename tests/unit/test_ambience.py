@@ -70,7 +70,8 @@ class TestState:
         services = ambience.state()["music"]["services"]
         assert [s["key"] for s in services] == list(ambience.MUSIC_SERVICE_KEYS)
         assert all(
-            set(s) == {"key", "label", "connected", "playback", "can_sign_in", "signed_in", "account"} for s in services
+            set(s) == {"key", "label", "connected", "playback", "can_sign_in", "signed_in", "account", "client"}
+            for s in services
         )
         assert not any(s["connected"] for s in services)
         assert not any(s["signed_in"] for s in services)
@@ -89,8 +90,16 @@ class TestState:
             "can_sign_in": True,
             "signed_in": False,
             "account": "",
+            "client": "none",
         }
         assert by_key["apple_music"]["connected"] is False
+
+    def test_the_client_a_sign_in_would_use_is_named(self, env):
+        env.setenv("SPOTIFY_CLIENT_ID", "own-app")
+        by_key = {s["key"]: s for s in ambience.state()["music"]["services"]}
+        assert by_key["spotify"]["client"] == "own"
+        assert by_key["youtube_music"]["client"] == "none"
+        assert by_key["apple_music"]["client"] == "none"
 
     def test_a_held_token_reads_as_signed_in_with_its_name_and_never_its_value(self, env):
         env.setenv("SPOTIFY_REFRESH_TOKEN", "AQD-refresh-token-value")
