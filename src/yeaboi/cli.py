@@ -2986,6 +2986,11 @@ def _cmd_connections(args: argparse.Namespace, console: Console) -> int:
         for field in connector.fields_for(method.key) if method else connector.fields:
             if connector.auth_env and field.env == connector.auth_env:
                 continue
+            # A sign-in's fields are minted by the flow, never typed.
+            if field.action == "signin":
+                if field.secret:
+                    console.print(f"[dim]{field.label}: sign in from the desktop's Music page[/dim]")
+                continue
             # An external ID is yeaboi's to mint, not the user's to invent: it
             # is what stops a confused deputy assuming the role, so it has to be
             # unguessable. Shown once, for pasting into the trust policy.

@@ -106,6 +106,17 @@ def post_form(url: str, *, data: dict[str, str], timeout: int = DEFAULT_TIMEOUT)
     return httpx.post(assert_safe_url(url), data=data, timeout=timeout)
 
 
+def put_json(url: str, *, headers: dict[str, str], payload: dict, timeout: int = DEFAULT_TIMEOUT):
+    """``PUT`` a JSON body to a guarded URL. Returns the raw httpx response.
+
+    The one write the music layer makes — Spotify's "play this" — through the
+    same guard as every read.
+    """
+    import httpx
+
+    return httpx.put(assert_safe_url(url), json=payload, headers=headers, timeout=timeout)
+
+
 def post_json(url: str, *, headers: dict[str, str], payload: dict, timeout: int = DEFAULT_TIMEOUT):
     """``POST`` a JSON body to a guarded URL. Returns the raw httpx response.
 

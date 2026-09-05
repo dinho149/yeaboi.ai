@@ -15,6 +15,8 @@ def env(monkeypatch):
     monkeypatch.setattr(config, "set_config_value", lambda _k, _v: Path("/tmp/.env"))
     for key in ("DUCK_ENABLED", "MUSIC_ENABLED", "MUSIC_CHANNEL", "PET_ENABLED", "SAVER_STYLE"):
         monkeypatch.delenv(key, raising=False)
+    for key in ("SPOTIFY_PLAYBACK", "APPLE_MUSIC_PLAYBACK", "YOUTUBE_MUSIC_PLAYBACK"):
+        monkeypatch.delenv(key, raising=False)
     return monkeypatch
 
 
@@ -62,6 +64,59 @@ class TestState:
 
     def test_the_style_catalogue_travels_with_the_state(self, env):
         assert ambience.state()["saver"]["styles"] == ambience.SAVER_STYLES
+
+    def test_the_streaming_services_travel_with_the_state_and_start_off(self, env):
+        # The catalogue decides what is on; with nothing saved, nothing is.
+        services = ambience.state()["music"]["services"]
+        assert [s["key"] for s in services] == list(ambience.MUSIC_SERVICE_KEYS)
+        assert all(
+            set(s) == {"key", "label", "connected", "playback", "can_sign_in", "signed_in", "account", "client"}
+            for s in services
+        )
+        assert not any(s["connected"] for s in services)
+        assert not any(s["signed_in"] for s in services)
+        assert [s["playback"] for s in services] == ["desktop", "desktop", "embed"]
+        # Apple never signs in: the desktop browses the Music app itself.
+        assert [s["can_sign_in"] for s in services] == [True, False, True]
+
+    def test_a_saved_playback_choice_switches_the_service_on(self, env):
+        env.setenv("SPOTIFY_PLAYBACK", "embed")
+        by_key = {s["key"]: s for s in ambience.state()["music"]["services"]}
+        assert by_key["spotify"] == {
+            "key": "spotify",
+            "label": "Spotify",
+            "connected": True,
+            "playback": "embed",
+            "can_sign_in": True,
+            "signed_in": False,
+            "account": "",
+            "client": "none",
+        }
+        assert by_key["apple_music"]["connected"] is False
+
+    def test_the_client_a_sign_in_would_use_is_named(self, env):
+        env.setenv("SPOTIFY_CLIENT_ID", "own-app")
+        by_key = {s["key"]: s for s in ambience.state()["music"]["services"]}
+        assert by_key["spotify"]["client"] == "own"
+        assert by_key["youtube_music"]["client"] == "none"
+        assert by_key["apple_music"]["client"] == "none"
+
+    def test_a_held_token_reads_as_signed_in_with_its_name_and_never_its_value(self, env):
+        env.setenv("SPOTIFY_REFRESH_TOKEN", "AQD-refresh-token-value")
+        env.setenv("SPOTIFY_ACCOUNT", "dinho")
+        by_key = {s["key"]: s for s in ambience.state()["music"]["services"]}
+        assert by_key["spotify"]["signed_in"] is True
+        assert by_key["spotify"]["account"] == "dinho"
+        # Signing in does not switch the service on; the playback choice does.
+        assert by_key["spotify"]["connected"] is False
+        assert "AQD-refresh-token-value" not in repr(ambience.state())
+
+    def test_an_unknown_playback_choice_reads_as_the_default(self, env):
+        # A value written by a newer desktop must not hand the older one a word it cannot act on.
+        env.setenv("YOUTUBE_MUSIC_PLAYBACK", "hologram")
+        by_key = {s["key"]: s for s in ambience.state()["music"]["services"]}
+        assert by_key["youtube_music"]["playback"] == "embed"
+        assert by_key["youtube_music"]["connected"] is True
 
     def test_the_state_is_a_copy_a_caller_cannot_corrupt(self, env):
         ambience.state()["duck"]["quips"]["standup_done"] = "nope"

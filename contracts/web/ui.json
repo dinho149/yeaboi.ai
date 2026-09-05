@@ -11,6 +11,7 @@
     "standup"
   ],
   "connector_accents": [
+    "apple_music",
     "aws",
     "azdevops",
     "azure_cloud",
@@ -33,9 +34,11 @@
     "pagerduty",
     "sentry",
     "slack",
+    "spotify",
     "statuspage",
     "tavus",
-    "trello"
+    "trello",
+    "youtube_music"
   ],
   "timing": {
     "refused_hold_sleep_ms": 1500

@@ -265,6 +265,7 @@ def _connector_fields() -> tuple[SettingField, ...]:
             secret=f.secret,
             choices=f.choices,
             default=f.default,
+            action=f.action,
         )
         for c in registry.all_connectors()
         for f in c.fields

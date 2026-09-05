@@ -1173,6 +1173,43 @@ def _verify_launchdarkly(token: str) -> tuple[bool, str]:
     return True, "LaunchDarkly verified"
 
 
+def _verify_music_player(url: str, verified: str) -> tuple[bool, str]:
+    """One unauthenticated GET against a music vendor's public catalogue.
+
+    The music connectors hold no credential, so the probe answers the only
+    question there is: whether the vendor's player is reachable from here.
+    """
+    from yeaboi.connectors.http import probe_status
+
+    status, message = probe_status(url, headers={})
+    if status == 0:
+        return False, message
+    if status != 200:
+        return False, f"Unexpected response: {status}"
+    return True, verified
+
+
+def _verify_spotify() -> tuple[bool, str]:
+    from urllib.parse import quote
+
+    playlist = quote("https://open.spotify.com/playlist/37i9dQZF1DX8Uebhn9wzrS", safe="")
+    return _verify_music_player(f"https://open.spotify.com/oembed?url={playlist}", "Spotify's player is reachable")
+
+
+def _verify_apple_music() -> tuple[bool, str]:
+    # Apple has no oEmbed; the iTunes lookup is the public, keyless catalogue read.
+    return _verify_music_player("https://itunes.apple.com/lookup?id=1440935467", "Apple Music's catalogue is reachable")
+
+
+def _verify_youtube_music() -> tuple[bool, str]:
+    from urllib.parse import quote
+
+    video = quote("https://www.youtube.com/watch?v=jfKfPfyJRdk", safe="")
+    return _verify_music_player(
+        f"https://www.youtube.com/oembed?url={video}&format=json", "YouTube's player is reachable"
+    )
+
+
 def _verify_jsm_ops(token: str, cloud_id: str) -> tuple[bool, str]:
     """Verify a JSM Ops API key can list one site's alerts.
 

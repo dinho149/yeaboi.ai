@@ -27,6 +27,7 @@ from yeaboi.app import (
     routes_consent,
     routes_feedback,
     routes_meta,
+    routes_music,
     routes_news,
     routes_niko,
     routes_performance,
@@ -236,6 +237,19 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/feedback", routes_feedback.submit),
     AppRoute("POST", "/api/feedback/polish", routes_feedback.polish),
     AppRoute("POST", "/api/feedback/attachments", routes_feedback.attach),
+    # The music services' sign-in and library: the Browse behind the desktop's
+    # Music page. Chrome like ambience — playback is the desktop's, and a
+    # library read is a UI affordance, not work an agent would be asked to do.
+    AppRoute("POST", "/api/connections/{key}/signin", routes_music.signin_start),
+    AppRoute("GET", "/api/connections/{key}/signin", routes_music.signin_status),
+    AppRoute("POST", "/api/connections/{key}/signin/cancel", routes_music.signin_cancel),
+    AppRoute("POST", "/api/connections/{key}/signout", routes_music.signout),
+    AppRoute("GET", "/api/music/{key}/library", routes_music.library),
+    AppRoute("GET", "/api/music/{key}/playlist/{playlist_id}/items", routes_music.playlist),
+    AppRoute("GET", "/api/music/{key}/search", routes_music.search),
+    AppRoute("POST", "/api/music/spotify/play", routes_music.spotify_play),
+    AppRoute("GET", "/api/music/spotify/player", routes_music.spotify_player),
+    AppRoute("GET", "/api/music/spotify/devices", routes_music.spotify_devices),
     AppRoute("GET", "/api/consent", routes_consent.pending),
     AppRoute("POST", "/api/consent/{req_id}", routes_consent.resolve),
     # -- dictation (the M11 surface) ------------------------------------------

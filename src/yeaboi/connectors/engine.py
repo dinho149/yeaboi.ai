@@ -26,6 +26,16 @@ from yeaboi.connectors.spec import FAMILY_LABELS, FAMILY_ORDER
 logger = logging.getLogger(__name__)
 
 
+def _signin_state(connector) -> dict | None:
+    """``{signed_in, account}`` for a connector with a sign-in, else ``None``."""
+    if not connector.can_sign_in:
+        return None
+    return {
+        "signed_in": bool(os.environ.get(connector.signin_env, "").strip()),
+        "account": os.environ.get(connector.account_env, "").strip() if connector.account_env else "",
+    }
+
+
 def list_connections(*, family: str = "", connected_only: bool = True, include_legacy: bool = False) -> dict:
     """The connector catalog: what exists, what is connected, and what it needs.
 
@@ -84,6 +94,10 @@ def list_connections(*, family: str = "", connected_only: bool = True, include_l
                 # way sends an empty list and no selector, so a surface that
                 # ignores these keys renders exactly as it did before.
                 "auth_env": connector.auth_env,
+                # The sign-in, when the connector has one: whether a token is
+                # held, and the display name it was minted for — the one field
+                # value this payload ever carries, and it is not a credential.
+                "signin": _signin_state(connector),
                 "auth_methods": [
                     {
                         "key": m.key,
@@ -110,6 +124,7 @@ def list_connections(*, family: str = "", connected_only: bool = True, include_l
                         "help_url": f.help_url,
                         "help_scope": f.help_scope,
                         "auth_method": f.auth_method,
+                        "action": f.action,
                     }
                     for f in connector.fields
                 ],

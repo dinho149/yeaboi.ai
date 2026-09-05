@@ -156,6 +156,33 @@
       "managed_by": "connections"
     },
     {
+      "key": "apple_music",
+      "label": "Apple Music",
+      "family": "music",
+      "family_label": "Music",
+      "accent": "rgb(250,45,85)",
+      "glyph": "🍎",
+      "managed_by": "connections"
+    },
+    {
+      "key": "spotify",
+      "label": "Spotify",
+      "family": "music",
+      "family_label": "Music",
+      "accent": "rgb(30,215,96)",
+      "glyph": "🎧",
+      "managed_by": "connections"
+    },
+    {
+      "key": "youtube_music",
+      "label": "YouTube Music",
+      "family": "music",
+      "family_label": "Music",
+      "accent": "rgb(255,0,0)",
+      "glyph": "▶️",
+      "managed_by": "connections"
+    },
+    {
       "key": "azdevops",
       "label": "Azure DevOps Boards",
       "family": "delivery",

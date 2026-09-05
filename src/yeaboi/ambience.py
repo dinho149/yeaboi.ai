@@ -70,6 +70,54 @@ def music_channels() -> list[dict[str, str]]:
     return [dict(channel) for channel in CHANNELS]
 
 
+#: The catalogue connectors that are music sources on the desktop, in the order
+#: the Music page lists them after the built-in radio.
+MUSIC_SERVICE_KEYS: tuple[str, ...] = ("spotify", "apple_music", "youtube_music")
+
+
+def _client_kind(key: str) -> str:
+    from yeaboi.connectors import oauth_clients
+
+    client = oauth_clients.resolve(key)
+    return "none" if client is None else ("own" if client.own else "builtin")
+
+
+def music_services() -> list[dict]:
+    """The streaming services, and whether each is switched on in the catalogue.
+
+    A service is on when its connector is connected, which means its "where it
+    plays" choice has been saved; signing in is a separate, optional step, and
+    ``signed_in``/``account`` say where it stands. The choice travels too: it
+    is the first field, and it is never a secret.
+    """
+    import os
+
+    from yeaboi.connectors import registry
+
+    services = []
+    for key in MUSIC_SERVICE_KEYS:
+        connector = registry.by_key(key)
+        if connector is None:
+            continue
+        field = connector.fields[0]
+        playback = os.environ.get(field.env, "").strip() or field.default
+        services.append(
+            {
+                "key": key,
+                "label": connector.label,
+                "connected": registry.is_connected(connector),
+                "playback": playback if playback in field.choices else field.default,
+                "can_sign_in": connector.can_sign_in,
+                "signed_in": bool(os.environ.get(connector.signin_env, "").strip()) if connector.can_sign_in else False,
+                "account": os.environ.get(connector.account_env, "").strip() if connector.account_env else "",
+                # Which OAuth app a sign-in would use: the user's own, yeaboi's
+                # built-in, or none — so the page can ask for one before a click.
+                "client": _client_kind(key) if connector.can_sign_in else "none",
+            }
+        )
+    return services
+
+
 def state() -> dict:
     """Every ambience preference and catalogue, in one read."""
     from yeaboi import config
@@ -83,6 +131,7 @@ def state() -> dict:
             "channels": channels,
             "channel": channel if 0 <= channel < len(channels) else 0,
             "enabled": config.is_music_enabled(),
+            "services": music_services(),
         },
         "saver": {
             "idle_seconds": IDLE_SECONDS,

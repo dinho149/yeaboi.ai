@@ -46,6 +46,14 @@ class TestBrowse:
         for label in labels:
             assert label in seen, f"{label} never renders in the catalog"
 
+    def test_the_music_shelf_names_its_three_services(self, payload):
+        # Keyless services are still catalogue entries: the shelf is where a
+        # user finds out they exist, on this surface as on the desktop.
+        out = _render(build_catalog_screen(payload, 0, filter_text="music", width=120, height=44))
+        assert "Music" in out
+        for label in ("Spotify", "Apple Music", "YouTube Music"):
+            assert label in out, f"{label} missing from the music shelf"
+
     def test_the_filter_narrows_by_label_summary_and_family(self, payload):
         assert [r["key"] for r in visible_rows(payload, "gitla")] == ["gitlab"]
         assert "sentry" in [r["key"] for r in visible_rows(payload, "error")]  # family label

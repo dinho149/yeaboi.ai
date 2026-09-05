@@ -364,6 +364,12 @@ _META_TIPS: tuple[FeatureTip, ...] = (
 # what TestDesktopOnlyTips checks against the desktop's own route manifest.
 _DESKTOP_TIPS: tuple[FeatureTip, ...] = (
     FeatureTip(
+        "desktop:music",
+        "\U0001f3b5 Tip: Music lives in the rail's pocket — radio shared with the terminal, "
+        "or Spotify, Apple Music and YouTube Music once they are on in the catalog",
+        surfaces=("desktop",),
+    ),
+    FeatureTip(
         "desktop:projects",
         "\U0001f4c1 Tip: Projects is the durable door — every run you start inside one shares its context",
         surfaces=("desktop",),
@@ -427,8 +433,8 @@ def get_tips() -> tuple[FeatureTip, ...]:
     }[state]
     desktop_voice_tip = FeatureTip("voice", desktop_voice_text, surfaces=("desktop",))
     music_available, _music_reason = is_music_available()
-    # Terminal-only: focus music is a pair of keybindings there, and the desktop
-    # app ships no control for it.
+    # Terminal-only because the text names the terminal's keys; the desktop has
+    # its own Music page, menu chords and a `desktop:music` tip.
     music_tip = FeatureTip(
         "music",
         "\U0001f3b5 Tip: press Ctrl+P for focus music · Ctrl+O to switch channel"

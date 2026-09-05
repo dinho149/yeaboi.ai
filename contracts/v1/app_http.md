@@ -91,7 +91,7 @@ over this wire. Writes are allowlisted to the engine's field registry
 | POST | `/api/settings/provider/verify` | body `{provider, credential, model?}` → `{ok, message}` (network, up to ~8s) |
 | POST | `/api/settings/provider/models` | body `{provider, credential}` → `{models, default, hints}` (discovered-first merge) |
 | POST | `/api/settings/connection/verify` | body `{kind, …fields}` → `{ok, message}`. `kind` is any `verify_kind` the `/api/connections` rows report — the legacy literals (`github`, `jira`, `confluence`, `notion`, `elevenlabs`, `tavus`) plus every descriptor-verified connector key (`datadog`, `grafana`, `sentry`, `gitlab`, `custom_*`, …), and the accepted field names are that kind's declared verify fields (e.g. `token`, `app_key`, `base_url`, `email`, `space_key`). Omitted fields fall back to saved values, so a stored credential can be re-checked without echoing it — but a stored secret only travels to the stored host: a caller-supplied `base_url`/`email` requires **every** secret verify field of that kind in the same request (Datadog: `token` and `app_key`), and a supplied `base_url` must be https (400 otherwise; network, up to ~10s) |
-| GET | `/api/connections` | the integration catalog: `{connectors: [{key, label, summary, detail, family, family_label, section, connected, read_only, managed_by, kind, docs_url, glyph, icon, accent, verify_kind, auth_env, auth_methods: [{key, label, summary, recommended, warning, setup_url, envs}], fields: [{env, label, secret, required, is_set, choices, default, placeholder, hint, help_url, help_scope, auth_method}]}], families, connected}`. `?all=1` is the browse view: every connector that could be added, plus the built-in integrations (GitHub, Jira, Azure DevOps Boards, Confluence, Notion, Slack, ElevenLabs, Tavus) as `managed_by: "credentials"` rows; the default lists only connected connector-layer rows — the view a Credentials-side "your integrations" panel renders. `kind` is a custom connection's kind (`api`/`webhook`/`mcp`); built-in and legacy rows send `""`. `icon` is a custom connection's uploaded icon — a server-validated `data:image/(png\|jpeg\|webp);base64,` URI, never SVG, decoded size ≤ 64KB; `""` everywhere else (built-in marks ship with the client). `managed_by` says where configuring happens — `"connections"` rows carry their own add flow (write the fields via `/api/settings/set`, then probe `verify_kind`), `"credentials"` rows deep-link to Settings ▸ Credentials/setup and their `verify_kind` is `""` when no probe exists (Slack, Azure DevOps). **Never carries a field value** — a field reports only whether it is set. `auth_methods` is empty for a connector with one way in, and a field's `auth_method` is empty when every method needs it; a client that ignores both keys renders exactly as it did before they existed. Exactly one method carries `recommended: true`, and every other carries a non-empty `warning` — a method yeaboi cannot bound says so on itself |
+| GET | `/api/connections` | the integration catalog: `{connectors: [{key, label, summary, detail, family, family_label, section, connected, read_only, managed_by, kind, docs_url, glyph, icon, accent, verify_kind, auth_env, signin, auth_methods: [{key, label, summary, recommended, warning, setup_url, envs}], fields: [{env, label, secret, required, is_set, choices, default, placeholder, hint, help_url, help_scope, auth_method, action}]}], families, connected}`. `signin` is `{signed_in, account}` for a connector with an OAuth sign-in (Spotify, YouTube Music) and `null` otherwise; `account` is the display name the sign-in was minted for — the one field value this payload ever carries, and not a credential. A field's `action` is `"signin"` when the sign-in flow writes it (the refresh token, the display name): no surface prompts for it, and the desktop renders it as a status row with Sign in / Sign out (see *Music* below). `?all=1` is the browse view: every connector that could be added, plus the built-in integrations (GitHub, Jira, Azure DevOps Boards, Confluence, Notion, Slack, ElevenLabs, Tavus) as `managed_by: "credentials"` rows; the default lists only connected connector-layer rows — the view a Credentials-side "your integrations" panel renders. `kind` is a custom connection's kind (`api`/`webhook`/`mcp`); built-in and legacy rows send `""`. `icon` is a custom connection's uploaded icon — a server-validated `data:image/(png\|jpeg\|webp);base64,` URI, never SVG, decoded size ≤ 64KB; `""` everywhere else (built-in marks ship with the client). `managed_by` says where configuring happens — `"connections"` rows carry their own add flow (write the fields via `/api/settings/set`, then probe `verify_kind`), `"credentials"` rows deep-link to Settings ▸ Credentials/setup and their `verify_kind` is `""` when no probe exists (Slack, Azure DevOps). **Never carries a field value** — a field reports only whether it is set. `auth_methods` is empty for a connector with one way in, and a field's `auth_method` is empty when every method needs it; a client that ignores both keys renders exactly as it did before they existed. Exactly one method carries `recommended: true`, and every other carries a non-empty `warning` — a method yeaboi cannot bound says so on itself |
 | POST | `/api/connections/custom` | save one user-created connection. Body: descriptor JSON — `{key: "custom_…", label, family, summary, detail?, docs_url?, glyph, accent, kind: api\|webhook\|mcp, auth_scheme: bearer\|basic\|header, header_name?, probe_path, probe_ok_status, webhook_verify?: token\|hmac, events?: {path, items_key, kind, title_path, ref_path?, severity_path?, status_path?, url_path?, started_at_path?, service_path?}, extra_fields?: [{label, env_suffix, secret?, header_name?, hint?}], icon_data?}` — **never a credential** (values are typed afterwards through `/api/settings/set`, exactly like a built-in connector's fields). An `mcp` kind stores a streamable-HTTP MCP server URL and optional bearer token (derived envs, values typed afterwards via `/api/settings/set`), verifies with the MCP initialize + tools/list handshake, and gathers nothing. A `webhook` kind requires the events mapping, ignores the HTTP-shape fields, and mints its delivery secret server-side — returned once as `webhook_secret` on the created row (`/api/webhooks/{key}/url` can show it again). `extra_fields` (`api` kind only, ≤ 4) declares extra credentials/config beyond the auth scheme — a Datadog-style app key beside the api key: `env_suffix` is UPPER_SNAKE and derives the env (`YEABOI_CUSTOM_<KEY>_<SUFFIX>`), `secret` defaults true, and a `header_name` sends the value as that request header on probe and fetch. `icon_data` is an optional icon in the `icon` row key's data-URI shape (png/jpeg/webp only, never SVG, ≤ 64KB decoded — the validator refuses the rest). The runtime validator is the gate: every problem comes back joined in a 400 `{"error": …}`. Success returns the new catalog row in the `/api/connections` row shape (`managed_by: "connections"`) |
 | POST | `/api/connections/custom/draft` | body `{description}` → `{ok, draft, problems}`: one LLM pass from a plain-language service description to a candidate descriptor (same shape as the create body). Never saves — a draft with problems pre-fills the create form. The model proposes identity, look and shape only — any kind, `extra_fields` included; never a credential value, an env name, verify wiring or `icon_data` (network + one LLM call) |
 | POST | `/api/connections/custom/{key}/delete` | remove one user-created connection — the descriptor AND its stored env values in the same act (a definition-less credential is an orphan). `{deleted: key}`; 404 for a key that is not a custom connection |
@@ -656,9 +656,71 @@ their behalf.
 `/api/ambience` serves music as a **catalogue and a preference only**. The
 terminal hands a station URL to `ffplay`; the desktop hands the same URL to an
 `<audio>` element and needs no binary, so playback state lives in the renderer
-and never round-trips. A bad channel index is refused rather than clamped, and
-`true` is not accepted as an index — `bool` is an `int` in Python, and silently
-selecting station 1 is worse than a 400.
+and never round-trips. The desktop writes `music_enabled` and `music_channel`
+back when the user presses play or picks a station, so both surfaces agree on
+what is on. A bad channel index is refused rather than clamped, and `true` is
+not accepted as an index — `bool` is an `int` in Python, and silently selecting
+station 1 is worse than a 400.
+
+`music.services` lists the streaming services the desktop can also play —
+`[{key, label, connected, playback, can_sign_in, signed_in, account, client}]` for
+Spotify, Apple Music and YouTube Music. Each is a connector in the integrations
+catalogue: `connected` is whether its "where it plays" choice has been saved
+(through `POST /api/settings/set`, like every connector field), and `playback`
+is that choice. Signing in is a separate, optional step: `can_sign_in` is false
+for Apple Music (the desktop browses the Music app on the Mac itself),
+`signed_in` says whether a token is held, `account` is the display name it
+was minted for, and `client` says which OAuth app a sign-in would use —
+`own` (the user's `*_CLIENT_ID`), `builtin` (yeaboi's), or `none`, in which
+case the desktop asks for one before offering Sign in. A desktop that finds no `signed_in` key is talking to an older
+backend and hides Sign in and Browse. Playback itself happens in the desktop's
+embedded player or the vendor's own app and never touches this API; the
+terminal ignores the block.
+
+## Music
+
+The Browse behind the desktop's Music page: sign in to Spotify or YouTube
+Music, then read the library. Chrome like ambience — no capability, no MCP
+tool — and every route below needs the bearer.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/connections/{key}/signin` | start a sign-in → `{started, url, message}`. The desktop opens `url` in the system browser. 404 for a connector with no sign-in (`apple_music`). `started: false` carries the reason in `message` — no client configured (paste your own client ID), or the callback port busy |
+| GET | `/api/connections/{key}/signin` | poll → `{active, done?, ok?, saved?, account?, message?}`; `{active: false}` when no sign-in for that key is running. On the poll that first sees the token it is persisted before `saved: true` is reported — the token itself is never in any body |
+| POST | `/api/connections/{key}/signin/cancel` | stop and discard the session → `{ok: true}` |
+| POST | `/api/connections/{key}/signout` | forget the token and the display name → `{ok: true, signed_in: false}` |
+| GET | `/api/music/{key}/library` | `?shelf=&cursor=&limit=` — one shelf of the signed-in library → `{items, next_cursor}`. `shelf` ∈ `playlists`, `liked`, `albums`, `recent` (YouTube: the first two; the rest 400). `next_cursor` is opaque; `""` ends the list. Apple has no library here (404): the desktop browses the Music app itself |
+| GET | `/api/music/{key}/playlist/{playlist_id}/items` | `?cursor=&limit=` — the tracks of one playlist, same shape |
+| GET | `/api/music/{key}/search` | `?q=&limit=` — catalogue search, same shape with an empty `next_cursor`. Spotify caps a page at 10. `apple_music` needs no sign-in: Apple's public iTunes Search API, `?country=` (two letters, default `us`), and each row carries `preview_url` |
+| POST | `/api/music/spotify/play` | body `{uri, device_id?}` → `{ok: true}`: play a Spotify URI on the active device. Premium only — see the codes below |
+| GET | `/api/music/spotify/player` | `{playing, progress_ms, item, device: {id, name}}`; `item`/`device` null when nothing plays |
+| GET | `/api/music/spotify/devices` | `{devices: [{id, name, type, active}]}` |
+
+A row is `{id, kind, title, subtitle, artwork_url, duration_ms, url, uri,
+preview_url, count}` — `kind` ∈ `track`, `album`, `playlist`, `video`, `song`;
+`url` is always a share link the desktop's own link grammar accepts
+(`https://open.spotify.com/<kind>/<id>`, `https://www.youtube.com/watch?v=`
+or `playlist?list=`, `https://music.apple.com/<cc>/album/<slug>/<id>?i=<track>`),
+so a row plays through exactly the path a pasted link does.
+
+A vendor's refusal comes back as `{error, code, retry_after?}` with the status
+the code implies: `signed_out` (**409**, never 401 — the desktop's bearer
+handling must not read it as its own failure; offer Sign in), `premium_required`
+(403) and `no_active_device` (409) — the desktop hands the track to the
+Spotify app instead — `not_allowlisted` (403: an unapproved app allows only a
+few sign-ins; paste your own client ID), `quota_exceeded` (429),
+`rate_limited` (429, `retry_after` seconds), `unsupported_shelf` / `bad_uri`
+(400), `unavailable` (502).
+
+The sign-in is Authorization Code + PKCE. The vendor sends the browser back
+to a loopback listener of the backend's own, never the app wire: it binds
+`127.0.0.1` on a **fixed** port (8643, `YEABOI_OAUTH_PORT` overrides — Spotify
+matches the registered Redirect URI exactly, so a busy port is an error, not a
+walk) and serves `/callback/{key}` for one sign-in. The refresh token is
+written to `~/.yeaboi/.env` as `SPOTIFY_REFRESH_TOKEN` / `YOUTUBE_MUSIC_REFRESH_TOKEN`
+(masked everywhere), the display name beside it. yeaboi's registered apps are
+built in; a `SPOTIFY_CLIENT_ID` or `YOUTUBE_MUSIC_CLIENT_ID` (+ `_CLIENT_SECRET`)
+saved through `/api/settings/set` takes precedence.
 
 `saver` is the same shape for the same reason: `idle_seconds`, the `styles`
 catalogue (key → display name) and the chosen `style`, set with `saver_style`.

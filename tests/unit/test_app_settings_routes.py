@@ -50,6 +50,28 @@ class TestSettingsRead:
         assert {"providers", "anthropic_auth_modes", "token_help"} == set(payload)
 
 
+class TestConnectionsSignInRow:
+    def test_the_catalog_reports_a_signin_without_its_token(self, app, monkeypatch):
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "AQD-refresh-token-value")
+        monkeypatch.setenv("SPOTIFY_ACCOUNT", "dinho")
+        resp = request(app, "GET", "/api/connections?all=1")
+        assert resp.code == 200
+        assert "AQD-refresh-token-value" not in resp.body.decode()
+        spotify = next(c for c in json.loads(resp.body)["connectors"] if c["key"] == "spotify")
+        assert spotify["signin"] == {"signed_in": True, "account": "dinho"}
+        token = next(f for f in spotify["fields"] if f["env"] == "SPOTIFY_REFRESH_TOKEN")
+        assert token["action"] == "signin" and token["secret"] and token["is_set"]
+        apple = next(c for c in json.loads(resp.body)["connectors"] if c["key"] == "apple_music")
+        assert apple["signin"] is None
+
+    def test_the_settings_snapshot_masks_the_token(self, app, monkeypatch):
+        monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", "AQD-refresh-token-value-long-enough")
+        resp = request(app, "GET", "/api/settings")
+        assert "AQD-refresh-token-value-long-enough" not in resp.body.decode()
+        row = next(f for f in json.loads(resp.body)["fields"] if f["env"] == "SPOTIFY_REFRESH_TOKEN")
+        assert row["secret"] and row["is_set"] and row["action"] == "signin"
+
+
 class TestSettingsWrites:
     @pytest.fixture(autouse=True)
     def _no_disk(self, monkeypatch):

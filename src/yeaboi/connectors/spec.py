@@ -31,6 +31,7 @@ FAMILIES: dict[str, str] = {
     "code": "\U0001f500",  # 🔀
     "chat": "\U0001f4ac",  # 💬
     "media": "\U0001f3a4",  # 🎤
+    "music": "\U0001f3b5",  # 🎵
 }
 
 #: Render order for the catalog. Families the user is most likely to be adding
@@ -45,6 +46,7 @@ FAMILY_ORDER: tuple[str, ...] = (
     "docs",
     "chat",
     "media",
+    "music",
 )
 
 FAMILY_LABELS: dict[str, str] = {
@@ -57,6 +59,7 @@ FAMILY_LABELS: dict[str, str] = {
     "docs": "Docs",
     "chat": "Chat",
     "media": "Voice & video",
+    "music": "Music",
 }
 
 
@@ -113,6 +116,11 @@ class ConnectorField:
     auth_method: str = ""
     choices: tuple[str, ...] = ()
     default: str = ""
+    # A non-empty action names the flow that mints this value instead of a
+    # typed write — the same vocabulary as ``SettingField.action``. ``signin``
+    # means an OAuth sign-in writes it: no surface ever prompts for it, and
+    # the desktop renders it as a status row with Sign in / Sign out.
+    action: str = ""
 
 
 @dataclass(frozen=True)
@@ -163,6 +171,15 @@ class Connector:
     auth_env: str = ""
     #: Read-only connectors gather data and never write to the vendor.
     read_only: bool = True
+    #: The refresh-token field an OAuth sign-in writes, and the field holding
+    #: the account's display name — the one value the catalogue may show.
+    #: Empty means the connector has no sign-in.
+    signin_env: str = ""
+    account_env: str = ""
+
+    @property
+    def can_sign_in(self) -> bool:
+        return bool(self.signin_env)
 
     @property
     def mark(self) -> str:

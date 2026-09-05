@@ -188,6 +188,9 @@ class AppServer:
         # `claude setup-token` child, driven a poll at a time over the API.
         self.signin = None
         self.signin_lock = threading.Lock()
+        # The music services' OAuth sign-in: one at a time, any service.
+        self.oauth_signin = None
+        self.oauth_signin_lock = threading.Lock()
         # The open planning conversations (routes_chat) — sessions live here
         # so a reloaded window rejoins the one it left.
         self.chats = chats if chats is not None else ChatSupervisor()

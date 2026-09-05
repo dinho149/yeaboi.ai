@@ -15,6 +15,7 @@ import os
 from collections.abc import Mapping
 
 from yeaboi.connectors import (
+    apple_music,
     aws,
     azure_cloud,
     bitbucket,
@@ -30,8 +31,10 @@ from yeaboi.connectors import (
     linear,
     pagerduty,
     sentry,
+    spotify,
     statuspage,
     trello,
+    youtube_music,
 )
 from yeaboi.connectors.spec import FAMILY_ORDER, Connector
 
@@ -58,6 +61,9 @@ _CONNECTORS: tuple[Connector, ...] = (
     launchdarkly.CONNECTOR,
     linear.CONNECTOR,
     trello.CONNECTOR,
+    spotify.CONNECTOR,
+    apple_music.CONNECTOR,
+    youtube_music.CONNECTOR,
 )
 
 
