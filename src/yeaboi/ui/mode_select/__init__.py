@@ -12821,38 +12821,58 @@ def _poll_after(paper, refreshing: bool) -> float:
     return time.monotonic() + (_NEWS_POLL_STALE if paper.stale or refreshing else _NEWS_POLL_FRESH)
 
 
-def _run_front_page_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool, *, desk) -> None:
-    """Event loop for the Front page reader (opened with `i` from the landing split).
+def _run_front_page_page(
+    console: Console, live, read_key, frame_time: float, supports_timeout: bool, *, desk, card=None
+) -> None:
+    """Event loop for the Front page (opened with `i` from the landing split).
 
-    Up/Down pick a story, Enter (or o) opens it in the browser, r asks the desk
-    for a fresh paper, Esc/q returns to the split.
+    The page turns on the clock; ←/→ (or [ ]) turn it by hand, Enter or o opens
+    the story in the browser, Tab unfolds the index — where ↑/↓ pick a story and
+    Enter turns to it — r asks the desk for a fresh paper, Esc/q returns.
     """
     from datetime import datetime, timezone
     from urllib.parse import urlsplit
 
+    from yeaboi import __version__
     from yeaboi.news import edition
-    from yeaboi.ui.mode_select.screens._screens_news import _build_front_page_screen
+    from yeaboi.ui.mode_select.screens._screens_news import _build_front_page_screen, index_lines
 
     news_on = desk.enabled()
     paper, refreshing = desk.get_paper()
     stories = edition.stories(paper)
     next_poll = _poll_after(paper, refreshing)
+    offset = 0
+    index_open = False
     selected = 0
-    anim_start = time.monotonic()
+    # The clock banks its time while the index is open, so the page never turns under the reader.
+    banked = 0.0
+    since: float | None = time.monotonic()
     logger.info("front page: opened (%d stories, stale=%s, refreshing=%s)", len(stories), paper.stale, refreshing)
+
+    def _elapsed() -> float:
+        return banked + (time.monotonic() - since if since is not None else 0.0)
+
+    def _current() -> int:
+        return edition.turn_index(_elapsed(), edition.PAGE_TURN_SECONDS, offset, len(stories))
 
     def _render() -> None:
         w, h = console.size
+        now = datetime.now(timezone.utc).astimezone()
+        current = _current()
         live.update(
             _build_front_page_screen(
-                stories,
+                edition.page(stories, current, now),
+                stories=stories,
                 paper=paper,
+                current=current,
                 selected=selected,
+                index_open=index_open,
+                card=card,
                 width=w,
                 height=max(10, h - 1),
-                now=datetime.now(timezone.utc),
+                now=now,
                 enabled=news_on,
-                sub_reveal=(time.monotonic() - anim_start) * _HEADER_SUB_SPEED,
+                version=__version__,
             )
         )
 
@@ -12863,35 +12883,50 @@ def _run_front_page_page(console: Console, live, read_key, frame_time: float, su
             fresh = edition.stories(paper)
             if [item.id for item in fresh] != [item.id for item in stories]:
                 stories = fresh
-                selected = min(selected, max(0, len(stories) - 1))
+                selected = 0
                 logger.info("front page: edition changed, %d stories", len(stories))
             next_poll = _poll_after(paper, refreshing)
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
         if parse_click(k) is not None:
             continue
-        last = max(0, len(stories) - 1)
-        if k in ("up", "scroll_up"):
-            selected = max(0, selected - 1)
-        elif k in ("down", "scroll_down"):
-            selected = min(last, selected + 1)
-        elif k == "pageup":
-            selected = max(0, selected - 10)
-        elif k == "pagedown":
-            selected = min(last, selected + 10)
-        elif k == "home":
-            selected = 0
-        elif k == "end":
-            selected = last
-        elif k in ("enter", "o") and stories:
-            story = stories[selected]
-            logger.info("front page: opening story %d at %s", selected + 1, urlsplit(story.url).netloc or "?")
-            _open_story(story.url)
-        elif k == "r" and news_on:
+        if k in ("esc", "q"):
+            break
+        current = _current()
+        if index_open:
+            others = index_lines(stories, current)
+            if k in ("up", "scroll_up"):
+                selected = max(0, selected - 1)
+            elif k in ("down", "scroll_down"):
+                selected = min(max(0, len(others) - 1), selected + 1)
+            elif k == "enter" and others:
+                target = others[min(selected, len(others) - 1)][0] - 1
+                offset += target - current
+                index_open = False
+                since = time.monotonic()
+                logger.info("front page: turned from the index to %d of %d", target + 1, len(stories))
+            elif k == "tab":
+                index_open = False
+                since = time.monotonic()
+        else:
+            if k in ("left", "[") and stories:
+                offset -= 1
+                logger.info("front page: turned back by hand to %d of %d", _current() + 1, len(stories))
+            elif k in ("right", "]") and stories:
+                offset += 1
+                logger.info("front page: turned by hand to %d of %d", _current() + 1, len(stories))
+            elif k in ("enter", "o") and stories:
+                story = stories[current]
+                logger.info("front page: opening story %d at %s", current + 1, urlsplit(story.url).netloc or "?")
+                _open_story(story.url)
+            elif k == "tab" and index_lines(stories, current):
+                index_open = True
+                selected = 0
+                banked = _elapsed()
+                since = None
+        if k == "r" and news_on:
             paper, refreshing = desk.get_paper(refresh=True)
             next_poll = _poll_after(paper, refreshing)
             logger.info("front page: refresh requested (refreshing=%s)", refreshing)
-        elif k in ("esc", "q"):
-            break
         _render()
     logger.info("front page: closed")
 
@@ -12910,22 +12945,20 @@ def _run_category_screen(
 
     Always shown on a fresh load (the last-used category is *preselected*,
     never auto-skipped — auto-skip would make the other family invisible).
-    Esc and q both quit here: there is nothing further back to go to. The
-    front page turns under the cards on the clock; ``[``/``]`` turn it by
-    hand, ``o`` (or a click on it) opens the story in the browser, and ``i``
-    opens the whole edition as a reader.
+    Esc and q both quit here: there is nothing further back to go to. When
+    the terminal is tall enough the duck waits under the cards with the front
+    page's headline; ``[``/``]`` turn it, ``i`` (or a click on him) opens the
+    paper.
     """
     from datetime import datetime, timezone
-    from urllib.parse import urlsplit
 
-    from yeaboi import __version__
     from yeaboi.news import edition
     from yeaboi.ui.mode_select.screens._screens_category import (
         _CATEGORY_CARDS,
         _build_category_screen,
         category_at_pos,
         category_index,
-        strip_at_pos,
+        informer_hit,
     )
 
     desk = desk or _landing_desk()
@@ -12937,20 +12970,19 @@ def _run_category_screen(
     selected = category_index(preselected)
     start = time.monotonic()
     logger.info(
-        "category screen shown (preselected: %s, %d stories, stale=%s, refreshing=%s, news=%s)",
+        "category screen shown (preselected: %s, %d stories, stale=%s, news=%s)",
         preselected,
         len(stories),
         paper.stale,
-        refreshing,
         "on" if news_on else "off",
     )
-    page = None
 
-    def _open_page() -> None:
-        if page is None:
-            return
-        logger.info("landing news: opening a story at %s", urlsplit(page.item.url).netloc or "?")
-        _open_story(page.item.url)
+    def _open_paper() -> None:
+        nonlocal next_poll
+        _run_front_page_page(
+            console, live, read_key, _FRAME_TIME, supports_timeout, desk=desk, card=_CATEGORY_CARDS[selected]
+        )
+        next_poll = 0.0  # a refresh asked for there shows here at once
 
     while True:
         w, h = console.size
@@ -12980,9 +13012,6 @@ def _run_category_screen(
                 intro=min(1.0, elapsed / 0.4),
                 page=page,
                 edition=edition.edition_line(paper, now, enabled=news_on),
-                inside=edition.inside_label(len(stories)),
-                masthead=edition.masthead(now.astimezone(), __version__),
-                colophon=edition.sources_line(paper),
             )
         )
         key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
@@ -13001,11 +13030,8 @@ def _run_category_screen(
             offset += 1 if key == "]" else -1
             turned = edition.turn_index(time.monotonic() - start, edition.PAGE_TURN_SECONDS, offset, len(stories))
             logger.info("landing news: turned by hand to %d of %d", turned + 1, len(stories))
-        elif key == "o":
-            _open_page()
         elif key == "i":
-            _run_front_page_page(console, live, read_key, _FRAME_TIME, supports_timeout, desk=desk)
-            next_poll = 0.0  # a refresh asked for there shows here at once
+            _open_paper()
         elif key == "n":
             # Niko reaches the landing split too — it is the first screen there
             # is, and the assistant answers for both halves of it. No companion
@@ -13016,8 +13042,8 @@ def _run_category_screen(
                 cx, cy = (int(p) for p in key.split(":")[1:3])
             except ValueError:
                 continue
-            if strip_at_pos(h, row=cy):
-                _open_page()
+            if informer_hit(w, h, row=cy, col=cx):
+                _open_paper()
                 continue
             hit = category_at_pos(w, h, row=cy, col=cx)
             if hit is None:

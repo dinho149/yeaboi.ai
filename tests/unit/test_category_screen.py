@@ -343,25 +343,19 @@ class TestHitTest:
         assert category_at_pos(100, 30, row=1, col=50) is None
         assert category_at_pos(100, 30, row=30, col=50) is None
 
-    def test_the_strip_is_dead_for_cards_and_live_for_the_story(self):
-        from yeaboi.ui.mode_select.screens._screens_category import strip_at_pos
+    def test_the_blank_rows_under_the_cards_still_count_when_there_is_no_informer(self):
+        assert category_at_pos(110, 40, row=36, col=50) == 1
 
-        for row in (32, 33, 34, 35):  # the rule and the three rows under it
-            assert category_at_pos(110, 40, row=row, col=50) is None
-            assert strip_at_pos(40, row=row)
-        for row in (31, 36, 37):
-            assert not strip_at_pos(40, row=row)
-        assert category_at_pos(110, 40, row=31, col=50) == 1
+    def test_the_informer_band_is_dead_for_cards_and_live_for_the_paper(self):
+        from yeaboi.ui.mode_select.screens._screens_category import informer_hit
 
-    def test_the_sheet_is_dead_for_cards_and_live_for_the_story(self):
-        from yeaboi.ui.mode_select.screens._screens_category import strip_at_pos
-
-        for row in (32, 40, 48):
-            assert category_at_pos(110, 53, row=row, col=50) is None
-            assert strip_at_pos(53, row=row)
-        for row in (31, 49, 50):
-            assert not strip_at_pos(53, row=row)
-        assert category_at_pos(110, 53, row=30, col=50) == 1
+        assert category_at_pos(110, 53, row=30, col=50) == 1  # the cards span rows 5–32
+        assert category_at_pos(110, 53, row=33, col=50) is None
+        assert informer_hit(110, 53, row=45, col=100)
+        assert not informer_hit(110, 53, row=45, col=40)  # the blank left of the lane
+        assert not informer_hit(110, 53, row=30, col=100)  # a card
+        assert not informer_hit(110, 53, row=50, col=100)  # the hint row
+        assert not informer_hit(110, 40, row=36, col=100)  # no informer at the floor
 
 
 class TestChromeOptOuts:
@@ -546,69 +540,83 @@ def _rows(width=110, height=40, **kwargs) -> list[str]:
     return ["".join(seg.text for seg in row) for row in rows]
 
 
-class TestPaperRows:
-    @pytest.mark.parametrize(("height", "rows"), [(40, 4), (51, 4), (52, 17), (53, 17), (60, 17)])
-    def test_the_sheet_when_it_fits_else_the_strip(self, height, rows):
-        from yeaboi.ui.mode_select.screens._screens_category import paper_rows
+class TestInformer:
+    def test_not_shown_below_forty_nine_rows(self):
+        rows = _rows(height=48, page=_story(), edition="Refreshed just now.")
+        text = "\n".join(rows)
+        assert len(rows) == 48 and "▾" not in text and "OpenAI" not in text
+        # The cards sit where they always did, centred, whatever the desk says.
+        bare = _rows(height=48)
+        assert [i for i, r in enumerate(bare) if "standups" in r] == [i for i, r in enumerate(rows) if "standups" in r]
 
-        assert paper_rows(height) == rows
-
-
-class TestStrip:
-    def test_the_rule_names_the_paper(self):
-        rows = _rows(page=_story(), edition="Refreshing.")
-        assert "═══ yeaboi ═══" in rows[31]
-
-    def test_rows_are_reserved_without_a_page(self):
+    def test_the_split_is_untouched_at_the_floor(self):
         bare, printed = _rows(), _rows(page=_story(), edition="Refreshed 8 minutes ago.")
         assert len(bare) == len(printed) == 40
-        hint = next(i for i, row in enumerate(bare) if "switch" in row)
-        assert hint == 36  # 0-based: the hint row is terminal row 37, unchanged by the strip
-        assert next(i for i, row in enumerate(printed) if "switch" in row) == hint
-        # The cards' capability rows sit on the same lines either way.
-        assert [i for i, row in enumerate(bare) if "standups" in row] == [
-            i for i, row in enumerate(printed) if "standups" in row
-        ]
+        assert next(i for i, row in enumerate(bare) if "switch" in row) == 36
+        assert bare == printed
 
-    def test_prints_the_desktop_copy_in_order(self):
-        rows = _rows(page=_story(), edition="Refreshed 8 minutes ago.")
-        assert "From the AI desk · 2 of 8 · Refreshed 8 minutes ago." in rows[32]
-        assert "OpenAI ships a new reasoning model" in rows[33]
-        assert "Techmeme, 2 hours ago · Read more at Techmeme" in rows[34]
+    def test_the_duck_and_his_bubble_under_the_cards(self):
+        rows = _rows(height=53, page=_story(), edition="Refreshed just now.")
+        assert len(rows) == 53 and "switch" in rows[49]
+        text = "\n".join(rows)
+        assert "OpenAI ships a new reasoning model" in text and "Techmeme, 2 hours ago" in text
+        assert "[ prev" in text and "] next" in text and "i open the paper" in text
+        assert "▾" in text and "ask niko" in text
+        headline_row = next(row for row in rows if "OpenAI" in row)
+        assert headline_row.index("OpenAI") > 110 - 3 - 44  # in the lane, bottom right
+        cards_end = max(i for i, row in enumerate(rows) if "standups" in row)
+        assert cards_end < rows.index(headline_row)
 
-    def test_the_inside_line_rides_the_byline_row(self):
-        rows = _rows(page=_story(), inside="Inside this edition, 7 more stories")
-        assert "Read more at Techmeme · Inside this edition, 7 more stories" in rows[34]
+    def test_the_duck_is_green_and_the_agents_robo_is_steel(self):
+        def _sgr(selected):
+            console = Console(width=110, height=53, force_terminal=True, color_system="truecolor")
+            with console.capture() as cap:
+                console.print(_build_category_screen(selected, width=110, height=53, page=_story(), edition="x"))
+            return cap.get()
 
-    def test_no_page_says_so_only_once_the_edition_is_known(self):
-        rows = _rows(page=None, edition="Refreshing.")
-        assert "Refreshing." in rows[32] and "Nothing to read yet." in rows[33]
-        assert "Nothing to read yet." not in "\n".join(_rows())
+        assert "34;158;122" in _sgr(1)
+        assert "140;160;178" in _sgr(2)
 
-    def test_seed_frame_strip_is_blank(self):
+    def test_a_long_headline_is_cut_to_two_lines(self):
+        rows = _rows(height=53, page=_story("word " * 40), edition="x")
+        assert len(rows) == 53 and "switch" in rows[49]
+        assert "…" in "\n".join(rows)
+
+    def test_a_quoted_headline_keeps_its_quote(self):
+        text = "\n".join(_rows(height=53, page=_story("“Quoted” headline"), edition="x"))
+        assert "“Quoted” headline" in text
+
+    def test_no_story_yet(self):
+        text = "\n".join(_rows(height=53, page=None, edition="Refreshing."))
+        assert "Nothing to read yet." in text and "Refreshing." in text and "] next" not in text
+
+    def test_seed_frame_shows_neither_duck_nor_bubble(self):
         from yeaboi.ui.mode_select import _landing_first_frame
 
-        console = Console(width=110, height=40, force_terminal=False)
-        seed = _landing_first_frame("team", width=110, height=40)
-        rows = console.render_lines(seed, console.options.update(height=40), pad=True)
-        text = "\n".join("".join(seg.text for seg in row) for row in rows)
-        assert "Nothing to read" not in text and "Refresh" not in text
+        console = Console(width=110, height=53, force_terminal=False)
+        seed = _landing_first_frame("team", width=110, height=53)
+        rows = [
+            "".join(seg.text for seg in row)
+            for row in console.render_lines(seed, console.options.update(height=53), pad=True)
+        ]
+        text = "\n".join(rows)
+        assert "▾" not in text and "Nothing to read" not in text
+        # The duck glides in with the wordmarks, so at intro 0 the band under the cards is bare
+        # (his caption keeps its glyphs while it fades from black, like on the welcome).
+        from yeaboi.ui.mode_select.screens._screens_category import _card_band
 
-    def test_the_strip_waits_for_the_wordmarks(self):
-        early = _rows(page=_story(), edition="Refreshing.", intro=0.2)
-        assert "OpenAI" not in "\n".join(early) and len(early) == 40
+        _first, last = _card_band(53)
+        hint = next(i for i, row in enumerate(rows) if "switch" in row)
+        band = [row for row in rows[last:hint] if "ask niko" not in row]
+        assert len(band) > 10 and all(row.strip("│ ") == "" for row in band)
 
-    def test_a_long_headline_ellipsizes_and_never_wraps(self):
-        rows = _rows(width=84, page=_story("word " * 60))
-        assert len(rows) == 40 and "…" in rows[33]
+    def test_the_bubble_waits_for_the_duck(self):
+        early = _rows(height=53, page=_story(), edition="x", intro=0.2)
+        assert "OpenAI" not in "\n".join(early) and len(early) == 53
 
-    def test_hint_row_names_the_turn_and_open_keys(self):
-        hint = next(row for row in _rows() if "switch" in row)
-        assert "[/] turn" in hint and "o open" in hint and "i inside" in hint and "q quit" in hint
-
-    def test_hint_row_fits_the_width_floor(self):
+    def test_hint_row_is_the_split_s_own(self):
         hint = next(row for row in _rows(width=84) if "switch" in row)
-        assert "q quit" in hint and "…" not in hint
+        assert "q quit" in hint and "turn" not in hint and "…" not in hint
 
 
 # ---------------------------------------------------------------------------
@@ -625,7 +633,7 @@ class _Live:
 
 
 class _Console:
-    size = (84, 40)
+    size = (84, 53)
 
 
 def _keys(*sequence):
@@ -682,97 +690,10 @@ def _run(*keys, preselected="team", desk=None):
     return result, live
 
 
-def _plain(renderable, width=84, height=40) -> str:
+def _plain(renderable, width=84, height=53) -> str:
     console = Console(width=width, height=height, force_terminal=False)
     rows = console.render_lines(renderable, console.options.update(height=height), pad=True)
     return "\n".join("".join(seg.text for seg in row) for row in rows)
-
-
-def _sheet_story(**kw):
-    from dataclasses import replace
-
-    return replace(
-        _story("OpenAI ships a new reasoning model built for long-running agents"),
-        persona="wizard",
-        scene="observatory",
-        caption="The wizard, under the stars.",
-        **kw,
-    )
-
-
-class TestSheet:
-    def _render(self, **kwargs):
-        return _rows(
-            height=53,
-            page=_sheet_story(),
-            edition="Refreshed just now.",
-            inside="Inside this edition, 11 more stories",
-            masthead="yeaboi · Saturday, 5 September 2026 · Vol. 3, No. 41",
-            colophon="Read from 14 outlets.",
-            **kwargs,
-        )
-
-    def test_exact_height_and_the_hint_where_it_was(self):
-        rows = self._render()
-        assert len(rows) == 53
-        assert "switch" in rows[49]
-
-    def test_the_nameplate_rides_the_top_edge_and_the_colophon_the_bottom(self):
-        rows = self._render()
-        assert "yeaboi · Saturday, 5 September 2026 · Vol. 3, No. 41" in rows[31]
-        assert "Refreshed just now. · Read from 14 outlets." in rows[47]
-
-    def test_the_spread(self):
-        text = "\n".join(self._render())
-        assert "═══════" in text
-        assert "From the AI desk · Techmeme" in text and "2 of 8" in text
-        assert "OpenAI ships a new reasoning model built for" in text
-        assert "Techmeme, 2 hours ago" in text and "o  Read more at Techmeme" in text
-        assert "The wizard, under the stars." in text
-        assert "Inside this edition, 11 more stories  i" in text
-
-    def test_the_picture_carries_the_persona_on_the_plate(self):
-        console = Console(width=110, height=53, force_terminal=True, color_system="truecolor")
-        with console.capture() as cap:
-            console.print(
-                _build_category_screen(
-                    1,
-                    width=110,
-                    height=53,
-                    page=_sheet_story(),
-                    edition="Refreshed just now.",
-                    masthead="yeaboi",
-                )
-            )
-        out = cap.get()
-        assert "48;2;17;28;20" in out  # the Team card's tint is the plate
-        assert "250;176;44" in out  # the bill, and the wizard's stars
-        assert "✦" in out  # the observatory's sky
-
-    def test_the_cards_do_not_move_when_the_paper_arrives(self):
-        bare = _rows(height=53)
-        printed = self._render()
-        assert [i for i, row in enumerate(bare) if "standups" in row] == [
-            i for i, row in enumerate(printed) if "standups" in row
-        ]
-        assert not any("╭" in row for row in bare[30:48])  # no empty sheet before the desk answers
-
-    def test_no_story_yet(self):
-        text = "\n".join(_rows(height=53, page=None, edition="Refreshing.", masthead="yeaboi"))
-        assert "Nothing to read yet." in text and "Refreshing." in text
-
-    def test_fits_the_width_floor(self):
-        rows = _rows(width=84, height=53, page=_sheet_story(), edition="Refreshing.", masthead="yeaboi")
-        assert len(rows) == 53 and "switch" in rows[49]
-        assert all("…" not in row or "Read more" in row or "model" in row for row in rows[31:48])
-
-    def test_the_robo_reads_the_agents_paper(self):
-        console = Console(width=110, height=53, force_terminal=True, color_system="truecolor")
-        with console.capture() as cap:
-            console.print(
-                _build_category_screen(2, width=110, height=53, page=_sheet_story(), edition="x", masthead="yeaboi")
-            )
-        assert "140;160;178" in cap.get()  # steel
 
 
 class TestCategoryLoop:
@@ -804,30 +725,24 @@ class TestCategoryLoop:
     def test_q_and_esc_quit(self, key):
         assert _run(key)[0] is None
 
-    def test_the_front_page_prints_and_turns_by_hand(self):
+    def test_the_bubble_carries_the_headline_and_turns_by_hand(self):
         _result, live = _run("]", "q")
-        assert "Story two" in _plain(live.frames[-1]) and "2 of 2" in _plain(live.frames[-1])
+        assert "Story two" in _plain(live.frames[-1])
         assert "Story one" in _plain(live.frames[0])
 
     def test_turning_back_wraps(self):
         _result, live = _run("[", "q")
         assert "Story two" in _plain(live.frames[-1])
 
-    def test_o_opens_the_story(self, monkeypatch):
+    def test_a_click_on_the_duck_opens_the_paper_and_chooses_no_card(self, monkeypatch):
         import yeaboi.ui.mode_select as ms
 
-        opened = []
-        monkeypatch.setattr(ms, "_open_story", lambda url: opened.append(url) or True)
-        assert _run("o", "enter")[0] == "team"
-        assert opened == ["https://news.example/Story one"]
-
-    def test_a_click_on_the_strip_opens_it_and_chooses_no_card(self, monkeypatch):
-        import yeaboi.ui.mode_select as ms
-
-        opened = []
-        monkeypatch.setattr(ms, "_open_story", lambda url: opened.append(url) or True)
-        assert _run("click:10:34", "enter", preselected="agents")[0] == "agents"
-        assert opened == ["https://news.example/Story one"]
+        seen = []
+        monkeypatch.setattr(ms, "_run_front_page_page", lambda *a, **k: seen.append(k["card"]["key"]))
+        assert _run("click:70:45", "enter", preselected="agents")[0] == "agents"
+        assert seen == ["agents"]
+        # A click in the blank left of the lane is nothing.
+        assert _run("click:10:45", "enter", preselected="solo")[0] == "solo"
 
     def test_polls_again_while_the_paper_is_stale(self, monkeypatch):
         import time as _time
@@ -848,13 +763,13 @@ class TestCategoryLoop:
         desk = FakeDesk((_paper("Note"), False), enabled=False)
         _result, live = _run("right", "right", "q", desk=desk)
         assert desk.asked == 1
-        assert "News is off, showing yeaboi alone." in _plain(live.frames[-1])
+        assert "Note" in _plain(live.frames[-1])  # the release notes still make the paper
 
     def test_an_empty_paper_is_said_so(self):
         from yeaboi.news.paper import Paper
 
         desk = FakeDesk((Paper(stale=True), True))
-        _result, live = _run("]", "o", "q", desk=desk)  # neither key has a story to act on
+        _result, live = _run("]", "q", desk=desk)  # nothing to turn to
         assert "Nothing to read yet." in _plain(live.frames[-1])
 
     def test_n_opens_niko_and_stays(self, monkeypatch):
@@ -869,27 +784,23 @@ class TestCategoryLoop:
         import yeaboi.ui.mode_select as ms
 
         seen = []
-        monkeypatch.setattr(ms, "_run_front_page_page", lambda *a, **k: seen.append(k["desk"]))
+        monkeypatch.setattr(ms, "_run_front_page_page", lambda *a, **k: seen.append((k["desk"], k["card"]["key"])))
         desk = FakeDesk()
         assert _run("i", "enter", desk=desk)[0] == "team"
-        assert seen == [desk]
+        assert seen == [(desk, "team")]
 
-    def test_the_inside_line_names_the_rest_of_the_edition(self):
-        desk = FakeDesk((_paper("One", "Two", "Three", "Four"), False))
-        _result, live = _run("q", desk=desk)
-        assert "Inside this edition, 3 more stories" in _plain(live.frames[-1])
+    def test_a_short_terminal_keeps_the_paper_off_the_split(self):
+        class Short:
+            size = (84, 40)
 
-    def test_a_tall_terminal_gets_the_sheet(self, monkeypatch):
         import yeaboi.ui.mode_select as ms
 
-        class Tall:
-            size = (110, 53)
-
         live = _Live()
-        ms._run_category_screen(Tall(), live, _keys("q"), True, preselected="team", desk=FakeDesk())
-        text = _plain(live.frames[-1], width=110, height=53)
-        assert "yeaboi · " in text and "Vol." in text
-        assert "Story one" in text and "The morning papers, at the stand." in text
+        assert (
+            ms._run_category_screen(Short(), live, _keys("]", "enter"), True, preselected="team", desk=FakeDesk())
+            == "team"
+        )
+        assert "Story" not in _plain(live.frames[-1], height=40)
 
 
 class TestLandingDesk:

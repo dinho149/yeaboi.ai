@@ -1,4 +1,4 @@
-"""The Front page reader (_screens_news.py) and its loop."""
+"""The Front page (_screens_news.py) and its loop."""
 
 from __future__ import annotations
 
@@ -8,16 +8,28 @@ import pytest
 from rich.console import Console
 
 from tests.unit.test_category_screen import FakeDesk, _Console, _keys, _Live, _paper, _plain
+from yeaboi.news import edition
 from yeaboi.news.paper import Paper, SourceStatus
 from yeaboi.news.parse import NewsItem
-from yeaboi.ui.mode_select.screens._screens_news import _build_front_page_screen
+from yeaboi.ui.mode_select.screens._screens_news import _build_front_page_screen, index_lines
 
-NOW = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 5, 9, 0, tzinfo=timezone.utc)
+SUMMARY = "The lab says the model plans over hours rather than minutes, and hands work back with a written trace."
 
 
 def _stories(n: int) -> tuple[NewsItem, ...]:
     return tuple(
-        NewsItem(id=f"s{i}", title=f"Story {i}", url=f"https://news.example/{i}", source_name="Techmeme", column="ai")
+        NewsItem(
+            id=f"s{i}",
+            title=f"Story {i} is a headline long enough to matter",
+            url=f"https://news.example/{i}",
+            source_name="Techmeme",
+            column="ai",
+            topic="models",
+            persona="wizard",
+            summary=SUMMARY,
+            published=(NOW - timedelta(hours=2)).isoformat(timespec="seconds"),
+        )
         for i in range(1, n + 1)
     )
 
@@ -26,83 +38,164 @@ def _fresh(**kw) -> Paper:
     return Paper(generated_at=(NOW - timedelta(minutes=8)).isoformat(timespec="seconds"), **kw)
 
 
-def _lines(stories, *, paper=None, height=40, width=100, **kw) -> list[str]:
+def _lines(stories, *, current=0, paper=None, height=39, width=100, **kw) -> list[str]:
     paper = paper if paper is not None else _fresh()
+    page = edition.page(stories, current, NOW) if stories else None
     console = Console(width=width, height=height, force_terminal=False)
-    panel = _build_front_page_screen(stories, paper=paper, width=width, height=height, now=NOW, **kw)
+    panel = _build_front_page_screen(
+        page, stories=stories, paper=paper, current=current, width=width, height=height, now=NOW, version="3.41.1", **kw
+    )
     rows = console.render_lines(panel, console.options.update(height=height), pad=True)
     return ["".join(seg.text for seg in row) for row in rows]
 
 
 class TestRender:
-    def test_exact_height(self):
-        assert len(_lines(_stories(3))) == 40
-        assert len(_lines(_stories(3), height=24)) == 24
+    def test_exact_height_at_the_floor_and_above(self):
+        assert len(_lines(_stories(3))) == 39
+        assert len(_lines(_stories(3), height=52, width=190)) == 52
 
-    def test_lists_every_story_in_edition_order_with_page_numerals(self):
-        text = "\n".join(_lines(_stories(4)))
-        assert "Inside this edition" in text
-        for i in range(1, 5):
-            assert f" {i}  Techmeme" in text and f"Story {i}" in text
-        assert text.index("Story 1") < text.index("Story 2") < text.index("Story 4")
+    def test_the_nameplate_and_folio(self):
+        text = "\n".join(_lines(_stories(3)))
+        assert "██" in text and "░░" in text  # the block nameplate
+        assert "Saturday, 5 September 2026" in text and "Vol. 3, No. 41" in text and "Refreshed 8 minutes ago." in text
+        assert "═══════" in text
 
-    def test_the_selected_row_carries_the_marker(self):
-        rows = [row for row in _lines(_stories(3), selected=1) if "Story" in row]
-        assert "▸" in rows[1] and "▸" not in rows[0]
+    def test_the_kicker_row_and_headline(self):
+        text = "\n".join(_lines(_stories(8), current=1))
+        assert "From the AI desk · Techmeme" in text and "‹ 2 of 8 ›" in text
+        assert "Story 2 is a headline long enough to matter" in text
 
-    def test_folio_shows_the_edition_line_and_the_colophon(self):
-        paper = _fresh(sources=tuple(SourceStatus(id=str(i), name=str(i), ok=i < 12) for i in range(14)))
-        text = "\n".join(_lines(_stories(2), paper=paper))
-        assert "Refreshed 8 minutes ago. Read from 12 outlets, two not answering." in text
-
-    def test_news_off(self):
-        text = "\n".join(_lines(_stories(1), enabled=False))
-        assert "News is off, showing yeaboi alone." in text
-
-    def test_empty_edition(self):
-        text = "\n".join(_lines((), paper=Paper(stale=True)))
-        assert "Nothing to read yet." in text and "Refreshing." in text
-
-    def test_the_viewport_follows_the_selection_and_shows_a_scrollbar(self):
-        rows = _lines(_stories(12), height=18, selected=11)
+    def test_the_spread(self):
+        rows = _lines(_stories(3))
         text = "\n".join(rows)
-        assert "Story 12" in text and "Story 1 " not in text
-        assert "█" in text or "┃" in text or "│" in text  # the track
+        assert "The wizard, under the stars." in text
+        assert "Techmeme, 2 hours ago" in text and "o  Read more at Techmeme" in text
+        assert "he lab says the model plans" in text  # the T is the drop cap
+        assert "✦" in text  # the observatory's sky
+        # The story column sits to the right of the plate.
+        byline_row = next(row for row in rows if "Techmeme, 2 hours ago" in row)
+        assert byline_row.index("Techmeme, 2 hours ago") > 32
 
-    def test_hints_and_background(self):
-        from yeaboi.ui.shared._components import CHANGELOG_THEME
-
-        text = "\n".join(_lines(_stories(2)))
-        assert "enter open" in text and "r refresh" in text and "esc back" in text
-        console = Console(width=100, height=40, force_terminal=True, color_system="truecolor")
+    def test_the_picture_is_tinted_and_wears_the_costume(self):
+        console = Console(width=100, height=39, force_terminal=True, color_system="truecolor")
         with console.capture() as cap:
-            console.print(_build_front_page_screen(_stories(2), paper=_fresh(), width=100, height=40, now=NOW))
-        r, g, b = CHANGELOG_THEME.bg.removeprefix("rgb(").removesuffix(")").split(",")
-        assert f"48;2;{r};{g};{b}" in cap.get()
+            console.print(
+                _build_front_page_screen(
+                    edition.page(_stories(2), 0, NOW),
+                    stories=_stories(2),
+                    paper=_fresh(),
+                    width=100,
+                    height=39,
+                    now=NOW,
+                )
+            )
+        out = cap.get()
+        assert "48;2;17;28;20" in out  # the Team tint, the default card
+        assert "250;176;44" in out  # the bill and the wizard's stars
+        assert "48;2;21;21;27" in out  # the sheet on the desk
+        assert "48;2;16;16;20" in out  # the desk itself
+
+    def test_the_agents_card_reads_the_paper_as_the_robo(self):
+        card = {"color": "rgb(90,160,210)", "tint": "rgb(15,24,32)", "mascot": "robo"}
+        console = Console(width=100, height=39, force_terminal=True, color_system="truecolor")
+        with console.capture() as cap:
+            console.print(
+                _build_front_page_screen(
+                    edition.page(_stories(1), 0, NOW),
+                    stories=_stories(1),
+                    paper=_fresh(),
+                    card=card,
+                    width=100,
+                    height=39,
+                    now=NOW,
+                )
+            )
+        assert "140;160;178" in cap.get() and "48;2;15;24;32" in cap.get()
+
+    def test_the_inside_line_folds_and_unfolds(self):
+        closed = "\n".join(_lines(_stories(12)))
+        assert "Inside this edition, 11 more stories  ▾" in closed
+        opened = "\n".join(_lines(_stories(12), index_open=True))
+        assert "Inside this edition  ▴" in opened
+        assert " 1  Techmeme" not in opened and " 2  Techmeme" in opened and "12  Techmeme" in opened
+        assert "▸" in opened and "enter turn to it" in opened
+        assert "The wizard, under the stars." not in opened
+
+    def test_two_stories_have_no_index(self):
+        assert index_lines(_stories(2), 0) == []
+        assert "Inside this edition" not in "\n".join(_lines(_stories(2)))
+
+    def test_the_colophon(self):
+        paper = _fresh(sources=tuple(SourceStatus(id=str(i), name=str(i), ok=i < 12) for i in range(14)))
+        assert "Read from 12 outlets, two not answering." in "\n".join(_lines(_stories(1), paper=paper))
+
+    def test_news_off_and_empty(self):
+        text = "\n".join(_lines((), paper=Paper(stale=True), enabled=False))
+        assert "News is off, showing yeaboi alone." in text and "Nothing to read yet." in text
+
+    def test_hints(self):
+        text = "\n".join(_lines(_stories(3)))
+        assert "←/→ turn" in text and "o open" in text and "tab inside" in text and "r refresh" in text
+
+    def test_fits_the_width_floor(self):
+        rows = _lines(_stories(3), width=84)
+        assert len(rows) == 39
+        assert any("═══" in row and "…" not in row for row in rows)
 
 
-def _run(*keys, desk=None):
+def _run(*keys, desk=None, card=None):
     import yeaboi.ui.mode_select as ms
 
     live = _Live()
-    ms._run_front_page_page(_Console(), live, _keys(*keys), 0.0, True, desk=desk or FakeDesk())
+    ms._run_front_page_page(_Console(), live, _keys(*keys), 0.0, True, desk=desk or FakeDesk(), card=card)
     return live
 
 
 class TestLoop:
-    def test_esc_returns_and_prints_the_edition(self):
+    def test_esc_returns_and_prints_the_story_that_is_up(self):
         live = _run("esc")
-        assert "Story one" in _plain(live.frames[-1]) and "Story two" in _plain(live.frames[-1])
+        text = _plain(live.frames[-1])
+        assert "Story one" in text and "‹ 1 of 2 ›" in text
 
-    def test_enter_opens_the_selected_story(self, monkeypatch):
+    def test_arrows_turn_the_page(self):
+        assert "Story two" in _plain(_run("right", "esc").frames[-1])
+        assert "Story two" in _plain(_run("left", "esc").frames[-1])  # wraps
+        assert "Story one" in _plain(_run("]", "[", "esc").frames[-1])
+
+    def test_enter_and_o_open_the_story_that_is_up(self, monkeypatch):
         import yeaboi.ui.mode_select as ms
 
         opened = []
         monkeypatch.setattr(ms, "_open_story", lambda url: opened.append(url) or True)
-        _run("down", "enter", "up", "o", "q")
-        assert opened == ["https://news.example/Story two", "https://news.example/Story one"]
+        _run("enter", "right", "o", "q")
+        assert opened == ["https://news.example/Story one", "https://news.example/Story two"]
 
-    def test_r_asks_for_a_fresh_paper(self):
+    def test_the_index_picks_a_story(self):
+        desk = FakeDesk((_paper("One", "Two", "Three", "Four"), False))
+        live = _run("tab", "down", "down", "enter", "esc", desk=desk)
+        text = _plain(live.frames[-1])
+        assert "‹ 4 of 4 ›" in text and "▴" not in text
+
+    def test_tab_folds_the_index_again(self):
+        desk = FakeDesk((_paper("One", "Two", "Three"), False))
+        live = _run("tab", "tab", "esc", desk=desk)
+        assert "▾" in _plain(live.frames[-1])
+
+    def test_the_clock_stops_while_the_index_is_open(self, monkeypatch):
+        import time as _time
+
+        clock = [0.0]
+
+        def _tick():
+            clock[0] += 5.0
+            return clock[0]
+
+        monkeypatch.setattr(_time, "monotonic", _tick)
+        desk = FakeDesk((_paper("One", "Two", "Three"), False))
+        live = _run("tab", "esc", "esc", "esc", "esc", desk=desk)
+        assert "‹ 1 of 3 ›" in _plain(live.frames[-1]) or "Inside this edition  ▴" in _plain(live.frames[-1])
+
+    def test_r_asks_for_a_fresh_paper_only_when_news_is_on(self):
         class Recording(FakeDesk):
             refreshes = 0
 
@@ -113,21 +206,11 @@ class TestLoop:
         desk = Recording()
         _run("r", "q", desk=desk)
         assert desk.refreshes == 1
+        off = FakeDesk((_paper("Note"), False), enabled=False)
+        _run("r", "q", desk=off)
+        assert off.asked == 1
 
-    def test_r_does_nothing_when_news_is_off(self):
-        desk = FakeDesk((_paper("Note"), False), enabled=False)
-        _run("r", "q", desk=desk)
-        assert desk.asked == 1
-
-    @pytest.mark.parametrize("key", ["end", "pagedown"])
-    def test_jumps_land_on_the_last_story(self, key, monkeypatch):
-        import yeaboi.ui.mode_select as ms
-
-        opened = []
-        monkeypatch.setattr(ms, "_open_story", lambda url: opened.append(url) or True)
-        _run(key, "enter", "q")
-        assert opened == ["https://news.example/Story two"]
-
-    def test_an_empty_edition_accepts_enter(self):
-        live = _run("enter", "q", desk=FakeDesk((Paper(stale=True), True)))
+    @pytest.mark.parametrize("key", ["enter", "o", "tab", "right"])
+    def test_an_empty_edition_takes_any_key(self, key):
+        live = _run(key, "q", desk=FakeDesk((Paper(stale=True), True)))
         assert "Nothing to read yet." in _plain(live.frames[-1])

@@ -209,8 +209,8 @@ class TestDemoScript:
         for marker in record_demo.MODE_SCREEN_MARKERS + record_demo.DOOR_SCREEN_MARKERS:
             assert marker not in category, f"marker {marker!r} renders on the landing split"
 
-        # With the front page printed too: the recorder runs with news off, so
-        # only the fixed strip copy and a release note can ever be on screen.
+        # With the informer's bubble printed too: the recorder runs with news off,
+        # so only a release note and the bubble's own controls can be on screen.
         from yeaboi.news.edition import Page
         from yeaboi.news.parse import NewsItem
 
@@ -224,21 +224,10 @@ class TestDemoScript:
             scene="dock",
             caption="The wizard, at the dock, with the crates.",
         )
-        for tall in (h, 60):  # the folded strip, and the sheet
-            printed = plain(
-                _build_category_screen(
-                    0,
-                    width=w,
-                    height=tall,
-                    page=story,
-                    edition="Refreshing.",
-                    inside="Inside this edition, 11 more stories",
-                    masthead="yeaboi · Saturday, 5 September 2026 · Vol. 4, No. 2",
-                    colophon="Read from 14 outlets.",
-                )
-            )
+        for tall in (h, 60):  # too short for the duck, and tall enough
+            printed = plain(_build_category_screen(0, width=w, height=tall, page=story, edition="Refreshing."))
             for marker in record_demo.MODE_SCREEN_MARKERS + record_demo.DOOR_SCREEN_MARKERS:
-                assert marker not in printed, f"marker {marker!r} renders on the landing split's front page"
+                assert marker not in printed, f"marker {marker!r} renders on the landing split's informer"
 
         for world in ("solo", "team", "agents"):
             door = plain(_build_door_screen(1, world=world, width=w, height=h, active_name="Apollo"))

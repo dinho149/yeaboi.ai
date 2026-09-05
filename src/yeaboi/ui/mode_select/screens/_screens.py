@@ -1501,6 +1501,7 @@ def _build_companion(
     compose: dict | None = None,
     lane_h: int = 40,
     mascot: str = "duck",
+    strip_glyph: bool = True,
 ) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
     in a speech bubble above it — and, above that, an optional ``update_box``.
@@ -1573,7 +1574,8 @@ def _build_companion(
         parts.extend([update_box, Text("")])
 
     tip = tip_line.plain.strip()
-    while tip and not (tip[0].isascii() and tip[0].isalnum()):  # drop a leading emoji/glyph
+    # A tip opens with an emoji; a headline may open with a quote or an accent, which must stay.
+    while strip_glyph and tip and not (tip[0].isascii() and tip[0].isalnum()):
         tip = tip[1:]
     tip = tip.strip()
     if tip and show_extras:
