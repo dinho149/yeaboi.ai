@@ -4,16 +4,16 @@
     {
       "version": "3.42.0",
       "date": "2026-09-05",
-      "headline": "Meet Niko on your home screen",
-      "summary": "The tips duck now greets you on the welcome screen with quick tips and today's edition news. A dedicated news page gives you deeper dives into tips, stories and highlights.",
+      "headline": "The front page comes to the terminal",
+      "summary": "The duck now waits under the world cards with the day's headline, on terminals of 49 rows or more. Press i to open the paper: yeaboi's release notes beside AI and engineering news, one story at a time.",
       "highlights": [
         {
-          "text": "Welcome screen now features the tips duck with daily news",
+          "text": "The duck on the landing screen carries the latest headline in his bubble",
           "areas": ["general"],
           "surfaces": ["tui"]
         },
         {
-          "text": "Dedicated news page for tips, stories and edition highlights",
+          "text": "A front page of its own, with the story's duck in costume in its scene",
           "areas": ["general"],
           "surfaces": ["tui"]
         }
