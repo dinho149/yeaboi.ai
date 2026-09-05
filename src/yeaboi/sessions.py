@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 32  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair, v27=agentwatch, v28=standup GitHub owner scope, v29=standup GitHub repo exclusions, v30=planning prior-art feedback, v31=projects, v32=weekly review  # noqa: E501
+CURRENT_SCHEMA_VERSION = 33  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback, v26=edit-provenance collision repair, v27=agentwatch, v28=standup GitHub owner scope, v29=standup GitHub repo exclusions, v30=planning prior-art feedback, v31=projects, v32=weekly review, v33=project status  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -917,6 +917,15 @@ class SessionStore:
 
             self._conn.executescript(_WEEKLY_REVIEW_SCHEMA)
             logger.info("Migration v32: created weekly_review_history table")
+
+        if from_version < 33:
+            # v33: the owner's verdict on a project (active | done). A fresh
+            # database already has the column from PROJECTS_SCHEMA above.
+            try:
+                self._conn.execute("ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+                logger.info("Migration v33: added projects.status")
+            except sqlite3.OperationalError:
+                pass
 
     def _apply_edit_provenance(self) -> None:
         """The v21 migration body — idempotent, so v26 re-runs it verbatim.

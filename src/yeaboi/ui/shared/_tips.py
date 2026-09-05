@@ -82,7 +82,7 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     # the desktop opens a project from the Projects page.
     FeatureTip(
         "projects",
-        "\U0001f5c2️ Tip: Pick Projects at the door — every run inside a project shares context (P switches)",
+        "\U0001f5c2️ Tip: Projects — describe what you're building, and every run inside reads what the others left (P switches)",  # noqa: E501
         is_new=True,
         surfaces=("tui",),
     ),

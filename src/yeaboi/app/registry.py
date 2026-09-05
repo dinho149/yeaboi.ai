@@ -89,7 +89,9 @@ ROUTES: tuple[AppRoute, ...] = (
     # proj-<8hex> id, not the planning chat's handle of the same name.
     AppRoute("GET", "/api/projects", routes_projects.projects, "projects"),
     AppRoute("POST", "/api/projects", routes_projects.create, "projects"),
+    AppRoute("POST", "/api/projects/draft", routes_projects.draft, "projects"),
     AppRoute("GET", "/api/projects/{project_id}", routes_projects.get, "projects"),
+    AppRoute("POST", "/api/projects/{project_id}/status", routes_projects.status, "projects"),
     AppRoute("GET", "/api/projects/{project_id}/sessions", routes_projects.sessions, "projects"),
     AppRoute("POST", "/api/projects/{project_id}/defaults", routes_projects.defaults, "projects"),
     AppRoute("GET", "/api/sessions/recent", routes_projects.recent, "sessions"),

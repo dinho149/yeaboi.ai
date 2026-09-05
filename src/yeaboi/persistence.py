@@ -88,6 +88,9 @@ def save_project_snapshot(project_id: str, graph_state: dict[str, Any]) -> None:
         "pipeline_progress": pipeline,
         "artifact_counts": artifacts,
         "jira_sync": jira_sync,
+        # The engine project (proj-<8hex>) the run happened inside, "" when
+        # unscoped — how the Projects page knows a plan belongs to it.
+        "engine_project_id": str(graph_state.get("project_id") or ""),
     }
 
     # Upsert — find existing entry by ID
@@ -490,6 +493,7 @@ def load_projects() -> list[ProjectSummary]:
                 jira_summary=_compute_jira_summary(jira_sync),
                 progress=_compute_progress(pipeline),
                 updated_at=proj.get("updated_at", ""),
+                engine_project_id=str(proj.get("engine_project_id") or ""),
             )
         )
 
