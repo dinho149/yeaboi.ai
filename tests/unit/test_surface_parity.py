@@ -129,7 +129,7 @@ CAPABILITIES: dict[str, dict] = {
             "a scoping primitive, not a guided workflow — modes gain --project/project_id, "
             "and agents call the project_* tools directly"
         ),
-        "desktop": {"/projects", "/projects/:id"},
+        "desktop": {"/projects", "/projects/:id", "/agents/projects", "/agents/projects/:id"},
     },
     "sessions": {
         "engines": Exempt("thin SessionStore reads — no pipeline to extract"),
@@ -140,10 +140,7 @@ CAPABILITIES: dict[str, dict] = {
         ),
         "cli": {"--list-sessions", "--resume", "--clear-sessions"},
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
-        "desktop": Exempt(
-            "the manifest carries no /sessions yet — the desktop's Sessions page lands with its rail "
-            "redesign, and this column flips in the same commit as the manifest it vendors"
-        ),
+        "desktop": {"/sessions"},
     },
     "standup": {
         "engines": {
