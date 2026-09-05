@@ -140,6 +140,16 @@ class TestStatus:
         _run(_press(DONE, "esc"))  # the same button now reads Reopen
         assert get_project(created["project_id"], db_path=env["db"])["status"] == "active"
 
+    def test_the_highlight_follows_the_toggled_project(self, env):
+        create_project("Apollo", db_path=env["db"])
+        create_project("Borealis", db_path=env["db"])  # newest first: Borealis, Apollo
+        # Done on Borealis moves it under Completed; the selection follows it, so Open opens Borealis.
+        live = _Live()
+        chosen = _projects.run_projects_page(
+            _Console(), live, _press(DONE, "left", "left", "enter", "enter"), 0.05, True
+        )
+        assert chosen == next(p["project_id"] for p in _projects._load() if p["name"] == "Borealis")
+
     def test_d_on_the_project_page_toggles_it(self, env):
         created = create_project("Apollo", db_path=env["db"])
         live = _run(_press(OPEN, "d", "esc", "esc"))
@@ -337,6 +347,10 @@ class TestContextPage:
         active.set_context_deps(())
         _run(self._context("enter", "esc", "esc", "esc"))
         assert active.get_context_deps() is None
+
+    def test_c_on_the_list_opens_it_with_no_projects(self, env):
+        _run(_keys("c", "right", "enter", "esc", "esc"))
+        assert active.get_context_deps() == ()
 
     def test_the_page_runs_on_its_own_too(self, env):
         live = _Live()

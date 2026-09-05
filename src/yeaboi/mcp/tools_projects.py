@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from yeaboi.mcp.runtime import run_readonly
+from mcp.server.fastmcp import Context
+
+from yeaboi.mcp.runtime import run_engine, run_readonly
 
 logger = logging.getLogger(__name__)
 
@@ -106,10 +108,10 @@ def register(app) -> None:
         return await run_readonly(_set_status, project_id, status)
 
     @app.tool()
-    async def project_draft(description: str) -> dict:
+    async def project_draft(ctx: Context, description: str) -> dict:
         """Turn a rough description of what is being built into a project name and a one- or
         two-sentence pitch — the AI rewrite behind the New project dialog. Returns
         {name, description, source, note}; when the LLM is unavailable the description comes
         back as sent, named from its first words (source "original"). Nothing is created:
         pass the result to project_create."""
-        return await run_readonly(_draft, description)
+        return await run_engine(ctx, _draft, description)

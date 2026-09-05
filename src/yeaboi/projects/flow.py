@@ -1,10 +1,11 @@
 """The context flow — what each mode leaves for the others inside a project.
 
 One fact table for every surface that explains a project: the TUI's Projects
-page draws it as a strip, and the desktop keeps an equal copy in
-``lib/yeaboi/reads.ts``. ``reads`` are the ``CONTEXT_DEP_TOKENS`` a mode
-consumes (see ``projects/scope.py`` and each engine's scope call site);
-``leaves`` is the one fragment that says what the run leaves behind.
+page draws it as a strip; the desktop mirrors it by hand in its
+``lib/yeaboi/reads.ts`` (nothing here guards the two — diff them on a change).
+``reads`` are the ``CONTEXT_DEP_TOKENS`` a mode consumes (see
+``projects/scope.py`` and each engine's scope call site); ``leaves`` is the
+one fragment that says what the run leaves behind.
 """
 
 from __future__ import annotations

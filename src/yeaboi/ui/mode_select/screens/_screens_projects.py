@@ -131,7 +131,7 @@ def _flow_strip(*, world: str, width: int, inside: dict[str, str] | None = None)
     heads = Text(PAD)
     for i, step in enumerate(steps):
         heads.append("● ", style=colors.get(step.key, accent))
-        heads.append(step.label, style="bold white")
+        heads.append(step.label, style=theme.value)
         if i < len(steps) - 1:
             heads.append(" ", style=accent)
             heads.append("─" * max(1, col_w - len(step.label) - 3), style=accent)
@@ -163,7 +163,7 @@ def _build_rows(projects: list[dict], selected: int, active_project_id: str, the
     if not projects:
         return [
             Text(f"{PAD}{EMPTY_LINE}", style=theme.muted),
-            Text(f"{PAD}New starts one.", style=theme.dim),
+            Text(f"{PAD}New starts one. c sets the context sources for one-off runs.", style=theme.dim),
         ]
     lines: list = []
     index = 0

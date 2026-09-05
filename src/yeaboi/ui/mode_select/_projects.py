@@ -149,7 +149,7 @@ def _confirm(console: Console, live, read_key, frame_time: float, supports_timeo
     while True:
         w, h = console.size
         popup = build_popup(
-            f"{question}\nEnter confirm  ·  Esc keep", width=min(w - 8, 56), border_style=PROJECTS_THEME.warn
+            f"{question}\nEnter confirms, Esc keeps", width=min(w - 8, 56), border_style=PROJECTS_THEME.warn
         )
         content = Group(Text(""), projects_title(width=w), Text(""), Align.center(popup))
         live.update(build_page_panel(content, theme=PROJECTS_THEME, height=max(10, h - 1)))
@@ -195,9 +195,10 @@ def run_projects_page(
 
     A project's Start returns its id; its Plan returns ``(card_key, id)`` so
     the menu opens on that card. ``pick`` marks the door's use (Esc returns
-    to the door); the loop is the same either way. ``open_hub(card_key)``
-    opens a mode's saved-runs hub — injected by ``select_mode``, which owns
-    the hubs.
+    to the door); the loop is the same either way. ``d``/``a`` mirror the
+    Done and Archive buttons; ``c`` opens the context toggles, which serve
+    one-off runs too. ``open_hub(card_key)`` opens a mode's saved-runs hub —
+    injected by ``select_mode``, which owns the hubs.
     """
     projects = _load()
     logger.info(
@@ -266,6 +267,11 @@ def run_projects_page(
             choice = "Done"
         elif key == "a":
             choice = "Archive"
+        elif key == "c":
+            # The context toggles serve one-off runs too, so they need no project.
+            run_context_page(console, live, read_key, frame_time, supports_timeout)
+            message = ""
+            continue
         if not choice:
             continue
 
@@ -299,6 +305,8 @@ def run_projects_page(
                 continue
             message = _archive(current)
         projects = _load()
+        # The row may have changed section; the highlight follows it.
+        selected = next((i for i, p in enumerate(projects) if p["project_id"] == current["project_id"]), 0)
         selected = min(selected, max(0, len(projects) - 1))
 
 
