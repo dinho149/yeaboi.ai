@@ -2,6 +2,24 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.41.1",
+      "date": "2026-09-05",
+      "headline": "Desktop now fully supports Sessions and Projects",
+      "summary": "The desktop app now supports Sessions and Projects workflows with the same door-based navigation as the terminal. All project and session screens work identically across surfaces.",
+      "highlights": [
+        {
+          "text": "Sessions and Projects doors both available on desktop",
+          "areas": ["general"],
+          "surfaces": ["desktop"]
+        },
+        {
+          "text": "Navigate projects and access project details on desktop",
+          "areas": ["planning"],
+          "surfaces": ["desktop"]
+        }
+      ]
+    },
+    {
       "version": "3.41.0",
       "date": "2026-09-03",
       "headline": "Choose between projects and one-off sessions",
