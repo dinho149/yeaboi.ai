@@ -54,46 +54,25 @@ def _advisor_history(limit: int):
         return {"reports": store.list_reports("advisor", limit=limit)}
 
 
-def _standup_run(
-    days: int,
-    tracker_sources: list | None,
-    github_owners: list | None,
-    azdo_projects: list | None,
-    include_local_sessions: bool,
-    deliver: bool,
-    project_path: str = "",
-):
-    if days < 0 or days > 90:
-        raise ValueError("days must be between 0 (previous working day) and 90.")
-    if tracker_sources and (bad := set(tracker_sources) - {"github", "azdo"}):
-        raise ValueError(f"tracker_sources entries must be github/azdo, got: {', '.join(sorted(bad))}.")
-    from yeaboi.agentwatch.engine import run_agent_standup
-
-    return run_agent_standup(
-        days=days or None,
-        tracker_sources=tracker_sources,
-        github_owners=github_owners,
-        azdo_projects=azdo_projects,
-        include_local_sessions=include_local_sessions,
-        deliver=deliver,
-        project_path=project_path,
-    )
-
-
-def _standup_history(limit: int):
-    if limit < 1 or limit > 100:
-        raise ValueError("limit must be between 1 and 100.")
-    from yeaboi.agentwatch.store import AgentWatchStore
-    from yeaboi.paths import get_db_path
-
-    with AgentWatchStore(get_db_path()) as store:
-        return {"digests": store.list_reports("standup", limit=limit)}
-
-
-def _security_scan(deep: bool):
+def _security_scan(deep: bool, include_info: bool = False):
     from yeaboi.agentwatch.engine import run_agent_security
 
-    return run_agent_security(deep=deep)
+    return run_agent_security(deep=deep, include_info=include_info)
+
+
+def _security_dismiss(key: str, reason: str, expires: str = ""):
+    from yeaboi.agentwatch import dismissals
+
+    entry = dismissals.dismiss(key, reason=reason, expires=expires)
+    return {"dismissed": entry.__dict__, "on_file": len(dismissals.load())}
+
+
+def _security_undismiss(key: str):
+    from yeaboi.agentwatch import dismissals
+
+    if not dismissals.undismiss(key):
+        raise ValueError(f"no dismissal on file for {key!r}.")
+    return {"restored": key, "on_file": len(dismissals.load())}
 
 
 def _security_history(limit: int):
@@ -178,61 +157,30 @@ def register(app) -> None:
         return _with_beta(await run_readonly(_advisor_history, limit))
 
     @app.tool()
-    async def agents_standup_run(
-        ctx: Context,
-        days: int = 0,
-        tracker_sources: list[str] | None = None,
-        github_owners: list[str] | None = None,
-        azdo_projects: list[str] | None = None,
-        include_local_sessions: bool = True,
-        deliver: bool = False,
-        project_path: str = "",
-    ) -> dict:
-        """BETA — Run the daily agent standup: what the user's AI coding agents did — local
-        sessions worked (with cost) plus agent-authored commits/PRs found in GitHub/Azure DevOps.
-        days=0 covers everything since the previous working day (a Monday run reaches Friday);
-        tracker_sources=[] skips trackers for a local-only digest, and
-        include_local_sessions=false is the mirror — a tracker-only digest. Session logs are read
-        from the machine this runs on, so set it false anywhere that is not the user's own
-        machine, or the digest reports whatever sessions that host happens to have. deliver=true
-        posts to the configured Slack webhook — ask the user before enabling. project_path keeps
-        only local sessions whose directory is that absolute path or under it.
-
-        The Agents modes are in beta — detection is a lower bound; never present absence of
-        evidence as agent idleness."""
-        return _with_beta(
-            await run_engine(
-                ctx,
-                _standup_run,
-                days,
-                tracker_sources,
-                github_owners,
-                azdo_projects,
-                include_local_sessions,
-                deliver,
-                project_path,
-            )
-        )
-
-    @app.tool()
-    async def agents_standup_history(limit: int = 20) -> dict:
-        """BETA — List previously generated agent standup digests (newest first).
-
-        The Agents modes are in beta — detection is a lower bound; never present absence of
-        evidence as agent idleness."""
-        return _with_beta(await run_readonly(_standup_history, limit))
-
-    @app.tool()
-    async def agents_security_scan(ctx: Context, deep: bool = False) -> dict:
+    async def agents_security_scan(ctx: Context, deep: bool = False, include_info: bool = False) -> dict:
         """BETA — Audit the local agent setup: permission-bypass settings, wildcard allow rules,
         risky hooks, MCP server inventory (plain-http, unpinned packages, inlined credentials),
-        secret-shaped text and risky shell commands found in session transcripts. Findings carry
-        pattern + file + line only — matched content is never stored or returned. deep=true
-        re-scans every transcript instead of only new/changed ones.
+        secret-shaped text and risky shell commands found in session transcripts. Findings are
+        grouped per (pattern, file) with an occurrence count and a key; they carry pattern + file
+        + line only — matched content is never stored or returned. The report also lists what is
+        new and what was resolved since the last scan. deep=true re-scans every transcript instead
+        of only new/changed ones; include_info=true lists informational findings that are
+        otherwise only counted.
 
         The Agents modes are in beta — deterministic pattern matches are an indicator, not a
         security audit; a clean report means no known pattern matched."""
-        return _with_beta(await run_engine(ctx, _security_scan, deep))
+        return _with_beta(await run_engine(ctx, _security_scan, deep, include_info))
+
+    @app.tool()
+    async def agents_security_dismiss(key: str, reason: str, expires: str = "") -> dict:
+        """BETA — Dismiss one security finding by its key (the ``key`` field on a finding,
+        category:pattern:location) with a mandatory reason, optionally until an ISO date.
+        Dismissed findings leave the report and the posture but stay counted as dismissed;
+        pass an empty reason and the call is refused. Use undo by passing reason="undo" with
+        the same key to restore it."""
+        if reason.strip().lower() == "undo":
+            return _with_beta(await run_readonly(_security_undismiss, key))
+        return _with_beta(await run_readonly(_security_dismiss, key, reason, expires))
 
     @app.tool()
     async def agents_security_history(limit: int = 20) -> dict:

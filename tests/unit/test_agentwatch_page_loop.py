@@ -61,7 +61,9 @@ def _run_page(read_key, run_engine, screens, monkeypatch):
     """Drive the shared loop with the usage mode's table row, faked end to end."""
     mode = agents_setup.require("agent-usage")
     monkeypatch.setattr(_agents, "_screen_builder", lambda _mode: screens)
-    monkeypatch.setattr(agents_setup, "run", lambda _mode, on_progress, project_path="": run_engine(on_progress))
+    monkeypatch.setattr(
+        agents_setup, "run", lambda _mode, on_progress, project_path="", options=None: run_engine(on_progress)
+    )
     monkeypatch.setattr(agents_setup, "failure_artifact", lambda _mode, exc: _FakeArtifact(name="failure"))
     _agents._run_agent_page(mode, _Console(), _Live(), read_key, 0.0, True)
 
@@ -77,6 +79,9 @@ def _seed_stale(db_path):
 def empty_db(tmp_path, monkeypatch):
     db = tmp_path / "sessions.db"
     monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+    # Every saved report is freshly recorded by these tests, so the page would
+    # treat it as fresh and never start the worker: force the old behaviour.
+    monkeypatch.setenv("YEABOI_AGENTWATCH_FRESH_MINUTES", "0")
     return db
 
 
@@ -315,7 +320,7 @@ class TestProjectScope:
             return "q" if screens.calls and screens.calls[-1][0] is not None else _tick()
 
         _agents._run_agent_page(mode, _Console(), _Live(), read_key, 0.0, True, project_path="/srv/app")
-        assert seen == {"project_path": "/srv/app"}
+        assert seen == {"project_path": "/srv/app", "options": {"window_days": 30}}
         # No instant open: the stale machine-wide report never reaches a frame.
         assert all(getattr(artifact, "name", "") != "stale" for artifact, _k in screens.calls)
         assert all(kwargs.get("as_of", "") != "2026-07-01" for _a, kwargs in screens.calls)

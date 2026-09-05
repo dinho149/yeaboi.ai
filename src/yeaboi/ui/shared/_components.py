@@ -107,7 +107,6 @@ SOLO_THEME = Theme(accent="rgb(210,168,80)", accent_bright="rgb(245,200,110)")
 TEAM_THEME = Theme()
 AGENTS_THEME = Theme(accent="rgb(90,160,210)", accent_bright="rgb(130,200,255)")
 AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,255)")
-AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,245,205)")
 AGENT_SECURITY_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
 AGENT_ADVISOR_THEME = Theme(accent="rgb(240,180,70)", accent_bright="rgb(255,210,110)")
 
@@ -460,11 +459,6 @@ def system_check_title(shimmer_tick: float | None = None, *, width: int | None =
 def agent_usage_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Agent Usage ASCII title (cyan accent). Optionally shimmering."""
     return build_ascii_title("Usage", "rgb(70,190,230)", shimmer_tick=shimmer_tick, width=width)
-
-
-def agent_standup_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
-    """Return the Agent Standup ASCII title (mint accent). Optionally shimmering."""
-    return build_ascii_title("Standup", "rgb(120,210,170)", shimmer_tick=shimmer_tick, width=width)
 
 
 def agent_security_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:

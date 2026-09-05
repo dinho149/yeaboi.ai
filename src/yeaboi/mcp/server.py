@@ -36,7 +36,7 @@ _INSTRUCTIONS = (
     "produce stakeholder delivery reports, and prep engineer 1:1s and reviews. "
     "For the agents working alongside them: agents_usage costs a window of agent "
     "work, agents_advisor_run finds the recoverable share of it, "
-    "agents_standup_run digests what they did, and agents_security_scan "
+    "and agents_security_scan "
     "audits the setup — all computed locally from this machine's agent session "
     "logs. "
     "Results come in an envelope {ok, llm_mode, warnings, data}; llm_mode "

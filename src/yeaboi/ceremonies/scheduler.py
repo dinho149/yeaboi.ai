@@ -743,6 +743,98 @@ def _installed_interval(session_id: str, kind: str) -> int:
     return 0
 
 
+def _launchd_program(path: Path) -> str:
+    """``ProgramArguments[0]`` of one plist, or "" when it cannot be read."""
+    try:
+        with path.open("rb") as fh:
+            program = plistlib.load(fh).get("ProgramArguments") or []
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return ""
+    return str(program[0]) if program else ""
+
+
+def _wrapper_target(wrapper: Path) -> str:
+    """The executable a standup wrapper's ``run.sh`` finally runs, or ""."""
+    run_script = wrapper.parent / "run.sh"
+    try:
+        lines = [ln for ln in run_script.read_text(encoding="utf-8").splitlines() if ln and not ln.startswith("#")]
+    except OSError:
+        return ""
+    if not lines:
+        return ""
+    try:
+        words = shlex.split(lines[-1])
+    except ValueError:
+        return ""
+    return words[0] if words else ""
+
+
+def _job_is_dead(path: Path) -> str:
+    """Why an installed launchd job can never run again, or "" when it can.
+
+    Two shapes of dead: the program it points at is gone (a worktree venv
+    deleted with its worktree, a moved install), and a ceremony whose mode is
+    no longer in the catalog. Both fire on schedule forever otherwise — one
+    opening a Terminal window onto a missing binary every weekday morning.
+    """
+    program = _launchd_program(path)
+    if not program:
+        return "unreadable plist"
+    if not Path(program).exists():
+        return f"program missing: {program}"
+    if Path(program).name == "yeaboi-standup":
+        target = _wrapper_target(Path(program))
+        if target and not (Path(target).exists() or shutil.which(target)):
+            return f"venv missing: {target}"
+    stem = path.name[: -len(".plist")]
+    if stem.startswith(f"{_CEREMONY_LABEL_PREFIX}."):
+        rest = stem[len(_CEREMONY_LABEL_PREFIX) + 1 :]
+        name = rest.rsplit(".", 1)[0] if "." in rest else rest
+        from yeaboi.ceremonies.store import CeremonyStore
+
+        try:
+            with CeremonyStore() as store:
+                declared = {c.name: c.mode for c in store.list()}
+        except Exception:  # noqa: BLE001 — a store problem must not stop the reap
+            declared = {}
+        mode = declared.get(name)
+        if mode is not None:
+            from yeaboi.ceremonies import catalog
+
+            if catalog.lookup(mode) is None:
+                return f"mode withdrawn: {mode}"
+    return ""
+
+
+def reap_dead_jobs() -> list[str]:
+    """Uninstall every yeaboi launchd job that can never run again; return what went.
+
+    macOS only today — cron entries carry their command inline and are cheap
+    to inspect by eye. Never raises: a job that cannot be read is left alone
+    and logged, since removing something on a guess is the wrong failure.
+    """
+    if not _is_macos():
+        return []
+    removed: list[str] = []
+    try:
+        plists = sorted(_launch_agents_dir().glob("com.yeaboi.*.plist"))
+    except OSError as exc:
+        logger.warning("reap_dead_jobs: cannot list LaunchAgents: %s", exc)
+        return []
+    for path in plists:
+        reason = _job_is_dead(path)
+        if not reason:
+            continue
+        program = _launchd_program(path)
+        subprocess.run(["launchctl", "unload", str(path)], capture_output=True, timeout=10, check=False)
+        path.unlink(missing_ok=True)
+        if program and Path(program).name == "yeaboi-standup":
+            shutil.rmtree(Path(program).parent, ignore_errors=True)
+        logger.info("scheduler[launchd]: reaped %s (%s)", path.name, reason)
+        removed.append(f"{path.name} — {reason}")
+    return removed
+
+
 def installed_ceremonies(session_id: str) -> list[str]:
     """Ceremony names with a job actually installed for ``session_id``.
 

@@ -138,7 +138,7 @@ The `src/yeaboi/solo/` package holds the Solo world's own modules: `today.py` (t
 
 ## Agents family (agentwatch)
 
-Four modes (`agent-usage`, `agent-advisor`, `agent-standup`, `agent-security`) share one package —
+Three modes (`agent-usage`, `agent-advisor`, `agent-security`) share one package —
 `src/yeaboi/agentwatch/` — and one blueprint deviation worth knowing: the *collector* is the gather
 step. `collector.refresh()` incrementally ingests `~/.claude/projects/**/*.jsonl` (and OpenClaw)
 into `agent_sessions` rollups, deduping usage by `requestId` via full-file reparse (Claude Code

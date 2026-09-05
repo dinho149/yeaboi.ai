@@ -218,12 +218,14 @@ ROUTES: tuple[AppRoute, ...] = (
     AppRoute("POST", "/api/slack/link", routes_ceremonies.link, "slack-inbound"),
     AppRoute("POST", "/api/slack/poll", routes_ceremonies.poll, "slack-inbound"),
     # -- the Agents family (the M9 surface) ----------------------------------
-    # One set of routes over four modes, addressed by kind. Registered against
+    # One set of routes over every mode, addressed by kind. Registered against
     # agent-usage, the row whose engine the other three sit beside.
     AppRoute("GET", "/api/agents/modes", routes_agents.modes, "agent-usage"),
     AppRoute("GET", "/api/agents/{kind}/latest", routes_agents.latest, "agent-usage"),
     AppRoute("POST", "/api/agents/{kind}/run", routes_agents.run, "agent-usage"),
     AppRoute("POST", "/api/agents/{kind}/export", routes_agents.export, "agent-usage"),
+    AppRoute("POST", "/api/agents/security/dismiss", routes_agents.dismiss, "agent-security"),
+    AppRoute("GET", "/api/agents/security/dismissed", routes_agents.dismissed, "agent-security"),
     # -- the shell's own furniture (the M10 surface) --------------------------
     # No capability owns these: ambience, the beta gate, the feedback form and
     # the sandbox consent modal are things the shell needs to draw itself, not

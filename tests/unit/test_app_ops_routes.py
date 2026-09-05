@@ -292,13 +292,14 @@ class TestSlack:
 
 
 class TestAgentModes:
-    def test_the_four_modes_come_back_with_the_beta_caveat(self, app, env):
+    def test_the_three_modes_come_back_with_the_beta_caveat(self, app, env):
         from yeaboi.beta import AGENTWATCH_BETA_NOTICE
 
         payload = body(request(app, "GET", "/api/agents/modes"))
-        assert [m["kind"] for m in payload["modes"]] == ["usage", "advisor", "standup", "security"]
+        assert [m["kind"] for m in payload["modes"]] == ["usage", "advisor", "security"]
         assert payload["beta_notice"] == AGENTWATCH_BETA_NOTICE
         assert payload["actions"] == ["Export", "Copy", "Re-run", "Back"]
+        assert payload["fresh_minutes"] == 60
 
 
 class TestAgentLatest:
@@ -315,6 +316,16 @@ class TestAgentLatest:
         payload = body(request(app, "GET", "/api/agents/usage/latest"))
         assert payload["report"]["total_cost_usd"] == pytest.approx(9.99)
         assert payload["as_of"]
+        # Just recorded, so within the freshness window: the surface must not re-run.
+        assert payload["fresh"] is True
+
+    def test_a_stale_report_is_flagged_so_the_surface_re_runs(self, app, env, monkeypatch):
+        from yeaboi.agentwatch.store import AgentWatchStore
+
+        with AgentWatchStore(env["db"]) as store:
+            store.record_report("usage", AgentUsageReport(period_start="2026-07-01"))
+        monkeypatch.setenv("YEABOI_AGENTWATCH_FRESH_MINUTES", "0")
+        assert body(request(app, "GET", "/api/agents/usage/latest"))["fresh"] is False
 
     def test_the_route_answers_to_the_mode_key_too(self, app, env):
         assert body(request(app, "GET", "/api/agents/agent-usage/latest"))["kind"] == "usage"
@@ -399,14 +410,22 @@ class TestAgentScope:
 
         monkeypatch.setattr(setup, "run", _fake)
         lines = drain(request(app, "POST", "/api/agents/usage/run", {"project_id": project["pid"]}))
-        assert seen == {"project_path": "/srv/apollo"}
+        assert seen == {"project_path": "/srv/apollo", "options": {}}
         assert lines[-1]["type"] == "done" and lines[-1]["scoped_to"] == "/srv/apollo"
 
-    def test_an_unscoped_run_echoes_an_empty_scope(self, app, env, monkeypatch):
+    def test_run_options_reach_the_engine(self, app, env, monkeypatch):
         from yeaboi.agentwatch import setup
 
-        monkeypatch.setattr(setup, "run", lambda mode, on_progress, **kw: AgentUsageReport(period_start="2026-07-01"))
-        assert drain(request(app, "POST", "/api/agents/usage/run", {}))[-1]["scoped_to"] == ""
+        seen = {}
+
+        def _fake(mode, on_progress, **kw):
+            seen.update(kw)
+            return AgentUsageReport(period_start="2026-07-01")
+
+        monkeypatch.setattr(setup, "run", _fake)
+        drain(request(app, "POST", "/api/agents/usage/run", {"window_days": 7, "include_info": True}))
+        assert seen["options"] == {"window_days": 7, "include_info": True}
+        assert request(app, "POST", "/api/agents/usage/run", {"window_days": "lots"}).code == 400
 
     def test_an_unknown_project_is_404(self, app, env, project):
         assert request(app, "GET", "/api/agents/usage/latest?project_id=proj-00000000").code == 404
@@ -457,3 +476,27 @@ class TestAuth:
             ("GET", "/api/agents/usage/latest"),
         ):
             assert request(app, method, path, {} if method == "POST" else None, authed=False).code == 401, path
+
+
+class TestSecurityDismissals:
+    def test_dismiss_needs_a_reason_then_lists_and_restores(self, app, env, monkeypatch, tmp_path):
+        from yeaboi.agentwatch import dismissals
+
+        monkeypatch.setattr(dismissals, "default_path", lambda: tmp_path / "allow.json")
+        assert request(app, "POST", "/api/agents/security/dismiss", {"key": "secret:p:/a"}).code == 400
+        assert request(app, "POST", "/api/agents/security/dismiss", {"reason": "x"}).code == 400
+        payload = body(
+            request(app, "POST", "/api/agents/security/dismiss", {"key": "secret:p:/a", "reason": "fixture"})
+        )
+        assert payload["entry"]["reason"] == "fixture"
+        listed = body(request(app, "GET", "/api/agents/security/dismissed"))
+        assert [d["key"] for d in listed["dismissed"]] == ["secret:p:/a"]
+        restored = body(request(app, "POST", "/api/agents/security/dismiss", {"key": "secret:p:/a", "undo": True}))
+        assert restored["restored"] == "secret:p:/a" and restored["dismissed"] == []
+        assert request(app, "POST", "/api/agents/security/dismiss", {"key": "secret:p:/a", "undo": True}).code == 404
+
+    def test_an_unscoped_run_echoes_an_empty_scope(self, app, env, monkeypatch):
+        from yeaboi.agentwatch import setup
+
+        monkeypatch.setattr(setup, "run", lambda mode, on_progress, **kw: AgentUsageReport(period_start="2026-07-01"))
+        assert drain(request(app, "POST", "/api/agents/usage/run", {}))[-1]["scoped_to"] == ""

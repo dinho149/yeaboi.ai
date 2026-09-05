@@ -8,13 +8,13 @@ user-facing *warning* and a deterministic fallback artifact, so every surface
 always renders something useful.
 
 Pipelines:
-  run_agent_usage()    → ingest local agent sessions → price → LLM insights → AgentUsageReport
-  run_agent_standup()  → local sessions + agent-authored tracker activity → LLM narrative
-                         → AgentStandupDigest
+  run_agent_usage()    → ingest local agent sessions → price per day → LLM insights → AgentUsageReport
+  run_agent_security() → scan transcripts + audit configs → group, dismiss, diff → LLM summary
+                         → AgentSecurityReport
 
 Every number in an artifact is computed deterministically here; the LLM only
-writes prose (insights/narrative) over the finished aggregates — a narrative
-can be wrong without corrupting a dashboard.
+writes prose (insights/summary) over the finished aggregates — a narrative can
+be wrong without corrupting a dashboard.
 
 # See docs: "The ReAct Loop" — using the LLM outside the main graph
 # See docs: "Prompt Construction" — the agentwatch prompts
@@ -25,17 +25,20 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
 from collections import defaultdict
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 
 from yeaboi.agent.state import (
     AgentSecurityReport,
-    AgentStandupDigest,
     AgentUsageBreakdownRow,
     AgentUsageReport,
     DailyUsagePoint,
     ModelUsageRow,
+    SecurityFinding,
 )
 from yeaboi.agentwatch import collector
 from yeaboi.agentwatch.store import AgentWatchStore
@@ -150,9 +153,75 @@ def _in_repo(session_project_path: str, project_path: str) -> bool:
     return candidate == root or candidate.startswith(root.rstrip(os.sep) + os.sep)
 
 
+_WORKTREES_SEGMENT = f"{os.sep}.claude{os.sep}worktrees{os.sep}"
+
+
+@lru_cache(maxsize=512)
+def _git_toplevel(project_path: str) -> str:
+    """The git toplevel above ``project_path``, or "" (cached per path)."""
+    if not project_path or not os.path.isdir(project_path):
+        return ""
+    from yeaboi.tools.local_git import git_subprocess_env
+
+    try:
+        proc = subprocess.run(
+            ["git", "-C", project_path, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+            env=git_subprocess_env(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    top = proc.stdout.strip()
+    return top if proc.returncode == 0 and top else ""
+
+
+def _git_toplevel_name(project_path: str) -> str:
+    top = _git_toplevel(project_path)
+    return Path(top).name if top else ""
+
+
 def _project_label(project_path: str) -> str:
-    """A readable per-project key: the path's last component (repo/dir name)."""
-    return Path(project_path).name or project_path or "(unknown)"
+    """A readable per-project key that names the repository, not the directory.
+
+    A worktree under ``<repo>/.claude/worktrees/<name>`` labels as
+    ``repo/name`` — a branch-named basename alone would merge every repo's
+    worktree of the same feature into one row. Elsewhere the git toplevel's
+    name wins over a subdirectory's, and the basename is the fallback.
+    """
+    if not project_path:
+        return "(unknown)"
+    normalised = os.path.normpath(project_path)
+    if _WORKTREES_SEGMENT in normalised:
+        repo_root, _sep, tail = normalised.partition(_WORKTREES_SEGMENT)
+        repo = Path(repo_root).name
+        # A worktree name may hold a slash (``agents/ai-native-sdlc``); the
+        # worktree's own git toplevel says where the name ends and the
+        # subdirectory begins. Without a checkout, the first segment stands.
+        top = os.path.realpath(_git_toplevel(normalised)) if _git_toplevel(normalised) else ""
+        marker = f"{os.path.realpath(repo_root)}{_WORKTREES_SEGMENT}"
+        name = top[len(marker) :] if top.startswith(marker) else tail.split(os.sep, 1)[0]
+        return f"{repo}/{name}" if repo and name else Path(normalised).name
+    top = _git_toplevel_name(normalised)
+    return top or Path(normalised).name or project_path
+
+
+def _price(model: str, u: dict):
+    """Price one usage bucket (day/model row or session/model entry)."""
+    return estimate_cost(
+        model,
+        int(u.get("input", 0)),
+        int(u.get("output", 0)),
+        cache_write_tokens=int(u.get("cache_write_5m", 0)),
+        cache_write_1h_tokens=int(u.get("cache_write_1h", 0)),
+        cache_read_tokens=int(u.get("cache_read", 0)),
+        web_search_calls=int(u.get("web_search_calls", 0)),
+        web_fetch_calls=int(u.get("web_fetch_calls", 0)),
+        premium_input_tokens=int(u.get("premium_input", 0)),
+        premium_output_tokens=int(u.get("premium_output", 0)),
+    )
 
 
 def _session_cost(model_usage: dict) -> tuple[float, bool]:
@@ -160,14 +229,7 @@ def _session_cost(model_usage: dict) -> tuple[float, bool]:
     total = 0.0
     all_known = True
     for model, u in model_usage.items():
-        est = estimate_cost(
-            model,
-            int(u.get("input", 0)),
-            int(u.get("output", 0)),
-            cache_write_tokens=int(u.get("cache_write_5m", 0)),
-            cache_write_1h_tokens=int(u.get("cache_write_1h", 0)),
-            cache_read_tokens=int(u.get("cache_read", 0)),
-        )
+        est = _price(model, u)
         total += est.usd
         all_known = all_known and est.known_model
     return total, all_known
@@ -193,7 +255,50 @@ def _fallback_usage_insights(report_rows: dict) -> tuple[tuple[str, ...], tuple[
     writes = report_rows.get("cache_write", 0)
     if reads or writes:
         insights.append(f"Cache traffic: {reads:,} tokens read vs {writes:,} written.")
+    share = report_rows.get("cache_cost_share", 0.0)
+    if share >= 0.5:
+        insights.append(f"{share:.0%} of the estimate is prompt-cache traffic — context size drives this bill.")
     return tuple(insights), ()
+
+
+def _claude_stats_path() -> Path:
+    """Claude Code's own daily activity cache — overridable in tests."""
+    return Path.home() / ".claude" / "stats-cache.json"
+
+
+def _claude_session_count(period_start: str, period_end: str) -> tuple[int, str] | None:
+    """Claude Code's own session count for the window, with the last day it computed.
+
+    ``stats-cache.json`` holds no tokens or money, only per-day message and
+    session counts — enough to notice when this scan and the CLI disagree
+    about how many sessions there were, which is the cheapest honesty check
+    available. The cache lags (it is rebuilt when the CLI feels like it), so
+    the caller compares only up to ``lastComputedDate``.
+    """
+    path = _claude_stats_path()
+    try:
+        if not path.exists():
+            return None
+        parsed = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return None
+    days = parsed.get("dailyActivity") if isinstance(parsed, dict) else None
+    if not isinstance(days, list):
+        return None
+    last_computed = str(parsed.get("lastComputedDate") or period_end)
+    until = min(last_computed, period_end)
+    if until < period_start:
+        return None
+    total = 0
+    seen = False
+    for row in days:
+        if not isinstance(row, dict):
+            continue
+        day = str(row.get("date", ""))
+        if period_start <= day <= until:
+            seen = True
+            total += int(row.get("sessionCount") or 0)
+    return (total, until) if seen else None
 
 
 def _deterministic_usage_report(
@@ -212,17 +317,17 @@ def _deterministic_usage_report(
     Scan, aggregate, price — returns the artifact with empty ``insights``/
     ``recommendations``/``generated_at`` for the caller to fill.
 
-    Two deliberate approximations in the windowing, both erring toward showing
-    work rather than hiding it. A session is placed by its ``ended_at``, so one
-    that ran across the window boundary has its whole cost attributed to the
-    day it finished. And the window has no upper bound, so a session with a
-    clock-skewed future ``ended_at`` stays visible instead of disappearing into
-    a gap — a cost dashboard that silently omits spend is the worse failure.
+    Tokens are windowed by the *day they were spent* (the per-day rollup the
+    collector keeps), so a session that ran across the window boundary
+    contributes only its in-window part, and the trend shows each day's own
+    traffic. The window is closed at ``today``; a clock-skewed future stamp
+    lands in a warning rather than in the total.
     """
     resolved_today = today or datetime.now(timezone.utc).date()
     window_days = max(1, int(window_days))
     period_start = (resolved_today - timedelta(days=window_days - 1)).isoformat()
     period_end = resolved_today.isoformat()
+    period_stop = (resolved_today + timedelta(days=1)).isoformat()
 
     warnings: list[str] = []
     with AgentWatchStore(_resolve_db_path(db_path)) as store:
@@ -236,16 +341,24 @@ def _deterministic_usage_report(
             detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
         )
         warnings.extend(stats.warnings)
-        sessions = store.list_sessions(since=period_start)
+        rows = store.list_session_days(since=period_start, until=period_stop)
+        future = store.list_session_days(since=period_stop)
+    if stats.duplicates:
+        warnings.append(f"{stats.duplicates} request(s) appeared in more than one transcript and were counted once.")
+    if stats.no_request_id:
+        warnings.append(f"{stats.no_request_id} assistant line(s) carried no request id — deduplicated per file only.")
+    if future:
+        warnings.append(f"{len(future)} usage row(s) are stamped after today and were left out of the window.")
 
     if project:
-        sessions = [s for s in sessions if project.lower() in _project_label(s["project_path"]).lower()]
+        rows = [r for r in rows if project.lower() in _project_label(r["project_path"]).lower()]
     if source:
-        sessions = [s for s in sessions if s["source"] == source]
+        rows = [r for r in rows if r["source"] == source]
     if project_path:
-        sessions = [s for s in sessions if _in_repo(s["project_path"], project_path)]
+        rows = [r for r in rows if _in_repo(r["project_path"], project_path)]
 
-    _emit(on_progress, "price", "running", label="Price usage", detail=f"{len(sessions)} transcript(s)")
+    files = {r["source_path"] for r in rows}
+    _emit(on_progress, "price", "running", label="Price usage", detail=f"{len(files)} transcript(s)")
 
     model_totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     project_totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
@@ -253,55 +366,49 @@ def _deterministic_usage_report(
     daily_totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     unknown_cost = 0.0
     total_cost = 0.0
+    cache_cost = 0.0
+    priced_from_log = 0
 
-    # Costs sum over rollup ROWS (one per transcript file, disjoint), but the
-    # session *counts* beside them must be distinct logical sessions — a
-    # resumed session is two rows carrying one id. Sets, then len() at build.
+    # Costs sum over day rows (disjoint), but the session *counts* beside them
+    # must be distinct logical sessions — a resumed session is two rows
+    # carrying one id. Sets, then len() at build.
     bucket_sessions: dict[tuple[str, str], set[str]] = defaultdict(set)
+    all_sessions: set[str] = set()
+    sessions_by_day: dict[str, set[str]] = defaultdict(set)
 
-    for session in sessions:
-        s_cost, _known = _session_cost(session["model_usage"])
-        p_label = _project_label(session["project_path"])
-        day = (session["ended_at"] or "")[:10]
-        s_key = session["session_id"] or session["source_path"]
+    for r in rows:
+        model = r["model"]
+        est = _price(model, r)
+        cost = float(r.get("recorded_cost_usd") or 0.0) or est.usd
+        if r.get("recorded_cost_usd"):
+            priced_from_log += 1
+        p_label = _project_label(r["project_path"])
+        s_key = r["session_id"] or r["source_path"]
+        src = r["source"] or "(unknown)"
+        day = r["day"]
+        all_sessions.add(s_key)
+        sessions_by_day[day].add(s_key)
         for bucket, kind, key in (
             (project_totals, "project", p_label),
-            (source_totals, "source", session["source"] or "(unknown)"),
+            (source_totals, "source", src),
+            (daily_totals, "day", day),
         ):
             bucket_sessions[(kind, key)].add(s_key)
-            bucket[key]["cost"] += s_cost
-        if day:
-            bucket_sessions[("day", day)].add(s_key)
-            daily_totals[day]["cost"] += s_cost
-        total_cost += s_cost
-        for model, u in session["model_usage"].items():
-            est = estimate_cost(
-                model,
-                int(u.get("input", 0)),
-                int(u.get("output", 0)),
-                cache_write_tokens=int(u.get("cache_write_5m", 0)),
-                cache_write_1h_tokens=int(u.get("cache_write_1h", 0)),
-                cache_read_tokens=int(u.get("cache_read", 0)),
-            )
-            m = model_totals[model]
-            m["input"] += int(u.get("input", 0))
-            m["output"] += int(u.get("output", 0))
-            m["cache_write"] += int(u.get("cache_write_5m", 0)) + int(u.get("cache_write_1h", 0))
-            m["cache_read"] += int(u.get("cache_read", 0))
-            m["calls"] += int(u.get("calls", 0))
-            m["cost"] += est.usd
-            m["known"] = float(est.known_model)
-            if not est.known_model:
-                unknown_cost += est.usd
-            for bucket, key in (
-                (project_totals, p_label),
-                (source_totals, session["source"] or "(unknown)"),
-            ):
-                bucket[key]["input"] += int(u.get("input", 0))
-                bucket[key]["output"] += int(u.get("output", 0))
-            if day:
-                daily_totals[day]["input"] += int(u.get("input", 0))
-                daily_totals[day]["output"] += int(u.get("output", 0))
+            bucket[key]["cost"] += cost
+            bucket[key]["input"] += int(r["input"])
+            bucket[key]["output"] += int(r["output"])
+        total_cost += cost
+        cache_cost += est.cache_usd
+        m = model_totals[model]
+        m["input"] += int(r["input"])
+        m["output"] += int(r["output"])
+        m["cache_write"] += int(r["cache_write_5m"]) + int(r["cache_write_1h"])
+        m["cache_read"] += int(r["cache_read"])
+        m["calls"] += int(r["calls"])
+        m["cost"] += cost
+        m["known"] = float(est.known_model)
+        if not est.known_model:
+            unknown_cost += cost
 
     by_model = tuple(
         ModelUsageRow(
@@ -342,17 +449,31 @@ def _deterministic_usage_report(
         for day, t in sorted(daily_totals.items())
     )
 
-    if not sessions:
+    if not rows:
         warnings.append("No local agent sessions found in the window — is Claude Code used on this machine?")
+    elif not project and not source and not project_path:
+        recorded = _claude_session_count(period_start, period_end)
+        if recorded is not None:
+            theirs, until = recorded
+            ours = len(set().union(*(ids for day, ids in sessions_by_day.items() if day <= until)) or set())
+            if ours >= 5 and theirs >= 5 and abs(theirs - ours) / max(theirs, ours) > 0.10:
+                warnings.append(
+                    f"Session count differs from Claude Code's own record through {until} "
+                    f"({ours} here vs {theirs} in its stats cache) — some transcripts may be missing or extra."
+                )
+    if priced_from_log:
+        warnings.append(f"{priced_from_log} row(s) carried a cost recorded by the CLI and were not re-priced.")
     # no_data, not completed, on an empty window — same checklist vocabulary as
-    # the insights/trackers phases' nothing-to-do case.
-    price_status = "completed" if sessions else "no_data"
-    _emit(on_progress, "price", price_status, label="Price usage", detail=f"{len(sessions)} transcript(s)")
+    # the insights phase's nothing-to-do case.
+    price_status = "completed" if rows else "no_data"
+    _emit(on_progress, "price", price_status, label="Price usage", detail=f"{len(files)} transcript(s)")
+
+    from yeaboi.agentwatch.billing import detect_billing
 
     return AgentUsageReport(
         period_start=period_start,
         period_end=period_end,
-        session_count=_distinct_session_count(sessions),
+        session_count=len(all_sessions),
         total_cost_usd=round(total_cost, 4),
         total_input_tokens=sum(r.input_tokens for r in by_model),
         total_output_tokens=sum(r.output_tokens for r in by_model),
@@ -360,6 +481,9 @@ def _deterministic_usage_report(
         total_cache_read_tokens=sum(r.cache_read_tokens for r in by_model),
         unknown_model_cost_share=round(unknown_cost / total_cost, 4) if total_cost > 0 else 0.0,
         pricing_as_of=PRICING_AS_OF,
+        billing_kind=detect_billing().kind,
+        cache_cost_share=round(cache_cost / total_cost, 4) if total_cost > 0 else 0.0,
+        window_days=window_days,
         by_model=by_model,
         by_project=by_project,
         by_source=by_source,
@@ -382,12 +506,12 @@ def run_agent_usage(
     """Build the agent cost/usage dashboard over locally monitored sessions.
 
     Deterministic gather: refresh the collector's ingest, aggregate the stored
-    session rollups over the window, and price every (model, session) pair from
-    the shared pricing table (``_deterministic_usage_report``). The single LLM
+    per-day rollups over the window, and price every (day, model) row from the
+    shared pricing table (``_deterministic_usage_report``). The single LLM
     call then writes ``insights`` and ``recommendations`` prose over the
     computed aggregates — never numbers.
 
-    project: substring filter on the session's project directory name.
+    project: substring filter on the session's project label.
     source:  exact filter on the telemetry source (currently "claude_code").
     project_path: keep only sessions whose project directory is this absolute
         path or sits under it (a worktree counts) — see ``_in_repo``.
@@ -453,12 +577,11 @@ def run_agent_usage(
                 "by_project": by_project,
                 "cache_read": sum(r.cache_read_tokens for r in by_model),
                 "cache_write": sum(r.cache_write_tokens for r in by_model),
+                "cache_cost_share": report.cache_cost_share,
             }
         )
         insights = fallback_insights
         recommendations = recommendations or fallback_recs
-
-    from dataclasses import replace
 
     report = replace(
         report,
@@ -491,459 +614,6 @@ def run_agent_usage(
 
 
 # ---------------------------------------------------------------------------
-# Agent Standup
-# ---------------------------------------------------------------------------
-
-
-def _summarise_sessions(sessions: list[dict]) -> tuple:
-    """Local session rollups → AgentSessionSummary rows, costliest first."""
-    from yeaboi.agent.state import AgentSessionSummary
-
-    summaries = []
-    for session in sessions:
-        cost, _known = _session_cost(session["model_usage"])
-        top_tools = sorted(session["tool_counts"].items(), key=lambda kv: kv[1], reverse=True)[:3]
-        summaries.append(
-            AgentSessionSummary(
-                session_id=session["session_id"],
-                source=session["source"],
-                project=_project_label(session["project_path"]),
-                branch=session["git_branch"],
-                models=tuple(sorted(session["model_usage"])),
-                turns=session["turns"],
-                cost_usd=round(cost, 4),
-                top_tools=tuple((name, str(count)) for name, count in top_tools),
-                started_at=session["started_at"],
-                ended_at=session["ended_at"],
-            )
-        )
-    return tuple(sorted(summaries, key=lambda s: s.cost_usd, reverse=True))
-
-
-def _collect_agent_repo_activity(
-    *,
-    window_days: int,
-    tracker_sources: list[str] | None,
-    github_owners: list[str] | None,
-    azdo_projects: list[str] | None,
-    on_progress=None,
-) -> tuple[tuple, tuple[str, ...]]:
-    """Agent-authored tracker items in the window → (rows, coverage notes).
-
-    Reuses the analysis mode's agent-identity detection (trailers, bot account
-    shapes, branch prefixes) and the standup automation filter, so a Wiz-style
-    service hook never shows up as "an agent shipped something". Best-effort:
-    missing credentials contribute a coverage note, never a failure.
-    """
-    from yeaboi.agent.state import AgentRepoActivityRow
-
-    if tracker_sources is not None and not tracker_sources:
-        _emit(on_progress, "trackers", "no_data", label="Scan trackers", detail="skipped — local sessions only")
-        return (), ("Tracker scan skipped (tracker_sources=[]) — local sessions only.",)
-
-    _emit(on_progress, "trackers", "running", label="Scan trackers")
-    try:
-        from yeaboi.analysis.ai_usage import _classify_ai_item, collect_ai_activity
-
-        scope: dict[str, list[str]] = {}
-        if github_owners:
-            scope["github"] = list(github_owners)
-        if azdo_projects:
-            scope["azdo"] = list(azdo_projects)
-        items, _sources, coverage, _repos = collect_ai_activity(
-            "",
-            # No project key: this scan is team-wide, not scoped to one board.
-            # "agent-standup" used to sit here as a label, which is inert only
-            # because ai_usage gates project_key on source == "azdevops" — a
-            # change to that gate would silently scope the AzDO scan to a
-            # project of that name.
-            "",
-            list(tracker_sources) if tracker_sources else None,
-            window_days=window_days,
-            analysis_scope=scope or None,
-        )
-    except Exception as exc:  # noqa: BLE001 — trackers are optional context
-        logger.warning("agent standup: tracker scan failed: %s", exc)
-        _emit(on_progress, "trackers", "no_data", label="Scan trackers", detail="unavailable")
-        return (), (f"Tracker scan unavailable: {exc}",)
-
-    # Drop non-agent automation (service hooks, scanners) before classifying —
-    # the standup filter only inspects review/comment kinds.
-    from yeaboi.standup.automation import partition_automated
-
-    kept, clusters = partition_automated(items)
-    if clusters:
-        logger.info("agent standup: %d automation cluster(s) excluded", len(clusters))
-
-    rows = []
-    for item in kept:
-        hits = _classify_ai_item(item)
-        if not hits:
-            continue
-        rows.append(
-            AgentRepoActivityRow(
-                source=str(item.get("source", "") or "github"),
-                repo=str(item.get("repository", "")).rsplit("/", 1)[-1],
-                kind=str(item.get("kind", "")),
-                title=str(item.get("title", ""))[:140],
-                url=str(item.get("url", "")),
-                author=str(item.get("author", "")),
-                status=str(item.get("status", "")),
-                agent_marker=", ".join(sorted(hits)),
-            )
-        )
-    order = {"pr": 0, "commit": 1, "review": 2, "comment": 3}
-    rows.sort(key=lambda r: (order.get(r.kind, 9), r.repo, r.title))
-    _emit(on_progress, "trackers", "completed", label="Scan trackers", detail=f"{len(rows)} item(s)")
-    return tuple(rows), tuple(coverage)
-
-
-def _session_line(summary) -> str:
-    """One session as a sentence about what it did, not merely that it existed.
-
-    ``_summarise_sessions`` sorts costliest-first, so the old "Session on {project}
-    (${cost})" made a $0.10 session a "highlight" purely for being ``summaries[0]``.
-    Branch and tools are already on the row and say something a reader can act on;
-    cost alone never did.
-    """
-    where = f"{summary.project}/{summary.branch}" if summary.branch else summary.project
-    facts = []
-    if summary.turns:
-        facts.append(f"{summary.turns} turns")
-    if summary.top_tools:
-        facts.append("mostly " + ", ".join(name for name, _count in summary.top_tools[:2]))
-    facts.append(f"${summary.cost_usd:,.2f}")
-    return f"{where} — {', '.join(facts)}"
-
-
-def _fallback_standup_prose(summaries: tuple, repo_rows: tuple) -> tuple[tuple[str, ...], tuple[str, ...], str]:
-    """Deterministic highlights / attention items / narrative — evidence, not analysis."""
-    highlights = []
-    for row in repo_rows:
-        if row.kind == "pr" and row.status == "merged":
-            highlights.append(f"Merged: {row.title} ({row.repo}, {row.agent_marker})")
-    # Sessions are a fallback for the *prose*, not a headline. With something
-    # merged to point at they add nothing, and a lone session is not a highlight
-    # of anything — it is the only row there was.
-    if not highlights and len(summaries) > 1:
-        highlights.extend(_session_line(summary) for summary in summaries[:3])
-    attention = [
-        f"Open agent PR: {row.title} ({row.repo})" for row in repo_rows if row.kind == "pr" and row.status == "open"
-    ]
-    narrative = (
-        f"{len(summaries)} local agent session(s) and {len(repo_rows)} agent-authored tracker item(s) in the window."
-    )
-    return tuple(highlights[:6]), tuple(attention[:6]), narrative
-
-
-def _deterministic_standup_digest(
-    *,
-    window_start: str,
-    digest_date: str,
-    project_path: str = "",
-    db_path=None,
-    on_progress=None,
-    roots=None,
-) -> AgentStandupDigest:
-    """The standup pipeline's local half, up to (not including) trackers + LLM.
-
-    Scan, list the window's sessions, summarise and total them — returns the
-    digest with empty ``repo_activity``/prose/``generated_at`` for the caller
-    to fill: the tracker leg and the LLM run afterwards.
-
-    The no-local-sessions coverage note is deterministic and lives here: a
-    cloud/CI environment has no ~/.claude at all, so its digest is
-    tracker-only — without the note the reader cannot tell "the agents were
-    idle" from "this machine can't see them", and a scheduled cloud
-    run is exactly that case.
-    """
-    warnings: list[str] = []
-    _emit(on_progress, "scan", "running", label="Scan agent sessions")
-    with AgentWatchStore(_resolve_db_path(db_path)) as store:
-        stats = collector.refresh(store, roots=roots, on_progress=on_progress)
-        _emit(
-            on_progress,
-            "scan",
-            "completed",
-            label="Scan agent sessions",
-            detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
-        )
-        warnings.extend(stats.warnings)
-        sessions = store.list_sessions(since=window_start)
-    if project_path:
-        sessions = [s for s in sessions if _in_repo(s["project_path"], project_path)]
-    summaries = _summarise_sessions(sessions)
-    coverage_notes: tuple[str, ...] = ()
-    if not sessions:
-        coverage_notes = (
-            "No local agent sessions in the window — this environment has no agent session history, "
-            "so the digest covers tracker activity only.",
-        )
-    return AgentStandupDigest(
-        digest_date=digest_date,
-        window_start=window_start,
-        window_end=digest_date,
-        sessions_worked=len(summaries),
-        total_cost_usd=round(sum(s.cost_usd for s in summaries), 4),
-        agents_seen=tuple(sorted({s.source for s in summaries})),
-        session_summaries=summaries,
-        coverage_notes=coverage_notes,
-        warnings=tuple(warnings),
-    )
-
-
-def _tracker_only_digest(*, window_start: str, digest_date: str, on_progress=None) -> AgentStandupDigest:
-    """The local half, deliberately not run — an empty digest and a note saying so.
-
-    Distinct from ``_deterministic_standup_digest``'s empty result, and the two
-    notes must not be confused. That one means "this machine has no agent history
-    in the window"; this one means "nobody looked". A reader who cannot tell them
-    apart cannot tell an idle fleet from an unasked question, which is the whole
-    failure this note family exists to prevent.
-
-    Not mirrored in the Go core: the sidecar's contract is the scan, and this is
-    the decision not to scan. ``_deterministic_standup_digest`` is untouched.
-    """
-    _emit(on_progress, "scan", "no_data", label="Scan agent sessions", detail="skipped — trackers only")
-    return AgentStandupDigest(
-        digest_date=digest_date,
-        window_start=window_start,
-        window_end=digest_date,
-        sessions_worked=0,
-        total_cost_usd=0.0,
-        agents_seen=(),
-        session_summaries=(),
-        coverage_notes=(
-            "Local agent sessions were not collected in this run — session logs are read from the "
-            "machine the digest runs on, so this covers agent-authored tracker activity only. "
-            "It is not a statement about how much local agent work happened.",
-        ),
-        warnings=(),
-    )
-
-
-def run_agent_standup(
-    *,
-    days: int | None = None,
-    tracker_sources: list[str] | None = None,
-    github_owners: list[str] | None = None,
-    azdo_projects: list[str] | None = None,
-    include_local_sessions: bool = True,
-    deliver: bool = False,
-    project_path: str = "",
-    db_path=None,
-    today: date | None = None,
-    on_progress=None,
-    dry_run: bool = False,
-) -> AgentStandupDigest:
-    """Build the daily "what did the agents do" digest.
-
-    Window: like the human standup, ``days=None`` reaches back to the start of
-    the previous working day (a Monday run covers Friday), so weekend gaps
-    never hide agent work; an explicit ``days`` looks back that many days.
-
-    Sources: local session rollups by default; tracker scanning (GitHub/AzDO
-    agent-authored commits/PRs) is best-effort — pass ``tracker_sources=[]``
-    for a local-only digest, or a subset of {"github", "azdo"}.
-
-    ``include_local_sessions=False`` is the mirror of that: skip the local half
-    entirely for a tracker-only digest. It exists because session logs are read
-    from *this machine's* ``~/.claude``, so a run somewhere else does not see
-    fewer sessions — it sees a different set. A scheduled cloud run once reported
-    "1 session · $0.10", which was its own session: the digest had found itself
-    and said so as though it were the day's work. Not scanning is the honest
-    option, and it must skip the scan
-    rather than discard its result, because scanning is what produced the
-    phantom.
-
-    deliver=True posts the digest to the configured Slack webhook and raises a
-    desktop notification (never raises; failures become warnings).
-
-    ``project_path`` keeps only the local sessions whose project directory is
-    that absolute path or sits under it (``_in_repo``); the tracker leg is
-    unaffected.
-    """
-    from yeaboi.standup.collector import previous_working_day_start
-
-    resolved_today = today or datetime.now(timezone.utc).date()
-    if days is None:
-        window_start_dt = previous_working_day_start(resolved_today)
-        window_days = max(1, (resolved_today - window_start_dt.date()).days + 1)
-    else:
-        window_days = max(1, int(days))
-        window_start_dt = datetime.combine(resolved_today - timedelta(days=window_days - 1), datetime.min.time())
-    window_start = window_start_dt.date().isoformat()
-    digest_date = resolved_today.isoformat()
-    # `local=` is the run's key decision and belongs in the entry log: with it
-    # absent, a tracker-only run and a machine with no agent history produce
-    # byte-identical logs, which is the exact confusion the coverage note exists
-    # to prevent — and the log is where it is diagnosed after the fact.
-    logger.info(
-        "agent standup: window %s..%s (deliver=%s dry_run=%s local=%s repo=%r)",
-        window_start,
-        digest_date,
-        deliver,
-        dry_run,
-        include_local_sessions,
-        project_path,
-    )
-
-    if include_local_sessions:
-        digest = _deterministic_standup_digest(
-            window_start=window_start,
-            digest_date=digest_date,
-            project_path=project_path,
-            db_path=db_path,
-            on_progress=on_progress,
-        )
-    else:
-        digest = _tracker_only_digest(window_start=window_start, digest_date=digest_date, on_progress=on_progress)
-    warnings = list(digest.warnings)
-    summaries = digest.session_summaries
-    total_cost = digest.total_cost_usd
-
-    repo_rows, tracker_coverage = _collect_agent_repo_activity(
-        window_days=window_days,
-        tracker_sources=tracker_sources,
-        github_owners=github_owners,
-        azdo_projects=azdo_projects,
-        on_progress=on_progress,
-    )
-
-    # The deterministic no-local-sessions note (if any) leads; tracker
-    # coverage gaps follow.
-    coverage_notes = (*digest.coverage_notes, *tracker_coverage)
-
-    agents_seen = tuple(
-        sorted(set(digest.agents_seen) | {m for r in repo_rows for m in r.agent_marker.split(", ") if m})
-    )
-    in_flight = tuple(f"{row.title} ({row.repo})" for row in repo_rows if row.kind == "pr" and row.status == "open")[:8]
-
-    if not summaries and not repo_rows:
-        # Two different empties. "Nothing worked locally" is a claim about the
-        # local scan, and a tracker-only run never made it — saying it anyway is
-        # the same error as the phantom session, pointed the other way.
-        warnings.append(
-            "No agent-marked tracker activity found in the window, and local sessions were not collected."
-            if not include_local_sessions
-            else "No agent activity found in the window — nothing worked locally, nothing agent-marked landed."
-        )
-
-    # ── The one LLM call: narrative prose over the deterministic rows ─────
-    highlights: tuple[str, ...] = ()
-    attention: tuple[str, ...] = ()
-    narrative = ""
-    if (summaries or repo_rows) and not dry_run:
-        _emit(on_progress, "digest", "running", label="Write the digest")
-        from yeaboi.prompts.agentwatch import get_standup_digest_prompt
-
-        prompt = get_standup_digest_prompt(
-            digest_date=digest_date,
-            window_start=window_start,
-            total_cost_usd=total_cost,
-            sessions=[
-                (
-                    s.project,
-                    s.source,
-                    s.cost_usd,
-                    s.turns,
-                    list(s.models),
-                    s.branch,
-                    [name for name, _count in s.top_tools],
-                )
-                for s in summaries[:12]
-            ],
-            repo_items=[(r.kind, r.title, r.repo, r.status, r.agent_marker) for r in repo_rows[:20]],
-        )
-        parsed, llm_warnings = _invoke_llm(prompt, what="standup-digest")
-        warnings.extend(llm_warnings)
-        highlights = _str_list(parsed.get("highlights"))[:6]
-        attention = _str_list(parsed.get("attention_items"))[:6]
-        narrative = str(parsed.get("narrative") or "").strip()
-        _emit(on_progress, "digest", "fallback" if llm_warnings else "completed", label="Write the digest")
-    else:
-        _emit(on_progress, "digest", "no_data", label="Write the digest", detail="skipped")
-    if not narrative:
-        highlights, attention, narrative = _fallback_standup_prose(summaries, repo_rows)
-
-    from dataclasses import replace
-
-    digest = replace(
-        digest,
-        agents_seen=agents_seen,
-        repo_activity=repo_rows,
-        highlights=highlights,
-        in_flight=in_flight,
-        attention_items=attention,
-        narrative=narrative,
-        coverage_notes=coverage_notes,
-        warnings=tuple(warnings),
-        generated_at=datetime.now(timezone.utc).isoformat(),
-    )
-
-    if deliver:
-        delivered = _deliver_digest(digest)
-        if not all(delivered.values()):
-            failed = ", ".join(channel for channel, ok in delivered.items() if not ok)
-            digest = AgentStandupDigest(
-                **{**_as_dict_shallow(digest), "warnings": (*digest.warnings, f"Delivery failed: {failed}.")}
-            )
-
-    try:
-        with AgentWatchStore(_resolve_db_path(db_path)) as store:
-            store.record_report("standup", digest, key_date=digest_date)
-    except Exception as exc:  # noqa: BLE001 — history is best-effort
-        logger.warning("agent standup: could not record digest history: %s", exc)
-    try:
-        from yeaboi.agentwatch.export import export_artifact
-
-        export_artifact(digest, kind="standup")
-    except Exception as exc:  # noqa: BLE001 — export must never sink the run
-        logger.warning("agent standup: export failed: %s", exc)
-
-    logger.info(
-        "agent standup: %d session(s)%s, %d tracker item(s), $%.2f",
-        digest.sessions_worked,
-        "" if include_local_sessions else " (not collected)",
-        len(digest.repo_activity),
-        digest.total_cost_usd,
-    )
-    return digest
-
-
-def _as_dict_shallow(artifact) -> dict:
-    """Field → value for rebuilding a frozen artifact with one field changed.
-
-    dataclasses.replace would also work; this keeps tuple fields as-is without
-    asdict's deep list conversion.
-    """
-    from dataclasses import fields
-
-    return {f.name: getattr(artifact, f.name) for f in fields(artifact)}
-
-
-def _deliver_digest(digest) -> dict[str, bool]:
-    """Post the digest to Slack (+ a desktop notification). Never raises.
-
-    This used to re-implement the webhook POST, because the shared channels were
-    typed to ``StandupReport`` and there was no honest way to hand them an agent
-    digest. They take a mode-neutral ``Dispatch`` now, so there is one Slack call
-    site again instead of two that can drift apart.
-
-    The digest's own plaintext renderer still writes the body — what changed is
-    who carries it, not what it says.
-    """
-    from dataclasses import replace
-
-    from yeaboi.agentwatch.export import build_standup_plaintext
-    from yeaboi.ceremonies.delivery import CHANNEL_DESKTOP, CHANNEL_SLACK, deliver
-    from yeaboi.ceremonies.renderers import agent_standup_dispatch
-
-    dispatch = replace(agent_standup_dispatch(digest), body=build_standup_plaintext(digest))
-    return deliver(dispatch, [CHANNEL_SLACK, CHANNEL_DESKTOP])
-
-
-# ---------------------------------------------------------------------------
 # Agent Security
 # ---------------------------------------------------------------------------
 
@@ -955,50 +625,124 @@ _STORED_FINDING_REMEDIATION = {
     "secret": "Rotate the credential; avoid pasting secrets into agent sessions.",
     "risky_tool": "Review the session; consider denying the pattern in your agent's permission rules.",
 }
+_SECRET_TITLES = {
+    "tunnel-hostname": "Live tunnel hostname in a session transcript",
+}
+_SECRET_REMEDIATION = {
+    "tunnel-hostname": "The quick-tunnel address was in a transcript; it expired with the tunnel.",
+}
 
 
-def _stored_findings(store: AgentWatchStore) -> list:
-    """Collector-persisted signals (secrets, risky commands) → SecurityFinding rows.
+def _stored_findings(store: AgentWatchStore) -> list[SecurityFinding]:
+    """Collector-persisted signals → one SecurityFinding per (category, pattern, file).
 
     The rows reference (pattern, file, line) only — the collector never stored
-    the matched content, and neither does this report.
+    the matched content, and neither does this report. A file that repeats
+    the same signal on many lines is one finding with an occurrence count
+    and the first line as its location; a CI log pasted with a token on
+    forty lines is one thing to rotate, not forty.
     """
-    from yeaboi.agent.state import SecurityFinding
+    from yeaboi.agentwatch import security_checks
 
-    rows = []
+    grouped: dict[tuple[str, str, str], dict] = {}
     for finding in store.list_findings():
         category = finding["category"]
+        pattern = security_checks.canonical_label(finding["pattern"])
+        severity = security_checks.severity_for(category, finding["pattern"], finding["severity"])
+        key = (category, pattern, finding["source_path"])
+        slot = grouped.setdefault(
+            key,
+            {"severity": severity, "line_no": int(finding["line_no"]), "count": 0, "session": finding["session_id"]},
+        )
+        slot["count"] += 1
+        if security_checks.SEVERITY_ORDER.get(severity, 9) < security_checks.SEVERITY_ORDER.get(slot["severity"], 9):
+            slot["severity"] = severity
+        slot["line_no"] = min(slot["line_no"], int(finding["line_no"]))
+
+    rows: list[SecurityFinding] = []
+    for (category, pattern, source_path), slot in grouped.items():
+        title = _SECRET_TITLES.get(pattern) or _STORED_FINDING_TITLES.get(category, "Session security signal")
+        remediation = _SECRET_REMEDIATION.get(pattern) or _STORED_FINDING_REMEDIATION.get(category, "")
+        detail = f"{slot['count']} matching line(s)" if slot["count"] > 1 else ""
+        if slot["session"]:
+            detail = f"{detail}; session {slot['session']}" if detail else f"session {slot['session']}"
         rows.append(
             SecurityFinding(
-                severity=finding["severity"],
+                severity=slot["severity"],
                 category=category,
-                title=_STORED_FINDING_TITLES.get(category, "Session security signal"),
-                location=finding["source_path"],
-                line_no=finding["line_no"],
-                pattern=finding["pattern"],
-                detail=f"session {finding['session_id']}" if finding["session_id"] else "",
-                remediation=_STORED_FINDING_REMEDIATION.get(category, ""),
+                title=title,
+                location=source_path,
+                line_no=slot["line_no"],
+                pattern=pattern,
+                detail=detail,
+                remediation=remediation,
+                occurrences=slot["count"],
             )
         )
     return rows
+
+
+def _pattern_totals(findings: list[SecurityFinding]) -> tuple[tuple[str, str], ...]:
+    """(pattern, "N matches across M files") for every transcript pattern present."""
+    per_pattern: dict[str, tuple[int, set[str]]] = {}
+    for f in findings:
+        if f.category not in ("secret", "risky_tool"):
+            continue
+        count, files = per_pattern.get(f.pattern, (0, set()))
+        files = set(files)
+        files.add(f.location)
+        per_pattern[f.pattern] = (count + f.occurrences, files)
+    return tuple(
+        (pattern, f"{count} match(es) across {len(files)} file(s)")
+        for pattern, (count, files) in sorted(per_pattern.items(), key=lambda kv: -kv[1][0])
+    )
+
+
+def _previous_keys(store: AgentWatchStore) -> set[str] | None:
+    """The finding keys of the last saved security report, or None on a first run."""
+    from yeaboi.agentwatch import security_checks
+
+    previous = store.latest_report("security")
+    if not previous:
+        return None
+    stored_keys = previous["report"].get("finding_keys")
+    if isinstance(stored_keys, list):
+        return {str(k) for k in stored_keys}
+    keys: set[str] = set()
+    for row in previous["report"].get("findings") or ():
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "")
+        if not key:
+            key = security_checks.finding_key(
+                SecurityFinding(
+                    category=str(row.get("category", "")),
+                    pattern=security_checks.canonical_label(str(row.get("pattern", ""))),
+                    location=str(row.get("location", "")),
+                )
+            )
+        keys.add(key)
+    return keys
 
 
 def _deterministic_security_report(
     *,
     scan_date: str,
     deep: bool = False,
+    include_info: bool = False,
     db_path=None,
     on_progress=None,
     roots=None,
 ) -> AgentSecurityReport:
     """Everything in the security pipeline up to (not including) the LLM.
 
-    Scan (deep forgets the cursors first), map the stored findings, audit the
-    settings files, inventory the MCP servers, rank and score — returns the
-    report with empty ``summary``/``recommendations``/``generated_at`` for the
-    caller to fill.
+    Scan (deep forgets the cursors first), group the stored findings, audit the
+    settings files, inventory the MCP servers, drop what the user dismissed,
+    hide ``info`` unless asked, diff against the previous report, rank and
+    score — returns the report with empty ``summary``/``recommendations``/
+    ``generated_at`` for the caller to fill.
     """
-    from yeaboi.agentwatch import security_checks
+    from yeaboi.agentwatch import dismissals, security_checks
 
     warnings: list[str] = []
     scan_label = "Re-scan every transcript" if deep else "Scan transcripts"
@@ -1006,7 +750,7 @@ def _deterministic_security_report(
     with AgentWatchStore(_resolve_db_path(db_path)) as store:
         if deep:
             store.reset_cursors()
-        stats = collector.refresh(store, roots=roots, on_progress=on_progress)
+        stats = collector.refresh(store, roots=roots, on_progress=on_progress, scan_security=True)
         _emit(
             on_progress,
             "scan",
@@ -1018,6 +762,7 @@ def _deterministic_security_report(
         sessions_scanned = _distinct_session_count(store.list_sessions())
         files_scanned = stats.files_seen
         findings = _stored_findings(store)
+        previous_keys = _previous_keys(store)
 
     _emit(on_progress, "settings", "running", label="Audit settings")
     settings_findings = security_checks.audit_settings()
@@ -1028,16 +773,38 @@ def _deterministic_security_report(
     findings.extend(mcp_findings)
     _emit(on_progress, "mcp", "completed", label="Inventory MCP servers", detail=f"{len(mcp_servers)} server(s)")
 
-    ranked = security_checks.rank_findings(findings)
+    keyed = [replace(f, key=security_checks.finding_key(f)) for f in findings]
+    dismissed = dismissals.active(scan_date)
+    kept = [f for f in keyed if f.key not in dismissed]
+    dismissed_count = len(keyed) - len(kept)
+    visible = [f for f in kept if include_info or f.severity != "info"]
+    hidden_info = len(kept) - len(visible)
+
+    ranked = security_checks.rank_findings(visible)
+    current_keys = {f.key for f in kept}
+    if previous_keys is None:
+        new_keys: tuple[str, ...] = ()
+        resolved_keys: tuple[str, ...] = ()
+    else:
+        new_keys = tuple(sorted(current_keys - previous_keys))
+        resolved_keys = tuple(sorted(previous_keys - current_keys - set(dismissed)))
+    posture_basis = tuple(f for f in kept if f.severity != "info")
     return AgentSecurityReport(
         scan_date=scan_date,
-        posture=security_checks.compute_posture(ranked),
+        posture=security_checks.compute_posture(posture_basis),
         sessions_scanned=sessions_scanned,
         files_scanned=files_scanned,
-        secrets_found=sum(1 for f in ranked if f.category == "secret"),
+        secrets_found=len({(f.pattern, f.location) for f in posture_basis if f.category == "secret"}),
         findings=ranked,
         mcp_servers=tuple(mcp_servers),
         settings_flags=tuple(sorted({f.pattern for f in ranked if f.category == "settings" and f.severity != "info"})),
+        finding_keys=tuple(sorted(current_keys)),
+        new_findings=new_keys,
+        resolved_findings=resolved_keys,
+        dismissed_count=dismissed_count,
+        hidden_info_count=hidden_info,
+        posture_reason=security_checks.posture_reason(posture_basis),
+        pattern_totals=_pattern_totals(kept),
         warnings=tuple(warnings),
     )
 
@@ -1045,6 +812,7 @@ def _deterministic_security_report(
 def run_agent_security(
     *,
     deep: bool = False,
+    include_info: bool = False,
     db_path=None,
     today: date | None = None,
     on_progress=None,
@@ -1057,13 +825,16 @@ def run_agent_security(
     and prioritised ``recommendations`` prose over the finished findings.
 
     deep=True forgets the ingest cursors first, so every transcript is
-    re-scanned rather than only new/changed files.
+    re-scanned rather than only new/changed files. include_info=True lists
+    the informational findings the report otherwise only counts.
     """
     resolved_today = today or datetime.now(timezone.utc).date()
     scan_date = resolved_today.isoformat()
-    logger.info("agent security: scan %s (deep=%s dry_run=%s)", scan_date, deep, dry_run)
+    logger.info("agent security: scan %s (deep=%s include_info=%s dry_run=%s)", scan_date, deep, include_info, dry_run)
 
-    report = _deterministic_security_report(scan_date=scan_date, deep=deep, db_path=db_path, on_progress=on_progress)
+    report = _deterministic_security_report(
+        scan_date=scan_date, deep=deep, include_info=include_info, db_path=db_path, on_progress=on_progress
+    )
 
     warnings = list(report.warnings)
     ranked = report.findings
@@ -1106,8 +877,6 @@ def run_agent_security(
         )
         recommendations = recommendations or tuple(f.remediation for f in ranked[:3] if f.remediation)
 
-    from dataclasses import replace
-
     report = replace(
         report,
         summary=summary,
@@ -1129,9 +898,11 @@ def run_agent_security(
         logger.warning("agent security: export failed: %s", exc)
 
     logger.info(
-        "agent security: %s — %d finding(s), %d MCP server(s)",
+        "agent security: %s — %d finding(s) (%d dismissed, %d info hidden), %d MCP server(s)",
         report.posture,
         len(report.findings),
+        report.dismissed_count,
+        report.hidden_info_count,
         len(report.mcp_servers),
     )
     return report

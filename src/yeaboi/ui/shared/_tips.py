@@ -272,12 +272,6 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         is_beta=True,
     ),
     FeatureTip(
-        "agent-standup",
-        "\U0001f916 Tip: Agents → Standup digests what your AI agents did yesterday — sessions, commits, PRs",
-        mode_key="agent-standup",
-        is_beta=True,
-    ),
-    FeatureTip(
         "agent-security",
         "\U0001f916 Tip: Agents → Security audits agent permissions, MCP servers and secrets exposure",
         mode_key="agent-security",

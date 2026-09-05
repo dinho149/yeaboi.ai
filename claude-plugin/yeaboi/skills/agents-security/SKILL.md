@@ -11,21 +11,38 @@ description: "(beta) Audit the user's local AI-agent setup with yeaboi: permissi
 
 1. **Run the scan** with `agents_security_scan`. The default pass audits the
    settings/MCP configs and any new or changed session transcripts; set
-   `deep: true` to re-scan every transcript (slower, thorough).
+   `deep: true` to re-scan every transcript (slower, thorough) and
+   `include_info: true` to list the informational findings the report
+   otherwise only counts in `hidden_info_count`.
 
-2. **Present it worst-first**: lead with the `posture`
-   (good / needs-attention / at-risk) and the critical/high findings, each with
-   its `remediation`. The `mcp_servers` table shows what is configured and its
-   risk `flags` (plain-http, unpinned-package, inline-credential).
+2. **Lead with what changed.** `new_findings` and `resolved_findings` are the
+   keys that appeared or went away since the previous saved scan — after a
+   first triage they are the whole story. Then the `posture`
+   (good / needs-attention / at-risk) with its `posture_reason`, and the
+   critical/high findings, each with its `remediation`. Findings are grouped
+   per (pattern, file): `occurrences` says how many lines matched, and
+   `pattern_totals` sums each transcript pattern across files. The
+   `mcp_servers` table shows what is configured and its risk `flags`
+   (plain-http, unpinned-package, inline-credential); an MCP finding lists
+   every `scopes` entry the same server spec appears in.
 
-3. **Privacy is structural** — findings carry pattern + file + line only.
+3. **Dismiss with a reason, never silently.** When the user says a finding is
+   expected (a fixture key, a scoped allow rule they meant), call
+   `agents_security_dismiss` with the finding's `key` and their reason — the
+   tool refuses an empty one. The next scan drops it from the findings and
+   the posture but keeps it in `dismissed_count`. Pass `reason: "undo"` with
+   the same key to restore it.
+
+4. **Privacy is structural** — findings carry pattern + file + line only.
    Never ask the user to paste the matched secret back; point them at the
-   `location` and recommend rotation.
+   `location` and recommend rotation. A transcript match is at most `high`:
+   a credential-shaped string in a session log is a signal to rotate, not a
+   checked-in secret.
 
-4. **Compare over time** with `agents_security_history` (newest first) — a
+5. **Compare over time** with `agents_security_history` (newest first) — a
    posture that regressed since the last scan is the headline.
 
-5. Exports auto-save under `~/.yeaboi/exports/agentwatch/security/`.
+6. Exports auto-save under `~/.yeaboi/exports/agentwatch/security/`.
 
 ## Error handling
 

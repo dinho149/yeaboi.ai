@@ -1604,64 +1604,17 @@ class AgentUsageReport:
     # honesty flag the renderers surface next to the total.
     unknown_model_cost_share: float = 0.0
     pricing_as_of: str = ""
+    # "subscription" | "api" | "" (unknown). A subscription's total is an
+    # API-equivalent figure, never a bill, and every renderer says so.
+    billing_kind: str = ""
+    cache_cost_share: float = 0.0  # share of the total that was cache reads + writes
+    window_days: int = 0
     by_model: tuple[ModelUsageRow, ...] = ()
     by_project: tuple[AgentUsageBreakdownRow, ...] = ()
     by_source: tuple[AgentUsageBreakdownRow, ...] = ()
     daily_trend: tuple[DailyUsagePoint, ...] = ()
     insights: tuple[str, ...] = ()
     recommendations: tuple[str, ...] = ()
-    warnings: tuple[str, ...] = ()
-    generated_at: str = ""
-    annotations: tuple[Annotation, ...] = ()
-
-
-@dataclass(frozen=True)
-class AgentSessionSummary:
-    """One monitored agent session, as it appears in a standup digest."""
-
-    session_id: str = ""
-    source: str = ""  # telemetry source label, e.g. claude_code
-    project: str = ""
-    branch: str = ""
-    models: tuple[str, ...] = ()
-    turns: int = 0
-    cost_usd: float = 0.0
-    top_tools: tuple[tuple[str, str], ...] = ()  # (tool name, count as str)
-    started_at: str = ""
-    ended_at: str = ""
-
-
-@dataclass(frozen=True)
-class AgentRepoActivityRow:
-    """One agent-authored item found in a tracker (commit, PR, review)."""
-
-    source: str = ""  # github | azdo
-    repo: str = ""
-    kind: str = ""  # commit | pr | review | comment
-    title: str = ""
-    url: str = ""
-    author: str = ""
-    status: str = ""  # open | merged | closed | ""
-    agent_marker: str = ""  # which detector matched (claude, copilot, …)
-
-
-@dataclass(frozen=True)
-class AgentStandupDigest:
-    """Daily "what did the agents do" digest — local sessions + repo signals."""
-
-    digest_date: str = ""
-    window_start: str = ""
-    window_end: str = ""
-    sessions_worked: int = 0
-    total_cost_usd: float = 0.0
-    agents_seen: tuple[str, ...] = ()  # distinct sources/tools active in window
-    session_summaries: tuple[AgentSessionSummary, ...] = ()
-    repo_activity: tuple[AgentRepoActivityRow, ...] = ()
-    highlights: tuple[str, ...] = ()
-    in_flight: tuple[str, ...] = ()  # open agent PRs / unfinished work
-    attention_items: tuple[str, ...] = ()
-    narrative: str = ""
-    coverage_notes: tuple[str, ...] = ()  # honesty notes (sources not reachable…)
     warnings: tuple[str, ...] = ()
     generated_at: str = ""
     annotations: tuple[Annotation, ...] = ()
@@ -1690,6 +1643,9 @@ class SecurityFinding:
     pattern: str = ""  # detector label, e.g. curl-pipe-shell
     detail: str = ""
     remediation: str = ""
+    occurrences: int = 1  # matching lines rolled into this row
+    key: str = ""  # the dismissal key: category:pattern:location
+    scopes: tuple[str, ...] = ()  # MCP: every scope the same server spec appears in
 
 
 @dataclass(frozen=True)
@@ -1706,6 +1662,13 @@ class AgentSecurityReport:
     settings_flags: tuple[str, ...] = ()
     summary: str = ""
     recommendations: tuple[str, ...] = ()
+    finding_keys: tuple[str, ...] = ()  # every undismissed key, info included — what the next run diffs against
+    new_findings: tuple[str, ...] = ()  # keys not in the previous saved report
+    resolved_findings: tuple[str, ...] = ()  # keys the previous report had and this one lacks
+    dismissed_count: int = 0
+    hidden_info_count: int = 0
+    posture_reason: str = ""
+    pattern_totals: tuple[tuple[str, str], ...] = ()  # (pattern, "N matches across M files")
     warnings: tuple[str, ...] = ()
     generated_at: str = ""
     annotations: tuple[Annotation, ...] = ()

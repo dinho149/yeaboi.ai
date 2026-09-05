@@ -4,10 +4,11 @@ One dispatch entry (:func:`route_agent_mode`) instead of four more branches in
 ``select_mode``'s routing chain. Each mode wraps itself in ``mode_log`` (its own
 log file under ~/.yeaboi/logs/agentwatch/) and its one-time beta notice.
 
-All four pages share one threaded-engine loop: the page opens instantly on
-the last saved report (age-stamped) while the pipeline runs on a daemon
-thread feeding a phase checklist / refresh banner, then the capped fresh
-result swaps in (r re-runs behind the visible report, esc backs out).
+All three pages share one threaded-engine loop: the page opens instantly on
+the last saved report (age-stamped) and re-runs the pipeline on a daemon
+thread only when that report is stale (``config.get_agentwatch_fresh_minutes``)
+— a phase checklist / refresh banner shows while it runs, then the capped
+fresh result swaps in (r re-runs behind the visible report, esc backs out).
 
 Imports from :mod:`yeaboi.ui.mode_select` happen lazily inside function bodies —
 the package imports this module's callers, so a top-level import is a cycle.
@@ -95,7 +96,6 @@ def _run_result_action(action: str, artifact, *, mode: agents_setup.AgentMode) -
 _SCREENS: dict[str, tuple[str, str]] = {
     "agent-usage": ("_screens_agents", "_build_agent_usage_screen"),
     "agent-advisor": ("_screens_agents", "_build_agent_advisor_screen"),
-    "agent-standup": ("_screens_agents", "_build_agent_standup_screen"),
     "agent-security": ("_screens_agents", "_build_agent_security_screen"),
 }
 
@@ -136,13 +136,17 @@ def _run_agent_page(
     On the result screen ←/→ move between Export / Copy / Re-run / Back and
     enter activates; `r` still re-runs (keeping the current report visible) and
     esc/q still backs out (a mid-run back-out lets the daemon finish + export).
-    Export writes the Markdown artifact, Copy puts the same Markdown on the
-    clipboard — both report back through the page's notice line rather than a
-    popup, because neither can fail in a way the user must acknowledge.
+    `w` cycles the window (7 / 30 / 90 days) on the windowed modes and re-runs;
+    on Security `i` toggles the informational findings and `d` dismisses the
+    focused finding after asking for a reason. Export writes the Markdown
+    artifact, Copy puts the same Markdown on the clipboard — both report back
+    through the page's notice line rather than a popup, because neither can
+    fail in a way the user must acknowledge.
     """
     import queue
 
     from yeaboi.analysis.progress import is_component_progress
+    from yeaboi.ui.mode_select import _settings_edit_keypress
     from yeaboi.ui.shared._music_bar import duck_working_thread
 
     label = mode.key
@@ -150,10 +154,17 @@ def _run_agent_page(
     logger.info("%s page opened", label)
     artifact = None
     as_of = ""
+    options: dict = {}
+    if mode.kind in ("usage", "advisor"):
+        options["window_days"] = 30
+    if mode.kind == "security":
+        options["include_info"] = False
+    finding_sel = 0
+    dismiss_edit: dict | None = None
     loaded = None if project_path else agents_setup.latest_artifact(mode.kind)
     if loaded is not None:
         artifact, as_of = loaded
-        logger.info("%s page: showing last saved report (from %s) while refreshing", label, as_of or "unknown time")
+        logger.info("%s page: showing last saved report (from %s)", label, as_of or "unknown time")
 
     progress_q: queue.Queue = queue.Queue()
     result_q: queue.Queue = queue.Queue(maxsize=1)
@@ -168,7 +179,7 @@ def _run_agent_page(
 
         def _work() -> None:
             try:
-                rq.put(("ok", agents_setup.run(mode, pq.put, project_path=project_path)))
+                rq.put(("ok", agents_setup.run(mode, pq.put, project_path=project_path, options=dict(options))))
             except Exception as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
                 logger.exception("%s engine failed", label)
                 rq.put(("err", exc))
@@ -181,7 +192,10 @@ def _run_agent_page(
         # same liveness cue the Team pages give their worker runs.
         duck_working_thread(_work, name=label).start()
 
-    _start_worker()
+    if artifact is None or not agents_setup.is_fresh(as_of):
+        _start_worker()
+    else:
+        logger.info("%s page: saved report is fresh — not re-running", label)
     start = time.monotonic()
     action_sel = 0
     notice = ""
@@ -195,6 +209,49 @@ def _run_agent_page(
         notice = ""
         as_of = artifact.generated_at
         _start_worker()
+
+    def _cycle_window() -> None:
+        nonlocal notice
+        if "window_days" not in options:
+            return
+        if refreshing:
+            notice = "Already refreshing…"
+            return
+        steps = (7, 30, 90)
+        current = options["window_days"]
+        options["window_days"] = steps[(steps.index(current) + 1) % len(steps)] if current in steps else 30
+        logger.info("%s page: window → %d days", label, options["window_days"])
+        notice = f"Window: {options['window_days']} days"
+        _handle_rerun()
+
+    def _toggle_info() -> None:
+        nonlocal notice
+        if "include_info" not in options:
+            return
+        if refreshing:
+            notice = "Already refreshing…"
+            return
+        options["include_info"] = not options["include_info"]
+        notice = "Showing informational findings" if options["include_info"] else "Hiding informational findings"
+        _handle_rerun()
+
+    def _dismiss(reason: str) -> str:
+        from yeaboi.agentwatch import dismissals
+
+        findings = getattr(artifact, "findings", ())
+        if not findings:
+            return "Nothing to dismiss."
+        from yeaboi.agentwatch import security_checks
+
+        finding = findings[min(finding_sel, len(findings) - 1)]
+        key = finding.key or security_checks.finding_key(finding)
+        try:
+            dismissals.dismiss(key, reason=reason)
+        except ValueError as exc:
+            return str(exc)
+        logger.info("%s page: dismissed %s", label, key)
+        _handle_rerun()
+        return f"Dismissed {finding.pattern} — {reason}"
 
     while True:
         # Drain everything queued since the last frame — the collector can
@@ -260,9 +317,21 @@ def _run_agent_page(
                     # the first-ever run's full checklist.
                     progress=list(events_by_id.values()) if refreshing else None,
                     scope=project_path,
+                    options=options,
+                    finding_sel=finding_sel,
+                    dismiss_edit=dismiss_edit["buf"] if dismiss_edit is not None else None,
                 )
             )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if dismiss_edit is not None:
+            if key == "enter":
+                notice = _dismiss(dismiss_edit["buf"].strip())
+                dismiss_edit = None
+            elif key == "esc":
+                dismiss_edit = None
+            elif isinstance(key, str) and key:
+                _settings_edit_keypress(key, dismiss_edit)
+            continue
         if key in ("esc", "q"):
             if artifact is None or refreshing:
                 logger.info("%s page: backed out while running", label)
@@ -271,6 +340,19 @@ def _run_agent_page(
             continue  # still loading: only esc/q act
         if key == "r":
             _handle_rerun()
+        elif key == "w":
+            _cycle_window()
+        elif key == "i":
+            _toggle_info()
+        elif key == "d" and mode.kind == "security":
+            if getattr(artifact, "findings", ()):
+                dismiss_edit = {"buf": "", "cur": 0}
+            else:
+                notice = "Nothing to dismiss."
+        elif key == "up" and mode.kind == "security":
+            finding_sel = max(0, finding_sel - 1)
+        elif key == "down" and mode.kind == "security":
+            finding_sel = min(max(0, len(getattr(artifact, "findings", ())) - 1), finding_sel + 1)
         elif key == "left":
             action_sel = (action_sel - 1) % len(AGENT_RESULT_ACTIONS)
         elif key == "right":

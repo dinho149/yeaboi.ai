@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentUsageReport
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +25,16 @@ def _md_footer() -> list[str]:
 
 def build_usage_markdown(report: AgentUsageReport) -> str:
     """The agent usage report as a shareable Markdown document."""
+    from yeaboi.agentwatch.billing import label_for
+
     lines: list[str] = [
         f"# Agent Usage — {report.period_start} → {report.period_end}",
         "",
-        f"**${report.total_cost_usd:,.2f} estimated** across {report.session_count} session(s) — "
+        f"**≈ ${report.total_cost_usd:,.2f}** ({label_for(report.billing_kind)}) across "
+        f"{report.session_count} session(s) — "
         f"{report.total_input_tokens:,} input / {report.total_output_tokens:,} output tokens, "
-        f"cache {report.total_cache_read_tokens:,} read / {report.total_cache_write_tokens:,} written.",
+        f"cache {report.total_cache_read_tokens:,} read / {report.total_cache_write_tokens:,} written"
+        + (f"; {report.cache_cost_share:.0%} of the estimate is cache traffic." if report.cache_cost_share else "."),
         "",
         f"*Costs are local estimates at public rates (as of {report.pricing_as_of}) — not a provider bill.*",
     ]
@@ -78,104 +82,50 @@ def build_usage_markdown(report: AgentUsageReport) -> str:
     return "\n".join(lines)
 
 
-def standup_totals(digest: AgentStandupDigest) -> tuple[str, str | None]:
-    """What a standup digest counted, as ``(count phrase, cost phrase or None)``.
-
-    One decision, three renderers. `build_standup_markdown`, `build_standup_plaintext`
-    and `render.format_standup_rich` all lead with this, and they must agree: the
-    markdown one is written to disk on every run, so a headline that is only honest
-    in Slack is one that ships wrong in the file nobody re-reads for months.
-
-    ``0 session(s), $0.00 estimated`` is the shape to avoid. It is *true* on a run
-    that did not collect local sessions (``include_local_sessions=False``, which is
-    how the cloud routine runs) and it reads as "the agents cost nothing today".
-    So a digest with no sessions counts whatever it does have, and the cost phrase
-    is dropped entirely rather than printed as zero — a total of $0.00 is a claim
-    about spend, and this run did not measure spend. `digest.coverage_notes` says
-    which of "none ran" and "none were collected" it was; that is their job, not
-    the headline's.
-    """
-    if digest.sessions_worked:
-        return f"{digest.sessions_worked} session(s)", f"${digest.total_cost_usd:,.2f} estimated"
-    if digest.repo_activity:
-        return f"{len(digest.repo_activity)} agent-authored tracker item(s)", None
-    return "no agent activity recorded in the window", None
-
-
-def build_standup_markdown(digest: AgentStandupDigest) -> str:
-    """The agent standup digest as a shareable Markdown document."""
-    count, cost = standup_totals(digest)
-    seen = f", agents seen: {', '.join(digest.agents_seen)}" if digest.agents_seen else ""
-    lines: list[str] = [
-        f"# Agent Standup — {digest.digest_date}",
-        "",
-        f"Window {digest.window_start} → {digest.window_end}: **{count}**" + (f", {cost}" if cost else "") + seen + ".",
-    ]
-    if digest.narrative:
-        lines += ["", digest.narrative]
-    for title, items in (
-        ("Highlights", digest.highlights),
-        ("In flight", digest.in_flight),
-        ("Needs a human", digest.attention_items),
-    ):
-        if items:
-            lines += ["", f"## {title}", ""] + [f"- {item}" for item in items]
-    if digest.session_summaries:
-        lines += ["", "## Local sessions", "", "| project | source | models | turns | cost |", "|---|---|---|---|---|"]
-        for s in digest.session_summaries:
-            lines.append(
-                f"| {s.project} ({s.branch}) | {s.source} | {', '.join(s.models)} | {s.turns} | ${s.cost_usd:,.2f} |"
-            )
-    if digest.repo_activity:
-        lines += ["", "## Agent-authored tracker activity", ""]
-        for r in digest.repo_activity:
-            status = f" ({r.status})" if r.status else ""
-            link = f"[{r.title}]({r.url})" if r.url else r.title
-            lines.append(f"- **{r.kind}**{status} {link} — {r.repo}, by {r.agent_marker}")
-    for title, items in (("Coverage notes", digest.coverage_notes), ("Warnings", digest.warnings)):
-        if items:
-            lines += ["", f"## {title}", ""] + [f"- {'⚠ ' if title == 'Warnings' else ''}{item}" for item in items]
-    lines += _md_footer()
-    return "\n".join(lines)
-
-
-def build_standup_plaintext(digest: AgentStandupDigest) -> str:
-    """A compact plaintext digest for Slack delivery (no markdown tables)."""
-    seen = f" · {', '.join(digest.agents_seen)}" if digest.agents_seen else ""
-    count, cost = standup_totals(digest)
-    headline = count + (f", {cost}" if cost else "") + seen
-    lines = [f"*Agent Standup — {digest.digest_date}*", headline]
-    if digest.narrative:
-        lines += ["", digest.narrative]
-    for title, items in (
-        ("Highlights", digest.highlights),
-        ("Needs a human", digest.attention_items),
-    ):
-        if items:
-            lines += ["", f"{title}:"] + [f"• {item}" for item in items[:5]]
-    if digest.coverage_notes:
-        lines += ["", *(f"_{note}_" for note in digest.coverage_notes[:2])]
-    return "\n".join(lines)
-
-
 def build_security_markdown(report: AgentSecurityReport) -> str:
     """The agent security report as a shareable Markdown document."""
     lines: list[str] = [
         f"# Agent Security — {report.scan_date}",
         "",
         f"**Posture: {report.posture}** — {report.sessions_scanned} session(s) scanned, "
-        f"{len(report.mcp_servers)} MCP server(s), {report.secrets_found} secret signal(s).",
+        f"{len(report.mcp_servers)} MCP server(s), {report.secrets_found} distinct secret signal(s)"
+        + (f", {report.dismissed_count} dismissed" if report.dismissed_count else "")
+        + ".",
         "",
         "*Deterministic pattern scan — an indicator, not a security audit. Findings reference "
         "file and line only; matched content is never stored.*",
     ]
+    if report.posture_reason:
+        lines.append(f"*{report.posture_reason}*")
+    if report.new_findings or report.resolved_findings:
+        lines += [
+            "",
+            f"**+{len(report.new_findings)} new / −{len(report.resolved_findings)} resolved** since the last scan.",
+        ]
     if report.summary:
         lines += ["", report.summary]
+    if report.pattern_totals:
+        lines += ["", "## Transcript signals", ""] + [
+            f"- `{pattern}` — {total}" for pattern, total in report.pattern_totals
+        ]
     if report.findings:
-        lines += ["", "## Findings", "", "| severity | finding | where | remediation |", "|---|---|---|---|"]
+        by_category: dict[str, list] = {}
         for f in report.findings:
-            where = f"{f.location}:{f.line_no}" if f.line_no else f.location
-            lines.append(f"| {f.severity} | {f.title} ({f.pattern}) | {where} | {f.remediation} |")
+            by_category.setdefault(f.category, []).append(f)
+        for category, rows in by_category.items():
+            lines += [
+                "",
+                f"## Findings — {category} ({len(rows)})",
+                "",
+                "| severity | finding | where | × | remediation |",
+                "|---|---|---|---|---|",
+            ]
+            for f in rows:
+                where = f"{f.location}:{f.line_no}" if f.line_no else f.location
+                times = str(f.occurrences) if f.occurrences > 1 else ""
+                lines.append(f"| {f.severity} | {f.title} ({f.pattern}) | {where} | {times} | {f.remediation} |")
+    if report.hidden_info_count:
+        lines += ["", f"_{report.hidden_info_count} informational finding(s) hidden — run with `--show-info`._"]
     if report.mcp_servers:
         lines += ["", "## MCP servers", "", "| name | scope | transport | flags |", "|---|---|---|---|"]
         for record in report.mcp_servers:
@@ -254,7 +204,6 @@ def build_advisor_markdown(report: AgentAdvisorReport) -> str:
 
 _BUILDERS = {
     "usage": build_usage_markdown,
-    "standup": build_standup_markdown,
     "security": build_security_markdown,
     "advisor": build_advisor_markdown,
 }

@@ -1279,12 +1279,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     agents_p = subparsers.add_parser(
         "agents",
-        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, recoverable spend, activity, security)",
+        help=f"Agents mode {BETA_TAG}: your AI-native SDLC teammate (cost, recoverable spend, security posture)",
         description=AGENTWATCH_BETA_NOTICE,
     )
-    agents_sub = agents_p.add_subparsers(
-        dest="agents_command", metavar="{cost,advisor,standup,security}", required=True
-    )
+    agents_sub = agents_p.add_subparsers(dest="agents_command", metavar="{cost,advisor,security}", required=True)
     # Every child carries the same description — `yeaboi agents cost --help` is
     # a perfectly normal place to arrive without ever seeing the parent's help.
     cost_p = agents_sub.add_parser(
@@ -1307,56 +1305,19 @@ def build_parser() -> argparse.ArgumentParser:
     advisor_p.add_argument("--repo", default="", metavar="PATH", help="Only sessions under this repository path")
     advisor_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     advisor_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
-    astandup_p = agents_sub.add_parser(
-        "standup",
-        help="Daily digest of what your agents did (sessions + agent-authored commits/PRs)",
-        description=AGENTWATCH_BETA_NOTICE,
-    )
-    astandup_p.add_argument(
-        "--days",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Days to look back (default: since the previous working day)",
-    )
-    astandup_p.add_argument(
-        "--tracker-sources",
-        nargs="*",
-        default=None,
-        choices=["github", "azdo"],
-        metavar="SRC",
-        help="Trackers to scan for agent-authored work (default both; pass none for local-only)",
-    )
-    astandup_p.add_argument(
-        "--github-owners",
-        nargs="+",
-        default=None,
-        metavar="OWNER",
-        help="GitHub owners/orgs to scan (default configured)",
-    )
-    astandup_p.add_argument(
-        "--azdo-projects",
-        nargs="+",
-        default=None,
-        metavar="NAME",
-        help="Azure DevOps projects to scan (default configured)",
-    )
-    astandup_p.add_argument(
-        "--no-local-sessions",
-        dest="include_local_sessions",
-        action="store_false",
-        help="Skip local session logs for a tracker-only digest (use off this machine)",
-    )
-    astandup_p.add_argument("--repo", default="", metavar="PATH", help="Only sessions under this repository path")
-    astandup_p.add_argument("--deliver", action="store_true", help="Post the digest to the configured Slack webhook")
-    astandup_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
-    astandup_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     asec_p = agents_sub.add_parser(
         "security",
         help="Audit your agent setup: permissions, MCP servers, secrets exposure, risky commands",
         description=AGENTWATCH_BETA_NOTICE,
     )
     asec_p.add_argument("--deep", action="store_true", help="Re-scan every transcript, not just new/changed ones")
+    asec_p.add_argument("--show-info", dest="include_info", action="store_true", help="List informational findings too")
+    asec_p.add_argument(
+        "--dismiss", default="", metavar="KEY", help="Dismiss one finding by its key (needs --reason); no scan runs"
+    )
+    asec_p.add_argument("--reason", default="", metavar="TEXT", help="Why the dismissed finding is expected")
+    asec_p.add_argument("--undismiss", default="", metavar="KEY", help="Restore a dismissed finding; no scan runs")
+    asec_p.add_argument("--list-dismissed", action="store_true", help="Print the dismissals on file; no scan runs")
     asec_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     asec_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
 
@@ -3390,6 +3351,8 @@ def _cmd_ceremonies(args: argparse.Namespace, console: Console) -> int:
 
     with CeremonyStore() as store:
         if command == "list":
+            for gone in scheduler.reap_dead_jobs():
+                print(f"⚠ removed a scheduled job that could never run again: {gone}", file=sys.stderr)
             declared = store.list(session_id)
             # The store and the operating system are two different things, and
             # the gap between them is invisible until something does not fire.
@@ -3813,6 +3776,38 @@ def _ship_report(args: argparse.Namespace, console: Console, run, *, batch: list
     return 0
 
 
+def _cmd_agents_dismissals(args: argparse.Namespace, console: Console) -> int:
+    """The security dismissal verbs: a hand-kept allowlist, never a scan."""
+    import json
+
+    from yeaboi.agentwatch import dismissals
+
+    if args.dismiss:
+        try:
+            entry = dismissals.dismiss(args.dismiss, reason=args.reason, by=os.environ.get("USER", ""))
+        except ValueError as exc:
+            print(f"✗ {exc}", file=sys.stderr)
+            return 2
+        console.print(f"[green]✓[/green] dismissed {entry.key} — {entry.reason}")
+        return 0
+    if args.undismiss:
+        if dismissals.undismiss(args.undismiss):
+            console.print(f"[green]✓[/green] restored {args.undismiss}")
+            return 0
+        print(f"✗ no dismissal on file for {args.undismiss}", file=sys.stderr)
+        return 1
+    rows = dismissals.load()
+    if args.format == "json":
+        print(json.dumps([r.__dict__ for r in rows], indent=2))
+    elif not rows:
+        console.print("No dismissed findings.")
+    else:
+        for row in rows:
+            expiry = f" (until {row.expires})" if row.expires else ""
+            console.print(f"• {row.key}{expiry} — {row.reason}")
+    return 0
+
+
 def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
     """The Agents family headless: same engines the TUI cards and MCP tools use
     (CLAUDE.md "REQUIRED: Surface Parity")."""
@@ -3853,31 +3848,6 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
             console.print(format_advisor_rich(report))
         return _strict_exit(args.strict, report.warnings, empty=report.session_count == 0)
 
-    if args.agents_command == "standup":
-        import json
-        from dataclasses import asdict
-
-        from yeaboi.agentwatch.engine import run_agent_standup
-        from yeaboi.agentwatch.render import format_standup_rich
-
-        digest = run_agent_standup(
-            days=args.days,
-            tracker_sources=args.tracker_sources,
-            github_owners=args.github_owners,
-            azdo_projects=args.azdo_projects,
-            include_local_sessions=args.include_local_sessions,
-            deliver=args.deliver,
-            project_path=args.repo,
-        )
-        for warning in digest.warnings:
-            print(f"⚠ {warning}", file=sys.stderr)
-        if args.format == "json":
-            print(json.dumps(asdict(digest), indent=2))
-        else:
-            console.print(format_standup_rich(digest))
-        empty = digest.sessions_worked == 0 and not digest.repo_activity
-        return _strict_exit(args.strict, digest.warnings, empty=empty)
-
     if args.agents_command == "security":
         import json
         from dataclasses import asdict
@@ -3885,7 +3855,9 @@ def _cmd_agents(args: argparse.Namespace, console: Console) -> int:
         from yeaboi.agentwatch.engine import run_agent_security
         from yeaboi.agentwatch.render import format_security_rich
 
-        report = run_agent_security(deep=args.deep)
+        if args.list_dismissed or args.dismiss or args.undismiss:
+            return _cmd_agents_dismissals(args, console)
+        report = run_agent_security(deep=args.deep, include_info=args.include_info)
         for warning in report.warnings:
             print(f"⚠ {warning}", file=sys.stderr)
         if args.format == "json":

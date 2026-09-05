@@ -1606,7 +1606,7 @@ class TestProjectCommand:
         assert get_project(project["project_id"], db_path=db)["settings"] == {"repo_path": str(repo.resolve())}
 
     def test_agents_repo_flag_reaches_the_engines(self, monkeypatch):
-        from yeaboi.agent.state import AgentAdvisorReport, AgentStandupDigest, AgentUsageReport
+        from yeaboi.agent.state import AgentAdvisorReport, AgentUsageReport
         from yeaboi.cli import _cmd_agents, build_parser
 
         seen: dict = {}
@@ -1618,17 +1618,12 @@ class TestProjectCommand:
             "yeaboi.agentwatch.advisor.run_agent_advisor",
             lambda **kw: seen.setdefault("advisor", kw) and AgentAdvisorReport(),
         )
-        monkeypatch.setattr(
-            "yeaboi.agentwatch.engine.run_agent_standup",
-            lambda **kw: seen.setdefault("standup", kw) and AgentStandupDigest(),
-        )
-        for sub in ("cost", "advisor", "standup"):
+        for sub in ("cost", "advisor"):
             args = build_parser().parse_args(["agents", sub, "--repo", "/srv/app", "--format", "json"])
             _cmd_agents(args, _console())
         assert {k: v["project_path"] for k, v in seen.items()} == {
             "cost": "/srv/app",
             "advisor": "/srv/app",
-            "standup": "/srv/app",
         }
 
     def test_set_defaults_with_no_flags_changes_nothing(self, tmp_path, monkeypatch):

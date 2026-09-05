@@ -152,11 +152,6 @@
       "title": "Agent Advisor"
     },
     {
-      "path": "/agents/standup",
-      "capability": "agent-standup",
-      "title": "Agent Standup"
-    },
-    {
       "path": "/agents/security",
       "capability": "agent-security",
       "title": "Agent Security"

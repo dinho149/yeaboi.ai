@@ -9,7 +9,7 @@ session log on the machine and takes tens of seconds on a cold cache, so the
 TUI opens on the last saved report and refreshes behind it — a rule that needs
 two things a request/response tool cannot give: the last artifact on its own,
 and the fresh one as a progress stream. Export is native for a smaller reason:
-these four artifacts write through ``agentwatch/export.py`` rather than the
+these artifacts write through ``agentwatch/export.py`` rather than the
 shared exporter, so ``/api/export`` cannot reach them.
 
 A run carries no ``op`` line — the agentwatch engines take no cancel event, and
@@ -34,15 +34,17 @@ _PROGRESS_POLL_SECONDS = 0.2
 
 
 def modes(app, request: Request) -> Response:
-    """``GET /api/agents/modes`` — the four modes and how fresh each report is."""
+    """``GET /api/agents/modes`` — the modes and how fresh each report is."""
     from yeaboi.agentwatch import setup
     from yeaboi.beta import AGENTWATCH_BETA_NOTICE
+    from yeaboi.config import get_agentwatch_fresh_minutes
 
     return json_response(
         {
             "modes": setup.mode_options(),
             "actions": list(setup.RESULT_ACTIONS),
             "beta_notice": AGENTWATCH_BETA_NOTICE,
+            "fresh_minutes": get_agentwatch_fresh_minutes(),
         }
     )
 
@@ -66,22 +68,67 @@ def latest(app, request: Request) -> Response:
             "label": mode.label,
             "report": to_jsonable(loaded[0]) if loaded else None,
             "as_of": loaded[1] if loaded else "",
+            # The surface re-runs only when this is false — the same rule the
+            # terminal follows, decided once here so the two cannot drift.
+            "fresh": bool(loaded and setup.is_fresh(loaded[1])),
             "scoped_to": scoped_to,
         }
     )
 
 
 def run(app, request: Request) -> Response:
-    """``POST /api/agents/{kind}/run`` ``{project_id?}`` — one fresh pass, streamed as NDJSON."""
+    """``POST /api/agents/{kind}/run`` ``{project_id?, window_days?, include_info?}`` — one fresh pass, as NDJSON."""
     mode = _mode(request)
-    project_id = str(request.json().get("project_id", "")).strip()
+    body = request.json()
+    project_id = str(body.get("project_id", "")).strip()
     scoped_to = _repo_path(project_id) if mode.scoped else ""
-    logger.info("Agents run start: %s (repo=%s)", mode.key, scoped_to or "-")
+    options: dict = {}
+    if "window_days" in body:
+        try:
+            options["window_days"] = max(1, min(365, int(body["window_days"])))
+        except (TypeError, ValueError) as exc:
+            raise HTTPError(400, "window_days must be an integer between 1 and 365") from exc
+    if "include_info" in body:
+        options["include_info"] = bool(body["include_info"])
+    logger.info("Agents run start: %s (repo=%s options=%s)", mode.key, scoped_to or "-", options or "-")
     return Response(
         content_type="application/x-ndjson",
-        stream=_lines(_run(mode, scoped_to)),
+        stream=_lines(_run(mode, scoped_to, options)),
         headers=(("X-Accel-Buffering", "no"),),
     )
+
+
+def dismiss(app, request: Request) -> Response:
+    """``POST /api/agents/security/dismiss`` ``{key, reason, expires?, undo?}`` — set a finding aside, with the why.
+
+    A dismissal needs a reason; an empty one is a 400, not a silent no-op. The
+    next run drops the finding from the report and counts it as dismissed.
+    """
+    from yeaboi.agentwatch import dismissals
+
+    body = request.json()
+    key = str(body.get("key", "")).strip()
+    if not key:
+        raise HTTPError(400, "key is required — the finding's category:pattern:location")
+    if body.get("undo"):
+        restored = dismissals.undismiss(key)
+        if not restored:
+            raise HTTPError(404, f"no dismissal on file for {key!r}")
+        logger.info("Agents security: restored %s", key)
+        return json_response({"ok": True, "restored": key, "dismissed": [d.__dict__ for d in dismissals.load()]})
+    try:
+        entry = dismissals.dismiss(key, reason=str(body.get("reason", "")), expires=str(body.get("expires", "")))
+    except ValueError as exc:
+        raise HTTPError(400, str(exc)) from exc
+    logger.info("Agents security: dismissed %s", key)
+    return json_response({"ok": True, "entry": entry.__dict__, "dismissed": [d.__dict__ for d in dismissals.load()]})
+
+
+def dismissed(app, request: Request) -> Response:
+    """``GET /api/agents/security/dismissed`` — the dismissals on file, reasons included."""
+    from yeaboi.agentwatch import dismissals
+
+    return json_response({"dismissed": [d.__dict__ for d in dismissals.load()]})
 
 
 def export(app, request: Request) -> Response:
@@ -158,7 +205,7 @@ def _repo_path(project_id: str) -> str:
     return repo_path
 
 
-def _run(mode, project_path: str = "") -> Iterator[dict]:
+def _run(mode, project_path: str = "", options: dict | None = None) -> Iterator[dict]:
     from yeaboi.agentwatch import setup
     from yeaboi.mcp.runtime import _ENGINE_LOCK
 
@@ -170,7 +217,7 @@ def _run(mode, project_path: str = "") -> Iterator[dict]:
         try:
             # Engines are one-at-a-time process-wide. Never fork this lock.
             with _ENGINE_LOCK:
-                result_box[0] = setup.run(mode, progress.put, project_path=project_path)
+                result_box[0] = setup.run(mode, progress.put, project_path=project_path, options=options)
         except BaseException as exc:  # noqa: BLE001 — reported on the stream below
             result_box[1] = exc
         finally:

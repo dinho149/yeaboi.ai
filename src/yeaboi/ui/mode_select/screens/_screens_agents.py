@@ -17,7 +17,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentUsageReport
 from yeaboi.agentwatch.render import format_usage_rich
 from yeaboi.analysis.progress import is_component_progress
 from yeaboi.timeparse import parse_datetime
@@ -52,11 +52,6 @@ _USAGE_PHASES: tuple[tuple[str, str], ...] = (
     ("scan", "Scan agent sessions"),
     ("price", "Price usage"),
     ("insights", "Write insights"),
-)
-_STANDUP_PHASES: tuple[tuple[str, str], ...] = (
-    ("scan", "Scan agent sessions"),
-    ("trackers", "Scan trackers"),
-    ("digest", "Write the digest"),
 )
 _SECURITY_PHASES: tuple[tuple[str, str], ...] = (
     ("scan", "Scan transcripts"),
@@ -228,19 +223,37 @@ def _subtitle_row(default: str, scope: str) -> Text:
     return row
 
 
-def _result_footer(action_sel: int, notice: str, theme) -> list:
+def _result_footer(action_sel: int, notice: str, theme, *, hints: str = "") -> list:
     """The shared footer under a finished report: notice line + action buttons.
 
     One helper for all three pages, and it goes through ``build_action_buttons``
     rather than painting its own key strip — tui-standards rule 1. The notice
     row is always present so the page height does not jump when an export
-    reports back.
+    reports back. ``hints`` names the page's extra keys (window, info, dismiss).
     """
     rows: list = [Text("")]
     rows.append(Text(notice, style=theme.accent if notice else "", justify="center"))
-    rows.append(Text(""))
+    rows.append(Text(hints, style="rgb(110,110,125)", justify="center") if hints else Text(""))
     rows.extend(build_action_buttons(AGENT_RESULT_ACTIONS, action_sel))
     return rows
+
+
+def _window_hint(options: dict | None) -> str:
+    """The key hint for a windowed page, naming the window in force."""
+    days = (options or {}).get("window_days")
+    return f"w  window · {days} days" if days else ""
+
+
+def _dismiss_prompt(dismiss_edit: str | None, theme) -> list:
+    """The one-line reason prompt shown while a dismissal is being typed."""
+    if dismiss_edit is None:
+        return []
+    prompt = Text(justify="center")
+    prompt.append("Why is this finding expected?  ", style=theme.accent_bright)
+    prompt.append(dismiss_edit or "", style="bold white")
+    prompt.append("▏", style=theme.accent)
+    prompt.append("   enter to dismiss · esc to keep", style="rgb(110,110,125)")
+    return [Text(""), prompt]
 
 
 def _capped(report: AgentUsageReport) -> tuple[AgentUsageReport, list[str]]:
@@ -278,6 +291,9 @@ def _build_agent_usage_screen(
     refreshing: bool = False,
     as_of: str = "",
     scope: str = "",
+    options: dict | None = None,
+    finding_sel: int = 0,
+    dismiss_edit: str | None = None,
 ) -> Panel:
     """The Agent Usage dashboard page.
 
@@ -312,7 +328,7 @@ def _build_agent_usage_screen(
         parts.append(format_usage_rich(capped))
         for note in notes:
             parts.append(Text(note, style="rgb(110,110,125)"))
-        parts.extend(_result_footer(action_sel, notice, theme))
+        parts.extend(_result_footer(action_sel, notice, theme, hints=_window_hint(options)))
 
     panel = build_page_panel(Group(*parts), theme=theme, height=height)
     # The chrome's corner companion and entrance read this stamp — Agents pages
@@ -350,6 +366,9 @@ def _build_agent_advisor_screen(
     refreshing: bool = False,
     as_of: str = "",
     scope: str = "",
+    options: dict | None = None,
+    finding_sel: int = 0,
+    dismiss_edit: str | None = None,
 ) -> Panel:
     """The Agent Advisor page: phase checklist while auditing, capped report when done."""
     from yeaboi.agentwatch.render import format_advisor_rich
@@ -380,7 +399,7 @@ def _build_agent_advisor_screen(
         parts.append(format_advisor_rich(capped))
         for note in notes:
             parts.append(Text(note, style="rgb(110,110,125)"))
-        parts.extend(_result_footer(action_sel, notice, theme))
+        parts.extend(_result_footer(action_sel, notice, theme, hints=_window_hint(options)))
     panel = build_page_panel(Group(*parts), theme=theme, height=height)
     # The chrome's corner companion and entrance read this stamp — Agents pages
     # get the robo, not the duck (see MusicLive.get_renderable).
@@ -388,86 +407,27 @@ def _build_agent_advisor_screen(
     return panel
 
 
-def _capped_standup(digest: AgentStandupDigest) -> tuple[AgentStandupDigest, list[str]]:
-    """Cap the digest's list fields for on-screen rendering (export keeps all)."""
+_MAX_FINDING_ROWS = 12
+
+
+def _capped_security(report: AgentSecurityReport, *, focus: int = 0) -> tuple[AgentSecurityReport, list[str]]:
+    """Cap the security report's list fields for on-screen rendering.
+
+    Findings are already grouped per (pattern, file), so a dozen rows is the
+    whole story on most machines; the window slides so the focused row is
+    always on screen.
+    """
     notes: list[str] = []
-    if len(digest.session_summaries) > _MAX_BREAKDOWN_ROWS:
-        notes.append(f"… and {len(digest.session_summaries) - _MAX_BREAKDOWN_ROWS} more session(s) in the export")
-    if len(digest.repo_activity) > _MAX_BREAKDOWN_ROWS:
-        notes.append(f"… and {len(digest.repo_activity) - _MAX_BREAKDOWN_ROWS} more tracker item(s) in the export")
-    capped = replace(
-        digest,
-        session_summaries=digest.session_summaries[:_MAX_BREAKDOWN_ROWS],
-        repo_activity=digest.repo_activity[:_MAX_BREAKDOWN_ROWS],
-        highlights=digest.highlights[:_MAX_PROSE],
-        in_flight=digest.in_flight[:_MAX_PROSE],
-        attention_items=digest.attention_items[:_MAX_PROSE],
-        coverage_notes=digest.coverage_notes[:1],
-    )
-    return capped, notes
-
-
-def _build_agent_standup_screen(
-    digest=None,
-    *,
-    width: int = 80,
-    height: int = 24,
-    shimmer_tick: float | None = None,
-    status: str = "",
-    action_sel: int = 0,
-    notice: str = "",
-    progress: list | None = None,
-    refreshing: bool = False,
-    as_of: str = "",
-    scope: str = "",
-) -> Panel:
-    """The Agent Standup page: phase checklist while running, capped digest when done."""
-    from yeaboi.agentwatch.render import format_standup_rich
-    from yeaboi.ui.shared._components import AGENT_STANDUP_THEME, agent_standup_title
-
-    theme = AGENT_STANDUP_THEME
-    parts: list = [
-        Text(""),
-        agent_standup_title(shimmer_tick, width=width),
-        _subtitle_row("What your agents did", scope),
-        Text(""),
-    ]
-    if digest is None:
-        if progress is not None:
-            parts += _build_agent_progress_body(
-                _STANDUP_PHASES, progress, tick=shimmer_tick or 0.0, theme=theme, status=status
-            )
-        else:
-            frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
-            working = Text(justify="center")
-            working.append(f"{frame} ", style=theme.accent_bright)
-            working.append(status or "Collecting agent activity…", style="rgb(160,160,175)")
-            parts += [Text(""), working]
-    else:
-        if refreshing:
-            parts.append(_refreshing_line(as_of, tick=shimmer_tick or 0.0, theme=theme, progress=progress))
-        capped, notes = _capped_standup(digest)
-        parts.append(format_standup_rich(capped))
-        for note in notes:
-            parts.append(Text(note, style="rgb(110,110,125)"))
-        parts.extend(_result_footer(action_sel, notice, theme))
-    panel = build_page_panel(Group(*parts), theme=theme, height=height)
-    # The chrome's corner companion and entrance read this stamp — Agents pages
-    # get the robo, not the duck (see MusicLive.get_renderable).
-    panel._duck_mascot = "robo"
-    return panel
-
-
-def _capped_security(report: AgentSecurityReport) -> tuple[AgentSecurityReport, list[str]]:
-    """Cap the security report's list fields for on-screen rendering."""
-    notes: list[str] = []
-    if len(report.findings) > _MAX_MODEL_ROWS:
-        notes.append(f"… and {len(report.findings) - _MAX_MODEL_ROWS} more finding(s) in the export")
+    total = len(report.findings)
+    start = 0
+    if total > _MAX_FINDING_ROWS:
+        start = min(max(0, focus - _MAX_FINDING_ROWS + 1), total - _MAX_FINDING_ROWS)
+        notes.append(f"… {total - _MAX_FINDING_ROWS} more finding(s) in the export (↑↓ to scroll)")
     if len(report.mcp_servers) > _MAX_BREAKDOWN_ROWS:
         notes.append(f"… and {len(report.mcp_servers) - _MAX_BREAKDOWN_ROWS} more MCP server(s) in the export")
     capped = replace(
         report,
-        findings=report.findings[:_MAX_MODEL_ROWS],
+        findings=report.findings[start : start + _MAX_FINDING_ROWS],
         mcp_servers=report.mcp_servers[:_MAX_BREAKDOWN_ROWS],
         recommendations=report.recommendations[:_MAX_PROSE],
     )
@@ -487,6 +447,9 @@ def _build_agent_security_screen(
     refreshing: bool = False,
     as_of: str = "",
     scope: str = "",
+    options: dict | None = None,
+    finding_sel: int = 0,
+    dismiss_edit: str | None = None,
 ) -> Panel:
     """The Agent Security page: phase checklist while scanning, capped report when done."""
     from yeaboi.agentwatch.render import format_security_rich
@@ -513,11 +476,13 @@ def _build_agent_security_screen(
     else:
         if refreshing:
             parts.append(_refreshing_line(as_of, tick=shimmer_tick or 0.0, theme=theme, progress=progress))
-        capped, notes = _capped_security(report)
-        parts.append(format_security_rich(capped))
+        capped, notes = _capped_security(report, focus=finding_sel)
+        parts.append(format_security_rich(capped, focus=min(finding_sel, max(0, len(capped.findings) - 1))))
         for note in notes:
             parts.append(Text(note, style="rgb(110,110,125)"))
-        parts.extend(_result_footer(action_sel, notice, theme))
+        parts.extend(_dismiss_prompt(dismiss_edit, theme))
+        info = "showing info" if (options or {}).get("include_info") else "info hidden"
+        parts.extend(_result_footer(action_sel, notice, theme, hints=f"↑↓ finding · d  dismiss · i  {info}"))
     panel = build_page_panel(Group(*parts), theme=theme, height=height)
     # The chrome's corner companion and entrance read this stamp — Agents pages
     # get the robo, not the duck (see MusicLive.get_renderable).

@@ -595,18 +595,33 @@ already running) is not a failure.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/agents/modes` | the four modes and how fresh each saved report is |
-| GET | `/api/agents/{kind}/latest` | the last saved report, for an instant open; `?project_id=` scopes it (see below) |
-| POST | `/api/agents/{kind}/run` | one fresh pass, streamed as NDJSON; body `{project_id?}` scopes it |
+| GET | `/api/agents/modes` | the modes and how fresh each saved report is; `fresh_minutes` is the re-run threshold |
+| GET | `/api/agents/{kind}/latest` | the last saved report, for an instant open, with `fresh: bool`; `?project_id=` scopes it (see below) |
+| POST | `/api/agents/{kind}/run` | one fresh pass, streamed as NDJSON; body `{project_id?, window_days?, include_info?}` |
 | POST | `/api/agents/{kind}/export` | write the report, or hand back its Markdown |
+| POST | `/api/agents/security/dismiss` | body `{key, reason, expires?, undo?}` — set one finding aside with the reason (400 without one), or restore it |
+| GET | `/api/agents/security/dismissed` | `{dismissed: [{key, reason, by, at, expires}]}` |
 
-`kind` is one of `usage`, `advisor`, `standup`, `security`. Every mode's run and
-history is an MCP tool already; what is native is the shape of the page. A pass
-scans every session log on the machine, so a surface opens on the last saved
-report and refreshes behind it — which needs the last artifact on its own and
-the fresh one as a stream. Export is native because these four artifacts write
-through `agentwatch/export.py` rather than the shared exporter, so `/api/export`
-cannot reach them; `copy` is answered as data, never performed.
+`kind` is one of `usage`, `advisor`, `security`. Every mode's run and history is
+an MCP tool already; what is native is the shape of the page. A pass scans every
+session log on the machine, so a surface opens on the last saved report and
+**re-runs only when `latest` answers `fresh: false`** — the same threshold the
+terminal uses (`YEABOI_AGENTWATCH_FRESH_MINUTES`, default 60), decided by the
+backend so the two cannot drift; the Re-run button always runs. `window_days`
+(7/30/90 in the window's own control) reaches the usage and advisor engines;
+`include_info` lists the security report's informational findings, which are
+otherwise only counted in `hidden_info_count`. Export is native because these
+artifacts write through `agentwatch/export.py` rather than the shared exporter,
+so `/api/export` cannot reach them; `copy` is answered as data, never performed.
+
+A security report's `findings` are grouped per (pattern, file) with
+`occurrences`, a `key` (`category:pattern:location`, what `dismiss` takes) and,
+for MCP findings, `scopes`; the report carries `new_findings` / `resolved_findings`
+(keys, relative to the previous saved report), `dismissed_count`,
+`hidden_info_count`, `posture_reason` and `pattern_totals`. A usage report
+carries `billing_kind` (`subscription` | `api` | `""`), which decides the
+qualifier a surface prints beside the total, `cache_cost_share` and
+`window_days`.
 
 A run answers `component` lines — the `analysis_component` dicts the phase
 checklist draws, which is every phase these engines emit today — then `done:
@@ -615,7 +630,7 @@ a plain phase, so a mode that grows a bare-string step still reaches the
 surface. No `op` line — the agentwatch engines take no cancel event, and backing
 out is free: the pass finishes and stores its report either way.
 
-**Scoping to a project.** `usage`, `advisor` and `standup` take a `project_id`
+**Scoping to a project.** `usage` and `advisor` take a `project_id`
 (the `proj-<8hex>` id of *Projects and sessions* below) and resolve it to the
 project's `repo_path` setting: only sessions whose project directory is that
 absolute path or sits under it (a worktree counts — never a basename match)

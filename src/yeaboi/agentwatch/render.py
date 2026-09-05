@@ -11,7 +11,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentAdvisorReport, AgentSecurityReport, AgentUsageReport
 
 _ACCENT = "rgb(70,190,230)"  # AGENT_USAGE_THEME.accent
 _MUTED = "rgb(120,120,140)"
@@ -26,6 +26,28 @@ def _tokens(n: int) -> str:
     return str(n)
 
 
+_BARS = " ▁▂▃▄▅▆▇█"
+
+
+def sparkline(points, *, accent: str = _ACCENT, width: int = 30) -> Text:
+    """One-row cost-per-day sparkline over the trend, newest on the right.
+
+    Block characters scaled to the busiest day; the caption names the peak so
+    the bar height means something without an axis.
+    """
+    tail = list(points)[-width:]
+    peak = max((p.cost_usd for p in tail), default=0.0)
+    line = Text()
+    line.append("trend ", style=_MUTED)
+    for point in tail:
+        level = 0 if peak <= 0 else min(8, int(round(point.cost_usd / peak * 8)))
+        line.append(_BARS[level], style=accent)
+    if tail:
+        first, last = tail[0].date[5:], tail[-1].date[5:]
+        line.append(f"  {first} → {last} · peak ${peak:,.2f}", style=_MUTED)
+    return line
+
+
 def format_usage_rich(report: AgentUsageReport) -> RenderableType:
     """The agent usage report as terminal output."""
     parts: list[RenderableType] = []
@@ -35,15 +57,23 @@ def format_usage_rich(report: AgentUsageReport) -> RenderableType:
     header.append(f"{report.period_start} → {report.period_end}", style=_MUTED)
     parts.append(header)
 
+    from yeaboi.agentwatch.billing import label_for
+
     totals = Text()
-    totals.append(f"${report.total_cost_usd:,.2f}", style="bold white")
-    totals.append(
-        f" estimated across {report.session_count} session(s) — "
+    totals.append(f"≈ ${report.total_cost_usd:,.2f}", style="bold white")
+    totals.append(f" {label_for(report.billing_kind)}", style=_MUTED)
+    parts.append(totals)
+    volume = Text(
+        f"{report.session_count} session(s) — "
         f"{_tokens(report.total_input_tokens)} in / {_tokens(report.total_output_tokens)} out, "
         f"cache {_tokens(report.total_cache_read_tokens)} read / {_tokens(report.total_cache_write_tokens)} written",
         style=_MUTED,
     )
-    parts.append(totals)
+    if report.cache_cost_share > 0:
+        volume.append(f" · {report.cache_cost_share:.0%} of the estimate is cache traffic", style=_MUTED)
+    parts.append(volume)
+    if report.daily_trend:
+        parts.append(sparkline(report.daily_trend, accent=_ACCENT))
     if report.unknown_model_cost_share > 0:
         parts.append(
             Text(
@@ -206,84 +236,6 @@ def format_advisor_rich(report: AgentAdvisorReport) -> RenderableType:
     return Group(*parts)
 
 
-_STANDUP_ACCENT = "rgb(120,210,170)"  # AGENT_STANDUP_THEME.accent
-
-
-def format_standup_rich(digest: AgentStandupDigest) -> RenderableType:
-    """The agent standup digest as terminal output."""
-    parts: list[RenderableType] = []
-    header = Text()
-    header.append("Agent Standup  ", style=f"bold {_STANDUP_ACCENT}")
-    header.append(f"{digest.window_start} → {digest.window_end}", style=_MUTED)
-    parts.append(header)
-
-    # Shared with both exporters, so the terminal, the Slack post and the written
-    # file never disagree about what the run measured. See `standup_totals`.
-    from yeaboi.agentwatch.export import standup_totals
-
-    count, cost = standup_totals(digest)
-    totals = Text()
-    totals.append(count, style="bold white")
-    if cost:
-        totals.append(f" — {cost}", style=_MUTED)
-    if digest.agents_seen:
-        totals.append(f" · {', '.join(digest.agents_seen)}", style=_MUTED)
-    parts.append(totals)
-
-    if digest.narrative:
-        parts.append(Text(""))
-        parts.append(Text(digest.narrative, style="white"))
-
-    for title, items in (
-        ("Highlights", digest.highlights),
-        ("In flight", digest.in_flight),
-        ("Needs a human", digest.attention_items),
-    ):
-        if not items:
-            continue
-        parts.append(Text(title, style=f"bold {_STANDUP_ACCENT}"))
-        parts.extend(Text(f"  • {item}") for item in items)
-
-    if digest.session_summaries:
-        table = Table(
-            title="Local sessions",
-            title_style=f"bold {_STANDUP_ACCENT}",
-            header_style=_MUTED,
-            border_style="rgb(50,60,80)",
-        )
-        table.add_column("project")
-        table.add_column("source")
-        table.add_column("models")
-        table.add_column("turns", justify="right")
-        table.add_column("cost", justify="right")
-        for s in digest.session_summaries:
-            table.add_row(s.project, s.source, ", ".join(s.models), str(s.turns), f"${s.cost_usd:,.2f}")
-        parts.append(table)
-
-    if digest.repo_activity:
-        table = Table(
-            title="Agent-authored tracker activity",
-            title_style=f"bold {_STANDUP_ACCENT}",
-            header_style=_MUTED,
-            border_style="rgb(50,60,80)",
-        )
-        table.add_column("kind")
-        table.add_column("title")
-        table.add_column("repo")
-        table.add_column("agent")
-        for r in digest.repo_activity:
-            kind = f"{r.kind} ({r.status})" if r.status else r.kind
-            table.add_row(kind, r.title, r.repo, r.agent_marker)
-        parts.append(table)
-
-    for note in digest.coverage_notes:
-        parts.append(Text(f"◦ {note}", style=_MUTED))
-    for warning in digest.warnings:
-        parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))
-
-    return Group(*parts)
-
-
 _SECURITY_ACCENT = "rgb(230,90,120)"  # AGENT_SECURITY_THEME.accent
 _SEVERITY_STYLE = {
     "critical": "bold rgb(255,90,90)",
@@ -298,8 +250,12 @@ _POSTURE_STYLE = {
 }
 
 
-def format_security_rich(report: AgentSecurityReport) -> RenderableType:
-    """The agent security report as terminal output."""
+def format_security_rich(report: AgentSecurityReport, *, focus: int | None = None) -> RenderableType:
+    """The agent security report as terminal output.
+
+    ``focus`` marks one findings row (the TUI's dismiss target); the CLI
+    passes nothing and no row is marked.
+    """
     parts: list[RenderableType] = []
     header = Text()
     header.append("Agent Security  ", style=f"bold {_SECURITY_ACCENT}")
@@ -311,10 +267,26 @@ def format_security_rich(report: AgentSecurityReport) -> RenderableType:
     posture.append(report.posture, style=_POSTURE_STYLE.get(report.posture, "bold white"))
     posture.append(
         f" — {report.sessions_scanned} session(s), {len(report.mcp_servers)} MCP server(s), "
-        f"{report.secrets_found} secret signal(s)",
+        f"{report.secrets_found} distinct secret signal(s)",
         style=_MUTED,
     )
+    if report.dismissed_count:
+        posture.append(f" · {report.dismissed_count} dismissed", style=_MUTED)
     parts.append(posture)
+    if report.posture_reason:
+        parts.append(Text(report.posture_reason, style=_MUTED))
+    delta = Text()
+    if report.new_findings or report.resolved_findings:
+        delta.append(f"+{len(report.new_findings)} new", style="rgb(220,120,120)" if report.new_findings else _MUTED)
+        delta.append(" / ", style=_MUTED)
+        delta.append(
+            f"−{len(report.resolved_findings)} resolved",
+            style="rgb(120,210,170)" if report.resolved_findings else _MUTED,
+        )
+        delta.append(" since the last scan", style=_MUTED)
+        parts.append(delta)
+    elif report.finding_keys:
+        parts.append(Text("no change since the last scan", style=_MUTED))
 
     if report.summary:
         parts.append(Text(""))
@@ -327,8 +299,11 @@ def format_security_rich(report: AgentSecurityReport) -> RenderableType:
         table.add_column("severity")
         table.add_column("finding")
         table.add_column("where")
-        for f in report.findings:
+        table.add_column("×", justify="right")
+        for index, f in enumerate(report.findings):
             where = f"{f.location}:{f.line_no}" if f.line_no else f.location
+            if f.scopes and len(f.scopes) > 1:
+                where = f"{where} ({len(f.scopes)} scopes)"
             # The title is per-category, so every stored secret signal shares
             # one. The pattern is the detector that actually fired and is the
             # only part a reader can act on — show it, and it is a label, never
@@ -336,8 +311,21 @@ def format_security_rich(report: AgentSecurityReport) -> RenderableType:
             what = Text(f.title)
             if f.pattern:
                 what.append(f"  {f.pattern}", style=_MUTED)
-            table.add_row(Text(f.severity, style=_SEVERITY_STYLE.get(f.severity, "")), what, where)
+            marker = "▶ " if focus is not None and index == focus else "  "
+            table.add_row(
+                Text(marker + f.severity, style=_SEVERITY_STYLE.get(f.severity, "")),
+                what,
+                where,
+                str(f.occurrences) if f.occurrences > 1 else "",
+            )
         parts.append(table)
+    if report.hidden_info_count:
+        parts.append(
+            Text(
+                f"{report.hidden_info_count} informational finding(s) hidden — `yeaboi agents security --show-info`",
+                style=_MUTED,
+            )
+        )
 
     if report.mcp_servers:
         table = Table(

@@ -13814,6 +13814,15 @@ def select_mode(
     # shows; the last choice is persisted and *preselected* on the next launch
     # (never auto-skipped). Esc from a menu returns here; q quits.
     from yeaboi.config import get_last_category, get_last_door, set_last_category, set_last_door
+
+    if not dry_run:
+        from yeaboi.ceremonies import scheduler as _scheduler
+
+        try:
+            for gone in _scheduler.reap_dead_jobs():
+                logger.info("mode select: reaped a scheduled job that could never run again: %s", gone)
+        except Exception:  # noqa: BLE001 — a housekeeping failure must not block the menu
+            logger.warning("mode select: reap_dead_jobs failed", exc_info=True)
     from yeaboi.projects.active import get_active_project, set_active_project, set_solo_mode
 
     category = get_last_category()

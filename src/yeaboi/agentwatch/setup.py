@@ -1,8 +1,8 @@
 """The Agents family's mode table, with no screen attached.
 
-Four modes that differ only in which callable runs, which artifact comes back
-and which Markdown builder renders it — a fact the TUI encoded four times over
-in its page functions and a second surface would have encoded a fifth. One
+Three modes that differ only in which callable runs, which artifact comes back
+and which Markdown builder renders it — a fact the TUI encoded once per mode
+in its page functions and a second surface would have encoded again. One
 table, read by both.
 
 Deliberately ``setup.py`` and not ``engine.py``: the engine glob in
@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class AgentMode:
     """One agentwatch mode: what runs it, what it stores under, what renders it."""
 
     key: str  # the TUI mode key and the desktop route segment
-    kind: str  # the store/export kind ("usage", "advisor", "standup", "security")
+    kind: str  # the store/export kind ("usage", "advisor", "security")
     label: str
     blurb: str
     engine: tuple[str, str]  # (module, attribute) — imported lazily
@@ -51,14 +52,6 @@ MODES: tuple[AgentMode, ...] = (
         artifact=("yeaboi.agent.state", "AgentAdvisorReport"),
     ),
     AgentMode(
-        key="agent-standup",
-        kind="standup",
-        label="Agent Standup",
-        blurb="What the agents actually did — a digest of their sessions.",
-        engine=("yeaboi.agentwatch.engine", "run_agent_standup"),
-        artifact=("yeaboi.agent.state", "AgentStandupDigest"),
-    ),
-    AgentMode(
         key="agent-security",
         kind="security",
         label="Agent Security",
@@ -81,7 +74,7 @@ def lookup(key: str) -> AgentMode | None:
 
 
 def require(key: str) -> AgentMode:
-    """:func:`lookup`, raising :class:`ValueError` naming the four valid keys."""
+    """:func:`lookup`, raising :class:`ValueError` naming the valid keys."""
     mode = lookup(key)
     if mode is None:
         raise ValueError(f"unknown agents mode {key!r} — choose from {', '.join(m.key for m in MODES)}")
@@ -95,16 +88,50 @@ def _resolve(target: tuple[str, str]) -> Callable:
     return getattr(import_module(module), attribute)
 
 
-def run(mode: AgentMode, on_progress: Callable[[object], None] | None = None, *, project_path: str = ""):
+def run(
+    mode: AgentMode,
+    on_progress: Callable[[object], None] | None = None,
+    *,
+    project_path: str = "",
+    options: dict | None = None,
+):
     """Run one mode's pipeline. The engines never raise — parse → fallback → format.
 
     ``project_path`` reaches only the modes that scope to a repository
     (``AgentMode.scoped``); the security audit is always machine-wide.
+    ``options`` are the per-run knobs a surface exposes (``window_days`` on the
+    windowed modes, ``include_info`` on security), passed only when the engine
+    takes them.
     """
+    import inspect
+
     engine = _resolve(mode.engine)
+    kwargs: dict = {"on_progress": on_progress}
     if project_path and mode.scoped:
-        return engine(on_progress=on_progress, project_path=project_path)
-    return engine(on_progress=on_progress)
+        kwargs["project_path"] = project_path
+    accepted = inspect.signature(engine).parameters
+    for key, value in (options or {}).items():
+        if key in accepted:
+            kwargs[key] = value
+    return engine(**kwargs)
+
+
+def is_fresh(as_of: str, *, now: datetime | None = None) -> bool:
+    """Whether a saved report from ``as_of`` is recent enough to skip a re-run."""
+    from yeaboi.config import get_agentwatch_fresh_minutes
+    from yeaboi.timeparse import parse_datetime
+
+    minutes = get_agentwatch_fresh_minutes()
+    if minutes <= 0 or not as_of:
+        return False
+    try:
+        stamp = parse_datetime(as_of)
+    except (TypeError, ValueError):
+        return False
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    return (now - stamp) <= timedelta(minutes=minutes)
 
 
 def failure_artifact(mode: AgentMode, exc: object):
@@ -144,7 +171,7 @@ def latest_artifact(kind: str, *, db_path=None):
 
 
 def mode_options() -> list[dict]:
-    """The four modes as a menu offers them, each with its last report's age."""
+    """The modes as a menu offers them, each with its last report's age."""
     options = []
     for mode in MODES:
         loaded = latest_artifact(mode.kind)

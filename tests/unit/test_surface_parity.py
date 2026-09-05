@@ -451,17 +451,9 @@ CAPABILITIES: dict[str, dict] = {
         "skill": "agents-advisor",
         "desktop": {"/agents/advisor"},
     },
-    "agent-standup": {
-        "engines": {("yeaboi.agentwatch.engine", "run_agent_standup")},
-        "mcp_tools": {"agents_standup_run", "agents_standup_history"},
-        "tui_mode": "agent-standup",
-        "cli": {"agents"},
-        "skill": "agents-standup",
-        "desktop": {"/agents/standup"},
-    },
     "agent-security": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_security")},
-        "mcp_tools": {"agents_security_scan", "agents_security_history"},
+        "mcp_tools": {"agents_security_scan", "agents_security_history", "agents_security_dismiss"},
         "tui_mode": "agent-security",
         "cli": {"agents"},
         "skill": "agents-security",
@@ -558,7 +550,6 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "anonymize_text": ("yeaboi.anonymize.engine", "run_anonymize"),
     "agents_usage": ("yeaboi.agentwatch.engine", "run_agent_usage"),
     "agents_advisor_run": ("yeaboi.agentwatch.advisor", "run_agent_advisor"),
-    "agents_standup_run": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents_security_scan": ("yeaboi.agentwatch.engine", "run_agent_security"),
     "provenance_audit": ("yeaboi.provenance.engine", "run_provenance_audit"),
     "provenance_trace": ("yeaboi.provenance.engine", "trace_entity"),
@@ -635,7 +626,6 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "perf review": ("yeaboi.performance.engine", "run_six_month_review"),
     "analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
     "agents cost": ("yeaboi.agentwatch.engine", "run_agent_usage"),
-    "agents standup": ("yeaboi.agentwatch.engine", "run_agent_standup"),
     "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
     "ship run": ("yeaboi.ship.engine", "run_ship"),
     "ship resume": ("yeaboi.ship.engine", "resume_ship"),
@@ -673,7 +663,6 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
     # --repo is the repository path the Agents reports scope to (exact-or-prefix
     # on the session's project directory, never a basename substring).
     "agents cost": {"repo": "project_path"},
-    "agents standup": {"repo": "project_path"},
     "analyze": {
         # NOT project_id: analysis's --project is the tracker key (Jira/AzDO),
         # a different id space from the projects table's proj-<8hex> ids.
@@ -712,8 +701,8 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "perf complete": {"strict"},
     "perf review": {"strict", "incognito"},
     "agents cost": {"format", "strict"},
-    "agents standup": {"format", "strict"},
-    "agents security": {"format", "strict"},
+    # The dismissal verbs edit a hand-kept allowlist instead of running the scan.
+    "agents security": {"format", "strict", "dismiss", "reason", "undismiss", "list_dismissed"},
     # --split picks the entry point (run_ship_batch) rather than a run_ship param.
     "ship run": {"format", "strict", "split"},
     "ship resume": {"format", "strict"},
@@ -1075,8 +1064,6 @@ SAVED_SESSIONS_EXEMPT: dict[str, str] = {
     "agent-usage": "opens instantly on the last saved report (AgentWatchStore.latest_report); "
     "list_reports exists and a browsable hub is queued follow-up work",
     "agent-advisor": "opens instantly on the last saved report (AgentWatchStore.latest_report); "
-    "list_reports exists and a browsable hub is queued follow-up work",
-    "agent-standup": "opens instantly on the last saved report (AgentWatchStore.latest_report); "
     "list_reports exists and a browsable hub is queued follow-up work",
     "agent-security": "opens instantly on the last saved report (AgentWatchStore.latest_report); "
     "list_reports exists and a browsable hub is queued follow-up work",
