@@ -15,6 +15,8 @@ def env(monkeypatch):
     monkeypatch.setattr(config, "set_config_value", lambda _k, _v: Path("/tmp/.env"))
     for key in ("DUCK_ENABLED", "MUSIC_ENABLED", "MUSIC_CHANNEL", "PET_ENABLED", "SAVER_STYLE"):
         monkeypatch.delenv(key, raising=False)
+    for key in ("SPOTIFY_PLAYBACK", "APPLE_MUSIC_PLAYBACK", "YOUTUBE_MUSIC_PLAYBACK"):
+        monkeypatch.delenv(key, raising=False)
     return monkeypatch
 
 
@@ -62,6 +64,27 @@ class TestState:
 
     def test_the_style_catalogue_travels_with_the_state(self, env):
         assert ambience.state()["saver"]["styles"] == ambience.SAVER_STYLES
+
+    def test_the_streaming_services_travel_with_the_state_and_start_off(self, env):
+        # The catalogue decides what is on; with nothing saved, nothing is.
+        services = ambience.state()["music"]["services"]
+        assert [s["key"] for s in services] == list(ambience.MUSIC_SERVICE_KEYS)
+        assert all(set(s) == {"key", "label", "connected", "playback"} for s in services)
+        assert not any(s["connected"] for s in services)
+        assert [s["playback"] for s in services] == ["desktop", "desktop", "embed"]
+
+    def test_a_saved_playback_choice_switches_the_service_on(self, env):
+        env.setenv("SPOTIFY_PLAYBACK", "embed")
+        by_key = {s["key"]: s for s in ambience.state()["music"]["services"]}
+        assert by_key["spotify"] == {"key": "spotify", "label": "Spotify", "connected": True, "playback": "embed"}
+        assert by_key["apple_music"]["connected"] is False
+
+    def test_an_unknown_playback_choice_reads_as_the_default(self, env):
+        # A value written by a newer desktop must not hand the older one a word it cannot act on.
+        env.setenv("YOUTUBE_MUSIC_PLAYBACK", "hologram")
+        by_key = {s["key"]: s for s in ambience.state()["music"]["services"]}
+        assert by_key["youtube_music"]["playback"] == "embed"
+        assert by_key["youtube_music"]["connected"] is True
 
     def test_the_state_is_a_copy_a_caller_cannot_corrupt(self, env):
         ambience.state()["duck"]["quips"]["standup_done"] = "nope"

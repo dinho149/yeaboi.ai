@@ -427,8 +427,8 @@ def get_tips() -> tuple[FeatureTip, ...]:
     }[state]
     desktop_voice_tip = FeatureTip("voice", desktop_voice_text, surfaces=("desktop",))
     music_available, _music_reason = is_music_available()
-    # Terminal-only: focus music is a pair of keybindings there, and the desktop
-    # app ships no control for it.
+    # Terminal-only because the text names the terminal's keys; the desktop has
+    # its own Music page, menu chords and a `desktop:music` tip.
     music_tip = FeatureTip(
         "music",
         "\U0001f3b5 Tip: press Ctrl+P for focus music · Ctrl+O to switch channel"

@@ -656,9 +656,19 @@ their behalf.
 `/api/ambience` serves music as a **catalogue and a preference only**. The
 terminal hands a station URL to `ffplay`; the desktop hands the same URL to an
 `<audio>` element and needs no binary, so playback state lives in the renderer
-and never round-trips. A bad channel index is refused rather than clamped, and
-`true` is not accepted as an index — `bool` is an `int` in Python, and silently
-selecting station 1 is worse than a 400.
+and never round-trips. The desktop writes `music_enabled` and `music_channel`
+back when the user presses play or picks a station, so both surfaces agree on
+what is on. A bad channel index is refused rather than clamped, and `true` is
+not accepted as an index — `bool` is an `int` in Python, and silently selecting
+station 1 is worse than a 400.
+
+`music.services` lists the streaming services the desktop can also play —
+`[{key, label, connected, playback}]` for Spotify, Apple Music and YouTube
+Music. Each is a keyless connector in the integrations catalogue: `connected`
+is whether its one "where it plays" choice has been saved (through
+`POST /api/settings/set`, like every connector field), and `playback` is that
+choice. Playback itself happens in the desktop's embedded player or the
+vendor's own app and never touches this API; the terminal ignores the block.
 
 `saver` is the same shape for the same reason: `idle_seconds`, the `styles`
 catalogue (key → display name) and the chosen `style`, set with `saver_style`.

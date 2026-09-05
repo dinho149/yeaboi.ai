@@ -31,6 +31,7 @@ FAMILIES: dict[str, str] = {
     "code": "\U0001f500",  # 🔀
     "chat": "\U0001f4ac",  # 💬
     "media": "\U0001f3a4",  # 🎤
+    "music": "\U0001f3b5",  # 🎵
 }
 
 #: Render order for the catalog. Families the user is most likely to be adding
@@ -45,6 +46,7 @@ FAMILY_ORDER: tuple[str, ...] = (
     "docs",
     "chat",
     "media",
+    "music",
 )
 
 FAMILY_LABELS: dict[str, str] = {
@@ -57,6 +59,7 @@ FAMILY_LABELS: dict[str, str] = {
     "docs": "Docs",
     "chat": "Chat",
     "media": "Voice & video",
+    "music": "Music",
 }
 
 

@@ -70,6 +70,40 @@ def music_channels() -> list[dict[str, str]]:
     return [dict(channel) for channel in CHANNELS]
 
 
+#: The catalogue connectors that are music sources on the desktop, in the order
+#: the Music page lists them after the built-in radio.
+MUSIC_SERVICE_KEYS: tuple[str, ...] = ("spotify", "apple_music", "youtube_music")
+
+
+def music_services() -> list[dict]:
+    """The streaming services, and whether each is switched on in the catalogue.
+
+    A service is on when its connector is connected, which for these keyless
+    connectors means its one "where it plays" choice has been saved. The choice
+    travels too: it is the only field, and it is never a secret.
+    """
+    import os
+
+    from yeaboi.connectors import registry
+
+    services = []
+    for key in MUSIC_SERVICE_KEYS:
+        connector = registry.by_key(key)
+        if connector is None:
+            continue
+        field = connector.fields[0]
+        playback = os.environ.get(field.env, "").strip() or field.default
+        services.append(
+            {
+                "key": key,
+                "label": connector.label,
+                "connected": registry.is_connected(connector),
+                "playback": playback if playback in field.choices else field.default,
+            }
+        )
+    return services
+
+
 def state() -> dict:
     """Every ambience preference and catalogue, in one read."""
     from yeaboi import config
@@ -83,6 +117,7 @@ def state() -> dict:
             "channels": channels,
             "channel": channel if 0 <= channel < len(channels) else 0,
             "enabled": config.is_music_enabled(),
+            "services": music_services(),
         },
         "saver": {
             "idle_seconds": IDLE_SECONDS,

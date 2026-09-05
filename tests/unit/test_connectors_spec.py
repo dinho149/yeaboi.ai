@@ -247,8 +247,10 @@ class TestTheFetchSeam:
     # Delivery trackers verify a credential and feed the catalog, but the
     # ops-event vocabulary has no delivery kind — their read/write path is the
     # tracker integration, not a gather. Verify stays: a credential the user
-    # just typed must be probeable.
-    _CATALOG_ONLY = {"linear", "trello"}
+    # just typed must be probeable. The music services are the same shape for
+    # a different reason: playback is the desktop's job, and nothing about a
+    # playlist is an ops event.
+    _CATALOG_ONLY = {"linear", "trello", "spotify", "apple_music", "youtube_music"}
 
     def test_a_connector_that_can_be_verified_can_be_gathered_from(self):
         # An entry in the catalog that verifies but returns nothing is a settings

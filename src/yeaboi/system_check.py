@@ -198,10 +198,18 @@ def _check_music() -> CheckResult:
     from yeaboi.music import is_music_available
 
     ok, reason = is_music_available()
+    # The terminal's player only: the desktop app plays the same stations
+    # through an <audio> element and never needs the binary.
+    feature = "Background music in the terminal"
     if ok:
-        return CheckResult("music", "Music (ffplay)", "ok", detail="ffplay on PATH", feature="Background music")
+        return CheckResult("music", "Music (ffplay)", "ok", detail="ffplay on PATH", feature=feature)
     return CheckResult(
-        "music", "Music (ffplay)", "missing", detail="ffplay not on PATH", hint=reason, feature="Background music"
+        "music",
+        "Music (ffplay)",
+        "missing",
+        detail="ffplay not on PATH",
+        hint=f"{reason} — the desktop app plays radio without it",
+        feature=feature,
     )
 
 

@@ -51,6 +51,7 @@ class TestAmbience:
         assert payload["duck"]["enabled"] is True
         assert payload["duck"]["quips"]["standup_done"]
         assert payload["music"]["channels"]
+        assert [s["key"] for s in payload["music"]["services"]] == ["spotify", "apple_music", "youtube_music"]
         assert payload["saver"]["idle_seconds"] > 0
         assert payload["pet"]["enabled"] is False
 
