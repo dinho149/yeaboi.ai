@@ -2,6 +2,24 @@
   "schema_version": 2,
   "entries": [
     {
+      "version": "3.42.0",
+      "date": "2026-09-05",
+      "headline": "The front page comes to the terminal",
+      "summary": "The duck now waits under the world cards with the day's headline, on terminals of 49 rows or more. Press i to open the paper: yeaboi's release notes beside AI and engineering news, one story at a time.",
+      "highlights": [
+        {
+          "text": "The duck on the landing screen carries the latest headline in his bubble",
+          "areas": ["general"],
+          "surfaces": ["tui"]
+        },
+        {
+          "text": "A front page of its own, with the story's duck in costume in its scene",
+          "areas": ["general"],
+          "surfaces": ["tui"]
+        }
+      ]
+    },
+    {
       "version": "3.41.1",
       "date": "2026-09-05",
       "headline": "Desktop now fully supports Sessions and Projects",

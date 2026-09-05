@@ -12788,6 +12788,149 @@ def _slide_menu_in(
     )
 
 
+# The front page under the world cards reads the desk on a timer, never per
+# frame: get_paper() reads the cache file and the roster from disk every call.
+_NEWS_POLL_STALE = 4.0  # while the first paper is on its way
+_NEWS_POLL_FRESH = 300.0  # the desk decides when to fetch; this only re-reads the cache
+_LANDING_DESK = None
+
+
+def _landing_desk():
+    """The one NewsDesk the landing split reads from — built on first use, so re-entering the split reuses its cache."""
+    global _LANDING_DESK
+    if _LANDING_DESK is None:
+        from yeaboi.news.desk import NewsDesk
+
+        _LANDING_DESK = NewsDesk()
+    return _LANDING_DESK
+
+
+def _open_story(url: str) -> bool:
+    """Open a story in the browser; False (and a warning) when the browser cannot be reached."""
+    import webbrowser
+
+    try:
+        webbrowser.open(url)
+    except Exception:  # noqa: BLE001 - a browser that will not open is a warning, not a crash
+        logger.warning("landing news: could not open the browser", exc_info=True)
+        return False
+    return True
+
+
+def _poll_after(paper, refreshing: bool) -> float:
+    return time.monotonic() + (_NEWS_POLL_STALE if paper.stale or refreshing else _NEWS_POLL_FRESH)
+
+
+def _run_front_page_page(
+    console: Console, live, read_key, frame_time: float, supports_timeout: bool, *, desk, card=None
+) -> None:
+    """Event loop for the Front page (opened with `i` from the landing split).
+
+    The page turns on the clock; ←/→ (or [ ]) turn it by hand, Enter or o opens
+    the story in the browser, Tab unfolds the index — where ↑/↓ pick a story and
+    Enter turns to it — r asks the desk for a fresh paper, Esc/q returns.
+    """
+    from datetime import datetime, timezone
+    from urllib.parse import urlsplit
+
+    from yeaboi import __version__
+    from yeaboi.news import edition
+    from yeaboi.ui.mode_select.screens._screens_news import _build_front_page_screen, index_lines
+
+    news_on = desk.enabled()
+    paper, refreshing = desk.get_paper()
+    stories = edition.stories(paper)
+    next_poll = _poll_after(paper, refreshing)
+    offset = 0
+    index_open = False
+    selected = 0
+    # The clock banks its time while the index is open, so the page never turns under the reader.
+    banked = 0.0
+    since: float | None = time.monotonic()
+    logger.info("front page: opened (%d stories, stale=%s, refreshing=%s)", len(stories), paper.stale, refreshing)
+
+    def _elapsed() -> float:
+        return banked + (time.monotonic() - since if since is not None else 0.0)
+
+    def _current() -> int:
+        return edition.turn_index(_elapsed(), edition.PAGE_TURN_SECONDS, offset, len(stories))
+
+    def _render() -> None:
+        w, h = console.size
+        now = datetime.now(timezone.utc).astimezone()
+        current = _current()
+        live.update(
+            _build_front_page_screen(
+                edition.page(stories, current, now),
+                stories=stories,
+                paper=paper,
+                current=current,
+                selected=selected,
+                index_open=index_open,
+                card=card,
+                width=w,
+                height=max(10, h - 1),
+                now=now,
+                enabled=news_on,
+                version=__version__,
+            )
+        )
+
+    _render()
+    while True:
+        if news_on and time.monotonic() >= next_poll:
+            paper, refreshing = desk.get_paper()
+            fresh = edition.stories(paper)
+            if [item.id for item in fresh] != [item.id for item in stories]:
+                stories = fresh
+                selected = 0
+                logger.info("front page: edition changed, %d stories", len(stories))
+            next_poll = _poll_after(paper, refreshing)
+        k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if parse_click(k) is not None:
+            continue
+        if k in ("esc", "q"):
+            break
+        current = _current()
+        if index_open:
+            others = index_lines(stories, current)
+            if k in ("up", "scroll_up"):
+                selected = max(0, selected - 1)
+            elif k in ("down", "scroll_down"):
+                selected = min(max(0, len(others) - 1), selected + 1)
+            elif k == "enter" and others:
+                target = others[min(selected, len(others) - 1)][0] - 1
+                offset += target - current
+                index_open = False
+                since = time.monotonic()
+                logger.info("front page: turned from the index to %d of %d", target + 1, len(stories))
+            elif k == "tab":
+                index_open = False
+                since = time.monotonic()
+        else:
+            if k in ("left", "[") and stories:
+                offset -= 1
+                logger.info("front page: turned back by hand to %d of %d", _current() + 1, len(stories))
+            elif k in ("right", "]") and stories:
+                offset += 1
+                logger.info("front page: turned by hand to %d of %d", _current() + 1, len(stories))
+            elif k in ("enter", "o") and stories:
+                story = stories[current]
+                logger.info("front page: opening story %d at %s", current + 1, urlsplit(story.url).netloc or "?")
+                _open_story(story.url)
+            elif k == "tab" and index_lines(stories, current):
+                index_open = True
+                selected = 0
+                banked = _elapsed()
+                since = None
+        if k == "r" and news_on:
+            paper, refreshing = desk.get_paper(refresh=True)
+            next_poll = _poll_after(paper, refreshing)
+            logger.info("front page: refresh requested (refreshing=%s)", refreshing)
+        _render()
+    logger.info("front page: closed")
+
+
 def _run_category_screen(
     console: Console,
     live,
@@ -12795,24 +12938,53 @@ def _run_category_screen(
     supports_timeout: bool,
     *,
     preselected: str = "team",
+    desk=None,
 ) -> str | None:
     """Phase 0 — the landing split. Returns a category key or
     None to quit.
 
     Always shown on a fresh load (the last-used category is *preselected*,
     never auto-skipped — auto-skip would make the other family invisible).
-    Esc and q both quit here: there is nothing further back to go to.
+    Esc and q both quit here: there is nothing further back to go to. When
+    the terminal is tall enough the duck waits under the cards with the front
+    page's headline; ``[``/``]`` turn it, ``i`` (or a click on him) opens the
+    paper.
     """
+    from datetime import datetime, timezone
+
+    from yeaboi.news import edition
     from yeaboi.ui.mode_select.screens._screens_category import (
         _CATEGORY_CARDS,
         _build_category_screen,
         category_at_pos,
         category_index,
+        informer_hit,
+        shows_informer,
     )
 
+    desk = desk or _landing_desk()
+    news_on = desk.enabled()
+    paper, refreshing = desk.get_paper()
+    stories = edition.stories(paper)
+    offset = 0
+    next_poll = _poll_after(paper, refreshing)
     selected = category_index(preselected)
     start = time.monotonic()
-    logger.info("category screen shown (preselected: %s)", preselected)
+    logger.info(
+        "category screen shown (preselected: %s, %d stories, stale=%s, news=%s)",
+        preselected,
+        len(stories),
+        paper.stale,
+        "on" if news_on else "off",
+    )
+
+    def _open_paper() -> None:
+        nonlocal next_poll
+        _run_front_page_page(
+            console, live, read_key, _FRAME_TIME, supports_timeout, desk=desk, card=_CATEGORY_CARDS[selected]
+        )
+        next_poll = 0.0  # a refresh asked for there shows here at once
+
     while True:
         w, h = console.size
         if w < _MIN_WIDTH or h < _MIN_HEIGHT:
@@ -12822,6 +12994,16 @@ def _run_category_screen(
                 return None
             continue
         elapsed = time.monotonic() - start
+        if news_on and time.monotonic() >= next_poll:
+            paper, refreshing = desk.get_paper()
+            fresh = edition.stories(paper)
+            if [item.id for item in fresh] != [item.id for item in stories]:
+                stories = fresh
+                logger.info("landing news: edition changed, %d stories", len(stories))
+            next_poll = _poll_after(paper, refreshing)
+        now = datetime.now(timezone.utc).astimezone()  # the bylines read the same on the split and the page
+        index = edition.turn_index(elapsed, edition.PAGE_TURN_SECONDS, offset, len(stories))
+        page = edition.page(stories, index, now)
         live.update(
             _build_category_screen(
                 selected,
@@ -12829,6 +13011,8 @@ def _run_category_screen(
                 height=h,
                 shimmer_tick=elapsed,
                 intro=min(1.0, elapsed / 0.4),
+                page=page,
+                edition=edition.edition_line(paper, now, enabled=news_on),
             )
         )
         key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
@@ -12843,6 +13027,12 @@ def _run_category_screen(
         elif key in ("q", "esc"):
             logger.info("quit from category screen")
             return None
+        elif key in ("[", "]") and stories and shows_informer(h):
+            offset += 1 if key == "]" else -1
+            turned = edition.turn_index(time.monotonic() - start, edition.PAGE_TURN_SECONDS, offset, len(stories))
+            logger.info("landing news: turned by hand to %d of %d", turned + 1, len(stories))
+        elif key == "i" and shows_informer(h):
+            _open_paper()
         elif key == "n":
             # Niko reaches the landing split too — it is the first screen there
             # is, and the assistant answers for both halves of it. No companion
@@ -12852,6 +13042,9 @@ def _run_category_screen(
             try:
                 cx, cy = (int(p) for p in key.split(":")[1:3])
             except ValueError:
+                continue
+            if informer_hit(w, h, row=cy, col=cx):
+                _open_paper()
                 continue
             hit = category_at_pos(w, h, row=cy, col=cx)
             if hit is None:

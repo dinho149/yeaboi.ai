@@ -125,6 +125,9 @@ def test_palette_matches_generator():
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
     assert gen.PALETTE == MASCOT_PALETTE
+    from yeaboi.ui.shared._mascot import ROBO_PALETTE
+
+    assert gen.PERSONA_EXTRA == ROBO_PALETTE  # the costume traces snap to the same steels the robo wears
 
 
 def test_render_head_shades_lift_zero_matches_resting_head():
@@ -151,3 +154,42 @@ def test_shades_sequence_starts_lifting_and_returns_to_zero():
 
     assert SHADES_LIFT_SEQUENCE[-1] == 0  # ends resting (== DUCK_HEAD)
     assert max(SHADES_LIFT_SEQUENCE) >= 4  # lifts clear of the crown
+
+
+# ---------------------------------------------------------------------------
+# The persona costumes (the front page's figure)
+# ---------------------------------------------------------------------------
+
+PERSONA_IDS = {"engineer", "teacher", "martial", "chef", "astronaut", "dj", "detective", "wizard"}
+
+
+def test_persona_grids_cover_every_costume_on_both_mascots():
+    from yeaboi.ui.shared import _persona_sprites as personas
+
+    assert set(personas.PERSONAS) == PERSONA_IDS
+    assert set(personas.ROBO_PERSONAS) == PERSONA_IDS
+
+
+def test_persona_grids_share_the_plate_size_and_the_palette():
+    from yeaboi.ui.shared import _persona_sprites as personas
+    from yeaboi.ui.shared._mascot import _ALL_COLOURS
+
+    valid = set(_ALL_COLOURS) | {"."}
+    for grids in (personas.PERSONAS, personas.ROBO_PERSONAS):
+        for pid, grid in grids.items():
+            assert len(grid) == 26, pid
+            assert all(len(row) == personas.PERSONA_WIDTH for row in grid), pid
+            assert set("".join(grid)) <= valid, pid
+
+
+def test_persona_cells_pack_to_thirteen_rows_and_fall_back_to_the_engineer():
+    from yeaboi.ui.shared._mascot import persona_cells
+
+    wizard = persona_cells("wizard")
+    assert len(wizard) == 13 and all(len(row) == 18 for row in wizard)
+    assert any(style and "250,176,44" in style for row in wizard for _g, style in row)  # the bill
+    assert persona_cells("pirate") == persona_cells("engineer")
+    robo = persona_cells("wizard", mascot="robo")
+    assert any(style and "140,160,178" in style for row in robo for _g, style in row)  # steel
+    large = persona_cells("wizard", scale=2)
+    assert len(large) == 26 and all(len(row) == 36 for row in large)

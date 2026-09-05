@@ -3,7 +3,9 @@
 Rounded world-cards side by side, each carrying its mascot (the OG duck for
 Solo, the duck trio for Team, the robotic duck for Agents), a solid-accent block title, a
 verb line, and an accent-middot capability list. The page's one question lives
-in the outer frame's border, not floating in space.
+in the outer frame's border, not floating in space. Under the cards, when the
+terminal is tall enough, the welcome's duck waits in the corner with the front
+page's headline in his bubble — the paper's informer, and the way in to it.
 
 The signature is that the selected card is *alive*: accent-bright border, a
 dark accent-tinted interior, and the mascot's wing flapping on the animation
@@ -22,7 +24,7 @@ from __future__ import annotations
 
 import re
 import textwrap
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rich.align import Align
 from rich.console import Group, RenderableType
@@ -32,6 +34,7 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.beta import BETA_LABEL
+from yeaboi.ui.mode_select.screens._screens import _COMPANION_COLS, _QUACK_HZ, _QUACK_SECONDS, _build_companion
 from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.shared._components import (
     AGENTS_THEME,
@@ -43,9 +46,13 @@ from yeaboi.ui.shared._components import (
     SOLO_THEME,
     TEAM_THEME,
     build_badge,
+    build_key_hints,
     build_page_panel,
 )
 from yeaboi.ui.shared._mascot import FRAMES, flock_cells, flock_head_cells, full_cells, mini_cells
+
+if TYPE_CHECKING:
+    from yeaboi.news.edition import Page
 
 _CATEGORY_CARDS: list[dict[str, Any]] = [
     {
@@ -172,6 +179,25 @@ def _walk_step(key: str, selected: bool) -> int:
 _CARD_ROWS = 28
 _HINT_ROWS = 4  # blank + the key-hint line + the two rows the footer note lands on
 _GUTTER_COLS = 1  # breathing room between the cards — one column, three-up is tight
+# The informer: the welcome's duck with the front page's headline in his bubble.
+_INFORMER_ROWS = 14  # bubble (border, two headline lines, byline, border), tail, the 7-row head, caption
+_BUBBLE_TEXT_W = _COMPANION_COLS - 6  # the bubble is two columns narrower than the lane, then its border and padding
+_HEADLINE_LINES = 2
+_EMPTY = "Nothing to read yet."
+
+
+def shows_informer(height: int) -> bool:
+    """Whether the duck and his bubble fit under the cards."""
+    return height - 3 - _HINT_ROWS - _CARD_ROWS >= _INFORMER_ROWS
+
+
+def _card_band(height: int) -> tuple[int, int]:
+    """The 1-based terminal rows the cards span, first and last."""
+    spare = max(0, height - 3 - _HINT_ROWS - _CARD_ROWS)
+    mid_top = (spare - _INFORMER_ROWS) // 2 if shows_informer(height) else spare // 2
+    first = 3 + mid_top
+    return first, first + _CARD_ROWS - 1
+
 
 # The quiet layer around the living cards.
 _HEADING = "Who are we working with today?"
@@ -337,6 +363,48 @@ def _card_half(
     return Padding(body, (1, 0))
 
 
+def informer_hit(width: int, height: int, *, row: int, col: int) -> bool:
+    """Whether a 1-based click lands on the informer's lane under the cards."""
+    _first, last = _card_band(height)
+    return shows_informer(height) and last < row < height - _HINT_ROWS and col > width - 3 - _COMPANION_COLS
+
+
+def _informer_text(page: Page | None, *, edition: str) -> Text:
+    """What the bubble says: the headline on two lines at most, then the byline; else what the paper is doing."""
+    if page is None:
+        return Text("\n".join(part for part in (_EMPTY if edition else "", edition) if part))
+    lines = textwrap.wrap(page.item.title, _BUBBLE_TEXT_W)
+    if len(lines) > _HEADLINE_LINES:
+        lines = lines[:_HEADLINE_LINES]
+        lines[-1] = lines[-1][: _BUBBLE_TEXT_W - 1].rstrip() + "…"
+    return Text("\n".join([*lines, page.byline]))
+
+
+def _build_informer(
+    page: Page | None, *, edition: str, intro: float, shimmer_tick: float, mascot: str, band_h: int
+) -> RenderableType:
+    """The band under the cards: blank on the left, the duck and his bubble bottom-right, ``band_h`` rows."""
+    from yeaboi.news.edition import PAGE_TURN_SECONDS
+
+    tick = shimmer_tick % PAGE_TURN_SECONDS
+    beak_open = page is not None and tick < _QUACK_SECONDS and int(tick * _QUACK_HZ) % 2 == 1
+    controls = build_key_hints([("[", "prev"), ("]", "next"), ("i", "open the paper")]) if page else None
+    lane = _build_companion(
+        _informer_text(page, edition=edition),
+        controls=controls,
+        beak_open=beak_open,
+        companion_intro=intro,
+        mascot="robo" if mascot == "robo" else "duck",
+        strip_glyph=False,
+    )
+    band = Table.grid(expand=True)
+    band.add_column(ratio=1)
+    band.add_column(width=_COMPANION_COLS)
+    # A space, not "": a column of truly empty Texts renders short, and the band must hold its height.
+    band.add_row(Group(*[Text(" ") for _ in range(band_h)]), lane)
+    return band
+
+
 def _build_category_screen(
     selected: int,
     *,
@@ -344,8 +412,10 @@ def _build_category_screen(
     height: int = 24,
     shimmer_tick: float = 0.0,
     intro: float = 1.0,
+    page: Page | None = None,
+    edition: str = "",
 ) -> Panel:
-    """Build the full-screen landing split."""
+    """Build the full-screen landing split, the informer under the cards when there is room."""
     bounds = _category_bounds(width)
     widths = [end - start + 1 for start, end in bounds]
     halves = [
@@ -373,15 +443,27 @@ def _build_category_screen(
         hint.append(f" {label}", style="rgb(70,70,82)")
 
     inner_h = height - 3  # top border + top pad + bottom border (no bottom pad)
-    body_h = _CARD_ROWS
-    body_area = max(0, inner_h - _HINT_ROWS)
-    mid_top = max(0, (body_area - body_h) // 2)
-    mid_bot = max(0, body_area - body_h - mid_top)
+    spare = max(0, inner_h - _HINT_ROWS - _CARD_ROWS)
+    first, _last = _card_band(height)
+    mid_top = first - 3
+    if shows_informer(height):
+        below: list[RenderableType] = [
+            _build_informer(
+                page,
+                edition=edition,
+                intro=intro,
+                shimmer_tick=shimmer_tick,
+                mascot=_CATEGORY_CARDS[selected]["mascot"],
+                band_h=spare - mid_top,
+            )
+        ]
+    else:
+        below = [Text("") for _ in range(spare - mid_top)]
 
     content = Group(
         *[Text("") for _ in range(mid_top)],
         grid,
-        *[Text("") for _ in range(mid_bot)],
+        *below,
         Text(""),
         hint,
         # Two rows for the chrome's footer note: it is drawn over the last three
@@ -415,9 +497,10 @@ def category_at_pos(width: int, height: int, *, row: int, col: int) -> int | Non
     Any click inside the content band counts for the card region it lands in —
     the cards are the whole screen, so precision clicking isn't required: a
     gutter (and the frame padding either side) counts for the nearest card. The
-    top border row and the bottom hint row return None.
+    top border row, the hint row and the informer's band return None.
     """
-    if row <= 2 or row >= height - 1:
+    _first, last = _card_band(height)
+    if row <= 2 or row >= height - 1 or (shows_informer(height) and row > last):
         return None
     bounds = _category_bounds(width)
     for i, (_start, end) in enumerate(bounds[:-1]):

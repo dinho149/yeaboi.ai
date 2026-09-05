@@ -72,6 +72,8 @@ def _spawn_tui_in_pty(tmp_path: Path) -> tuple[subprocess.Popen, int]:
         # Belt-and-braces: dry-run makes no LLM calls, but never let a real
         # key from the developer environment leak into the subprocess.
         "ANTHROPIC_API_KEY": "test-key-dry-run-only",
+        # The landing split's front page must not start a fetch thread here.
+        "YEABOI_NEWS": "off",
     }
     # Set, not popped: unset now falls through to the worktree's
     # .worktree.env marker, which would land this run in the shared

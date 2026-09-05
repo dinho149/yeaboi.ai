@@ -93,7 +93,7 @@ EGRESS_DISCLOSURES: tuple[dict, ...] = (
             "Anthropic Engineering, Simon Willison, InfoQ, GitHub Changelog, The Pragmatic Engineer — plus any "
             "outlet you add there and, if you set a channel, YouTube"
         ),
-        "when": "Opening the desktop home, at most every 30 minutes",
+        "when": "Opening the desktop home or the terminal's landing split, at most every 30 minutes",
         "default": "on",
         "off_switch": "YEABOI_NEWS=off (Settings ▸ System ▸ Privacy) — the yeaboi column still shows the release notes",
     },

@@ -209,6 +209,26 @@ class TestDemoScript:
         for marker in record_demo.MODE_SCREEN_MARKERS + record_demo.DOOR_SCREEN_MARKERS:
             assert marker not in category, f"marker {marker!r} renders on the landing split"
 
+        # With the informer's bubble printed too: the recorder runs with news off,
+        # so only a release note and the bubble's own controls can be on screen.
+        from yeaboi.news.edition import Page
+        from yeaboi.news.parse import NewsItem
+
+        story = Page(
+            item=NewsItem(id="r", title="yeaboi 4.2.0: Faster standups", url="https://pypi.org/p/", kind="release"),
+            kicker="From yeaboi",
+            counter="1 of 12",
+            byline="yeaboi, yesterday",
+            read="Read the release notes",
+            persona="wizard",
+            scene="dock",
+            caption="The wizard, at the dock, with the crates.",
+        )
+        for tall in (h, 60):  # too short for the duck, and tall enough
+            printed = plain(_build_category_screen(0, width=w, height=tall, page=story, edition="Refreshing."))
+            for marker in record_demo.MODE_SCREEN_MARKERS + record_demo.DOOR_SCREEN_MARKERS:
+                assert marker not in printed, f"marker {marker!r} renders on the landing split's informer"
+
         for world in ("solo", "team", "agents"):
             door = plain(_build_door_screen(1, world=world, width=w, height=h, active_name="Apollo"))
             for marker in record_demo.MODE_SCREEN_MARKERS + record_demo.CATEGORY_SCREEN_MARKERS:
@@ -334,6 +354,7 @@ class TestRecordingEnv:
         assert env["YEABOI_UPDATE_CHECK"] == "0"
         assert env["YEABOI_NO_TUNNEL"] == "1"
         assert env["YEABOI_TELEMETRY"] == "off"
+        assert env["YEABOI_NEWS"] == "off"
         assert env["HOME"] == str(tmp_path)
         assert env["TERM"] == "xterm-256color"
         assert env["ANTHROPIC_API_KEY"] == "test-key-dry-run-only"

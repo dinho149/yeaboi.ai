@@ -123,7 +123,7 @@ yeaboi.ai lives in **[yeaboi-site](https://github.com/yeaboi-ai/yeaboi-site)** �
 Two things still cross the boundary, in opposite directions:
 
 - **This repo publishes `contracts/site.json`** — the facts the site states about the package: the Python floor in its structured data, the repo URL in its JSON-LD, the PyPI install target. It is generated from `pyproject.toml` by `make site-contract` and `tests/unit/test_site_contract.py` fails when it is stale. The site vendors it by sha; **change a URL or the floor here and the site is a `make contracts-sync` behind until somebody bumps it.**
-- **The site holds artefacts this repo generates, and the master brand art this repo reads.** `make graph`, `make demo`/`demo-render` and the two sprite generators all resolve a yeaboi-site checkout via `scripts/_sibling_repos.py`: `$YEABOI_SITE`, else a sibling of the main checkout. None of them runs on a PR — every output is committed and guarded — so the two-checkout requirement is paid by whoever changes the product or the brand, never by CI.
+- **The site holds artefacts this repo generates, and the master brand art this repo reads.** `make graph`, `make demo`/`demo-render` and the two sprite generators all resolve a yeaboi-site checkout via `scripts/_sibling_repos.py`: `$YEABOI_SITE`, else a sibling of the main checkout. The persona costumes add a **yeaboi-desktop** checkout (`$YEABOI_DESKTOP`, else a sibling) for `gen_mascot_sprites.py`, which traces that repo's brand PNGs. None of them runs on a PR — every output is committed and guarded — so the extra-checkout requirement is paid by whoever changes the product or the brand, never by CI.
 
 ## Code Style
 

@@ -310,6 +310,8 @@ def _recording_env(home: Path) -> dict[str, str]:
         "YEABOI_UPDATE_CHECK": "0",
         "YEABOI_NO_TUNNEL": "1",
         "YEABOI_TELEMETRY": "off",
+        # The landing split's front page would otherwise start a fetch thread.
+        "YEABOI_NEWS": "off",
     }
     # Set, not popped: unset now falls through to the worktree's
     # .worktree.env marker, which would land this run in the shared
