@@ -3,7 +3,9 @@
 Rounded world-cards side by side, each carrying its mascot (the OG duck for
 Solo, the duck trio for Team, the robotic duck for Agents), a solid-accent block title, a
 verb line, and an accent-middot capability list. The page's one question lives
-in the outer frame's border, not floating in space.
+in the outer frame's border, not floating in space. Under the cards, the front
+page: one story at a time from the same paper the desktop home prints, so the
+split keeps the reader up to date without taking the choice off the screen.
 
 The signature is that the selected card is *alive*: accent-bright border, a
 dark accent-tinted interior, and the mascot's wing flapping on the animation
@@ -22,7 +24,7 @@ from __future__ import annotations
 
 import re
 import textwrap
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rich.align import Align
 from rich.console import Group, RenderableType
@@ -46,6 +48,9 @@ from yeaboi.ui.shared._components import (
     build_page_panel,
 )
 from yeaboi.ui.shared._mascot import FRAMES, flock_cells, flock_head_cells, full_cells, mini_cells
+
+if TYPE_CHECKING:
+    from yeaboi.news.edition import Page
 
 _CATEGORY_CARDS: list[dict[str, Any]] = [
     {
@@ -172,6 +177,8 @@ def _walk_step(key: str, selected: bool) -> int:
 _CARD_ROWS = 28
 _HINT_ROWS = 4  # blank + the key-hint line + the two rows the footer note lands on
 _GUTTER_COLS = 1  # breathing room between the cards — one column, three-up is tight
+_STRIP_ROWS = 3  # the front page: kicker row, headline, byline — pinned above the hint band
+_EMPTY = "Nothing to read yet."
 
 # The quiet layer around the living cards.
 _HEADING = "Who are we working with today?"
@@ -337,6 +344,34 @@ def _card_half(
     return Padding(body, (1, 0))
 
 
+def _joined(parts: list[tuple[str, str]]) -> Text:
+    """One centred row of ``part · part``, empties dropped; a single space when nothing is left."""
+    row = Text(justify="center", no_wrap=True, overflow="ellipsis")
+    for part, style in parts:
+        if not part:
+            continue
+        if row.plain:
+            row.append(" · ", style=_REST_BORDER)
+        row.append(part, style=style)
+    return row if row.plain else Text(" ")
+
+
+def _strip_rows(page: Page | None, *, edition: str = "", inside: str = "") -> list[Text]:
+    """The front page's rows: kicker · counter · edition line, the headline, the byline.
+
+    Always exactly ``_STRIP_ROWS`` Texts, a blank one a single space, so the
+    cards above never move as the paper arrives or the page turns.
+    """
+    if page is None:
+        empty = Text(_EMPTY if edition else " ", justify="center", style=LANDING_DETAIL_RESTING)
+        return [_joined([(edition, LANDING_DETAIL_RESTING)]), empty, Text(" ")]
+    resting = LANDING_DETAIL_RESTING
+    top = _joined([(page.kicker, resting), (page.counter, resting), (edition, resting)])
+    headline = Text(page.item.title, justify="center", style=LANDING_VERB_SELECTED, no_wrap=True, overflow="ellipsis")
+    foot = _joined([(page.byline, LANDING_DETAIL_SELECTED), (page.read, resting), (inside, resting)])
+    return [top, headline, foot]
+
+
 def _build_category_screen(
     selected: int,
     *,
@@ -344,8 +379,11 @@ def _build_category_screen(
     height: int = 24,
     shimmer_tick: float = 0.0,
     intro: float = 1.0,
+    page: Page | None = None,
+    edition: str = "",
+    inside: str = "",
 ) -> Panel:
-    """Build the full-screen landing split."""
+    """Build the full-screen landing split, the front page's strip under the cards."""
     bounds = _category_bounds(width)
     widths = [end - start + 1 for start, end in bounds]
     halves = [
@@ -366,7 +404,7 @@ def _build_category_screen(
     grid.add_row(*cells)
 
     hint = Text(justify="center")
-    for key, label in (("←/→", "switch"), ("enter", "choose"), ("q", "quit")):
+    for key, label in (("←/→", "switch"), ("enter", "choose"), ("[/]", "turn"), ("o", "open"), ("q", "quit")):
         if hint.plain:
             hint.append("   ")
         hint.append(key, style="bold rgb(210,210,220)")
@@ -374,14 +412,17 @@ def _build_category_screen(
 
     inner_h = height - 3  # top border + top pad + bottom border (no bottom pad)
     body_h = _CARD_ROWS
-    body_area = max(0, inner_h - _HINT_ROWS)
+    body_area = max(0, inner_h - _HINT_ROWS - _STRIP_ROWS)
     mid_top = max(0, (body_area - body_h) // 2)
     mid_bot = max(0, body_area - body_h - mid_top)
+    # The strip enters with the wordmarks; before that its rows are held blank.
+    strip = _strip_rows(page, edition=edition, inside=inside) if intro >= 0.5 else [Text(" ")] * _STRIP_ROWS
 
     content = Group(
         *[Text("") for _ in range(mid_top)],
         grid,
         *[Text("") for _ in range(mid_bot)],
+        *strip,
         Text(""),
         hint,
         # Two rows for the chrome's footer note: it is drawn over the last three
@@ -415,12 +456,17 @@ def category_at_pos(width: int, height: int, *, row: int, col: int) -> int | Non
     Any click inside the content band counts for the card region it lands in —
     the cards are the whole screen, so precision clicking isn't required: a
     gutter (and the frame padding either side) counts for the nearest card. The
-    top border row and the bottom hint row return None.
+    top border row, the front page's strip and the hint band return None.
     """
-    if row <= 2 or row >= height - 1:
+    if row <= 2 or row >= height - _HINT_ROWS - _STRIP_ROWS:
         return None
     bounds = _category_bounds(width)
     for i, (_start, end) in enumerate(bounds[:-1]):
         if col <= end + _GUTTER_COLS:
             return i
     return len(bounds) - 1
+
+
+def strip_at_pos(height: int, *, row: int) -> bool:
+    """Whether a 1-based terminal row lands on the front page's strip."""
+    return height - _HINT_ROWS - _STRIP_ROWS <= row < height - _HINT_ROWS
