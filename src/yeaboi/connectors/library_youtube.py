@@ -126,13 +126,15 @@ def search(query: str, limit: int = 10) -> Page:
     limit = clamp_limit(limit, 10)
 
     def load() -> Page:
+        # The category filter is only valid on a video-only search, so a
+        # search returns videos; playlists come from the library shelves.
         body = vendor_get(
             KEY,
             f"{API}/search",
             {
                 "part": "snippet",
                 "q": query,
-                "type": "video,playlist",
+                "type": "video",
                 "videoCategoryId": MUSIC_CATEGORY,
                 "maxResults": limit,
             },

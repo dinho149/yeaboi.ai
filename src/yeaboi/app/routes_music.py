@@ -84,12 +84,11 @@ def signin_cancel(app, request: Request) -> Response:
 
 def signout(app, request: Request) -> Response:
     """``POST /api/connections/{key}/signout`` — forget the token and the name."""
-    from yeaboi.connectors import library, oauth
+    from yeaboi.connectors import oauth
 
     key = request.params["key"]
     _connector(key)
     oauth.sign_out(key)
-    library.forget(key)
     return json_response({"ok": True, "signed_in": False})
 
 

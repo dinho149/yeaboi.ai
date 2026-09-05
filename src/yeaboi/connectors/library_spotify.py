@@ -173,8 +173,10 @@ def play(uri: str, device_id: str = "") -> None:
     parts = uri.split(":")
     if len(parts) != 3 or parts[0] != "spotify" or parts[1] not in _URI_KINDS or not parts[2].isalnum():
         raise LibraryError("bad_uri", "That is not a Spotify URI", 400)
+    if device_id and not device_id.isalnum():
+        raise LibraryError("bad_uri", "That is not a Spotify device id", 400)
     payload = {"uris": [uri]} if parts[1] == "track" else {"context_uri": uri}
-    url = f"{API}/me/player/play" + (f"?device_id={device_id}" if device_id.isalnum() else "")
+    url = f"{API}/me/player/play" + (f"?device_id={device_id}" if device_id else "")
     vendor_put(KEY, url, payload)
 
 

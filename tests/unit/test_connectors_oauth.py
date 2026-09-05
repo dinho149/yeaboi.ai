@@ -20,6 +20,8 @@ class FakeResponse:
         self.headers: dict[str, str] = {}
 
     def json(self):
+        if self._body is None:
+            raise ValueError("not json")
         return self._body
 
 
@@ -76,6 +78,8 @@ class TestAuthorizeUrl:
         assert oauth.redirect_uri("spotify") == "http://127.0.0.1:9911/callback/spotify"
         monkeypatch.setenv("YEABOI_OAUTH_PORT", "not-a-port")
         assert oauth.oauth_port() == 8643
+        monkeypatch.setenv("YEABOI_OAUTH_PORT", "70000")
+        assert oauth.oauth_port() == 8643
 
 
 class TestCallback:
@@ -118,6 +122,23 @@ class TestListener:
             assert info.value.code == 400
             assert "x" not in info.value.read().decode().split("<h1>")[1]
             assert listener.error and not listener.code
+        finally:
+            listener.close()
+
+    def test_close_releases_the_port_for_the_next_sign_in(self):
+        first = oauth._CallbackServer("spotify", "st", 0)
+        port = first._server.server_address[1]
+        first.close()
+        second = oauth._CallbackServer("spotify", "st", port)
+        second.close()
+
+    def test_a_non_ascii_state_is_a_400_page_not_a_traceback(self):
+        listener = oauth._CallbackServer("spotify", "st", 0)
+        port = listener._server.server_address[1]
+        try:
+            with pytest.raises(urllib.error.HTTPError) as info:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/callback/spotify?code=x&state=%C3%A9")
+            assert info.value.code == 400
         finally:
             listener.close()
 
@@ -200,6 +221,21 @@ class TestSession:
             session._worker and session._worker.join(timeout=0.1)
         assert not session.ok and "client ID" in session.error
 
+    def test_a_token_body_that_is_not_one_ends_the_sign_in(self, monkeypatch):
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "own-client")
+        monkeypatch.setenv("YEABOI_OAUTH_PORT", "0")
+        monkeypatch.setattr(oauth.http, "post_form", lambda url, *, data, timeout=10: FakeResponse(200, None))
+        session = oauth.OAuthSignIn("spotify")
+        assert session.start()
+        port = session._listener._server.server_address[1]
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/callback/spotify?code=c&state={session._state}").read()
+        for _ in range(100):
+            session.poll()
+            if session.done:
+                break
+            session._worker and session._worker.join(timeout=0.1)
+        assert session.done and not session.ok and "token" in session.error
+
     def test_cancel_is_safe_in_any_state(self):
         session = oauth.OAuthSignIn("spotify")
         session.cancel()
@@ -242,13 +278,17 @@ class TestBearer:
             oauth.bearer_for("spotify")
         assert applied == {"SPOTIFY_REFRESH_TOKEN": "", "SPOTIFY_ACCOUNT": ""}
 
-    def test_sign_out_clears_both_and_the_cache(self, monkeypatch):
+    def test_sign_out_clears_both_the_cache_and_the_pages(self, monkeypatch):
+        from yeaboi.connectors import library
+
         applied: dict[str, str] = {}
         monkeypatch.setattr("yeaboi.config.apply_config_value", lambda k, v: applied.__setitem__(k, v))
         oauth._cache_put("spotify", "AT", 3600)
+        library.cached(("spotify", "library", "x"), 60, lambda: library.Page())
         oauth.sign_out("spotify")
         assert applied == {"SPOTIFY_REFRESH_TOKEN": "", "SPOTIFY_ACCOUNT": ""}
         assert "spotify" not in oauth._cache
+        assert not [k for k in library._cache if k[0] == "spotify"]
         oauth.sign_out("apple_music")  # nothing to do, nothing raised
 
 

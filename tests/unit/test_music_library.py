@@ -130,6 +130,8 @@ class TestSpotifyRows:
         }
         with pytest.raises(library.LibraryError, match="not a Spotify URI"):
             library_spotify.play("spotify:track:../evil")
+        with pytest.raises(library.LibraryError, match="device id"):
+            library_spotify.play(f"spotify:track:{SPOTIFY_ID}", "dev 1")
 
     def test_player_reads_nothing_playing_as_quiet(self, monkeypatch):
         serve(monkeypatch, 204, None)
@@ -189,6 +191,8 @@ class TestYouTubeRows:
         first = library_youtube.search("rick")
         second = library_youtube.search("Rick ")
         assert first is second and len(calls) == 1 and "videoCategoryId=10" in calls[0]
+        # The category filter is only valid on a video-only search.
+        assert "type=video&" in calls[0] or calls[0].endswith("type=video")
 
 
 class TestAppleRows:

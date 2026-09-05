@@ -115,9 +115,10 @@ def oauth_port() -> int:
     """The port the callback listener binds — fixed, because the registered redirect URI names it."""
     raw = os.environ.get("YEABOI_OAUTH_PORT", "").strip()
     try:
-        return int(raw) if raw else DEFAULT_PORT
+        port = int(raw) if raw else DEFAULT_PORT
     except ValueError:
         return DEFAULT_PORT
+    return port if 1 <= port <= 65535 else DEFAULT_PORT
 
 
 def redirect_uri(key: str, port: int | None = None) -> str:
@@ -166,7 +167,7 @@ def parse_callback(path: str, expected_state: str) -> str:
     if error:
         raise CallbackError("Sign-in was refused" if error == "access_denied" else "Sign-in did not complete")
     state = (query.get("state") or [""])[0]
-    if not state or not secrets.compare_digest(state, expected_state):
+    if not state or not secrets.compare_digest(state.encode("utf-8"), expected_state.encode("utf-8")):
         raise CallbackError("Sign-in did not match the one that was started")
     code = (query.get("code") or [""])[0]
     if not code:
@@ -231,7 +232,7 @@ class _CallbackServer:
 
         # Raises OSError on a busy port: the caller turns that into a message.
         self._server = HTTPServer(("127.0.0.1", port), Handler)
-        self._server.timeout = 1
+        self._server.timeout = 0.2
         self._thread = threading.Thread(target=self._serve, name="oauth-callback", daemon=True)
         self._thread.start()
 
@@ -246,7 +247,15 @@ class _CallbackServer:
         return self._event.is_set()
 
     def close(self) -> None:
+        """Stop listening and release the port before returning.
+
+        The next sign-in binds the same fixed port straight away; a socket the
+        serve thread is still holding would refuse it with a misleading
+        "port busy".
+        """
         self._event.set()
+        if self._thread.is_alive() and threading.current_thread() is not self._thread:
+            self._thread.join(timeout=3)
 
 
 # -- the session ---------------------------------------------------------------
@@ -366,14 +375,18 @@ class OAuthSignIn:
             self.error = _exchange_message(self.key, resp.status_code)
             logger.warning("oauth: %s token exchange returned %d", self.key, resp.status_code)
             return
-        payload = resp.json()
+        payload = _token_payload(resp)
+        if payload is None:
+            self.error = "The sign-in service answered with something other than a token"
+            logger.warning("oauth: %s token exchange body was not a token", self.key)
+            return
         refresh = str(payload.get("refresh_token") or "")
         access = str(payload.get("access_token") or "")
         if not refresh:
             self.error = "Sign-in finished but no token was returned"
             logger.warning("oauth: %s exchange carried no refresh token", self.key)
             return
-        _cache_put(self.key, access, int(payload.get("expires_in") or 3600))
+        _cache_put(self.key, access, _expires_in(payload))
         try:
             self.account = provider.identity(access) if access else ""
         except Exception:  # noqa: BLE001 — a name is a nicety, not the credential
@@ -399,6 +412,22 @@ class OAuthSignIn:
         if not self.done:
             self.error = "Sign-in cancelled"
         self._refresh_token = ""
+
+
+def _token_payload(resp) -> dict | None:
+    """The token endpoint's JSON object, or None for anything else."""
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001 — a non-JSON 200 is just not a token
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def _expires_in(payload: dict) -> int:
+    try:
+        return max(1, int(payload.get("expires_in") or 3600))
+    except (TypeError, ValueError):
+        return 3600
 
 
 def _exchange_message(key: str, status: int) -> str:
@@ -435,6 +464,10 @@ def sign_out(key: str) -> None:
         apply_config_value(connector.account_env, "")
     with _cache_lock:
         _cache.pop(key, None)
+    # Pages read as the old account must not be served to the next one.
+    from yeaboi.connectors import library
+
+    library.forget(key)
     logger.info("oauth: %s signed out", key)
 
 
@@ -475,11 +508,11 @@ def _refresh(key: str) -> str:
     if resp.status_code != 200:
         logger.warning("oauth: %s refresh returned %d", key, resp.status_code)
         raise SignedOutError(f"{connector.label} answered {resp.status_code} — try again")
-    payload = resp.json()
-    access = str(payload.get("access_token") or "")
+    payload = _token_payload(resp)
+    access = str(payload.get("access_token") or "") if payload else ""
     if not access:
         raise SignedOutError(f"{connector.label} returned no token — sign in again")
-    _cache_put(key, access, int(payload.get("expires_in") or 3600))
+    _cache_put(key, access, _expires_in(payload or {}))
     rotated = str(payload.get("refresh_token") or "")
     if provider.refresh_rotates and rotated and rotated != refresh:
         from yeaboi.config import apply_config_value
